@@ -8,8 +8,9 @@ Everything in Hired is reachable from a conversation. The web app is where you g
 *look* at the result, adjust it by hand, and do the two jobs a conversation is bad at:
 direct manipulation and rendering.
 
-The left rail holds Today, Me, CRM, Pipeline and Analytics — the content. Resumes are a tab
-on Me, because a resume is a view of your own record rather than a separate filing cabinet.
+The left rail holds Today, Me, CRM and Pipeline — the content. Analytics is a tab on Today
+and Resumes is a tab on Me, because both are a second look at something you already have
+open rather than a separate filing cabinet.
 Docs, this manual, Settings and — for admins — Admin are account actions, so they live in
 the profile menu at the top right instead. `⌘K` / `Ctrl+K` opens a search palette: somewhere to go,
 something to create, and every role, resume and application by name.
@@ -32,7 +33,7 @@ top bar.
 
 `/`
 
-The front door is the list, not the numbers. Everything you owe, in two columns that stay
+Two tabs, and the first one is the front door: the list, not the numbers. Everything you owe, in two columns that stay
 apart on purpose. On the left the things you wrote down, grouped by overdue, today, the
 next seven days, later and no date — click a title to reword it, change its date in the
 row, or drop it. A task carries a detail as well as a title, and hangs off at most one
@@ -49,12 +50,13 @@ you opened the app.
 It answers the same question `list_follow_ups` does, laid out rather than listed. `/tasks`
 still works and lands here.
 
-## Analytics
+### Analytics
 
-`/analytics`
+`/?tab=analytics`
 
-How the search is going, which is a different question from what you owe today — so it is
-a different screen, and you go to it when you actually want to know.
+How the search is going, which is the same subject at a different altitude — so it is the
+second tab rather than a screen of its own, one click from the list and never in the way of
+it. `/analytics` still works and lands here.
 
 At the top, the funnel drawn as a flow chart: every application enters on the left as
 "Applied", the survivors carry across to the phone screen, the interview, the final round
@@ -63,8 +65,8 @@ no response, withdrew, offer accepted, still going. An application that was reje
 two interviews leaks out of the interview rung, not the applied one, because progress is
 measured by how far it actually got. A rung nobody was ever in is not drawn at all.
 
-**Share chart** copies it to the clipboard or downloads it as a PNG or an SVG. There is
-not a company, a role or a person's name on it — only the shape — which is what makes it
+**Share chart**, on the chart's own card, copies it to the clipboard or downloads it as a
+PNG or an SVG. There is not a company, a role or a person's name on it — only the shape — which is what makes it
 the one thing here that is safe to post. The PNG is rendered server-side by the same
 headless browser the PDF export uses; where an instance has no browser the SVG is offered
 instead and opens anywhere an image does. Over MCP it is `export_funnel_image`, and

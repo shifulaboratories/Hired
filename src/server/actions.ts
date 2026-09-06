@@ -1074,7 +1074,6 @@ export async function scheduleContactPingAction(id: string, date: string) {
 /** Everywhere a record could have been showing before it moved. */
 function revalidateEverywhere() {
   revalidatePath("/");
-  revalidatePath("/analytics");
   revalidatePath("/archive");
   revalidatePath("/applications");
   revalidatePath("/crm/companies");

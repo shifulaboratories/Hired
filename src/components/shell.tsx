@@ -6,7 +6,6 @@ import { motion } from "framer-motion";
 import {
   ArrowUpRightIcon,
   BookOpenIcon,
-  ChartNoAxesColumnIcon,
   CircleUserRoundIcon,
   Building2Icon,
   ChevronDownIcon,
@@ -78,7 +77,6 @@ const NAV: NavItem[] = [
     ],
   },
   { href: "/applications", label: "Pipeline", icon: KanbanIcon },
-  { href: "/analytics", label: "Analytics", icon: ChartNoAxesColumnIcon },
 ];
 
 // The rail remembers whether you collapsed it. Read after mount so the server

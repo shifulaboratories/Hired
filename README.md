@@ -49,15 +49,15 @@ just *talk* to it.
   things, so they don't share a column. On every other screen a bell in the top bar carries
   one number — follow-ups due, pings due, tasks past their date — and opens them grouped.
   Nothing in it can be dismissed: a thing leaves that list by being dealt with.
-- **Analytics** — where the numbers went, because you open this app to do the next thing
-  rather than to read your own statistics. The funnel drawn as a flow chart: applications
-  enter on the left, the survivors carry across to the phone screen, the interview, the
+- **Analytics** — the second tab on that same page, because it is the same subject at a
+  different altitude: one click away, never in the way of the list. The funnel drawn as a
+  flow chart: applications enter on the left, the survivors carry across to the phone screen, the interview, the
   final round and the offer, and everything that leaves peels off to where it went —
   rejected, no response, withdrew, offer accepted, still going. A rejection after two
   interviews leaks out of the interview rung, not the applied one, because progress is
   measured by how far it actually got. **Share chart** hands it to you as a PNG or an SVG
   with no company, role or person named anywhere on it — only the shape — which is what
-  makes it the one thing here that is safe to post. Beside it: response rate, what is in
+  makes it the one thing here that is safe to post. Under it: response rate, what is in
   flight, the diagnosis of which step is losing people, and recent activity.
 - **CRM** — companies and the people at them, as records you can visit. A company page holds
   their website, whatever you have learned about them, and their industries, sizes and

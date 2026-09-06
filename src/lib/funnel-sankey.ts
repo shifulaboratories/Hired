@@ -78,6 +78,14 @@ const GAP = 10;
  * is exactly the square somebody wants to see.
  */
 const EXIT_LANE = 120;
+/**
+ * The least vertical room a departure gets in the landing column.
+ *
+ * Its label is 11.5px whatever the chart's scale, so two exits worth one
+ * application each, on a chart of forty, would otherwise be drawn 3px apart and
+ * their labels would sit on top of each other. This is the floor that stops it.
+ */
+const MIN_EXIT_PITCH = 17;
 
 /**
  * A ribbon from one x to another, as a filled path.
@@ -130,6 +138,30 @@ export function sankeyLayout(rungs: FunnelRungInput[], options: SankeyOptions): 
 
   const nodes: SankeyNode[] = [];
   const links: SankeyLink[] = [];
+  /**
+   * Every departure, collected before any of them is placed.
+   *
+   * The landing column is shared by all five rungs, and each rung works out
+   * where its own exits *want* to sit without knowing about the others. That is
+   * fine while the drawing is tall — the wants happen not to overlap, because a
+   * rung's exits occupy exactly the band between its survivors and its total —
+   * but the labels beside them are a fixed 11.5px whatever the scale, so on a
+   * short chart with a real search in it they land on top of each other and the
+   * whole right-hand side becomes unreadable. So the placing happens once, over
+   * all of them, in the pass below.
+   */
+  const departures: {
+    id: string;
+    label: string;
+    key: string;
+    value: number;
+    /** Where it leaves the spine. Fixed — this is what makes it readable. */
+    fromX: number;
+    fromY: number;
+    height: number;
+    /** Where it would land with nothing else in the way. */
+    wantsY: number;
+  }[] = [];
 
   live.forEach((rung, index) => {
     const x = PADDING.left + index * columnGap;
@@ -176,29 +208,51 @@ export function sankeyLayout(rungs: FunnelRungInput[], options: SankeyOptions): 
     let exitY = cursor + (exits.length > 0 ? GAP : 0);
     for (const exit of exits) {
       const h = Math.max(1, exit.value * perUnit);
-      const endX = PADDING.left + inner.width;
-      links.push({
-        id: `exit-${rung.stage}-${exit.key}`,
-        path: ribbon(x + NODE_WIDTH, cursor, h, endX, exitY, h),
-        value: exit.value,
-        tone: options.tones[exit.key] ?? options.exitTone,
-        kind: "exit",
-      });
-      nodes.push({
-        id: `end-${rung.stage}-${exit.key}`,
+      departures.push({
+        id: `${rung.stage}-${exit.key}`,
         label: options.labelFor(exit.key),
+        key: exit.key,
         value: exit.value,
-        x: endX,
-        y: exitY,
-        width: NODE_WIDTH,
+        fromX: x + NODE_WIDTH,
+        fromY: cursor,
         height: h,
-        tone: options.tones[exit.key] ?? options.exitTone,
-        kind: "exit",
+        wantsY: exitY,
       });
       cursor += h;
       exitY += h + GAP;
     }
   });
+
+  // Place the landing column top to bottom, giving every label the room it
+  // needs. A block keeps its true height — a 1 must not look like a 3 — so
+  // what gives is the space beneath it, and the drawing grows rather than
+  // overlapping. Deeper rungs land higher, which falls out of sorting: a
+  // rung's exits sit in the band between its survivors and its total, and the
+  // deeper the rung the smaller both are.
+  const endX = PADDING.left + inner.width;
+  let floorY = PADDING.top;
+  for (const exit of departures.sort((a, b) => a.wantsY - b.wantsY)) {
+    const y = Math.max(exit.wantsY, floorY);
+    floorY = y + Math.max(exit.height, MIN_EXIT_PITCH);
+    links.push({
+      id: `exit-${exit.id}`,
+      path: ribbon(exit.fromX, exit.fromY, exit.height, endX, y, exit.height),
+      value: exit.value,
+      tone: options.tones[exit.key] ?? options.exitTone,
+      kind: "exit",
+    });
+    nodes.push({
+      id: `end-${exit.id}`,
+      label: exit.label,
+      value: exit.value,
+      x: endX,
+      y,
+      width: NODE_WIDTH,
+      height: exit.height,
+      tone: options.tones[exit.key] ?? options.exitTone,
+      kind: "exit",
+    });
+  }
 
   // The exits fan downward, so the drawing is usually taller than the spine.
   // Grow the box to fit rather than clipping the bottom label off.

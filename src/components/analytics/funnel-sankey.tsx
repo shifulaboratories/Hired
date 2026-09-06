@@ -59,7 +59,13 @@ export function funnelOptions(width?: number, height?: number) {
 export function FunnelSankey({
   rungs,
   width = 900,
-  height = 420,
+  /**
+   * Short on purpose. This is the overview at the top of a tab, not the
+   * report — a Sankey wants width and needs almost no height to be read, and
+   * at 420 it was a slab that pushed everything under it below the fold. The
+   * downloadable file passes its own, larger, box.
+   */
+  height = 200,
 }: {
   rungs: FunnelRung[];
   width?: number;
