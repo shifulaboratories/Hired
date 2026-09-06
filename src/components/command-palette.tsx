@@ -233,7 +233,7 @@ export function CommandPalette({
               </CommandItem>
               <CommandItem
                 value="go-analytics stats funnel chart"
-                onSelect={() => go("/analytics")}
+                onSelect={() => go("/?tab=analytics")}
               >
                 <ChartNoAxesColumnIcon /> Analytics
               </CommandItem>

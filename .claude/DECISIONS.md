@@ -4616,3 +4616,53 @@ reads before and after, which is the documented set. Typecheck, build, `gen-tool
 `src/app/(app)/page.tsx`, `src/app/(app)/analytics/page.tsx`, `src/app/(app)/tasks/page.tsx`,
 `src/app/(app)/layout.tsx`, `src/app/api/funnel/[format]/route.ts`, `src/lib/mcp/tools.ts`,
 `src/server/actions.ts`, `README.md`, `docs/app.mdx`, `docs/concepts/`.
+
+---
+
+## 2026-09-06 — Analytics is a tab on the front door, and the funnel is sized for a real search
+
+**Two screens were one screen.** Today and Analytics are the same subject at two altitudes,
+and a rail entry for the second made it a place you had to decide to visit. It is `?tab=`
+on `/` now, matching Me and Settings: an address, so a tab can be linked to and Back walks
+them. `/analytics` redirects. The rail lost its entry; the palette points at
+`/?tab=analytics`.
+
+**Each tab reads its own data, and the page reads almost none.** `AnalyticsPanel` takes a
+`userId` rather than props, and the page only loads the profile and setup status when Today
+is showing. That is the whole point of a tab strip built this way — the list is nine reads
+and the funnel is five, and a page that loads both to show one costs as much as both.
+**Share chart** moved onto the chart's own card for the same reason: in the page header it
+needed an application count, which meant a second `pipelineStats` on every analytics load.
+
+**The setup strip belongs to the Today tab, not to the page.** Three onboarding cards above
+a tab strip pushed the chart under the fold on a screen that is meant to be a glance.
+
+**The Sankey's labels had to be de-collided before it could shrink.** At `height=420` and a
+handful of applications it looked fine; at `height=200` with a real search — 24
+applications, nine departures — five labels landed on top of each other and the right-hand
+side was unreadable. The cause was structural, not a matter of scale: each rung placed its
+own exits knowing nothing about the others, which works only while every block is taller
+than the 11.5px label beside it.
+
+So `sankeyLayout` now collects every departure first and places the landing column in one
+pass, top to bottom, with `MIN_EXIT_PITCH = 17` as the floor. Blocks keep their true
+heights — a 1 must not look like a 3 — so what gives is the space beneath them, and the
+drawing grows instead of overlapping. Ordering falls out of sorting by natural position: a
+rung's exits occupy the band between its survivors and its total, so deeper rungs land
+higher, which is what the eye expects. Do not go back to placing exits per rung.
+
+**The page renders at `height=200`, the downloadable file at 460.** The file wants to be
+big; the tab wants a band. Both went through the same de-collision and both were rendered
+and looked at with 24 applications in.
+
+**Verified** on a seeded real Postgres with a realistic search — 24 applications across
+five rungs and nine departures — driven in a production `next start`: both tabs, the tab
+links, the browser's Back button, the share menu in its new home, and `/api/funnel/png` at
+200 (82KB). Typecheck, build and `gen-tool-docs --check` clean; seven unfiltered archivable
+reads, the documented set.
+
+**Applies to:** `src/app/(app)/page.tsx`, `src/app/(app)/analytics/page.tsx`,
+`src/components/analytics/analytics-panel.tsx`, `src/components/analytics/funnel-sankey.tsx`,
+`src/lib/funnel-sankey.ts`, `src/components/shell.tsx`,
+`src/components/command-palette.tsx`, `src/server/actions.ts`, `README.md`,
+`docs/app.mdx`, `docs/concepts/pipeline.mdx`.
