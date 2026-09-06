@@ -746,6 +746,30 @@ body:has(> .auth-field.theme-light) {
   }
 }
 
+/* The editor measures the document here: one column per page, sized to the
+   page's content box, so CSS fragmentation puts each element where the printer
+   would. Hidden with visibility rather than display:none or content-visibility,
+   both of which skip layout and would leave nothing to measure. */
+.rp-measure-host {
+  position: absolute;
+  left: -99999px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  contain: layout style;
+  width: var(--rp-page-w);
+  height: var(--rp-page-h);
+  column-width: var(--rp-page-w);
+  column-gap: 0;
+  column-fill: auto;
+}
+
+.rp-measure-host .resume-paper {
+  width: var(--rp-page-w);
+  min-height: 0;
+  padding: 0;
+}
+
 /* Outside @media print on purpose: break-inside is inert without a
    fragmentation context, so this changes nothing on screen — but the editor
    measures the document inside a multi-column host, which IS one, and it has to

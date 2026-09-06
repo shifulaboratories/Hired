@@ -4698,3 +4698,55 @@ rule that decides where pages break has to be the same one the printer reads.
 
 **Applies to:** `src/app/globals.css`, `src/components/resume/page-margin-style.tsx` (new),
 `src/app/print/[id]/page.tsx`, `src/app/r/[slug]/page.tsx`, `src/lib/pdf.ts`.
+
+---
+
+## 2026-09-06 — The editor measures its pages instead of estimating them
+
+**The page badge could not have been right.** `estimateLines()` assumes ~110 characters to a
+line and 46 lines to a page, and takes only the document — it never sees `fontSize`,
+`lineHeight`, `pageMargin` or `template`, all four of which sit in the Design popover two
+clicks from the badge. It was styled warning/success, so it looked authoritative while being
+structurally blind to half its own inputs. The same document now reads 1, 2 or 3 pages
+depending on those settings, and the editor agrees with the real PDF in all three cases.
+
+**The browser does the fragmenting; this code only reads the result.** `PageMeasure` renders
+a second, invisible copy of the document inside a multi-column box whose column is exactly
+one page's content box. CSS fragmentation and paged fragmentation are the same machinery and
+honour the same `break-inside: avoid`, so the column an element lands in is the page it
+prints on. Checked against the real PDF, not assumed: 1/2/3 pages measured, 1/2/3 pages
+printed. The naive `contentHeight / 1056` division does NOT work — it undercounts whenever an
+entry is pushed whole, which is most documents past one page.
+
+**It measures a copy, not the preview.** The preview lives inside `transform: scale()` and a
+scaled element's rectangles are scaled with it, so measuring it would report a page height
+that changed when you zoomed. The hidden host is never scaled. Its paper is rendered with
+`pageMargin: 0` and the margin carried by the column size — the same arrangement the printed
+page uses now that the margin lives on the page box.
+
+**The break line is drawn where content actually breaks, not where the sheet ends.** Those
+are different places, and the difference is the whole point: `break-inside: avoid` pushes an
+entry that will not fit down whole, so the page before it ends early with slack. A rule ruled
+across the geometric boundary cut through a paragraph that in fact prints intact. The line is
+anchored to the element that opens the next page, found by its `data-rp` path and positioned
+with `offsetTop` — a layout value, so it is unaffected by the zoom it sits inside.
+
+**Section wrappers are never the element that "starts" a page.** A `<section>` holding five
+jobs straddles every page it covers, so it is always the first rectangle on the page and
+always a continuation. Naming it made every break read "splits here" and pointed at the
+heading rather than at the entry you could actually move. The opener is now the first
+fragment that *begins* on the page and is not a section wrapper.
+
+**`data-rp` is positional, not id-based.** `resume-schema.ts` defaults every `id` to `""` and
+`RESUME_DOC_SHAPE` never mentions ids, so a document written through `create_resume` — the
+product's main path — carries empty ids throughout. Those were also being used as React keys
+in the renderer; both now key on the index. Positional paths are total and collision-free.
+
+**`estimateLines` stays, but only for the server.** `preview_resume_text` has no browser and
+still needs an answer; its number remains an estimate and `export_resume_pdf` remains the
+measured one. What went is the editor's duplicate `LINES_PER_PAGE`, which sat beside a comment
+in `resume-text.ts` explaining that the constant lives there so the two cannot drift.
+
+**Applies to:** `src/lib/resume-pagination.ts` (new), `src/lib/resume-measure-dom.ts` (new),
+`src/components/resume/{page-measure,page-breaks}.tsx` (new),
+`src/components/resume/{resume-paper,resume-editor}.tsx`, `src/app/globals.css`.

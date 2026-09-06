@@ -58,7 +58,9 @@ import {
   type ResumeSection,
   type SectionKind,
 } from "@/lib/resume-schema";
-import { estimateLines } from "@/lib/resume-text";
+import { PageMeasure } from "@/components/resume/page-measure";
+import { PageBreaks } from "@/components/resume/page-breaks";
+import { emptyLayout, pageBox, type PageLayout } from "@/lib/resume-pagination";
 import { ResumePaper, type PaperSettings } from "@/components/resume/resume-paper";
 import { EvidencePanel, type LinkedApplication } from "@/components/resume/evidence-panel";
 import type { CorrespondenceAccess } from "@/components/google/correspondence-card";
@@ -84,7 +86,6 @@ type Meta = Omit<PaperSettings, "photo"> & {
 };
 
 const ACCENTS = ["#000000", "#B30000", "#0C5B97", "#1f2937", "#6366f1", "#0ea5e9"];
-const LINES_PER_PAGE = 46;
 
 export function ResumeEditor({
   id,
@@ -146,9 +147,13 @@ export function ResumeEditor({
     push({ doc, meta: next });
   };
 
-  const lines = useMemo(() => estimateLines(doc), [doc]);
-  const pages = Math.max(1, Math.ceil(lines / LINES_PER_PAGE));
-  const fill = Math.min(100, Math.round(((lines % LINES_PER_PAGE || LINES_PER_PAGE) / LINES_PER_PAGE) * 100));
+  // Measured, not estimated: PageMeasure lays the real document out in
+  // page-sized columns and reports where the browser breaks it. The old gauge
+  // assumed 110 characters a line and never saw the type size, leading or
+  // margin, all of which are two clicks away in Design.
+  const [layout, setLayout] = useState<PageLayout>(() => emptyLayout(pageBox(initialMeta.pageMargin)));
+  const pages = layout.pages;
+  const fill = Math.round(layout.lastPageFill * 100);
 
   const updateSection = (sectionId: string, patch: Partial<ResumeSection>) => {
     commit({
@@ -196,7 +201,11 @@ export function ResumeEditor({
         <Badge
           variant={pages > 1 ? "warning" : "success"}
           className="ml-1 hidden tabular-nums sm:inline-flex"
-          title={`~${lines} rendered lines`}
+          title={
+            pages > 1
+              ? `Measured from the rendered document. Page ${pages} is ${fill}% full.`
+              : `Measured from the rendered document. The page is ${fill}% full.`
+          }
         >
           {pages} page{pages > 1 ? "s" : ""} · {fill}% of last
         </Badge>
@@ -344,14 +353,24 @@ export function ResumeEditor({
             animate={{ scale: 1 }}
           >
             <div
-              className="origin-top-left shadow-2xl"
+              className="relative origin-top-left shadow-2xl"
               style={{ transform: `scale(${zoom})`, width: "8.5in" }}
             >
               <ResumePaper doc={doc} settings={{ ...meta, photo: meta.showPhoto ? photo : "" }} />
+              {/* Inside the scaled box on purpose: the lines are positioned in
+                  the paper's own pixels, so they scale with it and need no
+                  arithmetic against the zoom. */}
+              <PageBreaks layout={layout} />
             </div>
           </motion.div>
         </div>
       </div>
+
+      <PageMeasure
+        doc={doc}
+        settings={{ ...meta, photo: meta.showPhoto ? photo : "" }}
+        onLayout={setLayout}
+      />
     </div>
   );
 }
