@@ -129,9 +129,10 @@ export async function renderPdf(input: {
     const bytes = await page.pdf({
       format: "Letter",
       printBackground: true,
-      // The document already carries the template's own margins; anything here
-      // would be applied on top and shift it.
-      margin: { top: "0", right: "0", bottom: "0", left: "0" },
+      // No margin stated here: the document's own @page rule carries it, and
+      // preferCSSPageSize is what makes Chromium honour that rather than its
+      // own default. Setting one here as well is a second place for the margin
+      // to be decided, which is how the PDF and the print page drift apart.
       preferCSSPageSize: true,
     });
 

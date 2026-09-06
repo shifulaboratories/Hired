@@ -710,9 +710,16 @@ body:has(> .auth-field.theme-light) {
 }
 
 @media print {
+  /* The margin lives on the PAGE BOX, not on the paper.
+     It used to be padding on .resume-paper with @page { margin: 0 }, and
+     padding on a box that fragments is sliced: page one got the top, the last
+     page got the bottom, and every page between them got none. Measured out of
+     the real PDF, page two of a two-page resume started 12px from the sheet's
+     edge where page one started at 61px, and page one ran to within 23px of the
+     bottom. @page cannot read a custom property, so the size is stated here and
+     each document's own margin is emitted by the route that prints it. */
   @page {
     size: letter;
-    margin: 0;
   }
 
   html,
@@ -727,18 +734,26 @@ body:has(> .auth-field.theme-light) {
   }
 
   .resume-paper {
-    width: 8.5in !important;
+    /* auto, not 8.5in: the page box is already the sheet minus its margins, so
+       the paper fills it and the content width is what it always was. */
+    width: auto !important;
     min-height: 0 !important;
+    padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
     margin: 0 !important;
   }
+}
 
-  .rp-block {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
+/* Outside @media print on purpose: break-inside is inert without a
+   fragmentation context, so this changes nothing on screen — but the editor
+   measures the document inside a multi-column host, which IS one, and it has to
+   see the same rule the printer does. Two copies of the rule that decides where
+   pages break is how a preview and a PDF drift apart. */
+.rp-block {
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 /* ---------------------------------------------------------------------------

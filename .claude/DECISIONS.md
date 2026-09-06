@@ -4616,3 +4616,38 @@ reads before and after, which is the documented set. Typecheck, build, `gen-tool
 `src/app/(app)/page.tsx`, `src/app/(app)/analytics/page.tsx`, `src/app/(app)/tasks/page.tsx`,
 `src/app/(app)/layout.tsx`, `src/app/api/funnel/[format]/route.ts`, `src/lib/mcp/tools.ts`,
 `src/server/actions.ts`, `README.md`, `docs/app.mdx`, `docs/concepts/`.
+
+---
+
+## 2026-09-06 — A printed resume's margin belongs to the page box
+
+**Every page after the first had no top margin, and page one ran to the sheet's edge.**
+`resume-paper.tsx` carried the document's margin as `padding` on `.resume-paper` while
+`globals.css` said `@page { margin: 0 }`. Padding on a box that fragments across pages is
+sliced — that is what `box-decoration-break: slice`, the default, means — so page one keeps
+the top of it, the last page keeps the bottom, and every page in between gets neither.
+
+Measured out of this app's own PDF rather than argued, by inflating the content streams and
+reading the text matrices: on a two-page resume at a 48px margin, page one's first text sat
+61px from the sheet's top edge and page two's sat **12px** from it, while page one's last
+line ran to within **23px** of the bottom. After the change both pages start 60–61px down.
+
+**The margin moved to `@page`, which means it is emitted per document.** `@page` cannot read
+a custom property and the margin is a per-resume setting, so `PageMarginStyle` renders one
+rule and both printable routes — `/print/[id]` and the public `/r/[slug]` — use it. In print,
+`.resume-paper` drops its padding and goes `width: auto`, filling a page box that is already
+the sheet minus its margins; the content width is 720px at a 48px margin either way, which is
+why **page one is unchanged**. Verified: first text at 61px before and after, and a
+one-page resume still renders as exactly one page.
+
+**`page.pdf()`'s explicit zero margin is gone.** With `preferCSSPageSize: true` Chromium
+honours the CSS, and stating the margin in `pdf.ts` as well would be a second place for it to
+be decided — which is how a PDF and a print page drift apart.
+
+**`.rp-block { break-inside: avoid }` left `@media print`.** It is inert without a
+fragmentation context, so nothing changes on screen. It moved because the editor is about to
+measure the document inside a multi-column host, which *is* a fragmentation context, and the
+rule that decides where pages break has to be the same one the printer reads.
+
+**Applies to:** `src/app/globals.css`, `src/components/resume/page-margin-style.tsx` (new),
+`src/app/print/[id]/page.tsx`, `src/app/r/[slug]/page.tsx`, `src/lib/pdf.ts`.

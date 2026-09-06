@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getResumeBySlug } from "@/lib/data/resumes";
 import { ResumePaper } from "@/components/resume/resume-paper";
+import { PageMarginStyle } from "@/components/resume/page-margin-style";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,7 @@ export default async function PublicResumePage({ params }: Params) {
 
   return (
     <main className="min-h-svh bg-neutral-200 py-6 print:bg-white print:py-0 sm:py-10">
+      <PageMarginStyle pageMargin={resume.pageMargin} />
       <div className="mx-auto w-fit max-w-full overflow-x-auto px-3 print:overflow-visible print:px-0">
         <div className="bg-white shadow-2xl print:shadow-none">
           <ResumePaper
