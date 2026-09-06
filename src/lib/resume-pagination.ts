@@ -22,6 +22,13 @@ import type { ResumeDoc } from "@/lib/resume-schema";
  * rectangles that come back into an answer.
  */
 
+/**
+ * What the browser-free estimate assumes fits on a page. Re-exported from
+ * resume-text.ts so a caller ranking trims without a layout engine states the
+ * assumption rather than inventing a second one.
+ */
+export { LINES_PER_PAGE as LINES_PER_PAGE_HINT } from "@/lib/resume-text";
+
 /** 8.5in and 11in at CSS's 96dpi. The only place these numbers appear. */
 export const PAGE_WIDTH_PX = 816;
 export const PAGE_HEIGHT_PX = 1056;

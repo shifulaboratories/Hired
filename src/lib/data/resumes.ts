@@ -10,6 +10,8 @@ import {
   type ResumeDoc,
 } from "@/lib/resume-schema";
 import { getMeSnapshot, listHighlights } from "@/lib/data/me";
+import { fitReport } from "@/lib/resume-fit";
+import { LINES_PER_PAGE } from "@/lib/resume-text";
 
 // Rendering helpers live in resume-text.ts (client-safe); re-exported so server
 // callers can keep reaching them through this module.
@@ -349,6 +351,29 @@ export type BulletEvidence = {
  * entry names a role, only that role's highlights can back it: crediting a
  * Stripe line to a note about another employer discredits the whole thing.
  */
+/**
+ * What to cut when a resume runs long.
+ *
+ * Ranks rather than measures. The page count here is the same estimate
+ * preview_resume_text reports and carries the same caveat — it cannot see the
+ * type size or the margins, and only a browser can. export_resume_pdf renders
+ * one and reports the real number. What this answers is the question the real
+ * number leaves you with: which pieces are big enough to be worth cutting.
+ */
+export async function resumeFitReport(userId: string, id: string) {
+  const resume = await db.resume.findFirst({ where: { id, userId } });
+  if (!resume) throw new Error(`No resume with id ${id}`);
+  const doc = parseResumeDoc(resume.data);
+  const report = fitReport(doc, LINES_PER_PAGE);
+  return {
+    resume: { id: resume.id, name: resume.name },
+    ...report,
+    fontSize: resume.fontSize,
+    lineHeight: resume.lineHeight,
+    pageMargin: resume.pageMargin,
+  };
+}
+
 export async function traceResumeEvidence(userId: string, id: string) {
   const resume = await db.resume.findFirst({ where: { id, userId } });
   if (!resume) throw new Error(`No resume with id ${id}`);

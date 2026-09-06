@@ -60,6 +60,7 @@ import {
 } from "@/lib/resume-schema";
 import { PageMeasure } from "@/components/resume/page-measure";
 import { PageBreaks } from "@/components/resume/page-breaks";
+import { FitPanel } from "@/components/resume/fit-panel";
 import { emptyLayout, pageBox, type PageLayout } from "@/lib/resume-pagination";
 import { ResumePaper, type PaperSettings } from "@/components/resume/resume-paper";
 import { EvidencePanel, type LinkedApplication } from "@/components/resume/evidence-panel";
@@ -152,8 +153,6 @@ export function ResumeEditor({
   // assumed 110 characters a line and never saw the type size, leading or
   // margin, all of which are two clicks away in Design.
   const [layout, setLayout] = useState<PageLayout>(() => emptyLayout(pageBox(initialMeta.pageMargin)));
-  const pages = layout.pages;
-  const fill = Math.round(layout.lastPageFill * 100);
 
   const updateSection = (sectionId: string, patch: Partial<ResumeSection>) => {
     commit({
@@ -198,17 +197,9 @@ export function ResumeEditor({
 
         <SaveIndicator state={state} />
 
-        <Badge
-          variant={pages > 1 ? "warning" : "success"}
-          className="ml-1 hidden tabular-nums sm:inline-flex"
-          title={
-            pages > 1
-              ? `Measured from the rendered document. Page ${pages} is ${fill}% full.`
-              : `Measured from the rendered document. The page is ${fill}% full.`
-          }
-        >
-          {pages} page{pages > 1 ? "s" : ""} · {fill}% of last
-        </Badge>
+        {/* The page count is where "how do I cut this down" gets asked, so it
+            is also where it gets answered. */}
+        <FitPanel doc={doc} layout={layout} onChange={(next) => commit(next)} />
 
         {base && <CompareToBase base={base} doc={doc} />}
 

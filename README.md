@@ -90,7 +90,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  120 tools any MCP client can call (150 if you're an admin). Claude, Claude Code, ChatGPT,
+  121 tools any MCP client can call (151 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **Multi-user** — invite whoever you like. Each person gets a completely private workspace;
   admins manage accounts but never see anyone's career history, resumes or applications. Admin lives
@@ -265,7 +265,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Hit **Test** next to any connection and the app calls its own endpoint the way a client
-would, then tells you how many tools answered — 120, or 150 if you're an admin.
+would, then tells you how many tools answered — 121, or 151 if you're an admin.
 
 #### One connection per client
 
@@ -443,7 +443,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-120 tools. One hundred and twelve of them are the data tools across the four areas, the
+121 tools. One hundred and thirteen of them are the data tools across the four areas, the
 archive that cuts through all of them, your Gmail and Calendar, and your account; the other
 eight are the workflows below, published as tools as well as prompts, because prompt support
 is optional in MCP clients and tool support isn't. Call one and it hands back a step-by-step
@@ -500,7 +500,8 @@ anything already there.
 **Resumes** — `get_resume_format` describes the document shape, then `create_resume` /
 `update_resume` / `duplicate_resume` build and tailor them. `preview_resume_text` renders a
 draft and estimates page count *without* saving, so Claude can check length before
-committing. `publish_resume` turns one into a shareable link and hands back the URL;
+committing, and `check_resume_fit` ranks what to cut when it runs long — the longest
+bullets, and which sections are carrying the most weight. `publish_resume` turns one into a shareable link and hands back the URL;
 `unpublish_resume` destroys it. `export_resume_pdf` renders a real PDF server-side and
 reports the page count it actually came out to. A duplicated resume remembers what it was
 tailored from, so `compare_resumes` can say exactly what a variant changed — bullets added,
@@ -580,6 +581,20 @@ for students and recent graduates, and wrong for most people with real work hist
 default order leads with Experience.
 
 The other templates — Classic, Modern, Compact, Editorial — are all still there.
+
+## Where the page ends
+
+The editor draws a line across the preview everywhere the paper runs out, labelled with the
+page it starts, and says *"splits here"* when an entry is cut in half by the break. That's
+measured, not guessed: a second invisible copy of the document is laid out in page-sized
+columns and the browser is asked where it actually broke, so the line lands where the PDF
+will break and moves as you type.
+
+When it runs to two pages the badge in the toolbar stops reporting the count and offers to
+fix it. Open it and you get what is on the last page in order, the sections you could hide —
+kept in the document, off the page, and undoable — and your longest bullets with the words on
+the button that removes each one. `check_resume_fit` is the same advice over MCP, so *"what
+should I cut to get this to one page?"* answers with the same list.
 
 ## One photo, every document
 

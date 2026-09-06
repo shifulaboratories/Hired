@@ -1,7 +1,7 @@
 ---
 title: "Resume tools"
 sidebarTitle: "Resumes"
-description: "Fifteen tools for writing documents, checking their length before saving, comparing a tailored variant against its base, publishing them to a link and exporting real PDFs."
+description: "Sixteen tools for writing documents, checking their length before saving, comparing a tailored variant against its base, publishing them to a link and exporting real PDFs."
 icon: "file-lines"
 ---
 
@@ -201,6 +201,16 @@ _Delete a resume_
 Permanently delete a resume.
 
 **Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Resume id |
+
+### `check_resume_fit`
+
+_Check what to cut from a resume_
+
+Reach for this when a resume runs long and the question is what to cut. Returns its bullets ranked longest first — each with the entry it sits under and the path to it — and its sections ranked by how much room they take, so the two obvious levers are in front of you: shorten the worst offenders, or hide a whole section. It RANKS; it does not measure. The page count it reports is the same estimate preview_resume_text gives and carries the same limit — it cannot see the type size, leading or margins, and only a browser can. Call export_resume_pdf for the real number, then call this to decide what goes. Nothing is written: read it, propose the cuts to the user, and make them with update_resume once they agree. Cutting a bullet is deleting something true they did, so say which ones you would drop and why rather than dropping them.
 
 | Argument | Type | |
 | --- | --- | --- |

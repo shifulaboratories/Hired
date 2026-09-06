@@ -1760,6 +1760,20 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => resumes.deleteResume(ctx.userId, required(args, "id")),
   },
   {
+    name: "check_resume_fit",
+    title: "Check what to cut from a resume",
+    description:
+      "Reach for this when a resume runs long and the question is what to cut. Returns its bullets ranked longest first — each with the entry it sits under and the path to it — and its sections ranked by how much room they take, so the two obvious levers are in front of you: shorten the worst offenders, or hide a whole section. It RANKS; it does not measure. The page count it reports is the same estimate preview_resume_text gives and carries the same limit — it cannot see the type size, leading or margins, and only a browser can. Call export_resume_pdf for the real number, then call this to decide what goes. Nothing is written: read it, propose the cuts to the user, and make them with update_resume once they agree. Cutting a bullet is deleting something true they did, so say which ones you would drop and why rather than dropping them.",
+    inputSchema: object({ id: str("Resume id") }, ["id"]),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => resumes.resumeFitReport(ctx.userId, required(args, "id")),
+  },
+  {
     name: "preview_resume_text",
     title: "Preview a resume document as text",
     description:

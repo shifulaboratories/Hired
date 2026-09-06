@@ -4750,3 +4750,41 @@ in `resume-text.ts` explaining that the constant lives there so the two cannot d
 **Applies to:** `src/lib/resume-pagination.ts` (new), `src/lib/resume-measure-dom.ts` (new),
 `src/components/resume/{page-measure,page-breaks}.tsx` (new),
 `src/components/resume/{resume-paper,resume-editor}.tsx`, `src/app/globals.css`.
+
+## 2026-09-06 — Telling someone their resume is two pages is not the useful part
+
+The badge knew the page count and stopped there, which is the least useful moment to stop:
+nobody is surprised their resume is two pages, they want it to be one. It is now a panel that
+answers "what do I cut?" — what is on the last page in order, which sections could be hidden,
+and the longest bullets, each with a button that removes it.
+
+**Two sources, one for each half, and that is deliberate.** What is *on* the last page comes
+from the measured layout, so it is exactly what will print. What is *worth cutting* comes from
+`fitReport` in `src/lib/resume-fit.ts`, a pure function over the document with no DOM in it,
+because `check_resume_fit` has to answer the same question on a server with no browser. The
+tool's description says plainly that it ranks rather than measures and points at
+`export_resume_pdf` for a real page count, so an assistant does not quote the estimate as
+fact.
+
+**Hiding a section is offered before deleting a bullet.** It is the biggest single lever and
+the only reversible one — the content stays in the document. The delete button carries the
+bullet's own words in its label, including for screen readers, because that button is
+throwing away something the person actually did.
+
+**Ranked by lines, not characters.** A 90-character bullet that wraps to two lines costs the
+same as a 130-character one that also wraps to two; sorting by length puts the second first
+and gains nothing when you cut it. `fitReport` sorts on estimated lines and shows the
+character count only as a tiebreak.
+
+**The measurement effect must not depend on the settings object.** Found by a click that
+never landed: `PageMeasure` listed `settings` in its dependency array, the editor builds that
+object fresh on every render, and `onLayout` sets state — so reporting a layout scheduled the
+next measurement and the editor re-rendered at frame rate forever. Nothing looked broken (the
+badge showed the right number, the breaks were in the right places) but Playwright could not
+click the badge, which is how it surfaced. The effect now depends on the settings' *values*,
+and reports once per pass rather than once per callback. Anything else that measures the DOM
+and reports upward needs the same care.
+
+**Applies to:** `src/lib/resume-fit.ts` (new), `src/components/resume/fit-panel.tsx` (new),
+`src/lib/data/resumes.ts` (`resumeFitReport`), `src/lib/mcp/tools.ts` (`check_resume_fit`),
+`src/components/resume/{page-measure,resume-editor}.tsx`.
