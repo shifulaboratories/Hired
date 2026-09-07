@@ -1347,6 +1347,7 @@ export const tools: McpTool[] = [
         "For a 'Leadership & Activities' section, use an experience-kind section with that heading — organisation, role, location and dates all lay out correctly.",
         "In Harvard, education `details` render as plain lines (thesis, relevant coursework, honours), not bullets.",
         "Set visible: false to keep a section in the document but off the page.",
+        "Sections and entries carry an `id`. Never invent one — leave it out and the app assigns it — but when you have read a document with get_resume and are writing it back, keep the ids you were given: they are how the editor tells one entry from another.",
         "Aim for roughly 40-48 rendered lines per page; call preview_resume_text to sanity-check length before saving.",
         "Photos: off unless asked. showPhoto draws the user's profile picture (set_profile_photo), never one you supply per document. Harvard never renders one — it is a US academic format and a face on it is wrong. US and UK applications generally omit photos; much of Europe and Latin America expects one.",
       ],

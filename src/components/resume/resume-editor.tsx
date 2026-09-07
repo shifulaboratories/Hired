@@ -154,11 +154,14 @@ export function ResumeEditor({
   // margin, all of which are two clicks away in Design.
   const [layout, setLayout] = useState<PageLayout>(() => emptyLayout(pageBox(initialMeta.pageMargin)));
 
-  const updateSection = (sectionId: string, patch: Partial<ResumeSection>) => {
+  // By position, not by id. Ids are healed on parse now, but a section's
+  // place in the list is the one address that cannot be blank or repeated,
+  // and this is the code that used to edit every section at once.
+  const updateSection = (index: number, patch: Partial<ResumeSection>) => {
     commit({
       ...doc,
-      sections: doc.sections.map((section) =>
-        section.id === sectionId ? { ...section, ...patch } : section,
+      sections: doc.sections.map((section, at) =>
+        at === index ? { ...section, ...patch } : section,
       ),
     });
   };
@@ -175,8 +178,8 @@ export function ResumeEditor({
     commit({ ...doc, sections: [...doc.sections, blankSection(kind)] });
   };
 
-  const removeSection = (sectionId: string) => {
-    commit({ ...doc, sections: doc.sections.filter((section) => section.id !== sectionId) });
+  const removeSection = (index: number) => {
+    commit({ ...doc, sections: doc.sections.filter((_, at) => at !== index) });
   };
 
   return (
@@ -315,9 +318,9 @@ export function ResumeEditor({
                   section={section}
                   index={index}
                   total={doc.sections.length}
-                  onChange={(patch) => updateSection(section.id, patch)}
+                  onChange={(patch) => updateSection(index, patch)}
                   onMove={(direction) => moveSection(index, direction)}
-                  onRemove={() => removeSection(section.id)}
+                  onRemove={() => removeSection(index)}
                 />
               ))}
             </div>

@@ -4788,3 +4788,34 @@ and reports upward needs the same care.
 **Applies to:** `src/lib/resume-fit.ts` (new), `src/components/resume/fit-panel.tsx` (new),
 `src/lib/data/resumes.ts` (`resumeFitReport`), `src/lib/mcp/tools.ts` (`check_resume_fit`),
 `src/components/resume/{page-measure,resume-editor}.tsx`.
+
+## 2026-09-07 — Every section of an assistant-written resume shared one identity
+
+`resume-schema.ts` defaults every `id` to `""` and `RESUME_DOC_SHAPE` never mentions ids, so
+a document built by `create_resume` — the product's main path — arrived with `id: ""` on
+every section and entry. The editor addressed sections by id. Reproduced rather than
+reasoned about: create a two-section resume over MCP, open it, click the eye on the first
+section, and **both** sections leave the page. `removeSection` filtered on the same
+comparison, so "delete this section" deleted the document. React was also keying the list on
+that value, so every section was key `""`.
+
+**Healed in `parseResumeDoc`, not at the write.** The write path was the obvious place and it
+is too late: a document is read, edited and only then saved, so the first edit happens while
+the ids are still blank. `parseResumeDoc` is the one funnel both reads and writes pass
+through — the fix applies before anything can act on a document, and the repaired ids persist
+on its next save.
+
+**Deterministic ids, not `rid()`.** `rid()` is random. Minted on read, a document would come
+back from `get_resume` with different ids every call, and two parses of one stored document
+would not be equal — which `compare_resumes` and every other read-parse-read path would have
+to defend against. Blank ids take a positional name (`sec_0`, `exp_1_0`), so parsing twice
+gives the same document. `claim()` also walks a name until it is free, so an id the document
+already uses twice is separated rather than trusted.
+
+**The editor now addresses sections by position anyway.** Ids are trustworthy after this, but
+position is the one address that cannot be blank or repeated, and this is the exact code that
+used to edit every section at once. Ids stay for React keys and for the drag reordering that
+is coming.
+
+**Applies to:** `src/lib/resume-schema.ts` (`ensureIds`), `src/components/resume/resume-editor.tsx`,
+`src/lib/mcp/tools.ts` (`get_resume_format` guidance).
