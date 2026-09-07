@@ -90,7 +90,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  121 tools any MCP client can call (151 if you're an admin). Claude, Claude Code, ChatGPT,
+  122 tools any MCP client can call (152 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **Multi-user** — invite whoever you like. Each person gets a completely private workspace;
   admins manage accounts but never see anyone's career history, resumes or applications. Admin lives
@@ -265,7 +265,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Hit **Test** next to any connection and the app calls its own endpoint the way a client
-would, then tells you how many tools answered — 121, or 151 if you're an admin.
+would, then tells you how many tools answered — 122, or 152 if you're an admin.
 
 #### One connection per client
 
@@ -443,7 +443,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-121 tools. One hundred and thirteen of them are the data tools across the four areas, the
+122 tools. One hundred and fourteen of them are the data tools across the four areas, the
 archive that cuts through all of them, your Gmail and Calendar, and your account; the other
 eight are the workflows below, published as tools as well as prompts, because prompt support
 is optional in MCP clients and tool support isn't. Call one and it hands back a step-by-step
@@ -501,7 +501,9 @@ anything already there.
 `update_resume` / `duplicate_resume` build and tailor them. `preview_resume_text` renders a
 draft and estimates page count *without* saving, so Claude can check length before
 committing, and `check_resume_fit` ranks what to cut when it runs long — the longest
-bullets, and which sections are carrying the most weight. `publish_resume` turns one into a shareable link and hands back the URL;
+bullets, and which sections are carrying the most weight. `reorder_resume` moves one
+section, job or bullet without rewriting the document, so "lead with the Stripe job" costs
+one call rather than a full rewrite. `publish_resume` turns one into a shareable link and hands back the URL;
 `unpublish_resume` destroys it. `export_resume_pdf` renders a real PDF server-side and
 reports the page count it actually came out to. A duplicated resume remembers what it was
 tailored from, so `compare_resumes` can say exactly what a variant changed — bullets added,
@@ -575,8 +577,10 @@ section and just rename the heading; organisation, role, location and dates all 
 correctly.
 
 The format is a starting point, not a cage. The Design menu (palette icon in the editor)
-switches template, font, accent, size, leading and margins per resume, and the ⌃/⌄ buttons
-on each section reorder them. Harvard's own convention puts Education first — that's right
+switches template, font, accent, size, leading and margins per resume. Sections, the jobs
+inside them and the bullets inside those all reorder by dragging the grip on the left — or
+with the ⌃/⌄ buttons, or from the keyboard: tab to a grip, press space, and the arrow keys
+move it. Harvard's own convention puts Education first — that's right
 for students and recent graduates, and wrong for most people with real work history, so the
 default order leads with Experience.
 

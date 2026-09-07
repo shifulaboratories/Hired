@@ -59,6 +59,8 @@ import {
   type SectionKind,
 } from "@/lib/resume-schema";
 import { PageMeasure } from "@/components/resume/page-measure";
+import { DragHandle, SortableList, SortableRow } from "@/components/resume/sortable-list";
+import { moveWithin } from "@/lib/resume-reorder";
 import { PageBreaks } from "@/components/resume/page-breaks";
 import { FitPanel } from "@/components/resume/fit-panel";
 import { emptyLayout, pageBox, type PageLayout } from "@/lib/resume-pagination";
@@ -169,9 +171,7 @@ export function ResumeEditor({
   const moveSection = (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= doc.sections.length) return;
-    const sections = [...doc.sections];
-    [sections[index], sections[target]] = [sections[target], sections[index]];
-    commit({ ...doc, sections });
+    commit({ ...doc, sections: moveWithin(doc.sections, index, target) });
   };
 
   const addSection = (kind: SectionKind) => {
@@ -311,19 +311,30 @@ export function ResumeEditor({
 
             <HeaderCard doc={doc} onChange={(header) => commit({ ...doc, header })} />
 
-            <div className="space-y-3">
+            <SortableList
+              className="space-y-3"
+              ids={doc.sections.map((section) => section.id)}
+              onReorder={(from, to) =>
+                commit({ ...doc, sections: moveWithin(doc.sections, from, to) })
+              }
+            >
               {doc.sections.map((section, index) => (
-                <SectionCard
+                <SortableRow
                   key={section.id}
-                  section={section}
-                  index={index}
-                  total={doc.sections.length}
-                  onChange={(patch) => updateSection(index, patch)}
-                  onMove={(direction) => moveSection(index, direction)}
-                  onRemove={() => removeSection(index)}
-                />
+                  id={section.id}
+                  label={`Reorder ${section.heading || section.kind}`}
+                >
+                  <SectionCard
+                    section={section}
+                    index={index}
+                    total={doc.sections.length}
+                    onChange={(patch) => updateSection(index, patch)}
+                    onMove={(direction) => moveSection(index, direction)}
+                    onRemove={() => removeSection(index)}
+                  />
+                </SortableRow>
               ))}
-            </div>
+            </SortableList>
 
             <AddSectionMenu onAdd={addSection} existing={doc.sections.map((s) => s.kind)} />
 
@@ -508,6 +519,7 @@ function SectionCard({
       badge={countLabel(section)}
       controls={
         <>
+          <DragHandle className="mr-0.5 size-7" />
           <Button
             variant="ghost"
             size="icon-sm"
@@ -572,7 +584,8 @@ function SectionCard({
             onRemove={(i) =>
               onChange({ experience: section.experience.filter((_, index) => index !== i) })
             }
-            onMove={(i, dir) => onChange({ experience: moveItem(section.experience, i, dir) })}
+            onMove={(i, dir) => onChange({ experience: moveWithin(section.experience, i, i + dir) })}
+            onReorderTo={(from_, to) => onChange({ experience: moveWithin(section.experience, from_, to) })}
             renderTitle={(item) => item.title || item.company || "New role"}
             render={(item, i) => {
               const set = (patch: Partial<typeof item>) => {
@@ -643,7 +656,8 @@ function SectionCard({
             onRemove={(i) =>
               onChange({ education: section.education.filter((_, index) => index !== i) })
             }
-            onMove={(i, dir) => onChange({ education: moveItem(section.education, i, dir) })}
+            onMove={(i, dir) => onChange({ education: moveWithin(section.education, i, i + dir) })}
+            onReorderTo={(from_, to) => onChange({ education: moveWithin(section.education, from_, to) })}
             renderTitle={(item) => item.school || "New entry"}
             render={(item, i) => {
               const set = (patch: Partial<typeof item>) => {
@@ -700,7 +714,8 @@ function SectionCard({
             onRemove={(i) =>
               onChange({ projects: section.projects.filter((_, index) => index !== i) })
             }
-            onMove={(i, dir) => onChange({ projects: moveItem(section.projects, i, dir) })}
+            onMove={(i, dir) => onChange({ projects: moveWithin(section.projects, i, i + dir) })}
+            onReorderTo={(from_, to) => onChange({ projects: moveWithin(section.projects, from_, to) })}
             renderTitle={(item) => item.name || "New project"}
             render={(item, i) => {
               const set = (patch: Partial<typeof item>) => {
@@ -857,7 +872,8 @@ function SectionCard({
             }
             addLabel="Add item"
             onRemove={(i) => onChange({ items: section.items.filter((_, index) => index !== i) })}
-            onMove={(i, dir) => onChange({ items: moveItem(section.items, i, dir) })}
+            onMove={(i, dir) => onChange({ items: moveWithin(section.items, i, i + dir) })}
+            onReorderTo={(from_, to) => onChange({ items: moveWithin(section.items, from_, to) })}
             renderTitle={(item) => item.title || "New item"}
             render={(item, i) => {
               const set = (patch: Partial<typeof item>) => {
@@ -905,10 +921,19 @@ function BulletEditor({
   placeholder?: string;
 }) {
   return (
-    <div className="space-y-1.5">
+    <SortableList
+      className="space-y-1.5"
+      ids={bullets.map((_, index) => `bullet-${index}`)}
+      onReorder={(from, to) => onChange(moveWithin(bullets, from, to))}
+    >
       {bullets.map((bullet, index) => (
-        <div key={index} className="flex items-start gap-1.5">
-          <span className="bg-muted-foreground/40 mt-3 size-1 shrink-0 rounded-full" />
+        <SortableRow
+          key={index}
+          id={`bullet-${index}`}
+          label={`Reorder bullet ${index + 1}`}
+          className="flex items-start gap-1.5"
+        >
+          <DragHandle className="mt-1.5 size-6" />
           <Textarea
             value={bullet}
             onChange={(event) => {
@@ -941,12 +966,12 @@ function BulletEditor({
           >
             <Trash2Icon />
           </Button>
-        </div>
+        </SortableRow>
       ))}
       <Button variant="ghost" size="xs" onClick={() => onChange([...bullets, ""])}>
         <PlusIcon /> Bullet
       </Button>
-    </div>
+    </SortableList>
   );
 }
 
@@ -957,6 +982,7 @@ function ItemList<T>({
   onAdd,
   onRemove,
   onMove,
+  onReorderTo,
   addLabel,
 }: {
   items: T[];
@@ -965,17 +991,25 @@ function ItemList<T>({
   onAdd: () => void;
   onRemove: (index: number) => void;
   onMove: (index: number, direction: -1 | 1) => void;
+  /** A drag landed: this entry moved to that position. */
+  onReorderTo: (from: number, to: number) => void;
   addLabel: string;
 }) {
   return (
     <div className="space-y-2">
+      <SortableList
+        className="space-y-2"
+        ids={items.map((_, index) => `row-${index}`)}
+        onReorder={onReorderTo}
+      >
       {items.map((item, index) => (
+        <SortableRow key={index} id={`row-${index}`} label={`Reorder ${renderTitle(item)}`}>
         <Collapsible
-          key={index}
           title={renderTitle(item)}
           nested
           controls={
             <>
+              <DragHandle className="mr-0.5 size-7" />
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -1008,7 +1042,9 @@ function ItemList<T>({
         >
           {render(item, index)}
         </Collapsible>
+        </SortableRow>
       ))}
+      </SortableList>
       <Button variant="outline" size="sm" onClick={onAdd}>
         <PlusIcon /> {addLabel}
       </Button>
@@ -1296,14 +1332,6 @@ function Slider({
       />
     </div>
   );
-}
-
-function moveItem<T>(items: T[], index: number, direction: -1 | 1) {
-  const target = index + direction;
-  if (target < 0 || target >= items.length) return items;
-  const next = [...items];
-  [next[index], next[target]] = [next[target], next[index]];
-  return next;
 }
 
 function countLabel(section: ResumeSection) {

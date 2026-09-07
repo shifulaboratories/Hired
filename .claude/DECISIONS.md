@@ -4819,3 +4819,39 @@ is coming.
 
 **Applies to:** `src/lib/resume-schema.ts` (`ensureIds`), `src/components/resume/resume-editor.tsx`,
 `src/lib/mcp/tools.ts` (`get_resume_format` guidance).
+
+## 2026-09-07 — Reordering is a drag, and one call rather than a rewrite
+
+Sections, the entries inside them and the bullets inside those all reorder by dragging now,
+and `reorder_resume` does the same job over MCP. The two halves share `moveWithin` in
+`src/lib/resume-reorder.ts`, so a drag, an arrow button and a tool call cannot disagree about
+what moving something means.
+
+**The tool exists because `update_resume` replaces.** "Put the Stripe job first" through
+`update_resume` means reproducing the entire document from memory, and the failure mode is
+losing a bullet nobody notices for a month. `reorder_resume` reads, moves one thing and
+writes back. This closes a parity gap that predates it: the ⌃/⌄ buttons have always been
+able to reorder and nothing over MCP could, short of a full rewrite.
+
+**Named by whatever the caller has to hand.** `section`, `entry` and `bullet` each accept an
+id, a name or a 1-based number, and an entry answers to *every* name it goes by — a job is
+"Company 3" as readily as "Senior Engineer 3". Matching only the display label was the first
+implementation, and it failed a request for the company with an error that did not even
+contain the word. A miss now lists what is actually there, so an assistant can retry from the
+error instead of falling back to `update_resume`.
+
+**The deepest thing named is what moves.** One tool rather than three: give `section` and it
+moves a section, add `entry` and the entry moves, add `bullet` and the bullet moves. A bullet
+named without an entry is only unambiguous when the section holds one entry — otherwise it is
+a question, and the tool asks it rather than guessing.
+
+**Drag from a handle, not from the row.** Rows here are mostly text inputs, and a card you can
+pick up anywhere is a card you cannot select text in. The handle is a real button, so the
+keyboard gets the same power: tab, space, arrows. Three of these lists nest inside each other
+and dnd-kit handled it without special-casing — verified in a browser that dragging an entry
+does not also move its section.
+
+**Applies to:** `src/lib/resume-reorder.ts` (new), `src/components/resume/sortable-list.tsx`
+(new), `src/lib/data/resumes.ts` (`reorderResume`), `src/lib/mcp/tools.ts`
+(`reorder_resume`), `src/components/resume/resume-editor.tsx` (its local `moveItem` is gone —
+one implementation of a move, not two).

@@ -11,6 +11,7 @@ import {
 } from "@/lib/resume-schema";
 import { getMeSnapshot, listHighlights } from "@/lib/data/me";
 import { fitReport } from "@/lib/resume-fit";
+import { reorderDoc, type ReorderInput } from "@/lib/resume-reorder";
 import { LINES_PER_PAGE } from "@/lib/resume-text";
 
 // Rendering helpers live in resume-text.ts (client-safe); re-exported so server
@@ -371,6 +372,29 @@ export async function resumeFitReport(userId: string, id: string) {
     fontSize: resume.fontSize,
     lineHeight: resume.lineHeight,
     pageMargin: resume.pageMargin,
+  };
+}
+
+/**
+ * Move one section, entry or bullet without rewriting the document.
+ *
+ * The alternative is update_resume, which replaces what you send: an assistant
+ * reordering two sections that way has to reproduce the whole document from
+ * memory, and the failure mode is silently dropping half a job. This reads,
+ * moves and writes back, so nothing can be lost on the way.
+ */
+export async function reorderResume(userId: string, id: string, input: ReorderInput) {
+  const resume = await db.resume.findFirst({ where: { id, userId } });
+  if (!resume) throw new Error(`No resume with id ${id}`);
+  const { doc, moved } = reorderDoc(parseResumeDoc(resume.data), input);
+  await db.resume.update({ where: { id: resume.id }, data: { data: doc as unknown as object } });
+  return {
+    resume: { id: resume.id, name: resume.name },
+    moved,
+    sections: doc.sections.map((section, at) => ({
+      position: at + 1,
+      heading: section.heading || section.kind,
+    })),
   };
 }
 
