@@ -29,6 +29,7 @@ import type { Stage } from "@prisma/client";
 import { createApplicationAction, parsePostingAction } from "@/server/actions";
 import { TagPicker, type TagOption } from "@/components/tags/tag-picker";
 import { cn } from "@/lib/utils";
+import { DateField } from "@/components/ui/date-field";
 import { ValuePicker } from "@/components/pipeline/value-picker";
 import type { TagValue } from "@/components/tags/tag-chip";
 
@@ -52,6 +53,7 @@ export function NewApplicationDialog({
     company: "",
     roleTitle: "",
     stage: "" as Stage | "",
+    appliedAt: "",
     jobUrl: "",
     location: "",
     salaryRange: "",
@@ -136,6 +138,7 @@ export function NewApplicationDialog({
           stage,
           company: form.company.trim(),
           roleTitle: form.roleTitle.trim(),
+          appliedAt: form.appliedAt || undefined,
           tagIds: tags.map((tag) => tag.id),
           resumeId: form.resumeId || null,
         });
@@ -260,6 +263,23 @@ export function NewApplicationDialog({
               </Select>
             </div>
           </div>
+
+          {/* Only once the answer above is "yes". The first session is almost
+              always a backfill — five or ten jobs sent over the past month —
+              and every one of them used to be stamped with today, which dated
+              the follow-up reminders wrong too. Blank means today, the way it
+              always did. */}
+          {form.stage && form.stage !== "WISHLIST" && (
+            <div className="space-y-1.5">
+              <Label>Applied on</Label>
+              <DateField
+                value={form.appliedAt}
+                onChange={(appliedAt) => setForm({ ...form, appliedAt })}
+                ariaLabel="Applied on"
+                placeholder="Today"
+              />
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label>Resume used</Label>

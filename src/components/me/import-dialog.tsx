@@ -97,11 +97,21 @@ export function ImportDialog() {
         const report = await importResumeAction(draft, source);
         const created = report.roles.created.length;
         const matched = report.roles.skipped.length;
-        toast.success(
-          matched > 0
-            ? `Brought in ${created} job${created === 1 ? "" : "s"}; ${matched} ${matched === 1 ? "was" : "were"} already here`
-            : `Brought in ${created} job${created === 1 ? "" : "s"}`,
-        );
+        if (created === 0 && matched === 0) {
+          // Not a success. The text is kept as a note, which is worth doing,
+          // but dressing it as an import sent people back to a Me page that
+          // still looked empty with no idea what had happened.
+          toast.message("Saved as a note", {
+            description:
+              "Nothing in it was read as a job. Check the headings, or paste it to Claude and ask it to bring it in.",
+          });
+        } else {
+          toast.success(
+            matched > 0
+              ? `Brought in ${created} job${created === 1 ? "" : "s"}; ${matched} ${matched === 1 ? "was" : "were"} already here`
+              : `Brought in ${created} job${created === 1 ? "" : "s"}`,
+          );
+        }
         setOpen(false);
         setText("");
         setDraft(null);
@@ -315,7 +325,7 @@ export function ImportDialog() {
               </Button>
               <Button variant="default" onClick={commit} disabled={pending}>
                 {pending && <LoaderCircleIcon className="animate-spin" />}
-                Bring it in
+                {(draft.roles?.length ?? 0) === 0 ? "Save it as a note" : "Bring it in"}
               </Button>
             </>
           ) : (
