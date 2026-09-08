@@ -5160,6 +5160,7 @@ keeps its own copy of every constant an `inputSchema` expression closes over.
 (`mergeIntoRole`, `runImport`, `previewResumeImport`), `src/lib/data/resumes.ts`,
 `src/lib/mcp/tools.ts`, `src/components/me/import-dialog.tsx`, `tools/gen-tool-docs.mjs`
 (the Me section now ends at `preview_resume_import`).
+
 ---
 
 ## 2026-09-08 — A six-lens audit of the first run, and what it turned up
@@ -5244,6 +5245,41 @@ matching nothing and a workspace with data. Typecheck, build, `gen-tool-docs --c
 `src/lib/{auth,posting}.ts`, `src/lib/data/{users,onboarding}.ts`,
 `src/app/(app)/settings/page.tsx`, `README.md`, `docs/app.mdx`.
 
+## 2026-09-08 — Which bullets you can actually defend, marked on the bullet
+
+The Evidence panel could already say which of a resume's claims trace back to something the
+person wrote, but you had to open it, and it read saved data. The same answer now sits beside
+each bullet in the editor and recomputes as you type: filled when something in Me stands
+behind the line, hollow when nothing does.
+
+**Hollow is not an accusation.** The copy and the title say the material is missing, not that
+the claim is false. Word overlap cannot know whether something happened; it can only say
+whether the person ever wrote it down, and writing it down is the fixable half.
+
+**One matcher, two callers, and that was the point of the last slice.** `backingFor` in
+`src/lib/resume-evidence.ts` is what `trace_resume_evidence` now runs and what the editor runs
+in the browser. A bullet the panel called backed and the mark called unbacked would make both
+useless. The threshold (0.3) and the "only this role's material when the entry names a Role"
+rule live there too, so moving either moves both.
+
+**Highlights only, not backgrounds.** A role's raw background is a wall of text that matches
+almost anything once it is long enough, and a mark that is always filled says nothing.
+Highlights are the lines somebody chose to keep. `evidenceSourcesFrom` is the one definition
+of what counts as evidence.
+
+**The material ships with the page, capped at 400.** The answer has to keep up with typing, so
+a round trip per keystroke is out; a career of five hundred highlights is a payload nobody
+asked for on every editor load. The cap is generous enough to be rare and it is a number in
+the code rather than a silent truncation somewhere in a query.
+
+**The decoration became the reading.** The dot beside each bullet was there for looks. This
+codebase's own rule is that a mark either carries information or should not be on screen, so
+the dot now carries it.
+
+**Applies to:** `src/lib/resume-evidence.ts` (new), `src/lib/data/resumes.ts`
+(`evidenceSources`, `traceResumeEvidence` now calls the shared matcher),
+`src/app/(app)/resumes/[id]/page.tsx`, `src/components/resume/resume-editor.tsx`. No new
+tool: `trace_resume_evidence` already answers this, and this is the same answer inline.
 ---
 
 ## 2026-09-08 — What the adversarial pass turned up after the first fixes

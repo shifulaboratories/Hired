@@ -67,6 +67,7 @@ import { moveWithin } from "@/lib/resume-reorder";
 import { PageBreaks } from "@/components/resume/page-breaks";
 import { FitPanel } from "@/components/resume/fit-panel";
 import { emptyLayout, pageBox, parsePath, type PageLayout } from "@/lib/resume-pagination";
+import { backingFor, type EvidenceSource } from "@/lib/resume-evidence";
 import { ResumePaper, type PaperSettings } from "@/components/resume/resume-paper";
 import { EvidencePanel, type LinkedApplication } from "@/components/resume/evidence-panel";
 import type { CorrespondenceAccess } from "@/components/google/correspondence-card";
@@ -104,10 +105,17 @@ export function ResumeEditor({
   siblings,
   applications,
   googleAccess,
+  evidence,
 }: {
   id: string;
   doc: ResumeDoc;
   meta: Meta;
+  /**
+   * The person's own highlights, for marking a bullet backed or not as it is
+   * typed. Sent with the page rather than fetched per keystroke: the answer has
+   * to keep up with typing, and a round trip per character would not.
+   */
+  evidence: EvidenceSource[];
   /** Every other resume, for saying which one it came from. */
   siblings: { id: string; name: string }[];
   /** The jobs this document was actually sent to. */
@@ -500,6 +508,7 @@ export function ResumeEditor({
                     index={index}
                     total={doc.sections.length}
                     focus={focusedSection === index ? focus : null}
+                    evidence={evidence}
                     onChange={(patch, options) => updateSection(index, patch, options)}
                     onMove={(direction) => moveSection(index, direction)}
                     onRemove={() => removeSection(index)}
@@ -687,6 +696,7 @@ function SectionCard({
   onRemove,
   onUndoable,
   focus,
+  evidence,
 }: {
   section: ResumeSection;
   index: number;
@@ -698,6 +708,8 @@ function SectionCard({
   onRemove: () => void;
   /** A click in the preview that landed inside this section, or null. */
   focus: { path: string; at: number } | null;
+  /** The person's own material, for marking this section's bullets. */
+  evidence: EvidenceSource[];
 }) {
   // The rail addresses its own inputs the way the paper addresses its blocks,
   // flattened: every entry kind is "e" here, because a form field does not
@@ -853,6 +865,8 @@ function SectionCard({
                   <BulletEditor
                     bullets={item.bullets}
                     path={`${at}/e${i}`}
+                    evidence={evidence}
+                    roleId={item.roleId}
                     onChange={(bullets, options) => set({ bullets }, options)}
                   />
                 </div>
@@ -1197,6 +1211,8 @@ function BulletEditor({
   bullets,
   onChange,
   path,
+  evidence,
+  roleId,
   placeholder = "Strong verb, specific scope, measurable outcome",
 }: {
   bullets: string[];
@@ -1204,6 +1220,14 @@ function BulletEditor({
   onChange: (bullets: string[], options?: { step?: boolean }) => void;
   /** This list's address, e.g. "s1/e0" — each row extends it with /bN. */
   path?: string;
+  /**
+   * The person's own material. Given only where the question makes sense: a
+   * job's bullets are claims that should trace back to something they wrote. A
+   * line of education detail is not a claim of that kind, and marking it
+   * unbacked would be noise pretending to be a finding.
+   */
+  evidence?: EvidenceSource[];
+  roleId?: string;
   placeholder?: string;
 }) {
   return (
@@ -1220,6 +1244,7 @@ function BulletEditor({
           className="flex items-start gap-1.5"
         >
           <DragHandle className="mt-1.5 size-6" />
+          <BulletBacking bullet={bullet} evidence={evidence} roleId={roleId} />
           <Textarea
             data-field={path ? `${path}/b${index}` : undefined}
             value={bullet}
@@ -1264,6 +1289,51 @@ function BulletEditor({
         <PlusIcon /> Bullet
       </Button>
     </SortableList>
+  );
+}
+
+/**
+ * Whether anything of the person's own stands behind this bullet.
+ *
+ * Hollow means nothing in Me matches — not that the bullet is false, but that
+ * the material behind it is missing, which is the thing worth fixing before an
+ * interview asks about it. It is word overlap, not proof, and the title says
+ * what it found rather than pronouncing on the claim.
+ *
+ * Recomputed as you type, which is affordable because the matcher is word
+ * overlap over a few hundred short strings and nothing here touches the
+ * network.
+ */
+function BulletBacking({
+  bullet,
+  evidence,
+  roleId,
+}: {
+  bullet: string;
+  evidence?: EvidenceSource[];
+  roleId?: string;
+}) {
+  const backing = useMemo(
+    () => (evidence ? backingFor(bullet, evidence, roleId) : null),
+    [bullet, evidence, roleId],
+  );
+  // Nothing to check against, or an empty line: no mark, and no gap either.
+  if (!backing || !bullet.trim()) return <span className="mt-2.5 size-1.5 shrink-0" />;
+  const backed = backing.sources.length > 0;
+  const label = backed
+    ? `Backed by what you wrote: "${backing.sources[0].text}"${
+        backing.sources.length > 1 ? ` and ${backing.sources.length - 1} more` : ""
+      }`
+    : "Nothing in Me backs this up yet";
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className={cn(
+        "mt-2.5 size-1.5 shrink-0 rounded-full",
+        backed ? "bg-[var(--success)]" : "ring-[1.5px] ring-[var(--warning)] ring-inset",
+      )}
+    />
   );
 }
 

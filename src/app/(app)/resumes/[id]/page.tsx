@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { getResume, listResumeNames } from "@/lib/data/resumes";
+import { evidenceSources, getResume, listResumeNames } from "@/lib/data/resumes";
 import { getProfile } from "@/lib/data/me";
 import { requireUser } from "@/lib/auth";
 import { accountAccess } from "@/lib/data/accounts";
@@ -29,6 +29,11 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
   // doesn't offer the comparison.
   const base = resume.baseResumeId ? await getResume(user.id, resume.baseResumeId) : null;
 
+  // The person's own highlights, so the editor can say which bullets are backed
+  // by something they wrote as they type them. The same material and the same
+  // rule trace_resume_evidence uses, so the inline mark and the panel agree.
+  const evidence = await evidenceSources(user.id);
+
   const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
   const proto =
     headerList.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
@@ -40,6 +45,7 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
       shareUrl={resume.slug ? `${proto}://${host}/r/${resume.slug}` : null}
       base={base ? { id: base.id, name: base.name, doc: base.doc } : null}
       doc={resume.doc}
+      evidence={evidence}
       meta={{
         name: resume.name,
         targetRole: resume.targetRole,
