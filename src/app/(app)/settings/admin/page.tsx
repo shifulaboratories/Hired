@@ -21,6 +21,7 @@ import { billedUserCount } from "@/lib/billing";
 import { UsersPanel } from "@/components/admin/users-panel";
 import { InvitesPanel } from "@/components/admin/invites-panel";
 import { WaitlistPanel } from "@/components/admin/waitlist-panel";
+import { EMAIL_TEMPLATES } from "@/lib/email";
 import { ConfigurationPanel } from "@/components/admin/configuration-panel";
 import { AuditPanel } from "@/components/admin/audit-panel";
 import { HealthPanel } from "@/components/admin/health-panel";
@@ -215,6 +216,7 @@ export default async function AdminPage() {
                 configured: emailReady,
                 fromEmail: settings.resendFromEmail,
                 ownEmail: actor.email,
+                templates: EMAIL_TEMPLATES.map(({ key, label }) => ({ key, label })),
               }}
               billing={{
                 configured: billingReady,

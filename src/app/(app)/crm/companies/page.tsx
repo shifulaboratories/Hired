@@ -1,17 +1,38 @@
 import Link from "next/link";
-import { ArrowDownIcon, ArrowUpIcon, Building2Icon, ExternalLinkIcon } from "lucide-react";
-import { EmptyState, PageHeader, PageShell } from "@/components/page-header";
+import { DownloadIcon, ExternalLinkIcon } from "lucide-react";
+import { PageHeader, PageShell } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
 import { CrmTabs } from "@/components/crm/tabs";
 import { SearchBox } from "@/components/crm/search-box";
-import { CompanyAvatar } from "@/components/pipeline/company-avatar";
 import { NewCompanyDialog } from "@/components/crm/new-company-dialog";
-import { TagChip } from "@/components/tags/tag-chip";
-import { listCompanies, type CompanyFilter } from "@/lib/data/pipeline";
-import { tagsOfKind } from "@/lib/data/tags";
+import { CompanyFilterMenu, type CompanyFacets } from "@/components/crm/filter-menu";
+import { CompaniesList, type CompanyRow } from "@/components/crm/companies-list";
+import { SortHeader } from "@/components/crm/sort-header";
+import { SortMenu } from "@/components/lists/sort-menu";
+import { ArchiveNote } from "@/components/archive/archive-note";
+import { listCompanies } from "@/lib/data/pipeline";
+import { archiveCounts } from "@/lib/data/archive";
+import { listTags, tagsOfKind } from "@/lib/data/tags";
+import { getProfile } from "@/lib/data/me";
+import { parseWidths } from "@/lib/column-widths";
 import { requireUser } from "@/lib/auth";
 import { companyDomain } from "@/lib/company";
 import { getSettings } from "@/lib/settings";
 import { agoDay, cn } from "@/lib/utils";
+import {
+  COMPANY_MISSING,
+  EMPTY_COMPANY_FILTERS,
+  buildCompanyQuery,
+  companyDesc,
+  hasAnyCompanyFilter,
+  matchesCompany,
+  parseCompanyFilters,
+  parseCompanySort,
+  sortCompanies,
+  type CompanyCut,
+  type CompanyFilters,
+  type CompanySort,
+} from "@/lib/crm-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -20,33 +41,13 @@ export const dynamic = "force-dynamic";
  * address is the state, and a view you can paste to yourself beats one you
  * have to rebuild by clicking.
  */
-const FILTERS: { key: CompanyFilter | undefined; label: string }[] = [
-  { key: undefined, label: "Everything" },
+const CUTS: { key: CompanyCut | null; label: string }[] = [
+  { key: null, label: "Everything" },
   { key: "active", label: "Active pipeline" },
   { key: "applied", label: "Applied" },
   { key: "never-applied", label: "Never applied" },
   { key: "with-contacts", label: "Know someone" },
 ];
-
-type SortKey = "name" | "applied" | "apps" | "people";
-
-function parseFilter(value: string | undefined): CompanyFilter | undefined {
-  return FILTERS.some((f) => f.key === value) ? (value as CompanyFilter) : undefined;
-}
-
-function parseSort(value: string | undefined): SortKey {
-  return value === "applied" || value === "apps" || value === "people" ? value : "name";
-}
-
-function buildHref(query: { q?: string; f?: string; sort?: string; dir?: string }) {
-  const params = new URLSearchParams();
-  if (query.q) params.set("q", query.q);
-  if (query.f) params.set("f", query.f);
-  if (query.sort) params.set("sort", query.sort);
-  if (query.dir) params.set("dir", query.dir);
-  const string = params.toString();
-  return string ? `/crm/companies?${string}` : "/crm/companies";
-}
 
 export default async function CompaniesPage({
   searchParams,
@@ -56,50 +57,98 @@ export default async function CompaniesPage({
   const user = await requireUser();
   const params = await searchParams;
   const one = (key: string) => (Array.isArray(params[key]) ? params[key][0] : params[key]);
-  const search = one("q")?.trim() ?? "";
-  const filter = parseFilter(one("f"));
-  const sort = parseSort(one("sort"));
-  // Name reads forwards; every other column is "most first" until flipped.
-  const desc = one("dir") ? one("dir") === "desc" : sort !== "name";
 
-  const [companies, { companyLogos }] = await Promise.all([
-    listCompanies(user.id, { search: search || undefined, filter }),
+  const filters = parseCompanyFilters(one);
+  const sort = parseCompanySort(one("sort"));
+  const desc = companyDesc(sort, one("dir"));
+
+  // Everything, once. The counts below are "how many would survive if I
+  // relaxed this one dimension", which only has an answer while you are
+  // holding the unfiltered set.
+  const [everyCompany, tagOptions, bin, { companyLogos }, profile] = await Promise.all([
+    listCompanies(user.id),
+    listTags(user.id),
+    archiveCounts(user.id),
     getSettings(),
+    getProfile(user.id),
   ]);
+  const widths = parseWidths(profile.columnWidths);
 
-  const sorted = [...companies].sort((a, b) => {
-    let order = 0;
-    if (sort === "name") order = a.name.localeCompare(b.name);
-    if (sort === "apps") order = a._count.applications - b._count.applications;
-    if (sort === "people") order = a._count.contacts - b._count.contacts;
-    if (sort === "applied") {
-      // Companies never applied to sort together at the end, whatever the
-      // direction — "sort by last applied" is a question about the others.
-      if (!a.lastAppliedAt && !b.lastAppliedAt) return a.name.localeCompare(b.name);
-      if (!a.lastAppliedAt) return 1;
-      if (!b.lastAppliedAt) return -1;
-      order = a.lastAppliedAt.getTime() - b.lastAppliedAt.getTime();
-    }
-    return (desc ? -order : order) || a.name.localeCompare(b.name);
-  });
-
-  const header = (key: SortKey, label: string, className: string) => {
-    const active = sort === key;
-    const nextDir = active ? (desc ? "asc" : "desc") : key === "name" ? "asc" : "desc";
-    return (
-      <Link
-        href={buildHref({ q: search, f: filter, sort: key, dir: nextDir })}
-        className={cn(
-          "hover:text-foreground flex items-center gap-1 transition-colors",
-          className,
-          active && "text-foreground",
-        )}
-      >
-        {label}
-        {active && (desc ? <ArrowDownIcon className="size-3" /> : <ArrowUpIcon className="size-3" />)}
-      </Link>
+  const passing = (except: keyof CompanyFilters) =>
+    everyCompany.filter((row) =>
+      matchesCompany(row, { ...filters, [except]: EMPTY_COMPANY_FILTERS[except] }),
     );
+
+  const tally = (rows: typeof everyCompany) => {
+    const out = new Map<string, number>();
+    for (const row of rows) for (const tag of row.tags) out.set(tag.id, (out.get(tag.id) ?? 0) + 1);
+    return out;
   };
+
+  const facetFor = (
+    kind: "INDUSTRY" | "SIZE" | "LOCATION" | "COMPANY",
+    except: keyof CompanyFilters,
+    on: string[],
+  ) => {
+    const counts = tally(passing(except));
+    return tagsOfKind(tagOptions, kind)
+      .map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+        color: tag.color,
+        count: counts.get(tag.id) ?? 0,
+      }))
+      .filter((tag) => tag.count > 0 || on.includes(tag.id));
+  };
+
+  const facets: CompanyFacets = {
+    industry: facetFor("INDUSTRY", "industries", filters.industries),
+    size: facetFor("SIZE", "sizes", filters.sizes),
+    location: facetFor("LOCATION", "locations", filters.locations),
+    tags: facetFor("COMPANY", "tags", filters.tags),
+    // Missing ANDs with itself, so each row counts what ADDING it would leave.
+    missing: Object.fromEntries(
+      COMPANY_MISSING.map((gap) => [
+        gap,
+        everyCompany.filter((row) =>
+          matchesCompany(row, { ...filters, missing: [...new Set([...filters.missing, gap])] }),
+        ).length,
+      ]),
+    ) as CompanyFacets["missing"],
+  };
+
+  const visible = sortCompanies(
+    everyCompany.filter((company) => matchesCompany(company, filters)),
+    sort,
+    desc,
+  );
+
+  const cutHref = (cut: CompanyCut | null) =>
+    buildCompanyQuery({ filters: { ...filters, cut }, sort, dir: one("dir") });
+
+  const sortHref = (key: CompanySort) =>
+    buildCompanyQuery({
+      filters,
+      sort: key,
+      // Clicking the column you are already on flips it.
+      dir: key === sort ? (desc ? "asc" : "desc") : key === "name" ? "asc" : "desc",
+    });
+
+  const exportHref = `/api/export/companies?${buildCompanyQuery({ filters, sort, dir: one("dir") }).split("?")[1] ?? ""}`;
+  const narrowed = hasAnyCompanyFilter(filters);
+
+  const rows: CompanyRow[] = visible.map((company) => ({
+    id: company.id,
+    name: company.name,
+    website: company.website,
+    domain: companyLogos ? companyDomain({ name: company.name, website: company.website }) : null,
+    industry: tagsOfKind(company.tags, "INDUSTRY"),
+    location: tagsOfKind(company.tags, "LOCATION"),
+    lastApplied: company.lastAppliedAt ? agoDay(company.lastAppliedAt) : "never",
+    applications: company._count.applications,
+    openApplications: company.openApplications,
+    contacts: company._count.contacts,
+  }));
 
   return (
     <PageShell>
@@ -117,129 +166,134 @@ export default async function CompaniesPage({
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <SearchBox placeholder="Search companies…" className="w-full sm:w-72" />
+        <CompanyFilterMenu filters={filters} facets={facets} sort={sort} dir={one("dir")} />
+        <SortMenu
+          active={sort}
+          desc={desc}
+          ariaLabel="Sort the companies"
+          options={[
+            {
+              key: "name",
+              label: "Company",
+              href: sortHref("name"),
+              ascHref: buildCompanyQuery({ filters, sort: "name", dir: "asc" }),
+              descHref: buildCompanyQuery({ filters, sort: "name", dir: "desc" }),
+            },
+            {
+              key: "applied",
+              label: "Last applied",
+              href: sortHref("applied"),
+              ascHref: buildCompanyQuery({ filters, sort: "applied", dir: "asc" }),
+              descHref: buildCompanyQuery({ filters, sort: "applied", dir: "desc" }),
+            },
+            {
+              key: "apps",
+              label: "Applications",
+              href: sortHref("apps"),
+              ascHref: buildCompanyQuery({ filters, sort: "apps", dir: "asc" }),
+              descHref: buildCompanyQuery({ filters, sort: "apps", dir: "desc" }),
+            },
+            {
+              key: "people",
+              label: "People",
+              href: sortHref("people"),
+              ascHref: buildCompanyQuery({ filters, sort: "people", dir: "asc" }),
+              descHref: buildCompanyQuery({ filters, sort: "people", dir: "desc" }),
+            },
+          ]}
+        />
+        <Button asChild variant="outline" size="sm" className="shrink-0">
+          <a href={exportHref} download>
+            <DownloadIcon /> Export
+          </a>
+        </Button>
         <span className="text-faint nums ml-auto text-[12px]">
-          {sorted.length} {sorted.length === 1 ? "company" : "companies"}
+          {narrowed && visible.length !== everyCompany.length
+            ? `${visible.length} of ${everyCompany.length} companies`
+            : `${visible.length} ${visible.length === 1 ? "company" : "companies"}`}
         </span>
       </div>
 
       <div className="no-scrollbar -mx-1 mb-3 flex items-center gap-1 overflow-x-auto px-1 pb-0.5">
-        {FILTERS.map(({ key, label }) => {
-          const active = filter === key;
+        {CUTS.map(({ key, label }) => {
+          const active = filters.cut === key;
+          const count = everyCompany.filter((row) =>
+            matchesCompany(row, { ...filters, cut: key }),
+          ).length;
           return (
             <Link
               key={label}
-              // Chips change the cut, never the ordering — carry sort and dir
-              // through exactly as they stand in the URL.
-              href={buildHref({ q: search, f: key, sort: one("sort"), dir: one("dir") })}
+              href={cutHref(key)}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "touch-target flex h-11 shrink-0 items-center rounded-chip px-2 text-[12.5px] transition-colors duration-150 md:h-7",
+                "touch-target flex h-11 shrink-0 items-center gap-1.5 rounded-chip px-2 text-[12.5px] transition-colors duration-150 md:h-7",
                 active
                   ? "bg-accent text-foreground font-medium"
                   : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
               )}
             >
               {label}
+              {count > 0 && <span className="text-faint nums">{count}</span>}
             </Link>
           );
         })}
       </div>
 
-      {sorted.length === 0 ? (
-        <EmptyState
-          icon={Building2Icon}
-          title={search || filter ? "Nothing matches that" : "No companies yet"}
-          description={
-            search || filter
-              ? "Loosen the search or the filter to see everything again."
-              : "Track a job and its company appears here, or add one now to keep research somewhere before you apply."
-          }
-          action={search || filter ? undefined : <NewCompanyDialog />}
-        />
-      ) : (
-        <div className="bg-card shadow-card overflow-hidden rounded-xl">
-          <div className="eyebrow bg-inset flex items-center gap-3 px-4 py-2">
-            <div className="min-w-0 flex-1">{header("name", "Company", "")}</div>
-            <div className="hidden w-36 shrink-0 md:block">Industry</div>
-            <div className="hidden w-36 shrink-0 xl:block">Location</div>
-            <div className="hidden w-24 shrink-0 sm:block">
-              {header("applied", "Last applied", "justify-end")}
-            </div>
-            <div className="w-24 shrink-0">{header("apps", "Applied", "justify-end")}</div>
-            <div className="w-16 shrink-0">{header("people", "People", "justify-end")}</div>
-          </div>
+      <CompaniesList
+        rows={rows}
+        filtered={narrowed}
+        exportHref={exportHref}
+        widths={widths}
+        header={
+          <>
+            <SortHeader
+              className="min-w-0 flex-1"
+              href={sortHref("name")}
+              label="Company"
+              active={sort === "name"}
+              desc={desc}
+            />
+            <SortHeader col="industry" className="hidden w-36 shrink-0 md:block" label="Industry" />
+            <SortHeader col="location" className="hidden w-36 shrink-0 xl:block" label="Location" />
+            <SortHeader
+              col="lastApplied"
+              className="hidden w-24 shrink-0 sm:block"
+              href={sortHref("applied")}
+              label="Last applied"
+              active={sort === "applied"}
+              desc={desc}
+              align="right"
+            />
+            <SortHeader
+              col="applications"
+              className="w-24 shrink-0"
+              href={sortHref("apps")}
+              label="Applied"
+              active={sort === "apps"}
+              desc={desc}
+              align="right"
+            />
+            <SortHeader
+              col="contacts"
+              className="w-16 shrink-0"
+              href={sortHref("people")}
+              label="People"
+              active={sort === "people"}
+              desc={desc}
+              align="right"
+            />
+          </>
+        }
+      />
 
-          <ul className="divide-y">
-            {sorted.map((company) => (
-              <li key={company.id}>
-                <Link
-                  href={`/crm/companies/${company.id}`}
-                  data-nav-item
-                  className="hover:bg-accent/50 flex items-center gap-3 px-4 py-2.5 transition-colors duration-150"
-                >
-                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                    <CompanyAvatar
-                      name={company.name}
-                      domain={
-                        companyLogos
-                          ? companyDomain({ name: company.name, website: company.website })
-                          : null
-                      }
-                      size={26}
-                    />
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-medium">{company.name}</div>
-                      <div className="text-faint truncate text-[12px]">
-                        {company.website || "No website on file"}
-                      </div>
-                    </div>
-                  </div>
-                  <TagCell tags={tagsOfKind(company.tags, "INDUSTRY")} className="md:flex" />
-                  <TagCell tags={tagsOfKind(company.tags, "LOCATION")} className="xl:flex" />
-                  <div className="nums text-muted-foreground hidden w-24 shrink-0 text-right text-[12px] sm:block">
-                    {company.lastAppliedAt ? agoDay(company.lastAppliedAt) : "never"}
-                  </div>
-                  <div className="nums text-muted-foreground w-24 shrink-0 text-right text-[12px]">
-                    {company._count.applications || "—"}
-                    {company.openApplications > 0 && (
-                      <span className="text-faint"> · {company.openApplications} open</span>
-                    )}
-                  </div>
-                  <div className="nums text-faint w-16 shrink-0 text-right text-[12px]">
-                    {company._count.contacts || "—"}
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <ArchiveNote kind="company" count={bin.company} />
 
-      {sorted.some((company) => !company.website) && (
+      {visible.some((company) => !company.website) && (
         <p className="text-faint mt-3 flex items-center gap-1.5 text-[12px]">
           <ExternalLinkIcon className="size-3" />
           Companies without a website fall back to their initials. Open one to add it.
         </p>
       )}
     </PageShell>
-  );
-}
-
-/**
- * One column of tags, clipped to the width the header reserved.
- *
- * Industry and location were single strings and are lists now, so a cell that
- * truncated text has to wrap chips instead — and stay one line, because the row
- * next to it is a fixed-height link.
- */
-function TagCell({ tags, className }: { tags: { id: string; name: string; color: string }[]; className?: string }) {
-  return (
-    <div className={cn("hidden w-36 shrink-0 items-center gap-1 overflow-hidden", className)}>
-      {tags.length === 0 ? (
-        <span className="text-faint text-[12px]">—</span>
-      ) : (
-        tags.map((tag) => <TagChip key={tag.id} tag={tag} className="shrink-0" />)
-      )}
-    </div>
   );
 }

@@ -3,7 +3,31 @@ import { db } from "@/lib/db";
 import { pick } from "@/lib/data/patch";
 import { DAY, hasGoneQuiet, lastTouchAt, quietDaysFor } from "@/lib/quiet";
 import { readQuickLog } from "@/lib/quick-log";
-import { TagKind, type TagRef, flattenTags, resolveTagIds, tagInclude } from "@/lib/data/tags";
+import {
+  TagKind,
+  type TagRef,
+  assertOwnedTagIds,
+  flattenTags,
+  resolveTagIds,
+  tagInclude,
+} from "@/lib/data/tags";
+import { archiveRecords } from "@/lib/data/archive";
+import {
+  type CompanyFilters,
+  type CompanyMissing,
+  type CompanySort,
+  type ContactFilters,
+  type ContactMissing,
+  type ContactSort,
+  EMPTY_COMPANY_FILTERS,
+  EMPTY_CONTACT_FILTERS,
+  companyDesc,
+  contactDesc,
+  matchesCompany,
+  matchesContact,
+  sortCompanies,
+  sortContacts,
+} from "@/lib/crm-filters";
 import { loadPosting, type ParsedPosting } from "@/lib/posting";
 
 /** Like me.ts: userId is the required first argument on every query. */
@@ -113,7 +137,22 @@ export const NO_ANSWER_STAGES: Stage[] = ["GHOSTED"];
 // Companies
 // ---------------------------------------------------------------------------
 
-const companyCounts = { _count: { select: { applications: true, contacts: true } } } as const;
+/**
+ * How many applications and people a company has — LIVE ones.
+ *
+ * Shared by listCompanies, readCompany and the merge survivor read, so the
+ * filter belongs here rather than at three call sites. `contacts` is a
+ * `ContactCompany[]` join, not `Contact[]`, so its predicate has to reach
+ * through the link to the person.
+ */
+const companyCounts = {
+  _count: {
+    select: {
+      applications: { where: { archivedAt: null } },
+      contacts: { where: { contact: { archivedAt: null } } },
+    },
+  },
+} satisfies Prisma.CompanyInclude;
 
 export type CompanyInput = {
   name: string;
@@ -183,29 +222,34 @@ const CONTACT_COLUMNS = [
 ] as const;
 
 /** Cuts of the company list that keep coming up as questions. */
-export type CompanyFilter = "active" | "applied" | "never-applied" | "with-contacts";
+/** The cut list lives in crm-filters.ts, so there is one of it. */
+export type { CompanyCut as CompanyFilter } from "@/lib/crm-filters";
 
+/**
+ * Every company, cut and ordered.
+ *
+ * The filtering happens in `matchesCompany` over the rows this fetches rather
+ * than in the Prisma `where`, and that is deliberate: a faceted count is "how
+ * many would survive if I relaxed this one dimension", which needs the
+ * unfiltered set in hand. Doing it in SQL for the list and again in a predicate
+ * for the counts would be two definitions of one rule — the fork invariant 2
+ * exists to prevent. It costs one full read of a personal-sized table.
+ */
 export async function listCompanies(
   userId: string,
-  options?: { search?: string; filter?: CompanyFilter; tagIds?: string[] },
+  options?: {
+    search?: string;
+    filter?: CompanyFilters["cut"];
+    tagIds?: string[];
+    industryIds?: string[];
+    sizeIds?: string[];
+    locationIds?: string[];
+    missing?: CompanyMissing[];
+    sort?: CompanySort;
+    dir?: "asc" | "desc";
+  },
 ) {
-  const where: Prisma.CompanyWhereInput = { userId };
-  if (options?.search) {
-    where.OR = [
-      { name: { contains: options.search, mode: "insensitive" } },
-      { notes: { contains: options.search, mode: "insensitive" } },
-      // Industry and location were columns and are tags now, so searching for
-      // "fintech" has to reach through the join to keep working.
-      { tags: { some: { tag: { name: { contains: options.search, mode: "insensitive" } } } } },
-    ];
-  }
-  if (options?.tagIds && options.tagIds.length > 0) {
-    where.tags = { some: { tagId: { in: options.tagIds } } };
-  }
-  if (options?.filter === "active") where.applications = { some: { stage: { notIn: TERMINAL_STAGES } } };
-  if (options?.filter === "applied") where.applications = { some: { appliedAt: { not: null } } };
-  if (options?.filter === "never-applied") where.applications = { none: { appliedAt: { not: null } } };
-  if (options?.filter === "with-contacts") where.contacts = { some: {} };
+  const where: Prisma.CompanyWhereInput = { userId, archivedAt: null };
 
   const rows = await db.company.findMany({
     where,
@@ -214,13 +258,13 @@ export async function listCompanies(
       ...companyCounts,
       ...tagInclude,
       // Plumbing for the two derived fields below, not part of the result.
-      applications: { select: { appliedAt: true, stage: true } },
+      applications: { where: { archivedAt: null }, select: { appliedAt: true, stage: true } },
     },
   });
   // "When did I last apply here" and "is anything still live" are the two
   // questions a company list gets asked; answer them on every row rather than
   // making callers fetch each company.
-  return rows.map(({ applications, ...company }) => ({
+  const mapped = rows.map(({ applications, ...company }) => ({
     ...flattenTags(company),
     lastAppliedAt: applications.reduce<Date | null>(
       (latest, application) =>
@@ -233,13 +277,31 @@ export async function listCompanies(
       (application) => !TERMINAL_STAGES.includes(application.stage),
     ).length,
   }));
+
+  const filters: CompanyFilters = {
+    ...EMPTY_COMPANY_FILTERS,
+    cut: options?.filter ?? null,
+    industries: options?.industryIds ?? [],
+    sizes: options?.sizeIds ?? [],
+    locations: options?.locationIds ?? [],
+    tags: options?.tagIds ?? [],
+    missing: options?.missing ?? [],
+    search: options?.search ?? "",
+  };
+  const sort = options?.sort ?? "name";
+  return sortCompanies(
+    mapped.filter((company) => matchesCompany(company, filters)),
+    sort,
+    companyDesc(sort, options?.dir),
+  );
 }
 
 export async function getCompany(userId: string, id: string) {
   const company = await db.company.findFirst({
-    where: { id, userId },
+    where: { id, userId, archivedAt: null },
     include: {
       applications: {
+        where: { archivedAt: null },
         orderBy: { updatedAt: "desc" },
         select: {
           id: true,
@@ -255,7 +317,11 @@ export async function getCompany(userId: string, id: string) {
           updatedAt: true,
         },
       },
-      contacts: { orderBy: { createdAt: "asc" }, include: { contact: true } },
+      contacts: {
+        where: { contact: { archivedAt: null } },
+        orderBy: { createdAt: "asc" },
+        include: { contact: true },
+      },
       ...tagInclude,
     },
   });
@@ -271,7 +337,7 @@ export async function getCompany(userId: string, id: string) {
 /** One company as every writer hands it back: counts, and flat tags. */
 async function readCompany(userId: string, id: string) {
   const company = await db.company.findFirstOrThrow({
-    where: { id, userId },
+    where: { id, userId, archivedAt: null },
     include: { ...companyCounts, ...tagInclude },
   });
   return flattenTags(company);
@@ -280,7 +346,10 @@ async function readCompany(userId: string, id: string) {
 export async function createCompany(userId: string, input: CompanyInput) {
   const name = input.name.trim();
   if (!name) throw new Error("A company needs a name");
-  const existing = await db.company.findFirst({ where: { userId, name } });
+  // Only a LIVE company clashes. One in the archive keeps its name out of the
+  // way through archiveKey, which is what lets you track a new job at a company
+  // you deleted last month.
+  const existing = await db.company.findFirst({ where: { userId, name, archivedAt: null } });
   if (existing) throw new Error(`You already have a company called "${name}"`);
   const company = await db.company.create({
     data: { userId, ...pick({ ...input, name }, COMPANY_COLUMNS) },
@@ -295,13 +364,18 @@ export async function updateCompany(userId: string, id: string, patch: Partial<C
   // changed — which used to come back as "no company with id".
   const current = await db.company.findFirst({ where: { id, userId } });
   if (!current) throw new Error(`No company with id ${id}`);
+  // A stale id in an assistant's hand must not quietly edit something the
+  // person has deleted.
+  if (current.archivedAt) {
+    throw new Error(`"${current.name}" is in the archive. Restore it before changing it.`);
+  }
 
   const data = pick(patch, COMPANY_COLUMNS);
   if (data.name !== undefined) {
     data.name = data.name.trim();
     if (!data.name) throw new Error("A company needs a name");
     const clash = await db.company.findFirst({
-      where: { userId, name: data.name, id: { not: id } },
+      where: { userId, name: data.name, id: { not: id }, archivedAt: null },
     });
     if (clash) throw new Error(`You already have a company called "${data.name}"`);
   }
@@ -313,27 +387,24 @@ export async function updateCompany(userId: string, id: string, patch: Partial<C
 /**
  * Refuses while applications point here, and unlinks the people who represent it.
  *
- * Note what the schema actually does: `ContactCompany` cascades — deleting a
- * company drops the link and leaves the person standing — but
- * `Application.company` is `onDelete: Cascade`, so deleting a company
- * WOULD take its applications with it, history included. That is the genuinely
- * bad afternoon this guard exists to prevent, and it is why the check below is
- * load-bearing rather than a courtesy. To fold a duplicate employer away
- * without losing anything, use mergeCompanies.
+ * It no longer refuses while applications point here, and it no longer needs
+ * to. That guard existed because `Application.company` is `onDelete: Cascade`
+ * at the database level, so destroying a company would have taken its
+ * applications and their whole history with it. Nothing is destroyed here now:
+ * the company and its live applications go into the archive together, marked
+ * so a restore brings back exactly those and leaves an application the person
+ * binned separately where they put it. The cascade danger has moved to
+ * deleteArchived and the purge, which is where the guard now lives.
+ *
+ * The people are NOT archived with it. Somebody is a founder at one company
+ * and an advisor at another, which is what ContactCompany exists for; they keep
+ * every other company and simply lose this one. To fold a duplicate employer
+ * away without archiving anything, use mergeCompanies.
  */
 export async function deleteCompany(userId: string, id: string) {
-  const company = await db.company.findFirst({
-    where: { id, userId },
-    include: companyCounts,
-  });
-  if (!company) throw new Error(`No company with id ${id}`);
-  if (company._count.applications > 0) {
-    throw new Error(
-      `"${company.name}" still has ${company._count.applications} application(s). Move or delete those first.`,
-    );
-  }
-  await db.company.delete({ where: { id } });
-  return { id, name: company.name };
+  const { archived, skipped } = await archiveRecords(userId, "company", [id]);
+  if (archived.length === 0) throw new Error(skipped[0]?.reason ?? `No company with id ${id}`);
+  return { id, name: archived[0].title, archived: true, withIt: archived[0].withIt };
 }
 
 /**
@@ -393,18 +464,18 @@ async function planCompanyMerge(userId: string, keepId: string, mergeId: string)
   if (keepId === mergeId) throw new Error("Those are the same company.");
   const [keep, merge] = await Promise.all([
     db.company.findFirst({
-      where: { id: keepId, userId },
+      where: { id: keepId, userId, archivedAt: null },
       include: {
-        applications: { select: { roleTitle: true } },
-        contacts: { select: { contactId: true } },
+        applications: { where: { archivedAt: null }, select: { roleTitle: true } },
+        contacts: { where: { contact: { archivedAt: null } }, select: { contactId: true } },
         tags: { select: { tagId: true } },
       },
     }),
     db.company.findFirst({
-      where: { id: mergeId, userId },
+      where: { id: mergeId, userId, archivedAt: null },
       include: {
-        applications: { select: { roleTitle: true } },
-        contacts: { select: { contactId: true } },
+        applications: { where: { archivedAt: null }, select: { roleTitle: true } },
+        contacts: { where: { contact: { archivedAt: null } }, select: { contactId: true } },
         tags: { select: { tagId: true } },
       },
     }),
@@ -509,7 +580,7 @@ export async function mergeCompanies(userId: string, keepId: string, mergeId: st
   });
 
   const survivor = await db.company.findFirstOrThrow({
-    where: { id: keepId, userId },
+    where: { id: keepId, userId, archivedAt: null },
     include: companyCounts,
   });
   return { ...survivor, merged: plan };
@@ -518,15 +589,21 @@ export async function mergeCompanies(userId: string, keepId: string, mergeId: st
 export async function upsertCompanyByName(
   userId: string,
   name: string,
-  extra?: Partial<{ website: string; industry: string; location: string; notes: string }>,
+  extra?: Partial<{ website: string; notes: string }>,
 ) {
   const clean = name.trim();
   // The last line of defence against a half-typed name becoming a company.
   // Callers reach here from an autosave, a tool argument and a posting parse,
   // and a Company row named "" is unreachable, unnameable and permanent.
   if (!clean) throw new Error("A company needs a name");
+  // `archiveKey: ""` is the whole point of the compound key: this only ever
+  // matches a LIVE company. Tracking a job at Stripe a month after you deleted
+  // Stripe gives you a new Stripe, rather than silently resurrecting the old
+  // one and every application that went into the archive with it. Restoring
+  // the archived one afterwards is refused by name and points at
+  // merge_companies, which is the tool for deciding what the one record says.
   return db.company.upsert({
-    where: { userId_name: { userId, name: clean } },
+    where: { userId_name_archiveKey: { userId, name: clean, archiveKey: "" } },
     create: { userId, name: clean, ...extra },
     update: extra ?? {},
   });
@@ -577,7 +654,7 @@ async function resolveCompanyIds(
   if (input.companyIds !== undefined) {
     if (input.companyIds.length === 0) return [];
     const owned = await db.company.findMany({
-      where: { id: { in: input.companyIds }, userId },
+      where: { id: { in: input.companyIds }, userId, archivedAt: null },
       select: { id: true },
     });
     const found = new Set(owned.map((row) => row.id));
@@ -627,8 +704,6 @@ export type ApplicationInput = {
   sourceIds?: string[];
   sources?: string[];
   source?: string;
-  excitement?: number;
-  fit?: number;
   notes?: string;
   appliedAt?: Date | string | null;
   nextFollowUpAt?: Date | string | null;
@@ -663,7 +738,9 @@ const applicationInclude = {
   company: true,
   ...applicationTagInclude,
   resume: { select: { id: true, name: true } },
-  _count: { select: { activities: true, tasks: true, contacts: true } },
+  _count: {
+    select: { activities: true, tasks: true, contacts: { where: { archivedAt: null } } },
+  },
   // The moment this application last changed stage, for "how long has it been
   // sitting there". updatedAt is not that date — editing a note bumps it — and
   // "waiting 40 days" is only worth printing if it is true.
@@ -698,7 +775,7 @@ export async function listApplications(
   userId: string,
   options?: { stage?: Stage; includeClosed?: boolean; search?: string; quietForDays?: number },
 ) {
-  const where: Prisma.ApplicationWhereInput = { userId };
+  const where: Prisma.ApplicationWhereInput = { userId, archivedAt: null };
   if (options?.stage) where.stage = options.stage;
   else if (!options?.includeClosed) where.stage = { notIn: TERMINAL_STAGES };
   if (options?.search) {
@@ -747,13 +824,16 @@ export async function listApplications(
 
 export async function getApplication(userId: string, id: string) {
   const application = await db.application.findFirst({
-    where: { id, userId },
+    // Archived reads as gone here too, not just in the lists. The archive
+    // screen is the one place a deleted record exists, and a detail page that
+    // half-renders something you deleted is worse than a clean not-found.
+    where: { id, userId, archivedAt: null },
     include: {
       company: true,
       ...applicationTagInclude,
       resume: { select: { id: true, name: true } },
       activities: { orderBy: { occurredAt: "desc" } },
-      contacts: { orderBy: { createdAt: "asc" } },
+      contacts: { where: { archivedAt: null }, orderBy: { createdAt: "asc" } },
       tasks: { orderBy: [{ done: "asc" }, { dueAt: "asc" }] },
     },
   });
@@ -807,6 +887,46 @@ async function assertOwnsResume(userId: string, resumeId: string) {
   if (!resume) throw new Error(`No resume with id ${resumeId}`);
 }
 
+/**
+ * The location and work-mode values already on this person's applications.
+ *
+ * Both are free text and always will be — "Remote (US, PST overlap)" is a real
+ * answer and no enum survives it. What free text costs is consistency: three
+ * spellings of Remote, none of which filter or group together. So the field
+ * offers what you have used before, with a count each, and typing something new
+ * is still just typing.
+ *
+ * Case-insensitive on the way in, first spelling wins on the way out: "remote"
+ * typed after "Remote" folds into the one already on file rather than adding a
+ * near-duplicate to the list. Archived applications do not vote — a value only
+ * they carry is not a value you use.
+ */
+export async function applicationFieldValues(
+  userId: string,
+): Promise<{ location: { value: string; count: number }[]; workMode: { value: string; count: number }[] }> {
+  const rows = await db.application.findMany({
+    where: { userId, archivedAt: null },
+    select: { location: true, workMode: true },
+  });
+
+  const tally = (pick: (row: (typeof rows)[number]) => string) => {
+    const seen = new Map<string, { value: string; count: number }>();
+    for (const row of rows) {
+      const value = pick(row).trim();
+      if (!value) continue;
+      const key = value.toLowerCase();
+      const existing = seen.get(key);
+      if (existing) existing.count += 1;
+      else seen.set(key, { value, count: 1 });
+    }
+    return [...seen.values()].sort(
+      (a, b) => b.count - a.count || a.value.localeCompare(b.value),
+    );
+  };
+
+  return { location: tally((row) => row.location), workMode: tally((row) => row.workMode) };
+}
+
 export async function createApplication(userId: string, input: ApplicationInput) {
   const company = await upsertCompanyByName(
     userId,
@@ -833,8 +953,6 @@ export async function createApplication(userId: string, input: ApplicationInput)
           (tagId) => ({ tagId }),
         ),
       },
-      excitement: clamp(input.excitement ?? 3, 1, 5),
-      fit: clamp(input.fit ?? 3, 1, 5),
       notes: input.notes ?? "",
       appliedAt,
       nextFollowUpAt: toDate(input.nextFollowUpAt) ?? defaultFollowUp(stage),
@@ -911,6 +1029,9 @@ export async function updateApplication(
 ) {
   const current = await db.application.findFirst({ where: { id, userId } });
   if (!current) throw new Error(`No application with id ${id}`);
+  if (current.archivedAt) {
+    throw new Error(`"${current.roleTitle}" is in the archive. Restore it before changing it.`);
+  }
 
   const data: Prisma.ApplicationUpdateInput = {};
   if (patch.roleTitle !== undefined) data.roleTitle = patch.roleTitle;
@@ -925,8 +1046,6 @@ export async function updateApplication(
     data.tags = { deleteMany: {}, create: tagIds.map((tagId) => ({ tagId })) };
   }
   if (patch.notes !== undefined) data.notes = patch.notes;
-  if (patch.excitement !== undefined) data.excitement = clamp(patch.excitement, 1, 5);
-  if (patch.fit !== undefined) data.fit = clamp(patch.fit, 1, 5);
   if (patch.sortOrder !== undefined) data.sortOrder = patch.sortOrder;
   if (patch.appliedAt !== undefined) data.appliedAt = toDate(patch.appliedAt);
   if (patch.nextFollowUpAt !== undefined) data.nextFollowUpAt = toDate(patch.nextFollowUpAt);
@@ -1047,6 +1166,9 @@ export async function moveApplicationStage(
 ) {
   const current = await db.application.findFirst({ where: { id, userId } });
   if (!current) throw new Error(`No application with id ${id}`);
+  if (current.archivedAt) {
+    throw new Error(`"${current.roleTitle}" is in the archive. Restore it before changing it.`);
+  }
 
   const data: Prisma.ApplicationUpdateInput = { stage };
   if (stage !== "WISHLIST" && !current.appliedAt) data.appliedAt = new Date();
@@ -1113,16 +1235,116 @@ export async function moveApplicationsStage(userId: string, ids: string[], stage
   return { moved, skipped, stage };
 }
 
+/**
+ * Add or remove tags across a selection, in one act.
+ *
+ * Add and remove rather than replace: a bulk write that replaces would mean
+ * "tag these nine as fintech" quietly stripping the size and location off
+ * every one of them. The kind allowlist is what stops an APPLICATION tag
+ * landing on a company, where nothing would ever render it and no picker could
+ * take it back off.
+ *
+ * Ids that are not this person's are skipped, the same rule
+ * moveApplicationsStage follows.
+ */
+export async function tagCompanies(
+  userId: string,
+  ids: string[],
+  change: { add?: string[]; remove?: string[] },
+) {
+  const add = await assertOwnedTagIds(userId, change.add ?? [], [
+    TagKind.INDUSTRY,
+    TagKind.SIZE,
+    TagKind.LOCATION,
+    TagKind.COMPANY,
+  ]);
+  const remove = await assertOwnedTagIds(userId, change.remove ?? [], [
+    TagKind.INDUSTRY,
+    TagKind.SIZE,
+    TagKind.LOCATION,
+    TagKind.COMPANY,
+  ]);
+  const owned = await db.company.findMany({
+    where: { id: { in: [...new Set(ids)] }, userId, archivedAt: null },
+    select: { id: true },
+  });
+  const companyIds = owned.map((row) => row.id);
+  if (remove.length > 0) {
+    await db.companyTag.deleteMany({
+      where: { companyId: { in: companyIds }, tagId: { in: remove } },
+    });
+  }
+  if (add.length > 0) {
+    await db.companyTag.createMany({
+      data: companyIds.flatMap((companyId) => add.map((tagId) => ({ companyId, tagId }))),
+      skipDuplicates: true,
+    });
+  }
+  return { changed: companyIds, skipped: ids.filter((id) => !companyIds.includes(id)) };
+}
+
+export async function tagContacts(
+  userId: string,
+  ids: string[],
+  change: { add?: string[]; remove?: string[] },
+) {
+  const add = await assertOwnedTagIds(userId, change.add ?? [], [TagKind.CONTACT]);
+  const remove = await assertOwnedTagIds(userId, change.remove ?? [], [TagKind.CONTACT]);
+  const owned = await db.contact.findMany({
+    where: { id: { in: [...new Set(ids)] }, userId, archivedAt: null },
+    select: { id: true },
+  });
+  const contactIds = owned.map((row) => row.id);
+  if (remove.length > 0) {
+    await db.contactTag.deleteMany({
+      where: { contactId: { in: contactIds }, tagId: { in: remove } },
+    });
+  }
+  if (add.length > 0) {
+    await db.contactTag.createMany({
+      data: contactIds.flatMap((contactId) => add.map((tagId) => ({ contactId, tagId }))),
+      skipDuplicates: true,
+    });
+  }
+  return { changed: contactIds, skipped: ids.filter((id) => !contactIds.includes(id)) };
+}
+
+/**
+ * Put a whole selection on the chase list for one date.
+ *
+ * The date is validated HERE rather than handed to `toDate`, which returns null
+ * for anything it cannot read. "next Tuesday" is a plausible thing for an
+ * assistant to send, and through toDate it would silently clear the ping date
+ * on every person in the batch instead of failing.
+ */
+export async function scheduleContactPings(userId: string, ids: string[], date: string | null) {
+  let when: Date | null = null;
+  if (date !== null && date !== "") {
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) throw new Error(`"${date}" is not a date I can read`);
+    when = parsed;
+  }
+  const { count } = await db.contact.updateMany({
+    where: { id: { in: [...new Set(ids)] }, userId, archivedAt: null },
+    data: { nextFollowUpAt: when },
+  });
+  return { changed: count, cleared: when === null };
+}
+
+/** Into the archive, with its timeline and its tasks. Nothing is destroyed. */
 export async function deleteApplication(userId: string, id: string) {
-  const { count } = await db.application.deleteMany({ where: { id, userId } });
-  if (count === 0) throw new Error(`No application with id ${id}`);
-  return { id };
+  const { archived, skipped } = await archiveRecords(userId, "application", [id]);
+  if (archived.length === 0) throw new Error(skipped[0]?.reason ?? `No application with id ${id}`);
+  return { id, archived: true };
 }
 
 export async function reorderApplications(userId: string, ids: string[]) {
   await db.$transaction(
     ids.map((id, index) =>
-      db.application.updateMany({ where: { id, userId }, data: { sortOrder: index } }),
+      db.application.updateMany({
+        where: { id, userId, archivedAt: null },
+        data: { sortOrder: index },
+      }),
     ),
   );
 }
@@ -1148,12 +1370,14 @@ export async function addActivity(
   }
   if (input.applicationId) {
     const application = await db.application.findFirst({
-      where: { id: input.applicationId, userId },
+      where: { id: input.applicationId, userId, archivedAt: null },
     });
     if (!application) throw new Error(`No application with id ${input.applicationId}`);
   }
   if (input.contactId) {
-    const contact = await db.contact.findFirst({ where: { id: input.contactId, userId } });
+    const contact = await db.contact.findFirst({
+      where: { id: input.contactId, userId, archivedAt: null },
+    });
     if (!contact) throw new Error(`No contact with id ${input.contactId}`);
   }
 
@@ -1192,9 +1416,139 @@ export async function readQuickLogAgainstPipeline(userId: string, text: string) 
   );
 }
 
+/**
+ * A task belongs to an application or to nothing at all.
+ *
+ * Not `as const`: that would make the OR a readonly tuple, and Prisma's `OR`
+ * is a mutable array, so it would not compile where it is spread.
+ */
+/**
+ * A task whose subject is not in the archive.
+ *
+ * Three of the six things a task can be about are archivable, and each needs
+ * BOTH legs: a task about a company has `applicationId: null`, so a
+ * single-legged application filter would wave it straight through. Resumes,
+ * roles and notes are not archivable — deleting one really deletes it, and the
+ * foreign key takes the task with it — so they need no clause here.
+ *
+ * The AND is what makes this composable: every archivable subject gets its own
+ * "unset, or alive" pair, and adding a fourth means adding a fourth pair rather
+ * than reasoning about the whole expression again.
+ */
+const LIVE_TASK_PARENT: Prisma.TaskWhereInput = {
+  AND: [
+    { OR: [{ applicationId: null }, { application: { archivedAt: null } }] },
+    { OR: [{ companyId: null }, { company: { archivedAt: null } }] },
+    { OR: [{ contactId: null }, { contact: { archivedAt: null } }] },
+  ],
+};
+
+/** Everything a task can be about, and the column each one lives in. */
+export const TASK_SUBJECTS = [
+  "application",
+  "company",
+  "contact",
+  "resume",
+  "role",
+  "note",
+] as const;
+export type TaskSubject = (typeof TASK_SUBJECTS)[number];
+
+const SUBJECT_COLUMN: Record<TaskSubject, string> = {
+  application: "applicationId",
+  company: "companyId",
+  contact: "contactId",
+  resume: "resumeId",
+  role: "roleId",
+  note: "noteId",
+};
+
+/**
+ * Check that a subject is this person's, and turn it into columns to write.
+ *
+ * At most one subject: passing two is a caller that has not decided, and
+ * silently keeping one of them would put a task on a thing nobody chose.
+ * Ownership is checked here rather than trusted from the foreign key, because
+ * the key only says the row exists — not that it belongs to the person writing.
+ * An archived company or person is refused too: attaching a reminder to
+ * something already in the bin makes a task nothing will ever show.
+ */
+export async function taskSubject(
+  userId: string,
+  input: Partial<Record<`${TaskSubject}Id`, string | null>>,
+): Promise<Record<string, string | null>> {
+  const named = TASK_SUBJECTS.filter((kind) => input[`${kind}Id`]);
+  if (named.length > 1) {
+    throw new Error(
+      `A task is about one thing. You passed ${named.length}: ${named.join(", ")}.`,
+    );
+  }
+
+  const columns: Record<string, string | null> = {};
+  for (const kind of TASK_SUBJECTS) {
+    const value = input[`${kind}Id`];
+    // Absent means "leave it"; null means "unhook it"; a string means "set it".
+    if (value === undefined) continue;
+    columns[SUBJECT_COLUMN[kind]] = value ?? null;
+  }
+  // Setting one subject clears the others, so a task never carries two.
+  if (named.length === 1) {
+    for (const kind of TASK_SUBJECTS) {
+      if (kind !== named[0]) columns[SUBJECT_COLUMN[kind]] = null;
+    }
+  }
+
+  const kind = named[0];
+  if (!kind) return columns;
+  const id = input[`${kind}Id`] as string;
+
+  const found = await (async () => {
+    switch (kind) {
+      case "application":
+        return db.application.findFirst({ where: { id, userId, archivedAt: null } });
+      case "company":
+        return db.company.findFirst({ where: { id, userId, archivedAt: null } });
+      case "contact":
+        return db.contact.findFirst({ where: { id, userId, archivedAt: null } });
+      case "resume":
+        return db.resume.findFirst({ where: { id, userId } });
+      case "role":
+        return db.role.findFirst({ where: { id, userId } });
+      case "note":
+        return db.note.findFirst({ where: { id, userId } });
+    }
+  })();
+  if (!found) throw new Error(`No ${kind} with id ${id}`);
+  return columns;
+}
+
+/** What a task hands back about its subject, whichever kind it turned out to be. */
+const taskSubjectInclude = {
+  application: { include: { company: { select: { name: true } } } },
+  company: { select: { id: true, name: true } },
+  contact: { select: { id: true, name: true } },
+  resume: { select: { id: true, name: true } },
+  role: { select: { id: true, title: true, company: true } },
+  note: { select: { id: true, title: true } },
+} satisfies Prisma.TaskInclude;
+
+/**
+ * An activity belongs to an application OR a contact — exactly one, enforced
+ * in addActivity rather than by the schema. Both legs are needed: a
+ * single-legged filter lets every contact activity through unchecked, because
+ * a contact's row has `applicationId: null` and matches the first branch on
+ * its own.
+ */
+const LIVE_ACTIVITY_PARENT: Prisma.ActivityWhereInput = {
+  AND: [
+    { OR: [{ applicationId: null }, { application: { archivedAt: null } }] },
+    { OR: [{ contactId: null }, { contact: { archivedAt: null } }] },
+  ],
+};
+
 export async function listActivities(userId: string, applicationId?: string, limit = 40) {
   return db.activity.findMany({
-    where: { userId, ...(applicationId ? { applicationId } : {}) },
+    where: { userId, ...LIVE_ACTIVITY_PARENT, ...(applicationId ? { applicationId } : {}) },
     orderBy: { occurredAt: "desc" },
     take: limit,
     include: {
@@ -1204,38 +1558,41 @@ export async function listActivities(userId: string, applicationId?: string, lim
   });
 }
 
+export type TaskSubjectInput = Partial<Record<`${TaskSubject}Id`, string | null>>;
+
 export async function createTask(
   userId: string,
   input: {
     title: string;
     detail?: string;
     dueAt?: Date | string | null;
-    applicationId?: string | null;
-  },
+  } & TaskSubjectInput,
 ) {
-  if (input.applicationId) {
-    const application = await db.application.findFirst({
-      where: { id: input.applicationId, userId },
-    });
-    if (!application) throw new Error(`No application with id ${input.applicationId}`);
-  }
+  const title = input.title.trim();
+  if (!title) throw new Error("A task needs a title");
+  const subject = await taskSubject(userId, input);
   return db.task.create({
     data: {
       userId,
-      title: input.title,
+      title,
       detail: input.detail ?? "",
       dueAt: toDate(input.dueAt) ?? null,
-      applicationId: input.applicationId ?? null,
+      ...subject,
     },
+    include: taskSubjectInclude,
   });
 }
 
 export async function listTasks(userId: string, options?: { done?: boolean; limit?: number }) {
   return db.task.findMany({
-    where: { userId, ...(options?.done === undefined ? {} : { done: options.done }) },
+    where: {
+      userId,
+      ...LIVE_TASK_PARENT,
+      ...(options?.done === undefined ? {} : { done: options.done }),
+    },
     orderBy: [{ done: "asc" }, { dueAt: "asc" }, { createdAt: "desc" }],
     take: options?.limit ?? 100,
-    include: { application: { include: { company: true } } },
+    include: taskSubjectInclude,
   });
 }
 
@@ -1254,8 +1611,7 @@ export async function updateTask(
     title?: string;
     detail?: string;
     dueAt?: Date | string | null;
-    applicationId?: string | null;
-  },
+  } & TaskSubjectInput,
 ) {
   // Read first, write by id: the same shape as updateContact, and the only way
   // to write a relation — updateMany cannot connect one.
@@ -1270,21 +1626,15 @@ export async function updateTask(
   }
   if (patch.detail !== undefined) data.detail = patch.detail;
   if (patch.dueAt !== undefined) data.dueAt = toDate(patch.dueAt);
-  if (patch.applicationId !== undefined) {
-    if (patch.applicationId) {
-      const application = await db.application.findFirst({
-        where: { id: patch.applicationId, userId },
-      });
-      if (!application) throw new Error(`No application with id ${patch.applicationId}`);
-      data.application = { connect: { id: patch.applicationId } };
-    } else {
-      data.application = { disconnect: true };
-    }
-  }
+  const subject = await taskSubject(userId, patch);
   return db.task.update({
     where: { id },
-    data,
-    include: { application: { include: { company: true } } },
+    // Scalar foreign keys rather than connect/disconnect: `taskSubject` already
+    // returns every column it means to move, including the ones it is clearing,
+    // and expressing five of those as relation ops is five times the code for
+    // the same UPDATE.
+    data: { ...data, ...subject },
+    include: taskSubjectInclude,
   });
 }
 
@@ -1333,7 +1683,7 @@ export async function createContact(
 ) {
   if (input.applicationId) {
     const application = await db.application.findFirst({
-      where: { id: input.applicationId, userId },
+      where: { id: input.applicationId, userId, archivedAt: null },
     });
     if (!application) throw new Error(`No application with id ${input.applicationId}`);
   }
@@ -1366,9 +1716,14 @@ export async function createContact(
 const contactInclude = {
   // Ordered by when the link was made, so the first chip is the one a compact
   // list shows and it does not move about between renders.
-  companies: { include: { company: true }, orderBy: { createdAt: "asc" as const } },
+  companies: {
+    where: { company: { archivedAt: null } },
+    include: { company: true },
+    orderBy: { createdAt: "asc" as const },
+  },
   ...tagInclude,
   application: {
+    where: { archivedAt: null },
     select: {
       id: true,
       roleTitle: true,
@@ -1381,45 +1736,36 @@ const contactInclude = {
   },
 } satisfies Prisma.ContactInclude;
 
-/** Cuts of the contact list: who is owed a ping, who is tied to a live thread. */
-export type ContactFilter = "ping-due" | "with-application" | "no-company";
+/** The cut list lives in crm-filters.ts, so there is one of it. */
+export type { ContactCut as ContactFilter } from "@/lib/crm-filters";
 
+/**
+ * Every person, cut and ordered. Same shape as listCompanies, same reason.
+ *
+ * `applicationId` stays in the SQL because it scopes WHOSE contacts these are
+ * rather than being a dimension of the screen. Everything else is a dimension,
+ * and dimensions AND — which fixes a quiet bug in the version this replaces,
+ * where passing `companyId` alongside the `no-company` cut had the second
+ * assignment silently overwrite the first.
+ */
 export async function listContacts(
   userId: string,
   options?: {
     applicationId?: string;
     companyId?: string;
+    companyIds?: string[];
     search?: string;
-    filter?: ContactFilter;
+    filter?: ContactFilters["cut"];
     tagIds?: string[];
+    quietDays?: number;
+    missing?: ContactMissing[];
+    sort?: ContactSort;
+    dir?: "asc" | "desc";
   },
 ) {
-  const where: Prisma.ContactWhereInput = { userId };
+  const where: Prisma.ContactWhereInput = { userId, archivedAt: null };
   if (options?.applicationId) where.applicationId = options.applicationId;
-  if (options?.companyId) where.companies = { some: { companyId: options.companyId } };
-  if (options?.tagIds && options.tagIds.length > 0) {
-    where.tags = { some: { tagId: { in: options.tagIds } } };
-  }
-  if (options?.filter === "ping-due") where.nextFollowUpAt = { lte: new Date() };
-  if (options?.filter === "with-application") where.applicationId = { not: null };
-  if (options?.filter === "no-company") where.companies = { none: {} };
-  if (options?.search) {
-    where.OR = [
-      { name: { contains: options.search, mode: "insensitive" } },
-      { title: { contains: options.search, mode: "insensitive" } },
-      { email: { contains: options.search, mode: "insensitive" } },
-      { relationship: { contains: options.search, mode: "insensitive" } },
-      { notes: { contains: options.search, mode: "insensitive" } },
-      {
-        companies: {
-          some: { company: { name: { contains: options.search, mode: "insensitive" } } },
-        },
-      },
-      // Same as companies: a tag is a word you filed someone under, so it has
-      // to be a word you can find them by.
-      { tags: { some: { tag: { name: { contains: options.search, mode: "insensitive" } } } } },
-    ];
-  }
+
   const contacts = await db.contact.findMany({
     where,
     orderBy: { name: "asc" },
@@ -1429,12 +1775,34 @@ export async function listContacts(
       activities: { select: { occurredAt: true }, orderBy: { occurredAt: "desc" as const }, take: 1 },
     },
   });
-  return contacts.map((contact) => ({ ...contact, ...contactShape(contact) }));
+  const mapped = contacts.map((contact) => ({ ...contact, ...contactShape(contact) }));
+
+  const filters: ContactFilters = {
+    ...EMPTY_CONTACT_FILTERS,
+    cut: options?.filter ?? null,
+    // The single-company shorthand folds into the dimension rather than
+    // fighting it.
+    companies: [...(options?.companyIds ?? []), ...(options?.companyId ? [options.companyId] : [])],
+    tags: options?.tagIds ?? [],
+    quiet: options?.quietDays ?? null,
+    missing: options?.missing ?? [],
+    search: options?.search ?? "",
+  };
+  // One `now` for the whole call, so "ping due" cannot answer differently for
+  // the first row and the last.
+  const now = Date.now();
+  const sort = options?.sort ?? "name";
+  return sortContacts(
+    mapped.filter((contact) => matchesContact(contact, filters, now)),
+    sort,
+    contactDesc(sort, options?.dir),
+    now,
+  );
 }
 
 export async function getContact(userId: string, id: string) {
   const contact = await db.contact.findFirst({
-    where: { id, userId },
+    where: { id, userId, archivedAt: null },
     include: { ...contactInclude, activities: { orderBy: { occurredAt: "desc" as const } } },
   });
   return contact ? { ...contact, ...contactShape(contact) } : null;
@@ -1472,6 +1840,9 @@ export async function updateContact(
 ) {
   const current = await db.contact.findFirst({ where: { id, userId } });
   if (!current) throw new Error(`No contact with id ${id}`);
+  if (current.archivedAt) {
+    throw new Error(`${current.name} is in the archive. Restore them before changing anything.`);
+  }
 
   const data: Prisma.ContactUpdateInput = pick(patch, CONTACT_COLUMNS);
   if (patch.nextFollowUpAt !== undefined) data.nextFollowUpAt = toDate(patch.nextFollowUpAt);
@@ -1496,7 +1867,7 @@ export async function updateContact(
   if (patch.applicationId !== undefined) {
     if (patch.applicationId) {
       const application = await db.application.findFirst({
-        where: { id: patch.applicationId, userId },
+        where: { id: patch.applicationId, userId, archivedAt: null },
       });
       if (!application) throw new Error(`No application with id ${patch.applicationId}`);
       data.application = { connect: { id: patch.applicationId } };
@@ -1508,10 +1879,11 @@ export async function updateContact(
   return { ...contact, ...contactShape(contact) };
 }
 
+/** Into the archive, with their whole timeline. Nothing is destroyed. */
 export async function deleteContact(userId: string, id: string) {
-  const { count } = await db.contact.deleteMany({ where: { id, userId } });
-  if (count === 0) throw new Error(`No contact with id ${id}`);
-  return { id };
+  const { archived, skipped } = await archiveRecords(userId, "contact", [id]);
+  if (archived.length === 0) throw new Error(skipped[0]?.reason ?? `No contact with id ${id}`);
+  return { id, archived: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -1526,6 +1898,7 @@ export async function followUpsDue(userId: string, withinDays = 0) {
   return db.application.findMany({
     where: {
       userId,
+      archivedAt: null,
       nextFollowUpAt: { lte: cutoff },
       stage: { notIn: TERMINAL_STAGES },
     },
@@ -1540,11 +1913,119 @@ export async function contactFollowUpsDue(userId: string, withinDays = 0) {
   cutoff.setDate(cutoff.getDate() + withinDays);
   cutoff.setHours(23, 59, 59, 999);
   const contacts = await db.contact.findMany({
-    where: { userId, nextFollowUpAt: { lte: cutoff } },
+    where: { userId, archivedAt: null, nextFollowUpAt: { lte: cutoff } },
     orderBy: { nextFollowUpAt: "asc" },
-    include: { companies: { include: { company: true }, orderBy: { createdAt: "asc" } } },
+    include: {
+      companies: {
+        where: { company: { archivedAt: null } },
+        include: { company: true },
+        orderBy: { createdAt: "asc" },
+      },
+    },
   });
   return contacts.map(flattenCompanies);
+}
+
+/**
+ * Everything whose date has come round.
+ *
+ * The bell in the chrome, and the same answer over MCP. Three kinds of dated
+ * thing pass their date and start meaning "do something": an application's next
+ * follow-up, a person's next ping, and a task's due date. Meetings and logged
+ * activities deliberately are not here — a calendar entry is not a debt, and an
+ * activity is a record of something that already happened.
+ *
+ * Grouped rather than merged into one sorted column, because the three ask for
+ * different actions: chase a company, ping a person, tick a thing off. One flat
+ * list of look-alike rows makes you read every row to work out which is which.
+ *
+ * `withinDays` defaults to 0 — today and everything already late.
+ */
+export type DueItem = {
+  kind: "APPLICATION" | "CONTACT" | "TASK";
+  id: string;
+  title: string;
+  detail: string;
+  dueAt: Date | null;
+  /** Past its date rather than due today. The one thing worth colouring. */
+  overdue: boolean;
+};
+
+export async function dueNow(
+  userId: string,
+  withinDays = 0,
+): Promise<{ followUps: DueItem[]; pings: DueItem[]; tasks: DueItem[]; total: number }> {
+  const now = new Date();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() + withinDays);
+  cutoff.setHours(23, 59, 59, 999);
+  const late = (date: Date | null) => date !== null && date < now;
+
+  const [applications, contacts, tasks] = await Promise.all([
+    db.application.findMany({
+      where: {
+        userId,
+        archivedAt: null,
+        nextFollowUpAt: { lte: cutoff },
+        stage: { notIn: TERMINAL_STAGES },
+      },
+      orderBy: { nextFollowUpAt: "asc" },
+      include: { company: { select: { name: true } } },
+    }),
+    db.contact.findMany({
+      where: { userId, archivedAt: null, nextFollowUpAt: { lte: cutoff } },
+      orderBy: { nextFollowUpAt: "asc" },
+      include: {
+        companies: {
+          where: { company: { archivedAt: null } },
+          include: { company: { select: { name: true } } },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    }),
+    db.task.findMany({
+      where: { userId, done: false, dueAt: { lte: cutoff }, ...LIVE_TASK_PARENT },
+      orderBy: { dueAt: "asc" },
+      include: { application: { include: { company: { select: { name: true } } } } },
+    }),
+  ]);
+
+  const followUps: DueItem[] = applications.map((application) => ({
+    kind: "APPLICATION",
+    id: application.id,
+    title: application.company.name,
+    detail: application.roleTitle,
+    dueAt: application.nextFollowUpAt,
+    overdue: late(application.nextFollowUpAt),
+  }));
+
+  const pings: DueItem[] = contacts.map((contact) => ({
+    kind: "CONTACT",
+    id: contact.id,
+    title: contact.name,
+    detail:
+      [contact.title, ...contact.companies.map((link) => link.company.name)]
+        .filter(Boolean)
+        .join(" · ") || "Contact",
+    dueAt: contact.nextFollowUpAt,
+    overdue: late(contact.nextFollowUpAt),
+  }));
+
+  const dueTasks: DueItem[] = tasks.map((task) => ({
+    kind: "TASK",
+    id: task.id,
+    title: task.title,
+    detail: task.application ? task.application.company.name : task.detail,
+    dueAt: task.dueAt,
+    overdue: late(task.dueAt),
+  }));
+
+  return {
+    followUps,
+    pings,
+    tasks: dueTasks,
+    total: followUps.length + pings.length + dueTasks.length,
+  };
 }
 
 /**
@@ -1591,19 +2072,24 @@ export async function listSchedule(
 
   const [followUps, contactPings, tasks, activities] = await Promise.all([
     db.application.findMany({
-      where: { userId, nextFollowUpAt: range, stage: { notIn: TERMINAL_STAGES } },
+      where: { userId, archivedAt: null, nextFollowUpAt: range, stage: { notIn: TERMINAL_STAGES } },
       include: { company: true },
     }),
     db.contact.findMany({
-      where: { userId, nextFollowUpAt: range },
-      include: { companies: { include: { company: { select: { name: true } } } } },
+      where: { userId, archivedAt: null, nextFollowUpAt: range },
+      include: {
+        companies: {
+          where: { company: { archivedAt: null } },
+          include: { company: { select: { name: true } } },
+        },
+      },
     }),
     db.task.findMany({
-      where: { userId, dueAt: range },
+      where: { userId, ...LIVE_TASK_PARENT, dueAt: range },
       include: { application: { include: { company: true } } },
     }),
     db.activity.findMany({
-      where: { userId, occurredAt: range },
+      where: { userId, ...LIVE_ACTIVITY_PARENT, occurredAt: range },
       include: {
         application: { include: { company: true } },
         contact: { select: { id: true, name: true } },
@@ -1724,10 +2210,140 @@ function median(values: number[]): number | null {
     : sorted[mid];
 }
 
+/**
+ * Every application, by how far it got and how it ended.
+ *
+ * This is the Sankey's whole input, and the only place the shape is computed —
+ * the on-screen diagram, the shared image and the tool all read this, so there
+ * is one answer to "how many did I apply to" rather than three.
+ *
+ * **Furthest reached, not currently at.** An application sitting in REJECTED
+ * still went through a screen and two interviews, and a funnel that filed it
+ * under "rejected after applying" would say the search leaks at the top when it
+ * leaks at the end. So the rung comes from the transition history, and the
+ * ending comes from where it is now — the same two-part reading `diagnoseSearch`
+ * already does, which is why `LADDER` is shared rather than re-declared.
+ *
+ * **The wishlist is not in it.** A job you noted and never applied to did not
+ * leak out of the funnel; it never entered. Counting it as "applied, no
+ * response" would be the single easiest way to make this diagram lie.
+ *
+ * Archived applications are out, for the reason pipelineStats gives: half a
+ * population is worse than either.
+ */
+export type FunnelRung = {
+  stage: Stage;
+  /**
+   * How many ever got at least this far — a DEPTH, not a visit count.
+   *
+   * An application that went straight from an interview to an offer got past
+   * the depth a final round sits at without having one, and counting it here is
+   * what makes the arithmetic close: every rung's ins equal its outs, so the
+   * ribbons join up. `visited` is the honest count, and the drawing uses it to
+   * decide whether the column exists at all.
+   */
+  reached: number;
+  /** How many were actually IN this stage — moved into it, or sitting in it. */
+  visited: number;
+  /** How many of those went on to the next rung. */
+  advanced: number;
+  /** How many stopped here, by the ending they stopped with. */
+  ended: { stage: Stage; count: number }[];
+  /** How many are sitting here right now, still live. */
+  open: number;
+};
+
+export async function funnelFlows(userId: string): Promise<{
+  rungs: FunnelRung[];
+  applied: number;
+  /** Everything not yet applied to. Reported, never drawn. */
+  wishlist: number;
+}> {
+  const [applications, transitions] = await Promise.all([
+    db.application.findMany({
+      where: { userId, archivedAt: null },
+      select: { id: true, stage: true, appliedAt: true },
+    }),
+    db.activity.findMany({
+      where: { userId, toStage: { not: null }, application: { archivedAt: null } },
+      select: { applicationId: true, toStage: true },
+    }),
+  ]);
+
+  const best = new Map<string, number>();
+  const rank = (stage: Stage | null) => (stage ? LADDER.indexOf(stage) : -1);
+  // Which rungs each application was genuinely in, as opposed to past.
+  const seen = new Map<string, Set<number>>();
+  for (const transition of transitions) {
+    if (!transition.applicationId) continue;
+    const previous = best.get(transition.applicationId) ?? -1;
+    const index = rank(transition.toStage);
+    best.set(transition.applicationId, Math.max(previous, index));
+    if (index >= 0) {
+      const set = seen.get(transition.applicationId);
+      if (set) set.add(index);
+      else seen.set(transition.applicationId, new Set([index]));
+    }
+  }
+
+  const rungs: FunnelRung[] = LADDER.map((stage) => ({
+    stage,
+    reached: 0,
+    visited: 0,
+    advanced: 0,
+    ended: [],
+    open: 0,
+  }));
+  const endings = LADDER.map(() => new Map<Stage, number>());
+  let wishlist = 0;
+
+  for (const application of applications) {
+    let furthest = Math.max(rank(application.stage), best.get(application.id) ?? -1);
+    // ACCEPTED is not a rung, it is what happens at the top of one.
+    if (application.stage === "ACCEPTED") furthest = Math.max(furthest, LADDER.indexOf("OFFER"));
+    // Applied without a single logged move still applied.
+    if (furthest < 0 && application.appliedAt) furthest = 0;
+    if (furthest < 0) {
+      wishlist += 1;
+      continue;
+    }
+
+    const visits = seen.get(application.id) ?? new Set<number>();
+    // Where it sits now counts as a visit; so does where it started.
+    const here = rank(application.stage);
+    if (here >= 0) visits.add(here);
+    if (application.appliedAt || application.stage !== "WISHLIST") visits.add(0);
+
+    for (let i = 0; i <= furthest; i++) {
+      rungs[i].reached += 1;
+      if (visits.has(i)) rungs[i].visited += 1;
+      if (i < furthest) rungs[i].advanced += 1;
+    }
+    // Where it stopped: an ending if it has one, otherwise it is still open.
+    if (TERMINAL_STAGES.includes(application.stage)) {
+      const map = endings[furthest];
+      map.set(application.stage, (map.get(application.stage) ?? 0) + 1);
+    } else {
+      rungs[furthest].open += 1;
+    }
+  }
+
+  for (const [index, map] of endings.entries()) {
+    rungs[index].ended = [...map.entries()]
+      .map(([stage, count]) => ({ stage, count }))
+      .sort((a, b) => b.count - a.count || a.stage.localeCompare(b.stage));
+  }
+
+  return { rungs, applied: rungs[0]?.reached ?? 0, wishlist };
+}
+
 export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
   const [applications, transitions] = await Promise.all([
     db.application.findMany({
-      where: { userId },
+      // Same rule as pipelineStats: what is in the archive is out of the
+      // funnel. Deleting twenty dead threads and watching the response rate
+      // not move would make the number meaningless.
+      where: { userId, archivedAt: null },
       select: {
         id: true,
         stage: true,
@@ -1741,7 +2357,11 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
       },
     }),
     db.activity.findMany({
-      where: { userId, toStage: { not: null } },
+      // Through the parent, like every other activity read. Without it the
+      // funnel's conversion rates exclude archived applications while its
+      // median days in each stage still count them — one diagnosis built from
+      // two different populations.
+      where: { userId, toStage: { not: null }, application: { archivedAt: null } },
       select: { applicationId: true, fromStage: true, toStage: true, occurredAt: true },
       orderBy: { occurredAt: "asc" },
     }),
@@ -1974,13 +2594,29 @@ function verdict(
 export async function pipelineStats(userId: string) {
   const [byStage, total, active, thisWeek, interviews, offers, tasksOpen, followUps] =
     await Promise.all([
-      db.application.groupBy({ by: ["stage"], where: { userId }, _count: { _all: true } }),
-      db.application.count({ where: { userId } }),
-      db.application.count({ where: { userId, stage: { notIn: TERMINAL_STAGES } } }),
-      db.application.count({ where: { userId, appliedAt: { gte: startOfWeek() } } }),
-      db.application.count({ where: { userId, stage: { in: ["SCREEN", "INTERVIEW", "FINAL"] } } }),
-      db.application.count({ where: { userId, stage: { in: ["OFFER", "ACCEPTED"] } } }),
-      db.task.count({ where: { userId, done: false } }),
+      // Archived applications leave the funnel with everything else. Half of
+      // them would be worse than either: `applied` below is derived as
+      // total - WISHLIST, so a filtered total against unfiltered stage counts
+      // computes a response rate off a denominator nobody can see.
+      db.application.groupBy({
+        by: ["stage"],
+        where: { userId, archivedAt: null },
+        _count: { _all: true },
+      }),
+      db.application.count({ where: { userId, archivedAt: null } }),
+      db.application.count({
+        where: { userId, archivedAt: null, stage: { notIn: TERMINAL_STAGES } },
+      }),
+      db.application.count({
+        where: { userId, archivedAt: null, appliedAt: { gte: startOfWeek() } },
+      }),
+      db.application.count({
+        where: { userId, archivedAt: null, stage: { in: ["SCREEN", "INTERVIEW", "FINAL"] } },
+      }),
+      db.application.count({
+        where: { userId, archivedAt: null, stage: { in: ["OFFER", "ACCEPTED"] } },
+      }),
+      db.task.count({ where: { userId, ...LIVE_TASK_PARENT, done: false } }),
       followUpsDue(userId, 0),
     ]);
 

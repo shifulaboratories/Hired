@@ -1,76 +1,217 @@
 import Link from "next/link";
 import {
-  ArrowRightIcon,
   CalendarClockIcon,
-  CircleUserRoundIcon,
-  CheckCircle2Icon,
-  FlameIcon,
+  ChartNoAxesColumnIcon,
+  ListChecksIcon,
   SparklesIcon,
-  TargetIcon,
-  TrendingUpIcon,
 } from "lucide-react";
 import { PageHeader, PageShell } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { FadeIn, Stagger, StaggerItem } from "@/components/motion";
-import { AnimatedNumber } from "@/components/animated-number";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
-import {
-  ACTIVITY_LABEL,
-  BOARD_STAGES,
-  STAGE_LABEL,
-  STAGE_TONE,
-  contactFollowUpsDue,
-  diagnoseSearch,
-  followUpsDue,
-  listActivities,
-  listTasks,
-  pipelineStats,
-} from "@/lib/data/pipeline";
-import type { Stage } from "@prisma/client";
-import { getProfile } from "@/lib/data/me";
-import { relativeDay, truncate } from "@/lib/utils";
-import { TaskList } from "@/components/dashboard/task-list";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FadeIn } from "@/components/motion";
 import { FollowUpList } from "@/components/dashboard/follow-up-list";
-import { DiagnosisCard } from "@/components/dashboard/diagnosis";
 import { SetupStrip } from "@/components/dashboard/setup-strip";
-import { setupStatus } from "@/lib/data/onboarding";
 import { QuickLog } from "@/components/dashboard/quick-log";
+import { TaskPanel } from "@/components/tasks/task-panel";
+import { PingScheduler } from "@/components/tasks/ping-scheduler";
+import type { SubjectOption } from "@/components/tasks/subject-picker";
+import { AnalyticsPanel } from "@/components/analytics/analytics-panel";
+import { requireUser } from "@/lib/auth";
+import { setupStatus } from "@/lib/data/onboarding";
+import {
+  contactFollowUpsDue,
+  followUpsDue,
+  listApplications,
+  listCompanies,
+  listContacts,
+  listTasks,
+} from "@/lib/data/pipeline";
+import { listResumeNames } from "@/lib/data/resumes";
+import { getProfile, listNotes, listRoles } from "@/lib/data/me";
+import { taskSubjectOf } from "@/lib/task-subject";
+import { relativeDay } from "@/lib/utils";
+import type { Stage } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+/**
+ * The front door: what you owe, and — one tab over — how it is going.
+ *
+ * Two tabs rather than two screens, because they are the same question at two
+ * altitudes and a rail entry for the second one made it a place you had to
+ * decide to visit. The numbers were the front door once and that was worse
+ * still: you open this app to do the next thing, not to read your own
+ * statistics.
+ *
+ * `?tab=` is an address, matching Me and Settings, so a tab can be linked to
+ * and the browser's Back button walks them. It also means each tab loads only
+ * its own data — the list is nine reads and the funnel is five, and nobody
+ * should pay for both to look at one.
+ */
+const TABS = ["today", "analytics"] as const;
+type Tab = (typeof TABS)[number];
+
+/** Morning, afternoon or evening, on the server's clock. */
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireUser();
-  const [stats, diagnosis, followUps, contactPings, tasks, activities, profile, setup, counts] =
+  const params = await searchParams;
+  const asked = params.tab;
+  const tab = Array.isArray(asked) ? asked[0] : asked;
+  const active: Tab = TABS.includes(tab as Tab) ? (tab as Tab) : "today";
+
+  // Only what this tab needs. Analytics reads none of it, and reading it
+  // anyway is how a tab strip quietly costs as much as both tabs.
+  const today =
+    active === "today"
+      ? await Promise.all([getProfile(user.id), setupStatus(user.id)])
+      : null;
+  const firstName = today ? (today[0].fullName.trim().split(/\s+/)[0] ?? "") : "";
+
+  return (
+    <PageShell>
+      <PageHeader
+        eyebrow={active === "today" ? greeting() : "Pipeline"}
+        title={
+          active === "analytics"
+            ? "How the search is going"
+            : firstName
+              ? `Let's go, ${firstName}.`
+              : "What you owe yourself."
+        }
+        description={
+          active === "analytics"
+            ? "The shape of it, not the to-do list: what is in flight, what is converting, and where applications are actually leaking out."
+            : "The things you wrote down, and the follow-ups that have come round. Your assistant can read and write this list too."
+        }
+        actions={
+          active === "today" ? (
+            <Button asChild variant="default">
+              <Link href="/me?tab=resumes&new=1">
+                <SparklesIcon /> New resume
+              </Link>
+            </Button>
+          ) : null
+        }
+      />
+
+      {/* Controlled by the URL: every trigger is a link, so the browser's own
+          history is the tab state and either tab can be linked to directly. */}
+      <Tabs value={active}>
+        <TabsList className="mb-5">
+          <TabsTrigger value="today" asChild>
+            <Link href="/">
+              <ListChecksIcon /> Today
+            </Link>
+          </TabsTrigger>
+          <TabsTrigger value="analytics" asChild>
+            <Link href="/?tab=analytics">
+              <ChartNoAxesColumnIcon /> Analytics
+            </Link>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value={active}>
+          {today ? (
+            <TodayTab userId={user.id} setup={today[1]} />
+          ) : (
+            <AnalyticsPanel userId={user.id} />
+          )}
+        </TabsContent>
+      </Tabs>
+    </PageShell>
+  );
+}
+
+/**
+ * Everything you owe, as one worked list.
+ *
+ * Two columns, deliberately not merged. Tasks are things you wrote down and
+ * can tick off; the chase list is dates the app worked out for you — a
+ * follow-up that has come round, a person you said you would ping. Ticking a
+ * task and logging a chase mean different things, so they stay side by side
+ * rather than interleaved into one column of look-alike rows.
+ */
+async function TodayTab({
+  userId,
+  setup,
+}: {
+  userId: string;
+  setup: Awaited<ReturnType<typeof setupStatus>>;
+}) {
+  const [tasks, applications, followUps, contactPings, contacts, companies, resumeNames, roles, notes] =
     await Promise.all([
-    pipelineStats(user.id),
-    diagnoseSearch(user.id),
-    followUpsDue(user.id, 3),
-    contactFollowUpsDue(user.id, 3),
-    listTasks(user.id, { done: false, limit: 8 }),
-    listActivities(user.id, undefined, 8),
-    getProfile(user.id),
-    setupStatus(user.id),
-    Promise.all([
-      db.role.count({ where: { userId: user.id } }),
-      db.resume.count({ where: { userId: user.id } }),
-      db.highlight.count({ where: { userId: user.id } }),
-    ]),
-  ]);
+      listTasks(userId, { limit: 300 }),
+      listApplications(userId),
+      // A week out, not just today: this is the tab you plan from, and a list
+      // that only ever shows what is already late plans nothing.
+      followUpsDue(userId, 7),
+      contactFollowUpsDue(userId, 7),
+      listContacts(userId),
+      listCompanies(userId),
+      listResumeNames(userId),
+      listRoles(userId),
+      listNotes(userId),
+    ]);
 
-  const [roleCount, resumeCount, highlightCount] = counts;
+  // Everything a task can be about, in one list for the picker. Built here
+  // rather than in the client so the six reads happen once per page rather
+  // than once per popover.
+  const subjects: SubjectOption[] = [
+    ...applications.map((application) => ({
+      kind: "application" as const,
+      id: application.id,
+      label: application.roleTitle,
+      hint: application.company.name,
+    })),
+    ...contacts.map((contact) => ({
+      kind: "contact" as const,
+      id: contact.id,
+      label: contact.name,
+      hint: contact.title || undefined,
+    })),
+    ...companies.map((company) => ({
+      kind: "company" as const,
+      id: company.id,
+      label: company.name,
+    })),
+    ...resumeNames.map((resume) => ({
+      kind: "resume" as const,
+      id: resume.id,
+      label: resume.name,
+    })),
+    ...roles.map((role) => ({
+      kind: "role" as const,
+      id: role.id,
+      label: role.title,
+      hint: role.company || undefined,
+    })),
+    ...notes.map((note) => ({
+      kind: "note" as const,
+      id: note.id,
+      label: note.title || "Untitled note",
+    })),
+  ];
 
-  // One chase list: applications to follow up and people to ping, due first.
+  const now = new Date();
   const chase = [
-    ...followUps.map((item) => ({
-      id: item.id,
-      company: item.company.name,
-      roleTitle: item.roleTitle,
-      stage: item.stage as Stage | null,
-      dueAt: item.nextFollowUpAt,
+    ...followUps.map((application) => ({
+      id: application.id,
+      company: application.company.name,
+      roleTitle: application.roleTitle,
+      stage: application.stage as Stage | null,
+      dueAt: application.nextFollowUpAt,
       kind: "application" as const,
     })),
     ...contactPings.map((contact) => ({
@@ -84,254 +225,80 @@ export default async function DashboardPage() {
       dueAt: contact.nextFollowUpAt,
       kind: "contact" as const,
     })),
-  ].sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0));
-  const firstName = (profile.fullName || user.name).split(" ")[0];
-  const isEmpty = roleCount === 0 && stats.total === 0 && resumeCount === 0;
-  const maxStage = Math.max(1, ...BOARD_STAGES.map((stage) => stats.counts[stage]));
+  ]
+    .sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0))
+    .map((item) => ({
+      ...item,
+      due: relativeDay(item.dueAt),
+      overdue: item.dueAt !== null && item.dueAt < now,
+    }));
+
+  const overdue = chase.filter((item) => item.overdue).length;
 
   return (
-    <PageShell>
-      <PageHeader
-        eyebrow={greeting()}
-        title={firstName ? `Let's go, ${firstName}.` : "Your career, in one place."}
-        actions={
-          <>
-            <Button asChild variant="outline">
-              <Link href="/me">
-                <CircleUserRoundIcon /> Me
-              </Link>
-            </Button>
-            <Button asChild variant="default">
-              <Link href="/me?tab=resumes&new=1">
-                <SparklesIcon /> New resume
-              </Link>
-            </Button>
-          </>
-        }
-      />
-
+    <>
+      {/* The first-run nudges belong to this tab, not to the page. Analytics
+          is about the search; three onboarding cards above its tab strip
+          pushed the thing you came for under the fold. */}
       {setup.outstanding && <SetupStrip status={setup} />}
 
-      {isEmpty ? null : (
-        <div className="space-y-4">
-          {/* Above the numbers, because reporting what happened is the thing
-              you came here to do; the numbers are what you read afterwards. */}
-          <QuickLog />
+      {/* Above the list, because reporting what happened is the thing you came
+          here to do; the list is what you work down afterwards. */}
+      <QuickLog />
 
-          {/* Two up from the narrowest screen. One card per row made the four
-              numbers a four-screen scroll on a phone, which is the opposite of
-              what a summary is for. */}
-          <Stagger className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatCard
-              icon={TargetIcon}
-              label="In flight"
-              value={stats.active}
-              hint={`${stats.total} tracked all-time`}
-            />
-            <StatCard
-              icon={TrendingUpIcon}
-              label="Response rate"
-              value={stats.responseRate}
-              suffix="%"
-              hint={`${stats.interviews} in interviews`}
-            />
-            <StatCard
-              icon={FlameIcon}
-              label="Applied this week"
-              value={stats.thisWeek}
-              hint={stats.offers > 0 ? `${stats.offers} offer${stats.offers > 1 ? "s" : ""} on the table` : "Keep the streak"}
-            />
-            <StatCard
-              icon={CircleUserRoundIcon}
-              label="Me"
-              value={highlightCount}
-              hint={`${roleCount} role${roleCount === 1 ? "" : "s"} · ${resumeCount} resume${resumeCount === 1 ? "" : "s"}`}
-            />
-          </Stagger>
+      <FadeIn>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <TaskPanel
+            tasks={tasks.map((task) => ({
+              id: task.id,
+              title: task.title,
+              detail: task.detail,
+              dueISO: task.dueAt?.toISOString() ?? "",
+              dueDate: task.dueAt ? task.dueAt.toISOString().slice(0, 10) : "",
+              done: task.done,
+              subject: taskSubjectOf(task),
+            }))}
+            subjects={subjects}
+          />
 
-          <FadeIn delay={0.08}>
-            <DiagnosisCard diagnosis={diagnosis} />
-          </FadeIn>
+          <div className="space-y-4">
+            <Card>
+              <CardHeader className="flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-[15px]">
+                  <CalendarClockIcon className="text-muted-foreground size-4" />
+                  Chase
+                </CardTitle>
+                {overdue > 0 && (
+                  <span className="text-destructive nums text-[12px] font-medium">
+                    {overdue} overdue
+                  </span>
+                )}
+              </CardHeader>
+              <CardContent>
+                <FollowUpList items={chase} />
+              </CardContent>
+            </Card>
 
-          <div className="grid items-start gap-4 lg:grid-cols-3">
-            <FadeIn delay={0.1} className="lg:col-span-2">
-              <Card className="h-full">
-                <CardHeader className="flex-row items-center justify-between">
-                  <CardTitle className="flex items-center gap-2 text-[15px]">
-                    <CalendarClockIcon className="text-muted-foreground size-4" />
-                    Needs you now
-                  </CardTitle>
-                  <Button asChild variant="ghost" size="xs">
-                    <Link href="/applications">
-                      Pipeline <ArrowRightIcon />
-                    </Link>
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  <FollowUpList
-                    items={chase.map((item) => ({
-                      id: item.id,
-                      company: item.company,
-                      roleTitle: item.roleTitle,
-                      stage: item.stage,
-                      due: item.dueAt ? relativeDay(item.dueAt) : "",
-                      overdue: item.dueAt ? item.dueAt < new Date() : false,
-                      kind: item.kind,
-                    }))}
-                  />
-                </CardContent>
-              </Card>
-            </FadeIn>
-
-            <FadeIn delay={0.15}>
-              <Card className="h-full">
-                <CardHeader className="flex-row items-center justify-between">
-                  <CardTitle className="flex items-center gap-2 text-[15px]">
-                    <CheckCircle2Icon className="text-muted-foreground size-4" />
-                    Tasks
-                  </CardTitle>
-                  {/* The glance is eight rows. The whole list, with dates and
-                      roles you can change, is its own page. */}
-                  <Button asChild variant="ghost" size="xs" className="text-muted-foreground">
-                    <Link href="/tasks">
-                      All tasks <ArrowRightIcon />
-                    </Link>
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  <TaskList
-                    tasks={tasks.map((task) => ({
-                      id: task.id,
-                      title: task.title,
-                      due: task.dueAt ? relativeDay(task.dueAt) : "",
-                      overdue: task.dueAt ? task.dueAt < new Date() : false,
-                      context: task.application
-                        ? `${task.application.company.name}`
-                        : "",
-                    }))}
-                  />
-                </CardContent>
-              </Card>
-            </FadeIn>
-          </div>
-
-          <div className="grid items-start gap-4 lg:grid-cols-3">
-            <FadeIn delay={0.2}>
-              <Card className="h-full">
-                <CardHeader>
-                  <CardTitle className="text-[15px]">Funnel</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3.5">
-                  {BOARD_STAGES.map((stage) => (
-                    <div key={stage}>
-                      <div className="mb-1.5 flex items-baseline justify-between text-sm">
-                        <span className="text-muted-foreground text-[13px]">{STAGE_LABEL[stage]}</span>
-                        <span className="nums text-[13px] font-medium">{stats.counts[stage]}</span>
-                      </div>
-                      <Progress
-                        value={(stats.counts[stage] / maxStage) * 100}
-                        indicatorClassName="bg-[var(--stage-tone)]"
-                        style={{ ["--stage-tone" as string]: STAGE_TONE[stage] }}
-                      />
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </FadeIn>
-
-            <FadeIn delay={0.25} className="lg:col-span-2">
-              <Card className="h-full">
-                <CardHeader>
-                  <CardTitle className="text-[15px]">Recent activity</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {activities.length === 0 ? (
-                    <p className="text-muted-foreground py-6 text-center text-sm">
-                      Nothing logged yet.
-                    </p>
-                  ) : (
-                    <ol className="relative space-y-4 pl-5">
-                      <span className="bg-border absolute top-1.5 bottom-1.5 left-[3px] w-px" />
-                      {activities.map((activity) => (
-                        <li key={activity.id} className="relative">
-                          <span className="bg-border ring-background absolute top-1.5 -left-5 size-[7px] rounded-full ring-4" />
-                          <div className="flex flex-wrap items-baseline gap-x-2">
-                            <Link
-                              href={
-                                activity.applicationId
-                                  ? `/applications/${activity.applicationId}`
-                                  : `/crm/contacts/${activity.contactId}`
-                              }
-                              className="text-sm font-medium hover:underline"
-                            >
-                              {activity.application?.company.name ??
-                                activity.contact?.name ??
-                                "Note"}
-                            </Link>
-                            <Badge variant="outline" className="text-[10px]">
-                              {ACTIVITY_LABEL[activity.type]}
-                            </Badge>
-                            <span className="text-faint meta ml-auto text-[11.5px]">
-                              {activity.occurredAt.toLocaleDateString("en-US", {
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </span>
-                          </div>
-                          <p className="text-muted-foreground mt-0.5 text-[13px]">
-                            {truncate(activity.body, 140)}
-                          </p>
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </CardContent>
-              </Card>
-            </FadeIn>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-[15px]">Ping someone</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <PingScheduler
+                  contacts={contacts.map((contact) => ({
+                    id: contact.id,
+                    name: contact.name,
+                    detail:
+                      [contact.title, ...contact.companies.map((company) => company.name)]
+                        .filter(Boolean)
+                        .join(" · ") || "",
+                  }))}
+                />
+              </CardContent>
+            </Card>
           </div>
         </div>
-      )}
-    </PageShell>
+      </FadeIn>
+    </>
   );
-}
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  suffix,
-  hint,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: number;
-  suffix?: string;
-  hint: string;
-}) {
-  return (
-    <StaggerItem>
-      <Card className="group relative overflow-hidden transition-shadow duration-200 ease-[var(--ease-settle)] hover:shadow-raised">
-        <CardContent className="relative px-4 pt-3.5 pb-3.5">
-          <div className="flex items-center gap-1.5">
-            <Icon className="text-faint size-3.5" />
-            <span className="text-muted-foreground meta text-[11px] font-medium">{label}</span>
-          </div>
-          {/* Tabular figures so the four numbers line up as a row rather than
-              jittering against each other. */}
-          <div className="nums mt-1.5 text-[26px] leading-none font-semibold tracking-tight">
-            <AnimatedNumber value={value} suffix={suffix} />
-          </div>
-          <p className="text-faint mt-1.5 text-[11.5px]">{hint}</p>
-        </CardContent>
-      </Card>
-    </StaggerItem>
-  );
-}
-
-
-function greeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
 }

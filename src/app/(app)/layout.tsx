@@ -1,7 +1,8 @@
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/shell";
-import { followUpsDue } from "@/lib/data/pipeline";
+import { relativeDay } from "@/lib/utils";
+import { dueNow } from "@/lib/data/pipeline";
 
 export const dynamic = "force-dynamic";
 
@@ -16,15 +17,27 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
 
-  const [followUps, profile] = await Promise.all([
-    followUpsDue(user.id, 0),
+  const [due, profile] = await Promise.all([
+    dueNow(user.id),
     db.profile.findUnique({ where: { userId: user.id }, select: { photo: true } }),
   ]);
+
+  // Flattened here rather than in the bell: the shell is a client component,
+  // and a Date crossing that boundary is one more thing that can format
+  // differently on the two sides of a hydration.
+  const notices = [...due.followUps, ...due.pings, ...due.tasks].map((item) => ({
+    kind: item.kind,
+    id: item.id,
+    title: item.title,
+    detail: item.detail,
+    due: relativeDay(item.dueAt),
+    overdue: item.overdue,
+  }));
 
   return (
     <>
       <Shell
-        followUpCount={followUps.length}
+        notices={notices}
         user={{
           name: user.name,
           email: user.email,

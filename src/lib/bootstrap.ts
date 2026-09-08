@@ -1,5 +1,6 @@
 import { randomInt } from "node:crypto";
 import { db } from "@/lib/db";
+import { sweepArchive } from "@/lib/data/archive";
 import { generatePassphrase } from "@/lib/passphrase";
 import { CLAIMED, ensureDefaultConnection, hashPassword } from "@/lib/auth";
 
@@ -125,6 +126,9 @@ async function maybeResetOwnerPassword() {
 
 /** Never let provisioning take the server down; log and carry on. */
 export async function bootstrap() {
+  // Anything whose window ran out while the instance was down. Same rule as
+  // ensureOwner: a failure here must not take the server with it.
+  void sweepArchive().catch(() => {});
   try {
     await ensureOwner();
   } catch (error) {

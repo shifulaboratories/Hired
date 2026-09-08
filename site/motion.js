@@ -39,6 +39,71 @@
   }
 
   // -------------------------------------------------------------------------
+  // One pointer, one frame
+  //
+  // A dozen things on this page answer the cursor: two marks, the bento cards,
+  // the primary buttons, the two files. Each used to attach its own
+  // `pointermove` and read a bounding box inside it, and a read that happens
+  // after somebody else's write is a forced layout — so moving the mouse cost
+  // twelve of them, every event, which is exactly the kind of thing that makes
+  // a page feel like it is dragging.
+  //
+  // They share one listener and one frame now: every rect is read together,
+  // then every style is written together. One layout per frame, whatever is
+  // watching.
+  // -------------------------------------------------------------------------
+
+  var watchers = [];
+  var cursor = { x: 0, y: 0, near: false };
+  var pointerFrame = 0;
+
+  function runWatchers() {
+    pointerFrame = 0;
+    // Reads first, all of them.
+    for (var i = 0; i < watchers.length; i++) {
+      watchers[i].box = watchers[i].el.getBoundingClientRect();
+    }
+    // Then the writes, which cannot invalidate a read that has already happened.
+    for (var j = 0; j < watchers.length; j++) {
+      watchers[j].apply(watchers[j].box, cursor);
+    }
+  }
+
+  function schedule() {
+    if (!pointerFrame) pointerFrame = requestAnimationFrame(runWatchers);
+  }
+
+  /** Answer the pointer. `apply` is handed the element's rect and the cursor. */
+  function follows(el, apply) {
+    if (calm) return;
+    watchers.push({ el: el, apply: apply, box: null });
+    if (watchers.length === 1) {
+      window.addEventListener(
+        "pointermove",
+        function (event) {
+          cursor.x = event.clientX;
+          cursor.y = event.clientY;
+          cursor.near = true;
+          schedule();
+        },
+        { passive: true }
+      );
+      window.addEventListener("pointerleave", function () {
+        cursor.near = false;
+        schedule();
+      });
+    }
+  }
+
+  /** -1..1 across a box grown by `reach` times its own size. */
+  function offset(box, point, axis, reach) {
+    var mid = axis === "x" ? box.left + box.width / 2 : box.top + box.height / 2;
+    var span = (axis === "x" ? box.width : box.height) * (reach || 1);
+    if (!span) return 0;
+    return Math.max(-1, Math.min(1, (point - mid) / span));
+  }
+
+  // -------------------------------------------------------------------------
   // The mark, built out into an object
   //
   // The markup ships the flat SVG. This puts a preserve-3d stage beside it and
@@ -103,23 +168,15 @@
     // The field is the mark's own region grown by four times its size, so the
     // cursor is answered well before it arrives rather than only on top of the
     // 24px target itself.
-    if (!calm) {
-      window.addEventListener(
-        "pointermove",
-        function (event) {
-          var box = host.getBoundingClientRect();
-          if (!box.width) return;
-          var reach = box.width * 4;
-          var dx = Math.max(-1, Math.min(1, (event.clientX - (box.left + box.width / 2)) / reach));
-          var dy = Math.max(-1, Math.min(1, (event.clientY - (box.top + box.height / 2)) / reach));
-          stage.style.setProperty("--ry", -23 + dx * 14 + "deg");
-          stage.style.setProperty("--rx", 12 - dy * 14 + "deg");
-          glass.style.setProperty("--gx", 34 - dx * 30 + "%");
-          glass.style.setProperty("--gy", 24 - dy * 22 + "%");
-        },
-        { passive: true }
-      );
-    }
+    follows(host, function (box, point) {
+      if (!box.width) return;
+      var dx = point.near ? offset(box, point.x, "x", 4) : 0;
+      var dy = point.near ? offset(box, point.y, "y", 4) : 0;
+      stage.style.setProperty("--ry", -23 + dx * 14 + "deg");
+      stage.style.setProperty("--rx", 12 - dy * 14 + "deg");
+      glass.style.setProperty("--gx", 34 - dx * 30 + "%");
+      glass.style.setProperty("--gy", 24 - dy * 22 + "%");
+    });
 
     once(host, function (target) { target.classList.add("in"); });
   }
@@ -175,41 +232,100 @@
   // the one rect, and neither runs at all for anyone who asked for calm.
   // -------------------------------------------------------------------------
 
-  if (!calm) {
-    $$("[data-spot]").forEach(function (card) {
-      card.addEventListener(
-        "pointermove",
-        function (event) {
-          var box = card.getBoundingClientRect();
-          card.style.setProperty("--mx", event.clientX - box.left + "px");
-          card.style.setProperty("--my", event.clientY - box.top + "px");
-        },
-        { passive: true }
-      );
-    });
+  $$("[data-spot]").forEach(function (card) {
+    /* A card that leans towards the cursor. Two degrees is the whole range:
+       enough that it reads as an object being looked at, not enough for a
+       paragraph on it to start keystoning. The axis is perpendicular to the
+       direction of the cursor, which is what makes it lean *towards* it rather
+       than about one edge — and it goes on `rotate`, not `transform`, because
+       the reveal owns `transform` on these elements. */
+    var leans = card.hasAttribute("data-lean");
 
-    $$("[data-magnet]").forEach(function (button) {
-      var pull = Number(button.getAttribute("data-magnet")) || 5;
-      window.addEventListener(
-        "pointermove",
-        function (event) {
-          var box = button.getBoundingClientRect();
-          if (!box.width) return;
-          var cx = box.left + box.width / 2;
-          var cy = box.top + box.height / 2;
-          var reach = box.width;
-          var dx = (event.clientX - cx) / reach;
-          var dy = (event.clientY - cy) / reach;
-          // Outside the reach it sits still. A button that leans towards a
-          // cursor on the other side of the page is a button that is never
-          // still, which is the opposite of the point.
-          var near = Math.abs(dx) < 1.1 && Math.abs(dy) < 1.6;
-          button.style.setProperty("--mgx", near ? dx * pull + "px" : "0px");
-          button.style.setProperty("--mgy", near ? dy * pull + "px" : "0px");
-        },
-        { passive: true }
-      );
+    follows(card, function (box, point) {
+      card.style.setProperty("--mx", point.x - box.left + "px");
+      card.style.setProperty("--my", point.y - box.top + "px");
+      if (!leans || !box.width) return;
+
+      var over =
+        point.near &&
+        point.x >= box.left && point.x <= box.right &&
+        point.y >= box.top && point.y <= box.bottom;
+
+      if (!over) {
+        card.style.rotate = "";
+        card.style.translate = "";
+        return;
+      }
+
+      var dx = (point.x - (box.left + box.width / 2)) / (box.width / 2);
+      var dy = (point.y - (box.top + box.height / 2)) / (box.height / 2);
+      var reach = Math.min(1, Math.sqrt(dx * dx + dy * dy));
+      // Dead centre there is no direction to lean in, and an axis of zero
+      // length is not a rotation the browser can make sense of.
+      card.style.rotate = reach < 0.02 ? "none" : -dy + " " + dx + " 0 " + (reach * 2).toFixed(2) + "deg";
+      card.style.translate = "0 -2px";
     });
+  });
+
+  /* A card that leans very slightly towards the cursor. Two and a half degrees
+     is the whole range: enough that the card reads as an object being looked
+     at, not so much that a paragraph on it starts to keystone. */
+  $$("[data-tilt]").forEach(function (host) {
+    var stage = host.firstElementChild;
+    if (!stage) return;
+    var lean = Number(host.getAttribute("data-tilt")) || 6;
+    follows(host, function (box, point) {
+      if (!box.width) return;
+      var dx = point.near ? offset(box, point.x, "x", 1.6) : 0;
+      var dy = point.near ? offset(box, point.y, "y", 1.6) : 0;
+      stage.style.setProperty("--ry", -9 + dx * lean + "deg");
+      stage.style.setProperty("--rx", 5 - dy * lean + "deg");
+    });
+  });
+
+  $$("[data-magnet]").forEach(function (button) {
+    var pull = Number(button.getAttribute("data-magnet")) || 5;
+    follows(button, function (box, point) {
+      if (!box.width) return;
+      var dx = (point.x - (box.left + box.width / 2)) / box.width;
+      var dy = (point.y - (box.top + box.height / 2)) / box.height;
+      // Outside its own reach it sits still. A button that leans towards a
+      // cursor on the other side of the page is a button that is never still,
+      // which is the opposite of the point.
+      var near = point.near && Math.abs(dx) < 1.1 && Math.abs(dy) < 1.6;
+      button.style.setProperty("--mgx", near ? dx * pull + "px" : "0px");
+      button.style.setProperty("--mgy", near ? dy * pull * 0.6 + "px" : "0px");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Drawings that keep going
+  //
+  // The four drawings in the bento used to play once on entry and hold, which
+  // made them illustrations of a thing rather than the thing happening. They
+  // loop now — a line filed and a highlight pulled out of it, a document
+  // rebuilt for a different posting, a card walking the board, a follow-up
+  // coming due.
+  //
+  // This is a deliberate exception to "nothing loops", and it is bounded three
+  // ways. Every cycle begins and ends at the drawing's resting state, so a
+  // paused one is indistinguishable from a still one. Nothing runs unless it is
+  // on screen — the class goes on when the drawing enters and comes off when it
+  // leaves, so four animations are not burning a phone's battery while somebody
+  // reads the FAQ five sections down. And `calm` never adds the class at all,
+  // which leaves the finished picture exactly as it was.
+  // -------------------------------------------------------------------------
+
+  if (!calm && "IntersectionObserver" in window) {
+    var living = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          entry.target.classList.toggle("live", entry.isIntersecting);
+        });
+      },
+      { threshold: 0.2 }
+    );
+    $$("[data-live]").forEach(function (el) { living.observe(el); });
   }
 
   // -------------------------------------------------------------------------
@@ -217,12 +333,6 @@
   // -------------------------------------------------------------------------
 
   $$("[data-reveal]").forEach(function (el) {
-    once(el, function (target) { target.classList.add("in"); });
-  });
-
-  // Groups whose children animate off the parent's `in` class — the funnel
-  // bars and the velocity chart both do this so the bars grow as one gesture.
-  $$("[data-grow]").forEach(function (el) {
     once(el, function (target) { target.classList.add("in"); });
   });
 
@@ -286,6 +396,162 @@
   onScroll();
 
   // -------------------------------------------------------------------------
+  // Smoothed scrolling
+  //
+  // Every wheel notch and every key press moves a target; the page eases
+  // towards it. Trackpads included — an earlier pass left them alone on the
+  // theory that a precision device is already smooth, and the result was a page
+  // that behaved differently depending on what you happened to be holding.
+  // One behaviour, tuned once.
+  //
+  // Deliberately NOT the usual implementation of this, which translates a
+  // wrapper element and leaves the document's real scroll offset at zero. Four
+  // things here read that offset — the sticky tour chapters, the progress bar
+  // and two scroll timelines — and a transformed wrapper breaks all of them. So
+  // the scroll is real: window.scrollTo, once a frame, towards a target.
+  // Find-on-page, the back button and the scrollbar all go on working.
+  //
+  // Two things are left alone, on purpose: touch, where the platform's own
+  // momentum is better than anything written here, and a pane with its own
+  // scrollbar, which should scroll itself.
+  // -------------------------------------------------------------------------
+
+  if (!calm && window.matchMedia("(pointer: fine)").matches) {
+    (function () {
+      var target = 0;
+      var frame = 0;
+      var last = 0;
+      var gliding = false;
+      var root = document.documentElement;
+
+      /* How much of the remaining distance is closed every 16.7ms. Lower is
+         longer and glassier; higher is tighter and more like the browser. This
+         is the one number worth arguing with. */
+      var EASE = 0.115;
+
+      function limit() {
+        return Math.max(0, root.scrollHeight - window.innerHeight);
+      }
+
+      function step(now) {
+        var gap = Math.min(64, now - last);
+        last = now;
+
+        var current = window.scrollY;
+        var left = target - current;
+
+        if (Math.abs(left) < 0.4) {
+          window.scrollTo(0, target);
+          stop();
+          return;
+        }
+
+        // Frame-rate independent, or 120Hz arrives twice as fast as 60.
+        window.scrollTo(0, current + left * (1 - Math.pow(1 - EASE, gap / 16.67)));
+        frame = requestAnimationFrame(step);
+      }
+
+      function stop() {
+        frame = 0;
+        gliding = false;
+        // Hand the anchors back their smooth scrolling.
+        root.style.scrollBehavior = "";
+      }
+
+      function begin() {
+        if (gliding) return;
+        target = window.scrollY;
+        gliding = true;
+        last = performance.now();
+        // A CSS smooth scroll on every frame of our own would fight this.
+        root.style.scrollBehavior = "auto";
+      }
+
+      function push(amount) {
+        begin();
+        target = Math.max(0, Math.min(limit(), target + amount));
+        if (!frame) frame = requestAnimationFrame(step);
+      }
+
+      function goto(where) {
+        begin();
+        target = Math.max(0, Math.min(limit(), where));
+        if (!frame) frame = requestAnimationFrame(step);
+      }
+
+      /* Anything that moves the page other than this — a scrollbar drag, an
+         anchor, the browser restoring a position — becomes the new target, or
+         the next notch would yank it back to where the glide was heading. */
+      function resync() {
+        if (!gliding) target = window.scrollY;
+      }
+      window.addEventListener("scroll", resync, { passive: true });
+      window.addEventListener("resize", resync, { passive: true });
+
+      function ownScroller(node) {
+        while (node && node.nodeType === 1 && node !== document.body) {
+          var style = window.getComputedStyle(node);
+          if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 1) {
+            return true;
+          }
+          node = node.parentNode;
+        }
+        return false;
+      }
+
+      window.addEventListener(
+        "wheel",
+        function (event) {
+          if (event.ctrlKey || event.defaultPrevented) return;
+          if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+          if (ownScroller(event.target)) return;
+
+          var amount =
+            event.deltaY *
+            (event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? window.innerHeight : 1);
+          if (!amount) return;
+
+          event.preventDefault();
+          push(amount);
+        },
+        { passive: false }
+      );
+
+      /* The keys that scroll, so a page turned with the keyboard arrives the
+         same way one turned with the wheel does. Anything with its own idea of
+         what these keys mean — a field, a button, a <summary> — keeps it. */
+      var TYPING = /^(input|textarea|select)$/;
+
+      window.addEventListener("keydown", function (event) {
+        if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+
+        var on = event.target;
+        if (on && (TYPING.test((on.tagName || "").toLowerCase()) || on.isContentEditable)) return;
+        if (on && on.closest && on.closest("button, summary, a, [tabindex], [role='button']")) return;
+        if (ownScroller(on)) return;
+
+        var page = window.innerHeight * 0.88;
+        var line = 90;
+        var by = null;
+        var to = null;
+
+        if (event.key === "PageDown") by = page;
+        else if (event.key === "PageUp") by = -page;
+        else if (event.key === " " || event.key === "Spacebar") by = event.shiftKey ? -page : page;
+        else if (event.key === "ArrowDown") by = line;
+        else if (event.key === "ArrowUp") by = -line;
+        else if (event.key === "Home") to = 0;
+        else if (event.key === "End") to = limit();
+        else return;
+
+        event.preventDefault();
+        if (to !== null) goto(to);
+        else push(by);
+      });
+    })();
+  }
+
+  // -------------------------------------------------------------------------
   // The transcript
   //
   // The text is already on the page; this retypes it. Each turn waits for the
@@ -334,7 +600,15 @@
       var body = $("[data-type]", step) || step;
       var calls = $$(".call", step);
 
-      // Chips land while the sentence is still being written.
+      /* A step can spend a moment working before it says anything, which is
+         what a client connected over MCP actually does: the calls go out, they
+         come back, and only then is there an answer to write. `data-think` is
+         how long that takes; the element it shows ships hidden, so a page
+         without this file has the answer and no spinner. */
+      var think = Number(step.getAttribute("data-think")) || 0;
+      var thinking = $("[data-thinking]", step);
+
+      // Chips land while it is still working, and go green as each returns.
       calls.forEach(function (call, i) {
         setTimeout(function () {
           call.classList.add("in");
@@ -343,9 +617,20 @@
       });
 
       step.classList.add("in");
-      typeInto(body, function () {
-        setTimeout(function () { next(index + 1); }, Number(step.getAttribute("data-pause")) || 480);
-      });
+
+      function speak() {
+        if (thinking) thinking.hidden = true;
+        typeInto(body, function () {
+          setTimeout(function () { next(index + 1); }, Number(step.getAttribute("data-pause")) || 480);
+        });
+      }
+
+      if (think && thinking) {
+        thinking.hidden = false;
+        setTimeout(speak, think);
+      } else {
+        speak();
+      }
     }
 
     next(0);
@@ -355,86 +640,44 @@
     if (calm) {
       $$(".call", tape).forEach(function (c) { c.classList.add("in", "done"); });
       $$("[data-step]", tape).forEach(function (s) { s.classList.add("in"); });
+      $$("[data-thinking]", tape).forEach(function (t) { t.hidden = true; });
       return;
     }
-    // Hide the answer text until its turn comes, without hiding the layout it
-    // occupies — the panel must not change height while it plays.
-    $$("[data-type]", tape).forEach(function (el) {
-      el.setAttribute("data-text", el.textContent);
-      el.textContent = "";
-    });
-    once(tape, playTape, "0px 0px -20% 0px");
-  });
+    /* Hide the answer text until its turn comes, without hiding the layout it
+       occupies — the panel must not change height while it plays, or every
+       section below it walks down the page a line at a time while somebody is
+       reading. Measure the finished line, hold that height, then empty it.
 
-  // -------------------------------------------------------------------------
-  // Numbers that count up
-  // -------------------------------------------------------------------------
+       Measured again once the webfont has landed, because Inter is wider than
+       the fallback and a height reserved against the wrong face is the wrong
+       height. Only for a tape that has not started: re-measuring one mid-type
+       would throw away what it had written. */
+    var lines = $$("[data-type]", tape);
 
-  $$("[data-count]").forEach(function (el) {
-    var target = Number(el.getAttribute("data-count"));
-    if (!isFinite(target)) return;
-    if (calm) return;
-    once(el, function () {
-      var start = performance.now();
-      var duration = 900;
-      (function frame(now) {
-        var t = Math.min(1, (now - start) / duration);
-        // Same deceleration as --ease-enter: fast, then coasting.
-        var eased = 1 - Math.pow(1 - t, 4);
-        el.textContent = String(Math.round(target * eased));
-        if (t < 1) requestAnimationFrame(frame);
-        else el.textContent = String(target);
-      })(start);
-    });
-  });
+    function reserve() {
+      lines.forEach(function (el) {
+        var full = el.getAttribute("data-text");
+        var showing = el.textContent;
+        el.style.minHeight = "";
+        el.textContent = full;
+        el.style.minHeight = el.getBoundingClientRect().height + "px";
+        el.textContent = showing;
+      });
+    }
 
-  // -------------------------------------------------------------------------
-  // The board: one card moves a stage, once, when the board is first seen.
-  //
-  // It is the same transition the real board runs on a drop — the card lands
-  // where you put it before the server has replied.
-  // -------------------------------------------------------------------------
+    lines.forEach(function (el) { el.setAttribute("data-text", el.textContent); });
+    reserve();
+    lines.forEach(function (el) { el.textContent = ""; });
 
-  $$("[data-move]").forEach(function (board) {
-    if (calm) return;
-    once(board, function () {
-      var card = $("[data-card]", board);
-      var to = $('[data-drop="' + board.getAttribute("data-move") + '"]', board);
-      if (!card || !to) return;
+    var started = false;
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function () { if (!started) reserve(); });
+    }
 
-      setTimeout(function () {
-        var from = card.getBoundingClientRect();
-        to.classList.add("hot");
-        var empty = $(".col-empty", to);
-        if (empty) empty.remove();
-        to.appendChild(card);
-        var landed = card.getBoundingClientRect();
-
-        card.animate(
-          [
-            {
-              transform:
-                "translate(" + (from.left - landed.left) + "px," + (from.top - landed.top) + "px) rotate(2deg)",
-              boxShadow: "var(--shadow-overlay)",
-            },
-            { transform: "none", boxShadow: "var(--shadow-card)" },
-          ],
-          { duration: 620, easing: "cubic-bezier(0.16,1,0.3,1)" }
-        );
-
-        var chip = $("[data-chip]", card);
-        if (chip) {
-          chip.style.setProperty("--tone", "var(--stage-interview)");
-          chip.textContent = "Interviewing";
-        }
-        card.style.setProperty("--tone", "var(--stage-interview)");
-
-        setTimeout(function () {
-          to.classList.remove("hot");
-          fit();
-        }, 700);
-      }, 620);
-    });
+    once(tape, function (target) {
+      started = true;
+      playTape(target);
+    }, "0px 0px -20% 0px");
   });
 
   // -------------------------------------------------------------------------
@@ -490,112 +733,34 @@
   }
 
   // -------------------------------------------------------------------------
-  // The tour: which chapter is on screen
+  // Monthly or annual
+  //
+  // Both figures are in the markup and the annual one ships hidden, so the page
+  // without this file is the monthly price and the control is not there to
+  // press. All this does is swap which of the two pairs is showing.
   // -------------------------------------------------------------------------
 
-  var scenes = $$("[data-scene]");
-  var chapters = $$("[data-chapter]");
+  $$("[data-plans]").forEach(function (group) {
+    var buttons = $$("button[data-period]", group);
+    var swappable = $$("[data-when]");
+    if (!buttons.length || !swappable.length) return;
 
-  if (scenes.length && chapters.length && "IntersectionObserver" in window) {
-    var visible = {};
-    var spy = new IntersectionObserver(
-      function (entries) {
-        entries.forEach(function (entry) {
-          visible[entry.target.getAttribute("data-scene")] = entry.isIntersecting
-            ? entry.intersectionRatio
-            : 0;
-        });
-        var best = null;
-        var bestRatio = 0;
-        Object.keys(visible).forEach(function (key) {
-          if (visible[key] > bestRatio) { bestRatio = visible[key]; best = key; }
-        });
-        if (!best) return;
-        chapters.forEach(function (chapter) {
-          chapter.classList.toggle("on", chapter.getAttribute("data-chapter") === best);
-        });
-      },
-      { rootMargin: "-20% 0px -40% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] }
-    );
-    scenes.forEach(function (scene) { spy.observe(scene); });
-  }
+    group.hidden = false;
 
-  chapters.forEach(function (chapter) {
-    chapter.addEventListener("click", function () {
-      var scene = $('[data-scene="' + chapter.getAttribute("data-chapter") + '"]');
-      if (scene) scene.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // The tool catalogue
-  // -------------------------------------------------------------------------
-
-  var catalogue = $("[data-catalogue]");
-  if (catalogue) {
-    var tools = $$(".tool", catalogue);
-    var input = $(".search input", catalogue);
-    var count = $("[data-tools-count]", catalogue);
-    var empty = $(".tools-empty", catalogue);
-    var filters = $$(".filter", catalogue);
-    var group = "all";
-
-    function apply() {
-      var query = (input && input.value || "").trim().toLowerCase();
-      var shown = 0;
-      tools.forEach(function (tool) {
-        var inGroup = group === "all" || tool.getAttribute("data-group") === group;
-        var match = !query || tool.getAttribute("data-find").indexOf(query) > -1;
-        var show = inGroup && match;
-        tool.classList.toggle("gone", !show);
-        if (show) shown++;
+    function show(period) {
+      buttons.forEach(function (button) {
+        var on = button.getAttribute("data-period") === period;
+        button.classList.toggle("on", on);
+        button.setAttribute("aria-pressed", on ? "true" : "false");
       });
-      if (count) count.textContent = String(shown);
-      if (empty) empty.classList.toggle("on", shown === 0);
+      swappable.forEach(function (el) {
+        el.hidden = el.getAttribute("data-when") !== period;
+      });
     }
 
-    filters.forEach(function (filter) {
-      filter.addEventListener("click", function () {
-        group = filter.getAttribute("data-group");
-        filters.forEach(function (f) { f.classList.toggle("on", f === filter); });
-        apply();
-      });
-    });
-    if (input) input.addEventListener("input", apply);
-    apply();
-  }
-
-  // -------------------------------------------------------------------------
-  // Connection recipes
-  // -------------------------------------------------------------------------
-
-  $$("[data-tabs]").forEach(function (group) {
-    var tabs = $$("[data-tab]", group);
-    var panes = $$("[data-pane]", group);
-    tabs.forEach(function (tab) {
-      tab.addEventListener("click", function () {
-        var id = tab.getAttribute("data-tab");
-        tabs.forEach(function (t) {
-          var on = t === tab;
-          t.classList.toggle("on", on);
-          t.setAttribute("aria-selected", on ? "true" : "false");
-        });
-        panes.forEach(function (pane) {
-          pane.hidden = pane.getAttribute("data-pane") !== id;
-        });
-      });
-    });
-  });
-
-  // Copy buttons on the code blocks that people actually run.
-  $$("[data-copy]").forEach(function (button) {
-    button.addEventListener("click", function () {
-      var source = document.getElementById(button.getAttribute("data-copy"));
-      if (!source || !navigator.clipboard) return;
-      navigator.clipboard.writeText(source.innerText.trim()).then(function () {
-        var was = button.textContent;
-        button.textContent = "Copied";
-        setTimeout(function () { button.textContent = was; }, 1600);
+    buttons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        show(button.getAttribute("data-period"));
       });
     });
   });

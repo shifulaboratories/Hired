@@ -34,7 +34,6 @@ export type ListRow = {
   stage: Stage;
   location: string;
   salaryRange: string;
-  excitement: number;
   nextFollowUpAt: string | null;
   activityCount: number;
   updatedAt: string;
@@ -47,6 +46,44 @@ export type ListRow = {
   /** Null when logos are off, or no domain could be worked out. */
   domain: string | null;
 };
+
+/**
+ * What a row is built from. Structural, so listApplications' own return type
+ * satisfies it without either side importing the other.
+ */
+export type ListSource = {
+  id: string;
+  company: { name: string };
+  roleTitle: string;
+  stage: Stage;
+  location: string;
+  salaryRange: string;
+  nextFollowUpAt: Date | null;
+  updatedAt: Date;
+  daysInStage: number;
+  quietDays: number;
+  jobUrl: string;
+  _count: { activities: number };
+};
+
+/** One mapping, shared by the table and the export, so they cannot drift. */
+export function toListRow(application: ListSource, domain: string | null): ListRow {
+  return {
+    id: application.id,
+    company: application.company.name,
+    roleTitle: application.roleTitle,
+    stage: application.stage,
+    location: application.location,
+    salaryRange: application.salaryRange,
+    nextFollowUpAt: application.nextFollowUpAt?.toISOString() ?? null,
+    activityCount: application._count.activities,
+    updatedAt: application.updatedAt.toISOString(),
+    daysInStage: application.daysInStage,
+    quietDays: application.quietDays,
+    jobUrl: application.jobUrl,
+    domain,
+  };
+}
 
 const STAGE_ORDER: Stage[] = [
   "OFFER",

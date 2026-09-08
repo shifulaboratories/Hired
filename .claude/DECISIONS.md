@@ -3791,6 +3791,1115 @@ move, and the product-facing `skills/` tree, which carries no retired vocabulary
 **Applies to:** `src/lib/mcp/tools.ts`, `src/lib/mcp/handler.ts`, `README.md`,
 `docs/tools/{me,connections,overview}.mdx`.
 
+---
+
+## 2026-09-03 — The landing page, second pass
+
+**The hero lost the mark it had just been given.** One page down it read as a logo asking
+to be admired rather than a headline making an argument, and it pushed the transcript —
+which is the actual evidence — below the fold on a laptop. The object stays in the nav,
+where it is a label, and on /coming-soon/, where it is the only thing above the form.
+
+**"What's in it" is one landscape card and three portrait ones, not four squares.** Two
+plus two was tried first and the problem was structural, not aesthetic: in a row of two,
+the taller card sets the height and the shorter one opens a hole under itself, and the
+hole moved around as the text rewrapped. A full-width card has no neighbour to be
+stretched by, and three cards with the same bullet count come out the same height on their
+own. Me gets the big one because the other three are built out of it.
+
+**Each card carries a diagram, animated off the card's own `.in`.** The reveal observer
+already puts that class there, so four drawings cost no JavaScript and no second observer —
+`.js .cell.in .viz i { scale: 1 1 }` is the whole mechanism. They are diagrams and not
+screenshots on purpose: the tour below has the real screens at the width the app is used
+at, and the same screenshot shrunk to 280px is illegible as a screenshot and useless as a
+diagram. The pipeline card's moving card is drawn in the column it ends up in and animated
+*from* where it was, which needs no measuring and no JS, and is the same trick the real
+board plays on a drop.
+
+**The conversation section shows a conversation, including the part where it is working.**
+A screenshot of a chat can show a question and an answer; it cannot show the four seconds
+in between, which is the only part that demonstrates anything is happening at all. So
+`playTape` grew a `data-think` phase: the step shows a working state, the tool chips land
+and go green one at a time, and only then is the reply typed.
+
+**That working state is laid over the answer, not stacked above it.** Stacked, it added
+its own height and the panel grew by eighty pixels the moment it appeared. `.answer` is
+the shared box; the skeleton sits in the space the finished reply has already reserved.
+
+**And the reply's height is now actually reserved.** `motion.js` has claimed since it was
+written that emptying a line "does not hide the layout it occupies". It did: clearing
+`textContent` collapses the box, so every tape grew a line at a time while somebody was
+reading it and everything below walked down the page. It measures the finished line, holds
+that height, then empties it — and measures again on `document.fonts.ready`, because Inter
+is wider than the fallback and a height reserved against the wrong face is the wrong
+height. Only for a tape that has not started; re-measuring one mid-type would throw away
+what it had written.
+
+**Two exceptions to "nothing loops", and both are the same exception.** The typing caret
+already blinked forever and the file said why: it indicates something in progress and it
+stops when that thing does. The thinking dots and the skeleton sweep are that, with an
+iteration count so they run out even if the script that hides them never ran.
+
+**Monthly and annual, with both figures in the markup.** The annual pair ships `hidden`
+and the control ships `hidden`, so a page with no scripting is the monthly price and no
+buttons that do nothing — the monthly figure being the one anybody comparing starts from.
+`$120` a year is two months off, said on the button rather than in a footnote, and it
+shrinks rather than disappears on a phone: a toggle with no stated benefit is a toggle
+nobody presses. The figure is a placeholder in four places now — the card, the fine print,
+the FAQ answer, and the FAQ answer again inside the FAQPage block — and they move together.
+
+**`.tier .price span` was catching the price.** It styles the "/ month" beside the figure
+at 13px and faint, and the figure had just become a span too. Ten minutes of a $12 that
+looked like a footnote.
+
+**The self-host band is gone and every link that pointed at it points at the manual.** It
+was the answer to "what happens if you lose interest", which is a real question, but it
+was a compose file three scrolls below a page whose primary action is a signup form. The
+pricing card's free column still says the whole thing out loud; the argument for it belongs
+at docs.hired.tools, which is written for someone who has already decided.
+
+**Smoothed scrolling that keeps the real scroll position.** The usual implementation
+translates a wrapper and leaves `scrollY` at zero. Three things on this page read
+`scrollY` — the sticky tour chapters, the progress bar and two scroll timelines — and a
+transformed wrapper breaks all of them, so this is `window.scrollTo` once a frame towards
+a target the wheel moves. Frame-rate independent, or 120Hz arrives twice as fast. Left
+alone: touch, because the platform's momentum is better than anything written here; a pane
+with its own scrollbar; and precision devices, which already emit a smooth stream that
+easing only adds lag to — a wheel delta under 40px in pixel mode is a trackpad and is not
+touched. Anything that moves the page other than the wheel becomes the new target, or the
+next notch yanks it back.
+
+**Verified in a browser at 1360 and 390:** one notch eases 0 → 195 → 316 → … → 399 over
+about four hundred milliseconds; a 12px delta is not intercepted and a 120px one is; the
+nav's anchors still land (they take about 1.5s for thirteen thousand pixels, which is the
+browser's own smooth scroll, not this); the billing switch swaps both the figure and the
+terms; and every in-page anchor in the file still resolves to an id that exists.
+
+**Applies to:** `site/{index.html,styles.css,motion.js}`, `tools/build-site.mjs`.
+
+---
+
+## 2026-09-03 — Why it exists, said without a filename
+
+**`final_v3` was a joke for people who name files.** It was the headline of the section
+that has to land first, and it asked the reader to already know what a version-suffixed
+filename is. The section now says the asymmetry straight: *They keep a file on you. You
+keep it all in your head.* The paragraph lost "req" for the same reason — that is recruiter
+vocabulary, and the person reading this has never been on that side of it.
+
+**The gap is now an object, because two objects at different depths is what reads as 3D.**
+Their file sits back, thick and full and shut; yours sits in front, thin and half empty,
+half of its lines never written. One `preserve-3d` stage, one card at `translateZ(-42px)`
+and one at `+28px`, and the whole thing leans towards the pointer — so moving the cursor
+slides them past each other. That parallax is the entire effect. An extrusion on a single
+flat card reads as a drop shadow no matter how many layers it has; two things moving at
+different rates read as a space with things in it, which is the thing the extruded mark
+had to work much harder for.
+
+**A card pushed towards the viewer is drawn larger.** The front file grew out of its own
+column until the stage got padding. Obvious in hindsight, invisible until a screenshot at
+1360 showed the corner clipped.
+
+**Scrolling now behaves the same whatever you are holding.** The first pass exempted
+precision devices on the theory that a trackpad is already smooth, and the result was a
+page that felt different depending on the hardware — which is worse than either behaviour
+on its own. One easing for everything, longer than before (0.115 a frame, about six hundred
+milliseconds to settle), plus the keys that scroll, so a page turned with PageDown arrives
+the way one turned with the wheel does. A field, a button or a `<summary>` keeps its own
+idea of what a key means.
+
+**The real cause of "not smooth" was probably not the easing.** A dozen elements answered
+the pointer and each one attached its own `pointermove` and read a bounding box inside it.
+A read after somebody else's write is a forced layout, so moving the mouse cost twelve of
+them per event. They share one listener and one frame now — every rect read together, then
+every style written together — which is one layout per frame however many things are
+watching. That is the fix; the easing tune is the part you notice.
+
+**The bento cards lean on `rotate`, not `transform`.** `transform` on those elements
+already belongs to the reveal, and two owners of one property is a bug waiting for whoever
+edits the other. The independent `rotate` property composes with it. The axis is
+perpendicular to the direction of the cursor, which is what makes the card lean *towards*
+it rather than pivot about an edge — and dead centre there is no direction at all, so a
+zero-length axis has to be caught or the browser normalises it to something arbitrary.
+
+**Two degrees, and an edge lit from where the cursor is.** More lean than that and a
+paragraph starts to keystone. The edge is the standard masked-ring trick — a padded
+pseudo-element, `mask-composite: exclude` — and at 1px and 62% it was invisible in a
+screenshot; 1.5px and 92% is the difference between an effect and a rumour of one.
+
+**The tool count on this page had gone stale, exactly as CLAUDE.md warns.** It said 73;
+`tools/list` returns 104 for a member. Corrected by hand, which is the same thing that will
+go wrong again — the generator owns every count in the manual but not the ones on the
+landing page.
+
+**Applies to:** `site/{index.html,styles.css,motion.js}`.
+
+---
+
+## 2026-09-03 — Half the landing page, deliberately
+
+Measured before touching anything: **twelve sections, 16,300px, eighteen screens, 3,100
+words.** A page that converts is six to eight screens and under a thousand. It now runs
+**nine sections, 8,650px, 9.6 screens, 1,490 words** — half the height, half the words.
+
+**The waste was not spread evenly; four sections said "here is what it does" four times.**
+The bento named the four areas, `#app` showed one screenshot of them, the tour showed the
+same four areas again at 4,379px and 904 words, and `#diagnosis` blew one feature up to a
+full section. Together they were 47% of the page. The tour went entirely — it was the
+single biggest thing on the page and it repeated what the section above it had just said —
+and `#app` stayed, because a product page needs one real screenshot and its frame is
+already a video slot waiting for a demo.
+
+**`#connect` was setup documentation on a sales page.** Five client tabs and a config
+blob, for a step nobody takes before signing up. The hero already says "works inside Claude
+· ChatGPT · Cursor", which is the claim; the how belongs in the manual.
+
+**The tool catalogue went, and that is the one cut worth arguing about.** Eighty tool names
+with descriptions, kept by hand, already stale against the 104 `tools/list` actually
+returns, written for whoever reads function names — which is not who this page is for. It
+was behind a `<details>` so it cost no screens, but it was 350 lines of markup that had to
+be right and never would be. One sentence and a link to the manual replaces it, and the
+manual is generated, so it stays correct on its own. This also permanently kills the
+stale-count problem the last entry predicted would come back.
+
+**"Nothing on a resume is invented" kept its argument and lost two of its four exhibits.**
+The refusal and the requirement check *show* it. The server-instructions code block and the
+guardrails card *asserted* it a third and fourth time, and one of them put `handler.ts` on
+the page.
+
+**Open source is now in pricing and one FAQ answer.** It was in 24 places across six
+sections. Gone: the "1 environment variable — DATABASE_URL" stat tile, the spec sheet at
+the foot (`AGPL-3.0 · Next.js 15 · PostgreSQL · MCP Streamable HTTP…`, which was the last
+thing a job seeker read), the "or skip the queue and run it yourself" note under the
+closing form, and the Docker/terminal copy that left with `#connect`. What is left says it
+where somebody is deciding what to pay: the free column, and the cost answer, which
+absorbed the old "what if you stop caring" question because that is the only reason the
+licence matters to somebody who will never clone it.
+
+**Nine FAQ questions became five**, in the markup and in the FAQPage block together —
+`build-site.mjs` fails the build when those disagree, which is exactly what that check is
+for and the reason this was safe to do quickly.
+
+**Dead code went with the sections.** Nine handlers in `motion.js` (`data-scene`,
+`data-chapter`, `data-move`, `data-tabs`, `data-tab`, `data-pane`, `data-copy`,
+`data-count`, `data-grow`) and about 9,000 characters of CSS for the tour, the catalogue,
+the pipeline-board mock and the funnel charts. Every remaining `$$("[data-…]")` in
+`motion.js` now matches an attribute that is still in the markup — that is the check worth
+running after a cut this size, and it caught the last two dangling footer anchors too.
+
+**The stat tiles went as a row, not one at a time.** Product-spec numbers — how many tools,
+how many env vars — in the middle of the one emotional section on the page. "104 things it
+can do on your say-so" is a sentence for somebody who has already decided.
+
+**Applies to:** `site/{index.html,styles.css,motion.js}`.
+
+---
+
+## 2026-09-03 — The four bento drawings run
+
+The drawings in "What's in it" played once on entry and then held. That made each one an
+illustration of a thing rather than the thing happening, which is the only reason they are
+on the page. They loop now: a line arrives in the record and a highlight is pulled out of
+it, a resume's body re-tailors itself and the page count holds at one, a card walks the
+four pipeline stages, and "due" moves down the three people in turn.
+
+**This reverses `motion.js`'s own "nothing loops" rule, on purpose, and the reversal is
+bounded three ways.** Written into the CSS header so the next person does not have to
+reconstruct it:
+
+1. **Every cycle starts and ends at rest** — the state the entry reveal leaves the drawing
+   in. A paused cycle, a cycle that never starts and no cycle at all are the same picture,
+   which is what makes the other two bounds cheap rather than load-bearing.
+2. **Nothing runs off screen.** One `IntersectionObserver` toggles `.live` on
+   `[data-live]`, so a phone reading the FAQ is compositing nothing. At 390px only one
+   drawing is ever live, because they stack.
+3. **`calm` never adds `.live`**, and a `prefers-reduced-motion` block is the belt to that
+   pair of braces — it also puts back the one element the loop owns outright.
+
+Everything animates `transform`, `scale` and `opacity` only, so all of it is on the
+compositor. The four periods (9s, 10s, 11s, 12s) are deliberately not multiples of each
+other, or the section falls into step with itself and starts reading as a metronome.
+
+**Three bugs worth writing down, because each cost more than the feature did:**
+
+**A property that first appears at 90% is interpolated from 0%.** `walk-the-board` set
+`opacity: 0` at 90% to fade the traveller out, and the browser correctly read that as "fade
+from 1 to 0 across the whole cycle" — a DOM probe measured 0.77, 0.32, 0.12, 0.04, 0.01. A
+keyframed property has to be pinned at the frames where it should not be moving, not only
+at the frames where it should.
+
+**`.vz-trip` was an `<i>` and `.viz i` is a rule.** It inherited `height: 5px`,
+`background: var(--rim)` and `scale: 0 1` and rendered as a thin grey line rather than a
+card. Changed to a `<span>` with `display: block`. The `.viz` drawings use bare `i` and `b`
+as their primitives, so anything added to one that is *not* a line or a label needs a
+different element, not an override.
+
+**The entry reveal and the loop fought over the same element.**
+`.js .cell.in .viz i { scale: 1 1 }` beat the loop's own resting `scale: 0 1`, so the line
+that is supposed to arrive was already there. It is now `i:not(.vz-fresh)`: an element a
+loop owns outright has to be excluded from the entry stagger rather than fixed up
+afterwards.
+
+**Applies to:** `site/{index.html,styles.css,motion.js}`.
+
+---
+
+## 2026-09-03 — Delete becomes reversible, and the CRM lists grow up
+
+Five asks in one batch: real filters and sorting on both CRM lists, multi-select with bulk
+changes, an export per list, an archive that deleting goes through with a 30-day sweep, and a
+per-view choice of which fields the pipeline shows.
+
+**The archive covers three models, and that number is the design.** Company, Contact,
+Application. Not resumes, not roles, not notes, not tasks, not tags, not saved views. The
+reason is the one thing a soft delete cannot buy you: every read of an archivable model has
+to exclude archived rows, and nothing in this toolchain catches one that forgets. I checked
+whether a Prisma client extension could make it the default and it cannot — measured, not
+assumed: an extension on `findMany`/`findFirst`/`count` works and the caller's own `where`
+survives, but a nested `include` and a nested `_count` both come back unfiltered. That is
+worse than no net at all, because it teaches you to stop checking exactly where it stops
+working. So every read is explicit, seven deliberate exceptions carry a comment saying why,
+and the scope stays small enough to audit by hand.
+
+**`archiveKey`, not a partial unique index.** `Company @@unique([userId, name])` would have
+let an archived "Stripe" block tracking a new job at Stripe. Postgres says that as
+`CREATE UNIQUE INDEX … WHERE archived_at IS NULL`; Prisma cannot model one, so every future
+`migrate dev` would offer to drop it as drift, and drift a tool offers to fix is worse than a
+column. So: `""` while live, the row's own id once archived, and the constraint becomes
+`(userId, name, archiveKey)`. Among live rows that is exactly the old constraint. Proven in
+SQL before any code was written — archived Stripe, new live Stripe, second archived Stripe,
+and a second LIVE Stripe still refused.
+
+**`upsertCompanyByName` matches only live rows.** It could have resurrected the archived one,
+and that reading is defensible, but it would mean tracking a new job at Stripe silently
+un-deleting every application that went into the bin with the old record. Restoring the old
+one afterwards is refused by name and points at `merge_companies`, which is the tool for
+deciding what one record says.
+
+**Two bugs a real database found that the compiler could not.** `writeCompanyTags` was
+written and never called, so company tags were silently dropped on every write; and
+`updateCompany` decided "no such company" from `updateMany`'s count, which is zero for a
+patch that touches no columns — so saving only tags threw. Both are the same lesson the tags
+entry already recorded: a write path with no round trip through a real database is a write
+path nobody has run.
+
+**Filtering moved out of the Prisma `where`.** A faceted count is "how many would survive if
+I relaxed this one dimension", which only has an answer while you hold the unfiltered set.
+Keeping the cut in SQL for the list and a predicate for the counts would have been two
+definitions of one rule. It costs one full read of a personal-sized table. Two bugs fell out
+of the rewrite: passing a company id alongside the `no-company` cut had the second `where`
+assignment silently overwrite the first, and `ping-due` took a fresh `new Date()` inside the
+query so a long list could answer differently for its first row and its last.
+
+**Bulk tagging adds and removes; it does not replace.** Replace would mean "tag these nine as
+fintech" stripping the size and location off all nine. And ids go through a kind allowlist
+first: all four of a company's lists share one join table, so nothing at the database level
+stops an APPLICATION tag landing on a company, where no screen renders it and no picker can
+take it back off — one click across forty rows would write forty invisible, unremovable rows.
+
+**`scheduleContactPings` validates its date rather than handing it to `toDate`.** `toDate`
+returns null for anything it cannot read, so "next Tuesday" — a plausible thing for an
+assistant to send — would have cleared the ping date on every person in the batch instead of
+failing.
+
+**The selection bar lives inside the list component.** The obvious split — server page renders
+the table, client component renders the bar — breaks on the one path that matters: filter
+down to no matches and the table subtree unmounts, taking the selection with it. The bar and
+the empty state are now siblings inside one client component, and when what you ticked is off
+screen it says so.
+
+**The export always includes closed applications.** `listApplications` hides them by default,
+and somebody exporting before a clear-out wants the rejections most of all — a file that
+silently dropped them would look complete and be wrong at the only moment it mattered. CSV
+cells beginning `=`, `+`, `-` or `@` are prefixed, because a note beginning "=2+2" is a
+formula to Excel.
+
+**The purge has no cron, and the entry should say so honestly.** There is no worker in this
+app. `sweepArchive` runs at boot, at sign-in, from the MCP token resolver's existing
+once-a-minute throttle, and `purgeExpiredFor` runs whenever somebody archives something — the
+act that fills the bin trims it. It throttles through a Setting row rather than a process
+timer, because the transport is stateless and may be more than one replica. The honest gap:
+an instance nobody restarts, nobody signs into and nobody archives anything on purges
+nothing. The direction is over-retention, never over-deletion, and the screen states each
+row's own purge date rather than the header promising a guarantee the app cannot keep.
+
+**Archived records read as gone by id, not just in lists.** `getCompany`, `getContact` and
+`getApplication` return null for an archived row, so a bookmarked URL 404s. The alternative —
+render the page with a banner and every control disabled — is a lot of surface for a state
+whose one useful action (restore) is on a screen built for it. A clean not-found is what "I
+deleted this" should look like.
+
+**Field visibility is stored, and empty means the defaults.** Three `String[]` columns on
+Profile. An empty list is "I have never chosen", which is what keeps every existing account
+looking as it did and what makes a field added to a catalogue later appear for everybody;
+meaning genuinely nothing needed its own sentinel. The view is a positional, enum-validated
+argument rather than a key in a patch bag — through `pick` a mistyped view would have been
+dropped and reported back as a success over a board that never moved.
+
+**Applies to:** `prisma/schema.prisma` + `20250126000000_archive` + `20250127000000_pipeline_fields`,
+`src/lib/data/{archive,export,pipeline,tags,me,resumes,pipeline-share,onboarding,users}.ts`,
+`src/lib/{crm-filters,pipeline-fields,pipeline-list,settings,auth,bootstrap}.ts`,
+`src/lib/mcp/{tools,handler}.ts`, `src/server/actions.ts`, `src/components/{archive,crm,filters,pipeline}/`,
+`src/app/(app)/{archive,crm,applications}/`, `src/app/api/export/`, `tools/gen-tool-docs.mjs`,
+and the manual.
+
+## 2026-09-03 — What the adversarial pass found in the archive batch
+
+A hundred and one agents read the batch above; nineteen findings survived three independent
+skeptics each. The ones that changed the code, and why they were not obvious:
+
+**A scoped empty of the bin destroyed rows it reported as untouched.** `Application.company`
+is `ON DELETE CASCADE` at the database level. "Empty just the companies" deleted the company
+rows and let the foreign key take their archived applications, then reported
+`application: 0` — the one number somebody reads before agreeing to it. Now
+`destroyArchivedCompanies` deletes those applications explicitly and counts them first, and
+`purgeExpiredFor` and `sweepArchive` go through the same helper. The `none: { archivedAt:
+null }` guard already stopped a LIVE application riding along; what was missing was honesty
+about the archived ones.
+
+There is one edge the foreign key does not let us out of: a company past its window whose
+archived application is not yet past its own goes when the company goes. Every real path
+archives the two together, so the application's window is never the later of the pair — the
+only way to construct it is to edit `archivedAt` by hand. Measured, not assumed.
+
+**Restoring one application woke every sibling.** An application under an archived company
+cannot be drawn anywhere, so restoring one has to bring its company back too. It called the
+same `restoreCompany` the company row uses, which also un-archives everything swept in with
+it — so asking for one application back silently returned nine. `restoreCompany` now takes
+`withApplications`, false on that path.
+
+**"with 3 applications" promised more than the restore delivered.** The archive row counted
+every archived application under a company; the restore only brings back the ones it swept in
+(`archivedWith` set), leaving anything binned separately where the person put it. The count
+is now filtered to match.
+
+**A `$extends` query extension does not reach nested reads.** Measured against a real
+Postgres, not inferred: the client extension covers top-level `findMany`/`findFirst`/`count`,
+and silently does nothing for a nested `include` or a nested `_count`. That is the whole
+reason this feature filters by hand in every read rather than globally, and the reason the
+archivable set is three models — small enough to audit by hand, because nothing in the
+toolchain catches a read that forgets. Three nested reads were still wrong and are fixed:
+`listResumes` and `getResume` counted archived applications against a resume, and
+`diagnoseSearch` counted archived transitions.
+
+**Two descriptions promised behaviour the schema did not have.** `export_csv` said companies
+and contacts take the same filters as the list tools while exposing only `kind`, `ids`,
+`search` and `query` — a filtered request returned everything, which is worse than refusing.
+And `ids` intersects with the other arguments rather than replacing them; the description now
+says so, because the code's behaviour is the more predictable of the two. `get_pipeline_fields`
+said stage is always drawn, one field away from an `available` list that returns stage as
+optional on the calendar. A tool description that contradicts its own output is a bug.
+
+**The archive screen printed the whole bin's count next to a filtered list.** Every other list
+on the site prints what is on screen. With a search on, the archive printed the larger number.
+It now says both.
+
+**The row checkboxes on both CRM lists could not be clicked.** The stretched-link pattern
+(`before:absolute before:inset-0` on the `<Link>`) paints its overlay over any sibling
+earlier in DOM order — `relative` is not enough, it needs a stacking order. Found by driving a
+real browser, then confirmed with `elementFromPoint` against the compiled CSS: before the fix
+the element at the checkbox's centre is the `<a>`.
+
+**Applies to:** `src/lib/data/{archive,resumes,pipeline}.ts`, `src/lib/{crm-filters,pipeline-fields}.ts`,
+`src/lib/mcp/tools.ts`, `src/components/{archive,crm,pipeline}/`, `src/app/(app)/archive/page.tsx`,
+and the manual.
+
+## 2026-09-03 — Merging the archive batch across Gmail, Calendar and the Me rename
+
+Main had moved a long way: Gmail and Calendar read live, the resume grid moved onto Me, and
+the landing page was rebuilt twice. Five files conflicted, and all five were the same shape —
+two branches both appending to a list.
+
+**The conflicts were all bookkeeping.** The decision log takes both sides in date order.
+`docs.json`, the generator's `SECTIONS` and the README's three hand-carried tool counts each
+needed both entries rather than a winner; the counts came from running the generator after
+the code merged, which is the only number worth trusting. `overview.mdx` took main's copy
+wholesale because everything this branch changed in it sits between `generated:` markers.
+
+**The merge's real work was the archive audit, and it found six.** Everything main added
+compiled cleanly against this branch and was wrong at runtime: `list_correspondence` would
+happily return the mail behind an archived company, person or application, and the calendar
+matched attendees against archived companies and people. A stale id an assistant is still
+holding is exactly how somebody reaches a deleted record, so these read like the bug the
+archive exists to prevent. Six reads in `src/lib/data/google.ts` now filter — three subject
+lookups, the resume's applications and their people, and both sides of the calendar match,
+each reaching through its join where there is one.
+
+This is the cost the archive was designed to have, and it landed on the first feature written
+after it: nothing in the toolchain catches a read that forgets, so every merge with new reads
+of Company, Contact or Application has to be audited by hand. A script that walks each
+`db.<model>.<op>(...)` call expression and reports the ones with no archive predicate does
+the mechanical half in a second; the seven it flags are the documented exceptions.
+
+**The audit found one this branch had left too.** A tag's count — the number beside it in
+every picker, and the "comes off N things" a person agrees to before deleting one — counted
+archived rows. Measured on a real database: two, where one thing wore it. All three relations
+are join tables, so each predicate reaches through the link. The two counts that stay
+unfiltered now say why in a comment: `instanceStats` and the admin's per-account row counts
+are an operator looking at what is on disk, and a row in somebody's archive is still on disk.
+
+**Applies to:** `src/lib/data/{google,tags,users}.ts`, `.claude/DECISIONS.md`, `README.md`,
+`docs/docs.json`, `docs/tools/overview.mdx`, `tools/gen-tool-docs.mjs`.
+
+## 2026-09-03 — The parity and docs pass after the merge
+
+A tool audit and a manual audit over the merged tree. Parity came back clean: 145 tools,
+30 admin-only, every server action covered except four that are deliberately not.
+
+**The four uncovered actions, and why three of them should stay that way.**
+`loginAction`, `setupAction` and `acceptInviteAction` are how you get a connection in the
+first place — a tool for them would be authenticating over a channel that is already
+authenticated. `testConnectionAction` calls the server's own endpoint and counts what
+answers, which over MCP is `tools/list`. `changeOwnPasswordAction` is the deliberate one: a
+password typed into a chat is a password in a transcript. The one worth revisiting is
+`updateOwnAccountAction` — `update_profile` writes the Profile row's email, which is the one
+printed on a resume, and there is no tool for the User row's name and email, which is the one
+you sign in with. Two fields called `email` that mean different things, and only one is
+reachable by conversation. Left alone here because it is not this batch's, and noted so the
+next person does not have to work it out again.
+
+**The manual was stale in five places and the product skills in more.** The pipeline concepts
+page still said `delete_company` refuses while applications point at it, and still said the
+stage is never optional, one page after the calendar made it optional. Neither page said that
+deleting an application archives it — the CRM page said it for companies and nothing said it
+for the pipeline's own record. Me's "a highlight can be archived rather than deleted" now
+collides with a screen called Archive, so it says which it means.
+
+The product-facing skills in `skills/` mattered more than any of that, because they are what
+a person's assistant actually loads. `hired` opened with "there is no draft copy and no undo",
+which stopped being true the day the archive shipped, and its replace-versus-append table —
+the whole reason the skill exists — had no row for the bulk tools, where the rule inverts.
+`run-the-search` never mentioned that an ending is a stage rather than a deletion, which is
+the confusion that costs somebody their funnel.
+
+**The server briefing gained two rules of thumb, not a feature tour.** `handler.ts` is read
+by every client before any tool call, so the bar for adding to it is a trap rather than a
+capability. Two qualified: the bulk tools invert the replace rule that the briefing already
+teaches, and `export_csv` is what "send me a spreadsheet" means. Field visibility did not —
+it is a display preference, and a client that has to be told about it will find it in
+`tools/list` anyway.
+
+**Applies to:** `src/lib/mcp/handler.ts`, `skills/{hired,run-the-search}/SKILL.md`,
+`docs/concepts/{pipeline,me}.mdx`, `docs/reference/{faq,security}.mdx`,
+`docs/guides/what-to-say.mdx`, `docs/skills.mdx`.
+
+## 2026-09-03 — Resizable columns, a filter you step into, and a library behind Connect
+
+Five asks in one batch: an app library behind Connect with the settings screen reduced to a
+status row, resizable columns on the pipeline table, the stage chips out of the toolbar,
+a filter that does not make you scroll, and sorting and resizing on every list.
+
+**Column widths are stored, not local.** The Fields menu set the precedent — a display
+preference follows you between devices, a cut of the data lives in the URL — and a width you
+set on a laptop that does not apply on a phone is the same broken promise. It costs a `Json`
+column on Profile, a data function and two tools. `Json` rather than the `String[]` beside it
+because this is a map with a number in it, and a parallel array of `"key:width"` strings is
+the same thing with a parser bolted on. Prisma has no partial update for a Json column, so
+the write is read-modify-write and the merge lives in `withWidths` — where the clamping is
+too, so a tool and a drag handle cannot disagree about what 4000 means.
+
+An absent list, or an absent column inside one, means that column's catalogue width. That is
+what makes a column added later size itself, and what makes "reset" a delete rather than a
+write of every default. Widths are clamped on the way in AND on the way out: the value in the
+database was written by a client that may predate a narrower max.
+
+**Only the fixed columns resize; the name column absorbs the rest.** Giving every column a
+width means the table needs a horizontal scrollbar, which is a different design. So the
+handle sits on the LEFT edge of each fixed column and widening one narrows the name, which is
+the "divider between these two cells" a person expects.
+
+**The snap-back was only findable in a browser.** `setColumnWidthsAction` deliberately does
+not revalidate the route — the table already has the new width on screen. Clearing the local
+override when the drag ended therefore reverted the column to the stale server value the
+instant the pointer came up, and it corrected itself on the next navigation. Typecheck and
+build were both clean through all of it. The local width now stands until a genuinely
+different map arrives, compared by its serialised form because `stored` is a fresh literal
+every render. Measured with Playwright: 188 → drag → 248 → reload → 248.
+
+**The stage chips left the toolbar, which reverses an earlier entry.** They read well at five
+stages and badly at ten: the widest row on the page, scrolling sideways on a phone, above a
+board whose columns already are the stages. Stage is a dimension like tags or companies and
+it lives in the Filter menu now, with the four endings as one "Closed" row because that is
+how they are picked. Two chips stayed: Everything, and Needs a nudge — overdue is what the
+dashboard leads with and what the tasks page is built around, and burying it three clicks
+deep to tidy a row would have cost more than the row did. A line beside the chips names the
+stages the menu is holding, because a narrowed board whose only explanation is a number on a
+button is a board that looks broken.
+
+**The filter menu is two levels, and search still spans both.** One flat scroller is fine at
+three dimensions and unusable at seven — the dimensions, which are what you pick first, were
+invisible headings between walls of rows. It opens on them now. The drill-down would have
+made "I want the Fintech one and I don't care which list it is on" worse, so typing searches
+every value in every dimension at once and keeps the headings, because a company called
+Remote and a location called Remote are different rows that read identically.
+
+`CommandEmpty` had to go with it: `shouldFilter={false}` makes cmdk count every rendered item,
+and the "Clear these" row is one — so a search matching nothing showed a menu with one
+unrelated row in it and no explanation.
+
+**Sorting became a control as well as a heading.** Every one of these tables hides columns
+below `md`, so on a phone half the sort keys had no heading to click and were unreachable.
+The menu lists all of them at every width. The headings still sort; the two share one href
+builder so they cannot disagree.
+
+**The settings screen is a row, and Connect is a library.** Two labelled grids of the same
+tile spent most of a screen restating that an assistant and an account are different kinds of
+thing — a distinction that matters while you are adding one and nobody needs while reading.
+So: one row per wired thing, saying whether it is on and whether it needs you, and a library
+behind Connect with a tab each. The library lists everything, connected or not, and a row for
+a client you already have opens it rather than making a second connection: "did I already add
+Cursor?" is the question that screen exists to answer.
+
+**Applies to:** `prisma/schema.prisma` + `20250128000000_column_widths`,
+`src/lib/column-widths.ts`, `src/lib/data/me.ts`, `src/lib/mcp/tools.ts`, `src/server/actions.ts`,
+`src/components/lists/`, `src/components/filters/facet-menu.tsx`,
+`src/components/{pipeline,crm,settings}/`, `src/app/(app)/{applications,crm}/`,
+`tools/gen-tool-docs.mjs`, and the manual.
+
+## 2026-09-04 — Two ratings out, a calendar in, and a task about anything
+
+**Excitement and fit are dropped, not hidden.** Two 1-5 ratings on every application,
+defaulted to 3, which made a pipeline of thirty into thirty threes — a number that looks like
+data, sorts, filters and says nothing. They reached sixteen files each: a board field, a table
+column, a filter ("Want it at least"), the `x` parameter in every saved view's query, the CSV
+export, the shared pipeline's select, and four tool arguments. Hiding them would have left two
+columns an assistant could still write that no screen shows, which is the kind of thing that
+rots. The migration drops both; the rating widget went with them.
+
+**Location and mode stay free text and gained a memory.** "Remote (US, PST overlap)" is a real
+answer and no enum survives it, so the fields are still strings. What free text costs is
+consistency — three spellings of Remote, none of which group — so the field now lists what is
+already on your applications, most-used first with a count, and typing something new is still
+just typing. Folding is case-insensitive with the first spelling winning, and archived
+applications do not vote: a value only they carry is not a value you use. `list_field_values`
+is the same list over MCP, and both write tools' argument descriptions now point at it.
+
+**The calendar replaced every `input[type=date]`.** The native control was doing the job four
+different ways — three segments in the browser's locale, a text box on Firefox for Linux, a
+wheel on iOS — and printing "mm/dd/yyyy" in grey on every empty one, which in a column of
+follow-up dates was louder than the dates actually set. react-day-picker 9, wrapped as given.
+
+The subtle part is the string, not the widget: **these are civil dates, not instants.** A
+follow-up on the 14th is the 14th wherever you open it, so `parseISODate`/`toISODate` split and
+rebuild by local parts. `new Date("2026-03-14")` parses as UTC midnight and renders as the 13th
+for anyone west of Greenwich, and a date picker that silently moves a date back a day is worse
+than no date picker. Verified against a real database: clicking the 22nd stored
+`2026-09-22 00:00:00`.
+
+**An opened application has tabs.** Overview, Timeline, Posting, Notes — everything here is
+about one application but not at the same moment, and stacked, the posting and the notes sat
+three scrolls under the thing you came for. The details rail stays OUT of the tabs: stage,
+follow-up and salary are the answer to "where is this", which is true on every tab.
+
+**A task is about at most one thing, and the thing can be almost anything.** Five nullable
+foreign keys beside the existing `applicationId` rather than a `subjectKind` + `subjectId`
+pair. The pair has no referential integrity — delete a resume and the task points at an id
+nothing resolves, forever, with nothing in the database to stop it. These cascade, which is
+what `applicationId` already did and what a person expects.
+
+Nothing in Postgres enforces "at most one": a CHECK across five columns is a constraint every
+future subject has to remember to extend. `taskSubject` enforces it on the way in — refusing
+two rather than guessing, checking ownership rather than trusting the foreign key, and
+clearing the others when one is set — and `taskSubjectOf` takes the first it finds on the way
+out, so a hand-written row can never render in two places.
+
+`LIVE_TASK_PARENT` grew from one leg to three. Three of the six subjects are archivable, and
+each needs BOTH legs of its own OR: a task about a company has `applicationId: null` and would
+have sailed through a single-legged application filter. Measured: archiving a person hides its
+two tasks and restoring brings them back, and deleting a note takes its task with it.
+
+**Applies to:** `prisma/schema.prisma` + `20250129000000_drop_ratings` +
+`20250130000000_task_subjects`, `src/lib/task-subject.ts`, `src/lib/data/pipeline.ts`,
+`src/lib/mcp/tools.ts`, `src/server/actions.ts`, `src/components/ui/{calendar,date-field}.tsx`,
+`src/components/{pipeline,tasks}/`, `src/app/(app)/{applications,tasks}/`, and the manual.
+
+---
+
+## 2026-09-04 — The front door is always light
+
+`/login`, `/setup` and `/invite/[token]` no longer follow the app's theme. They are reached
+from the marketing site, which is paper, and they are what a stranger sees before there is
+a person here with a preference — a dark card at the end of a light page reads as a
+different product. The theme inside the app is untouched: signing in lands you in whatever
+you had set.
+
+**Done as a class, not as `forcedTheme`.** `next-themes` decides the theme in an effect, so
+a nested provider with `forcedTheme` paints the dark card for a frame and then flips. A
+flash on the first screen a stranger sees is worse than the dark card would have been.
+`.theme-light` on the shell is in the server-rendered HTML and applies on the first style
+pass.
+
+**The mechanism is that a custom property set on an element beats one inherited from an
+ancestor, whatever that ancestor's selector.** So the light token block simply gained a
+second and third selector — `:root, .theme-light, body:has(> .auth-field.theme-light)` —
+and nothing is duplicated. This only works because the front door is written entirely in
+tokens; the check that made it safe was that there is not one `dark:` utility anywhere in
+`src/components/ui/` or on the three pages (the whole app has two, both in
+`client-mark.tsx`).
+
+**Three things a subtree of tokens does not cover, and they are the whole lesson:**
+
+**`color`.** `body { color: var(--foreground) }` resolved before the subtree got a say, and
+what inherits down is the answer, not the question — near-white ink on a paper card. Caught
+by probing computed styles under `html.dark` and comparing against `html.light`; every
+other value already matched. Any inherited property set from a token above the door has to
+be re-stated on `.theme-light`. `color` is the only one in this file. `* { border-color }`
+is not one, because a universal selector re-resolves at every element.
+
+**`color-scheme`, and `accent-color` with it.** The browser paints its own furniture —
+autofill, scrollbars, the "keep me signed in" checkbox — and would paint it for a dark page
+behind light fields.
+
+**The canvas.** A subtree cannot reach the element the browser paints the page background
+from, so a rubber-band overscroll on a phone showed a near-black sliver above paper. Hence
+the `body:has(> .auth-field.theme-light)` selector. The child combinator is deliberate: it
+keeps this a cheap `:has()` for every other page, one the engine re-checks only when body's
+own children change. If the tree above the door gains a wrapper this stops matching and the
+overscroll gutter goes dark again — cosmetic, not broken.
+
+**`@custom-variant dark` gained `:not(.theme-light *)`,** so a `dark:` utility added to the
+door later cannot fire against light tokens. It changes nothing today and is the guard that
+makes the class name honest.
+
+**`themeColor` is per page now.** The root layout sets it from `prefers-color-scheme`, which
+is right for every page that follows the theme and wrong for these three — a phone in dark
+mode painted the bar above a paper page near-black, which is the exact seam the root
+layout's own comment is about. `authViewport` is exported beside `AuthShell` and re-exported
+by each of the three pages, because Next only reads that export from a page or a layout.
+
+**Verified without a database.** There is no Postgres in the environment these sessions run
+in, so the door was rendered from the compiled stylesheet and the real class strings, under
+`html.dark` with the OS in dark mode, and probed: field, card ink, input, mark tokens and
+aurora opacity all identical to the light-theme render. The same probe with the door removed
+confirms body goes back to `oklch(0.165 …)` — the app is untouched.
+
+**Applies to:** `src/app/globals.css`, `src/components/auth-shell.tsx`,
+`src/app/{login,setup,invite/[token]}/page.tsx`.
+
+---
+
+## 2026-09-04 — The three emails got a design, and tables came back
+
+An instance sends exactly three emails: the invitation (`inviteEmail`), the notice to the
+owner when a stranger asks for access (`waitlistNoticeEmail`), and the test from
+Admin → Configuration → Email (`testEmail`). All three shared one `shell()` of divs with
+hex greys picked by hand and no relationship to the app. They now share a rebuilt one.
+
+**Tables carry the layout now, which reverses the comment that used to sit above these
+templates.** That comment said "plain, table-free HTML so it survives every mail client",
+and it was aimed at the right goal by the wrong means: Outlook on Windows renders through
+Word, Word has no `max-width`, so the centred `<div>` became full-bleed on the one client a
+hiring manager is most likely to be reading an invitation in. The layout is now a centring
+table plus an MSO ghost table, which is the boring standard answer. Everything inside is
+still inline-styled — the tables are structure, not decoration.
+
+**The palette is the app's tokens converted to hex, not new colours.** A mail client cannot
+read `globals.css`, so `C` (light) and `D` (dark) in `email.ts` repeat `--canvas`, `--card`,
+`--foreground`, `--muted-foreground`, `--faint`, `--border` and `--primary` as hex. The one
+value that is not a straight conversion is the dark primary: `--primary` in `.dark` is
+`oklch(0.65 0.17 252)`, which still disappears against a dark card at button size in mail,
+so `D.primary` is lifted to `#4ea1f5`. If a token in `globals.css` moves, this block is the
+thing that silently stops matching.
+
+**The mark is drawn out of a table cell and three coloured strips.** Not an `<img>`: images
+are off by default in a lot of inboxes and a broken-image icon where the logo goes is worse
+than no logo. Not inline SVG: Gmail strips it. The geometry is the same 64-unit grid as
+`hired-mark.tsx` scaled to 40px and rounded to whole pixels — bars 8/14/20 wide, 4 tall, 3
+apart, 10 from the left, tile radius 9. Outlook drops the corner radii and gets square bars
+in a square tile, which is still legibly the mark.
+
+**No webfont.** Inter is named first in case it is installed locally, then the system stack.
+Loading it from Google would tell a third party the moment an email was opened, and this
+product already has a switch (`company_logos`) that exists because that trade is not ours to
+make for someone.
+
+**Dark mode is a `prefers-color-scheme` block over inline light values**, and the `html`
+element is in it — without that, a short email leaves a light band under the content in
+Apple Mail. Gmail forces its own inversion and ignores the query; the design survives it
+because the surface is a near-neutral grey either way.
+
+**This does not contradict the entry above about the front door being light.** A page can
+decide it is paper; an email cannot. Apple Mail and Outlook invert a message whether or not
+it asked to be inverted, so the choice is not light-or-dark, it is *a dark theme I designed*
+or *a dark theme the client invents by flipping my greys*. Do not "fix" these templates to
+match `/login` by deleting the media query — that only hands the decision to the client.
+
+**`admin_send_test_email` now takes a `template`.** A design nobody can look at is a design
+nobody checks, and the only way to see the invitation used to be to invite a real person —
+which mints a token that *is* the credential for accepting. The tool (and the Send test row
+in the admin UI, which reads the same `EMAIL_TEMPLATES` list) sends any of the three filled
+with placeholder material, subject prefixed `[Sample]`, links pointing nowhere.
+`EMAIL_TEMPLATES` lives in `email.ts`, which reaches the database, so the admin panel is a
+client component that receives `{key, label}` as a prop rather than importing it.
+
+**`tools/gen-tool-docs.mjs` evaluates each `inputSchema` expression with nothing else in
+scope.** The `template` argument's description originally interpolated
+`EMAIL_TEMPLATES.map(...)`; the generator died with `EMAIL_TEMPLATES is not defined`. Any
+schema expression has to be self-contained — the helpers and literals only.
+
+**Verified** by rendering all three to files and screenshotting them in Chromium at 700px
+and 375px, light and dark. Typecheck and build clean, tool docs regenerated.
+
+**Applies to:** `src/lib/email.ts`, `src/lib/mcp/tools.ts`, `src/server/actions.ts`,
+`src/components/admin/configuration-panel.tsx`, `src/app/(app)/settings/admin/page.tsx`,
+`docs/tools/admin.mdx`, `README.md`.
+
+---
+
+## 2026-09-04 — Tasks is the front door, Analytics is its own screen, and the funnel is a picture you can post
+
+**The dashboard was the wrong front door.** You open this app to do the next thing, not to
+read your own statistics — and a screen of numbers you click past every morning is a tax.
+So `/` is the tasks page now and everything that was on the dashboard moved to
+`/analytics`. `/tasks` stays as a redirect: it is in people's history, in the command
+palette's muscle memory, and in two places the manual has been publishing.
+
+**"Needs you now" became a bell in the top bar.** A card on one page only tells you what is
+owed if you happen to be on that page. `dueNow(userId, withinDays = 0)` in
+`src/lib/data/pipeline.ts` merges the three kinds of dated debt — an application's
+follow-up, a person's ping, a task past its date — and the shell renders one count from it
+on every screen. Deliberately *not* dismissable: an item leaves that list by being dealt
+with, and a dismissable notification lets the bell go quiet while the work stays undone.
+The rail's old follow-up badge on Pipeline is gone with it — two numbers in one chrome for
+the same idea, with different scopes, is worse than one.
+
+**`list_follow_ups` returns the tasks too**, so the bell and an assistant cannot disagree
+about what is owed. It calls `dueNow` for that third list while keeping the rich
+application and contact rows the two existing reads return. That is four queries where
+three would do; the duplication buys one definition of "due" rather than two, and it is a
+tool a person calls a few times a day, not a hot path.
+
+**The Sankey is `reached` for arithmetic, `visited` for honesty.** An application that went
+interview → offer has passed the final-round rung's depth, which is what makes the sums
+close at every rung. Drawing a column for it would put "Final round 1" on a chart belonging
+to somebody who never had one, and this chart's entire job is to be posted and read by
+strangers. So `funnelFlows` returns both, and `sankeyLayout` skips a rung nobody entered.
+The ribbon still joins: survivors leaving one kept rung equal the depth reached at the next
+kept one, drawn or not.
+
+**One emitter for the picture, and it is a string, not JSX.** Next refuses
+`react-dom/server` anywhere in the app router — the build fails outright — so
+`sankeyBody`/`sankeyDocument` in `src/lib/funnel-sankey.ts` build the markup as text and the
+React component injects it with `dangerouslySetInnerHTML`. That is the *point*, not a
+workaround: two emitters would be two pictures the day somebody edited one. Everything in
+that string is a number counted from the database or a label from a fixed catalogue;
+`esc` guards the day someone passes a `labelFor` that is neither. Do not reintroduce a JSX
+copy of this markup.
+
+**The one thing the page and the file differ on is ribbon opacity.** 34% of a colour reads
+as a pastel on the white sheet and as mud on the app's near-black; the page passes
+`flow: { spine: 0.5, exit: 0.32 }`. Geometry, words and numbers are identical.
+
+**Tones are resolved hex, never `var(--…)`.** The headless Chromium that screenshots the
+SVG loads no stylesheet of ours, so a CSS variable comes out black.
+
+**`EXIT_LANE` exists because the last rung sat on top of its own exits.** Without 120px
+reserved, the offer column landed at x=838 and the exit column at x=844 — the offer block
+was hidden behind "Offer accepted", which is exactly the square somebody wants to see.
+Found by rendering the PNG and looking at it; no assertion would have caught it.
+
+**PNG degrades to SVG, and the route says 503 rather than 500.** Same posture as
+`export_resume_pdf`: the request was fine, this host cannot serve it. `export_funnel_image`
+reports `formats` so an assistant picks one that works instead of guessing.
+
+**Verified** against a real Postgres — `dueNow` counts, the archive taking a task off the
+bell with its parent application, the SVG's structure — plus a production `next start`
+driven in Chromium (login, bell, analytics, the share menu, both themes), the three routes
+fetched from inside the page (svg 200, png 200 image/png 41KB, gif 404 JSON), and all four
+new/changed tools round-tripped over the real MCP transport. Seven unfiltered archivable
+reads before and after, which is the documented set. Typecheck, build, `gen-tool-docs
+--check` and `migrate diff --exit-code` all clean.
+
+**Applies to:** `src/lib/data/pipeline.ts`, `src/lib/funnel-sankey.ts`,
+`src/lib/funnel-image.ts`, `src/components/analytics/`, `src/components/notifications.tsx`,
+`src/components/shell.tsx`, `src/components/command-palette.tsx`,
+`src/app/(app)/page.tsx`, `src/app/(app)/analytics/page.tsx`, `src/app/(app)/tasks/page.tsx`,
+`src/app/(app)/layout.tsx`, `src/app/api/funnel/[format]/route.ts`, `src/lib/mcp/tools.ts`,
+`src/server/actions.ts`, `README.md`, `docs/app.mdx`, `docs/concepts/`.
+
+---
+
+## 2026-09-06 — Analytics is a tab on the front door, and the funnel is sized for a real search
+
+**Two screens were one screen.** Today and Analytics are the same subject at two altitudes,
+and a rail entry for the second made it a place you had to decide to visit. It is `?tab=`
+on `/` now, matching Me and Settings: an address, so a tab can be linked to and Back walks
+them. `/analytics` redirects. The rail lost its entry; the palette points at
+`/?tab=analytics`.
+
+**Each tab reads its own data, and the page reads almost none.** `AnalyticsPanel` takes a
+`userId` rather than props, and the page only loads the profile and setup status when Today
+is showing. That is the whole point of a tab strip built this way — the list is nine reads
+and the funnel is five, and a page that loads both to show one costs as much as both.
+**Share chart** moved onto the chart's own card for the same reason: in the page header it
+needed an application count, which meant a second `pipelineStats` on every analytics load.
+
+**The setup strip belongs to the Today tab, not to the page.** Three onboarding cards above
+a tab strip pushed the chart under the fold on a screen that is meant to be a glance.
+
+**The Sankey's labels had to be de-collided before it could shrink.** At `height=420` and a
+handful of applications it looked fine; at `height=200` with a real search — 24
+applications, nine departures — five labels landed on top of each other and the right-hand
+side was unreadable. The cause was structural, not a matter of scale: each rung placed its
+own exits knowing nothing about the others, which works only while every block is taller
+than the 11.5px label beside it.
+
+So `sankeyLayout` now collects every departure first and places the landing column in one
+pass, top to bottom, with `MIN_EXIT_PITCH = 17` as the floor. Blocks keep their true
+heights — a 1 must not look like a 3 — so what gives is the space beneath them, and the
+drawing grows instead of overlapping. Ordering falls out of sorting by natural position: a
+rung's exits occupy the band between its survivors and its total, so deeper rungs land
+higher, which is what the eye expects. Do not go back to placing exits per rung.
+
+**The page renders at `height=200`, the downloadable file at 460.** The file wants to be
+big; the tab wants a band. Both went through the same de-collision and both were rendered
+and looked at with 24 applications in.
+
+**Verified** on a seeded real Postgres with a realistic search — 24 applications across
+five rungs and nine departures — driven in a production `next start`: both tabs, the tab
+links, the browser's Back button, the share menu in its new home, and `/api/funnel/png` at
+200 (82KB). Typecheck, build and `gen-tool-docs --check` clean; seven unfiltered archivable
+reads, the documented set.
+
+**Applies to:** `src/app/(app)/page.tsx`, `src/app/(app)/analytics/page.tsx`,
+`src/components/analytics/analytics-panel.tsx`, `src/components/analytics/funnel-sankey.tsx`,
+`src/lib/funnel-sankey.ts`, `src/components/shell.tsx`,
+`src/components/command-palette.tsx`, `src/server/actions.ts`, `README.md`,
+`docs/app.mdx`, `docs/concepts/pipeline.mdx`.
+## 2026-09-06 — A printed resume's margin belongs to the page box
+
+**Every page after the first had no top margin, and page one ran to the sheet's edge.**
+`resume-paper.tsx` carried the document's margin as `padding` on `.resume-paper` while
+`globals.css` said `@page { margin: 0 }`. Padding on a box that fragments across pages is
+sliced — that is what `box-decoration-break: slice`, the default, means — so page one keeps
+the top of it, the last page keeps the bottom, and every page in between gets neither.
+
+Measured out of this app's own PDF rather than argued, by inflating the content streams and
+reading the text matrices: on a two-page resume at a 48px margin, page one's first text sat
+61px from the sheet's top edge and page two's sat **12px** from it, while page one's last
+line ran to within **23px** of the bottom. After the change both pages start 60–61px down.
+
+**The margin moved to `@page`, which means it is emitted per document.** `@page` cannot read
+a custom property and the margin is a per-resume setting, so `PageMarginStyle` renders one
+rule and both printable routes — `/print/[id]` and the public `/r/[slug]` — use it. In print,
+`.resume-paper` drops its padding and goes `width: auto`, filling a page box that is already
+the sheet minus its margins; the content width is 720px at a 48px margin either way, which is
+why **page one is unchanged**. Verified: first text at 61px before and after, and a
+one-page resume still renders as exactly one page.
+
+**`page.pdf()`'s explicit zero margin is gone.** With `preferCSSPageSize: true` Chromium
+honours the CSS, and stating the margin in `pdf.ts` as well would be a second place for it to
+be decided — which is how a PDF and a print page drift apart.
+
+**`.rp-block { break-inside: avoid }` left `@media print`.** It is inert without a
+fragmentation context, so nothing changes on screen. It moved because the editor is about to
+measure the document inside a multi-column host, which *is* a fragmentation context, and the
+rule that decides where pages break has to be the same one the printer reads.
+
+**Applies to:** `src/app/globals.css`, `src/components/resume/page-margin-style.tsx` (new),
+`src/app/print/[id]/page.tsx`, `src/app/r/[slug]/page.tsx`, `src/lib/pdf.ts`.
+
+---
+
+## 2026-09-06 — The editor measures its pages instead of estimating them
+
+**The page badge could not have been right.** `estimateLines()` assumes ~110 characters to a
+line and 46 lines to a page, and takes only the document — it never sees `fontSize`,
+`lineHeight`, `pageMargin` or `template`, all four of which sit in the Design popover two
+clicks from the badge. It was styled warning/success, so it looked authoritative while being
+structurally blind to half its own inputs. The same document now reads 1, 2 or 3 pages
+depending on those settings, and the editor agrees with the real PDF in all three cases.
+
+**The browser does the fragmenting; this code only reads the result.** `PageMeasure` renders
+a second, invisible copy of the document inside a multi-column box whose column is exactly
+one page's content box. CSS fragmentation and paged fragmentation are the same machinery and
+honour the same `break-inside: avoid`, so the column an element lands in is the page it
+prints on. Checked against the real PDF, not assumed: 1/2/3 pages measured, 1/2/3 pages
+printed. The naive `contentHeight / 1056` division does NOT work — it undercounts whenever an
+entry is pushed whole, which is most documents past one page.
+
+**It measures a copy, not the preview.** The preview lives inside `transform: scale()` and a
+scaled element's rectangles are scaled with it, so measuring it would report a page height
+that changed when you zoomed. The hidden host is never scaled. Its paper is rendered with
+`pageMargin: 0` and the margin carried by the column size — the same arrangement the printed
+page uses now that the margin lives on the page box.
+
+**The break line is drawn where content actually breaks, not where the sheet ends.** Those
+are different places, and the difference is the whole point: `break-inside: avoid` pushes an
+entry that will not fit down whole, so the page before it ends early with slack. A rule ruled
+across the geometric boundary cut through a paragraph that in fact prints intact. The line is
+anchored to the element that opens the next page, found by its `data-rp` path and positioned
+with `offsetTop` — a layout value, so it is unaffected by the zoom it sits inside.
+
+**Section wrappers are never the element that "starts" a page.** A `<section>` holding five
+jobs straddles every page it covers, so it is always the first rectangle on the page and
+always a continuation. Naming it made every break read "splits here" and pointed at the
+heading rather than at the entry you could actually move. The opener is now the first
+fragment that *begins* on the page and is not a section wrapper.
+
+**`data-rp` is positional, not id-based.** `resume-schema.ts` defaults every `id` to `""` and
+`RESUME_DOC_SHAPE` never mentions ids, so a document written through `create_resume` — the
+product's main path — carries empty ids throughout. Those were also being used as React keys
+in the renderer; both now key on the index. Positional paths are total and collision-free.
+
+**`estimateLines` stays, but only for the server.** `preview_resume_text` has no browser and
+still needs an answer; its number remains an estimate and `export_resume_pdf` remains the
+measured one. What went is the editor's duplicate `LINES_PER_PAGE`, which sat beside a comment
+in `resume-text.ts` explaining that the constant lives there so the two cannot drift.
+
+**Applies to:** `src/lib/resume-pagination.ts` (new), `src/lib/resume-measure-dom.ts` (new),
+`src/components/resume/{page-measure,page-breaks}.tsx` (new),
+`src/components/resume/{resume-paper,resume-editor}.tsx`, `src/app/globals.css`.
+
+## 2026-09-06 — Telling someone their resume is two pages is not the useful part
+
+The badge knew the page count and stopped there, which is the least useful moment to stop:
+nobody is surprised their resume is two pages, they want it to be one. It is now a panel that
+answers "what do I cut?" — what is on the last page in order, which sections could be hidden,
+and the longest bullets, each with a button that removes it.
+
+**Two sources, one for each half, and that is deliberate.** What is *on* the last page comes
+from the measured layout, so it is exactly what will print. What is *worth cutting* comes from
+`fitReport` in `src/lib/resume-fit.ts`, a pure function over the document with no DOM in it,
+because `check_resume_fit` has to answer the same question on a server with no browser. The
+tool's description says plainly that it ranks rather than measures and points at
+`export_resume_pdf` for a real page count, so an assistant does not quote the estimate as
+fact.
+
+**Hiding a section is offered before deleting a bullet.** It is the biggest single lever and
+the only reversible one — the content stays in the document. The delete button carries the
+bullet's own words in its label, including for screen readers, because that button is
+throwing away something the person actually did.
+
+**Ranked by lines, not characters.** A 90-character bullet that wraps to two lines costs the
+same as a 130-character one that also wraps to two; sorting by length puts the second first
+and gains nothing when you cut it. `fitReport` sorts on estimated lines and shows the
+character count only as a tiebreak.
+
+**The measurement effect must not depend on the settings object.** Found by a click that
+never landed: `PageMeasure` listed `settings` in its dependency array, the editor builds that
+object fresh on every render, and `onLayout` sets state — so reporting a layout scheduled the
+next measurement and the editor re-rendered at frame rate forever. Nothing looked broken (the
+badge showed the right number, the breaks were in the right places) but Playwright could not
+click the badge, which is how it surfaced. The effect now depends on the settings' *values*,
+and reports once per pass rather than once per callback. Anything else that measures the DOM
+and reports upward needs the same care.
+
+**Applies to:** `src/lib/resume-fit.ts` (new), `src/components/resume/fit-panel.tsx` (new),
+`src/lib/data/resumes.ts` (`resumeFitReport`), `src/lib/mcp/tools.ts` (`check_resume_fit`),
+`src/components/resume/{page-measure,resume-editor}.tsx`.
+
+## 2026-09-07 — Every section of an assistant-written resume shared one identity
+
+`resume-schema.ts` defaults every `id` to `""` and `RESUME_DOC_SHAPE` never mentions ids, so
+a document built by `create_resume` — the product's main path — arrived with `id: ""` on
+every section and entry. The editor addressed sections by id. Reproduced rather than
+reasoned about: create a two-section resume over MCP, open it, click the eye on the first
+section, and **both** sections leave the page. `removeSection` filtered on the same
+comparison, so "delete this section" deleted the document. React was also keying the list on
+that value, so every section was key `""`.
+
+**Healed in `parseResumeDoc`, not at the write.** The write path was the obvious place and it
+is too late: a document is read, edited and only then saved, so the first edit happens while
+the ids are still blank. `parseResumeDoc` is the one funnel both reads and writes pass
+through — the fix applies before anything can act on a document, and the repaired ids persist
+on its next save.
+
+**Deterministic ids, not `rid()`.** `rid()` is random. Minted on read, a document would come
+back from `get_resume` with different ids every call, and two parses of one stored document
+would not be equal — which `compare_resumes` and every other read-parse-read path would have
+to defend against. Blank ids take a positional name (`sec_0`, `exp_1_0`), so parsing twice
+gives the same document. `claim()` also walks a name until it is free, so an id the document
+already uses twice is separated rather than trusted.
+
+**The editor now addresses sections by position anyway.** Ids are trustworthy after this, but
+position is the one address that cannot be blank or repeated, and this is the exact code that
+used to edit every section at once. Ids stay for React keys and for the drag reordering that
+is coming.
+
+**Applies to:** `src/lib/resume-schema.ts` (`ensureIds`), `src/components/resume/resume-editor.tsx`,
+`src/lib/mcp/tools.ts` (`get_resume_format` guidance).
+
+## 2026-09-07 — Reordering is a drag, and one call rather than a rewrite
+
+Sections, the entries inside them and the bullets inside those all reorder by dragging now,
+and `reorder_resume` does the same job over MCP. The two halves share `moveWithin` in
+`src/lib/resume-reorder.ts`, so a drag, an arrow button and a tool call cannot disagree about
+what moving something means.
+
+**The tool exists because `update_resume` replaces.** "Put the Stripe job first" through
+`update_resume` means reproducing the entire document from memory, and the failure mode is
+losing a bullet nobody notices for a month. `reorder_resume` reads, moves one thing and
+writes back. This closes a parity gap that predates it: the ⌃/⌄ buttons have always been
+able to reorder and nothing over MCP could, short of a full rewrite.
+
+**Named by whatever the caller has to hand.** `section`, `entry` and `bullet` each accept an
+id, a name or a 1-based number, and an entry answers to *every* name it goes by — a job is
+"Company 3" as readily as "Senior Engineer 3". Matching only the display label was the first
+implementation, and it failed a request for the company with an error that did not even
+contain the word. A miss now lists what is actually there, so an assistant can retry from the
+error instead of falling back to `update_resume`.
+
+**The deepest thing named is what moves.** One tool rather than three: give `section` and it
+moves a section, add `entry` and the entry moves, add `bullet` and the bullet moves. A bullet
+named without an entry is only unambiguous when the section holds one entry — otherwise it is
+a question, and the tool asks it rather than guessing.
+
+**Drag from a handle, not from the row.** Rows here are mostly text inputs, and a card you can
+pick up anywhere is a card you cannot select text in. The handle is a real button, so the
+keyboard gets the same power: tab, space, arrows. Three of these lists nest inside each other
+and dnd-kit handled it without special-casing — verified in a browser that dragging an entry
+does not also move its section.
+
+**Applies to:** `src/lib/resume-reorder.ts` (new), `src/components/resume/sortable-list.tsx`
+(new), `src/lib/data/resumes.ts` (`reorderResume`), `src/lib/mcp/tools.ts`
+(`reorder_resume`), `src/components/resume/resume-editor.tsx` (its local `moveItem` is gone —
+one implementation of a move, not two).
+
+## 2026-09-08 — Undo, and the one place it must keep its hands off
+
+The editor deletes a job in one click and reorders a document with one drag, and until now
+neither had a way back. Undo and redo now sit beside the save indicator, answer to ⌘Z and
+⇧⌘Z, and every destructive action also raises a toast that offers the exact previous
+document back.
+
+**Snapshots, not patches.** `src/hooks/use-history.ts` keeps whole values of
+`{ doc, meta }` — the same object autosave already writes. There is no inverse operation to
+write for each of the twenty ways a document can change, and no chance of the two drifting.
+It costs a reference rather than a copy, because every mutation path in the editor already
+builds a new object instead of mutating the old one.
+
+**⌘Z inside a text field is the field's, not the document's.** A textarea has its own undo
+stack and it is the right one while you are typing: taking back a sentence is what a person
+means mid-sentence, not resurrecting the section they deleted a minute ago. The shortcut
+checks the focused element and stands down for INPUT, TEXTAREA and anything
+contenteditable. The toolbar buttons work from anywhere, so the capability is never
+unreachable — which is also why they exist rather than leaving this keyboard-only and
+invisible.
+
+**Steps are coalesced by time, with an explicit override.** Changes closer together than
+700ms fold into one step, so a typed sentence undoes as a sentence. That alone would merge a
+delete that happened to land mid-sentence into the typing around it, so discrete acts —
+delete, add, drag, toggle, the fit panel's cuts — pass `{ step: true }` and force a boundary.
+The 700ms matches the autosave debounce deliberately: one undo step is about one saved
+revision, which is the model a person already has from watching the indicator. The
+alternative considered and rejected was inferring "structural vs text" from a shape
+signature of the document; it gets reordering wrong (the shape is unchanged) and clever undo
+is worse than predictable undo.
+
+**A toast restores its own snapshot, not the top of the stack.** The toast names one thing
+("Senior Engineer 3" removed) and its Undo puts back the document as it stood at that moment.
+Popping the stack instead would undo whatever happened last, which after a few seconds is
+often something else entirely.
+
+**No MCP tool, and this is the exception's shape.** Undo is editor state, not data: there is
+no stored history to reach for, and every document it restores is reachable through
+`update_resume` and `reorder_resume` already. A conversational "undo that" would need
+version history on `Resume` — a real feature, worth doing on its own terms, not smuggled in
+as a side effect of a keyboard shortcut.
+
+**Applies to:** `src/hooks/use-history.ts` (new), `src/components/resume/resume-editor.tsx`,
+`src/components/resume/fit-panel.tsx` (its `onChange` now names what it cut).
 ## 2026-09-03 — Any mailbox: Microsoft 365, IMAP and CalDAV, behind one reader
 
 **`GoogleAccount` became `LinkedAccount`, several per person.** A `provider` column

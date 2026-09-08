@@ -4,7 +4,7 @@ import { ArrowLeftIcon } from "lucide-react";
 import { PageShell } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { FadeIn } from "@/components/motion";
-import { getApplication, listCompanies } from "@/lib/data/pipeline";
+import { applicationFieldValues, getApplication, listCompanies } from "@/lib/data/pipeline";
 import { listTags } from "@/lib/data/tags";
 import { getResume, listResumeNames } from "@/lib/data/resumes";
 import { requireUser } from "@/lib/auth";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function ApplicationPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
-  const [application, resumes, tagOptions, companies, { companyLogos }, googleConnection] =
+  const [application, resumes, tagOptions, companies, { companyLogos }, googleConnection, fieldValues] =
     await Promise.all([
       getApplication(user.id, id),
       listResumeNames(user.id),
@@ -25,6 +25,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
       listCompanies(user.id),
       getSettings(),
       accountAccess(user.id),
+      applicationFieldValues(user.id),
     ]);
   if (!application) notFound();
 
@@ -54,8 +55,6 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
             workMode: application.workMode,
             salaryRange: application.salaryRange,
             tags: application.tags,
-            excitement: application.excitement,
-            fit: application.fit,
             notes: application.notes,
             appliedAt: application.appliedAt?.toISOString() ?? null,
             nextFollowUpAt: application.nextFollowUpAt?.toISOString() ?? null,
@@ -82,6 +81,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
             dueAt: task.dueAt?.toISOString() ?? null,
           }))}
           resumes={resumes.map((resume) => ({ id: resume.id, name: resume.name }))}
+          fieldValues={fieldValues}
           tagOptions={tagOptions.map((tag) => ({
                 id: tag.id,
                 name: tag.name,

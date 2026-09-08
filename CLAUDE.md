@@ -109,7 +109,7 @@ src/lib/pdf.ts                Server-side PDF rendering. Needs a Chromium on the
                               degrades to the print page where there isn't one.
 src/server/actions.ts         Server actions for the UI. Never accepts a userId.
 src/app/(app)/                The app: dashboard, me, resumes, applications, tasks, crm,
-                              docs, settings (admin lives under it).
+                              archive, docs, settings (admin lives under it).
 src/app/api/mcp/[token]/      The connection URL. /api/mcp also accepts a bearer header.
 src/app/r/[slug]/             Published resume, no auth. With /p/[slug] (shared pipeline),
                               the only unauthenticated pages in the app — unlisted slugs
@@ -145,8 +145,9 @@ Data areas map cleanly onto tool prefixes: me (`search_me`, `list_roles`,
 `append_role_background`, …), resumes (`get_resume_format`, `create_resume`,
 `preview_resume_text`, …), pipeline (`list_applications`, `move_application_stage`,
 `list_follow_ups`, …), CRM (`list_companies`, `create_contact`, …), admin (`admin_*`,
-hidden from members' `tools/list` entirely — not merely refused), and tags (`list_tags`,
-`create_tag`, …) cutting across all of them. Don't trust any
+hidden from members' `tools/list` entirely — not merely refused), tags (`list_tags`,
+`create_tag`, …) and the archive (`list_archive`, `restore_records`, …) cutting across all
+of them. Don't trust any
 hand-written tool count you find, including in old decision-log entries: the authoritative
 number is generated live on the /docs page, and the README hand-carries it in three
 places that must be bumped whenever the array changes.
@@ -208,6 +209,18 @@ and the compare-to-base view in the resume editor, which recomputes as you type.
 the other half — which of a person's own material stands behind each bullet, and which
 bullets nothing does. That is derived by comparing text rather than recorded when a
 document is written; read the decision log before changing it.
+
+**Deleting is archiving, for three models.** Company, Contact and Application carry
+`archivedAt`; `src/lib/data/archive.ts` owns putting things in, taking them out, destroying
+them and sweeping what is past its window. Everything else deletable — a role, a highlight,
+a note, a resume, a task, a tag, a saved view — really is gone when you delete it, and its
+copy says so. The scope is small on purpose: EVERY read of an archivable model has to
+exclude archived rows, nothing in the toolchain catches one that forgets, and a Prisma
+client extension provably cannot help (it covers top-level finds and silently does nothing
+for nested includes or `_count`). So the list of reads has to stay short enough to audit by
+hand, and the audit is a real-Postgres exercise rather than a build. If you add a read of
+Company, Contact or Application, filter it — and if you deliberately do not, say why in a
+comment, as the seven exceptions already do.
 
 There is also one catalogue behind every label in the product: `src/lib/data/tags.ts` and
 the `Tag` table, keyed by `kind`. Where an application came from, a company's industry,

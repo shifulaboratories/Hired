@@ -107,9 +107,23 @@ function assertColor(color: string): TagColor {
   return color as TagColor;
 }
 
-/** How many things wear this tag, across all three kinds of thing. */
+/**
+ * How many things wear this tag, across all three kinds of thing.
+ *
+ * Archived rows are not counted. This number is read in two places that both
+ * describe what is on screen — the count beside a tag in the picker, and the
+ * "comes off N things" a person agrees to before deleting one — so counting
+ * something in the bin makes both of them lie. All three are join tables, so
+ * each predicate has to reach through the link to the record itself.
+ */
 const tagCounts = {
-  _count: { select: { applications: true, companies: true, contacts: true } },
+  _count: {
+    select: {
+      applications: { where: { application: { archivedAt: null } } },
+      companies: { where: { company: { archivedAt: null } } },
+      contacts: { where: { contact: { archivedAt: null } } },
+    },
+  },
 } as const;
 
 export type TagWithCounts = Prisma.TagGetPayload<{ include: typeof tagCounts }>;
@@ -225,6 +239,36 @@ export function flattenTags<T extends { tags: { tag: TagRef }[] }>(
   row: T,
 ): Omit<T, "tags"> & { tags: TagRef[] } {
   return { ...row, tags: row.tags.map((link) => link.tag) };
+}
+
+/**
+ * Every one of these ids must be this person's, and of one of these kinds.
+ *
+ * The guard exists for the bulk paths. All four of a company's lists share one
+ * join table, so nothing at the database level stops an APPLICATION tag being
+ * attached to a company — and once it is, no screen renders it and no picker
+ * can take it back off. One click across a selection of forty would write
+ * forty rows nobody can ever see or remove.
+ */
+export async function assertOwnedTagIds(
+  userId: string,
+  ids: string[],
+  kinds: TagKind[],
+): Promise<string[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  const owned = await db.tag.findMany({
+    where: { id: { in: unique }, userId, kind: { in: kinds } },
+    select: { id: true },
+  });
+  const found = new Set(owned.map((row) => row.id));
+  const missing = unique.filter((id) => !found.has(id));
+  if (missing.length > 0) {
+    throw new Error(
+      `No ${kinds.map((kind) => kind.toLowerCase()).join(" or ")} tag with id ${missing[0]}`,
+    );
+  }
+  return unique;
 }
 
 /** The one list a row wears, cut down to a single kind. */

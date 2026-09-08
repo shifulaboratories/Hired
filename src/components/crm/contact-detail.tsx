@@ -25,7 +25,12 @@ import type { TagValue } from "@/components/tags/tag-chip";
 import { CorrespondenceCard, type CorrespondenceAccess } from "@/components/google/correspondence-card";
 import { SaveIndicator } from "@/components/save-indicator";
 import type { SaveState } from "@/hooks/use-autosave";
-import { addActivityAction, deleteCrmContactAction, saveContactAction } from "@/server/actions";
+import {
+  addActivityAction,
+  deleteCrmContactAction,
+  restoreRecordsAction,
+  saveContactAction,
+} from "@/server/actions";
 import { ACTIVITY_LABEL, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
 import { linkHref } from "@/lib/social";
 import { relativeDay } from "@/lib/utils";
@@ -162,11 +167,23 @@ export function ContactDetail({
   };
 
   const remove = () => {
-    if (!confirm(`Delete ${contact.name}? Their timeline goes with them. This cannot be undone.`))
+    if (
+      !confirm(
+        `Delete ${contact.name}? Their whole timeline goes with them, and you can restore all of it from the archive.`,
+      )
+    )
       return;
     startTransition(async () => {
       try {
         await deleteCrmContactAction(contact.id);
+        toast.success(`${contact.name} moved to the archive`, {
+          action: {
+            label: "Undo",
+            onClick: () => {
+              void restoreRecordsAction("contact", [contact.id]).then(() => router.refresh());
+            },
+          },
+        });
         router.push("/crm/contacts");
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Could not delete that contact.");

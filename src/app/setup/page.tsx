@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
 import { instanceNeedsSetup, setupKeyIsRequired } from "@/lib/auth";
 import { SetupForm } from "@/components/setup-form";
-import { AuthShell } from "@/components/auth-shell";
+import { AuthShell, authViewport } from "@/components/auth-shell";
 
 export const dynamic = "force-dynamic";
+
+/** The door is light; the bar above it has to be told. */
+export const viewport = authViewport;
 
 /**
  * Fallback only. The owner account is normally provisioned at boot by

@@ -8,9 +8,12 @@ import {
 import { getSettings, googleIsConfigured } from "@/lib/settings";
 import { isGoogleRefusal, refusalMessage } from "@/lib/google";
 import { LoginForm } from "@/components/login-form";
-import { AuthShell } from "@/components/auth-shell";
+import { AuthShell, authViewport } from "@/components/auth-shell";
 
 export const dynamic = "force-dynamic";
+
+/** The door is light; the bar above it has to be told. */
+export const viewport = authViewport;
 
 export default async function LoginPage({
   searchParams,

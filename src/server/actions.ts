@@ -27,7 +27,7 @@ import {
 } from "@/lib/auth";
 import { deleteVariable, getSettings, setVariables } from "@/lib/settings";
 import { unlinkGoogleFromUser } from "@/lib/google";
-import { sendEmail, testEmail } from "@/lib/email";
+import { renderEmailTemplate, sendEmail } from "@/lib/email";
 import { syncAllBilling } from "@/lib/billing";
 import { loadPosting } from "@/lib/posting";
 import { dateRange } from "@/lib/utils";
@@ -40,6 +40,10 @@ import {
 } from "@/lib/login-throttle";
 import { listAudit, recordAudit } from "@/lib/data/audit";
 import { recordSystemEvent, sweepSystemEvents } from "@/lib/data/system";
+import * as archive from "@/lib/data/archive";
+import type { PipelineView } from "@/lib/pipeline-fields";
+import type { ColumnList } from "@/lib/column-widths";
+import { sweepArchive } from "@/lib/data/archive";
 
 /**
  * Every action resolves the caller from their session cookie. No action ever
@@ -100,6 +104,7 @@ export async function loginAction(_prev: { error?: string } | undefined, formDat
   // not awaited-and-blocking on failure: a failed sweep must not fail a login.
   void sweepThrottles().catch(() => {});
   void sweepSystemEvents().catch(() => {});
+  void sweepArchive().catch(() => {});
   redirect("/");
 }
 
@@ -572,12 +577,12 @@ export async function syncBillingAction(email?: string) {
   }
 }
 
-export async function sendTestEmailAction(to?: string) {
+export async function sendTestEmailAction(to?: string, template?: string) {
   const actor = await requireAdmin();
   const settings = await getSettings();
   const result = await sendEmail({
     to: to?.trim() || actor.email,
-    ...testEmail(settings.instanceName),
+    ...renderEmailTemplate(template, settings),
     settings,
   });
   return result.ok
@@ -929,10 +934,10 @@ export async function duplicateResumeAction(id: string, name?: string) {
  * just renamed should not still read the old way on the page they came from.
  */
 function revalidateTags() {
+  revalidatePath("/");
   revalidatePath("/applications");
   revalidatePath("/crm/companies");
   revalidatePath("/crm/contacts");
-  revalidatePath("/tasks");
 }
 
 const asOption = (tag: {
@@ -1017,11 +1022,13 @@ export async function moveStageAction(id: string, stage: Stage) {
   revalidatePath("/");
 }
 
+/** Archives, now. The name stays because the button still says Delete. */
 export async function deleteApplicationAction(id: string) {
   const user = await requireUser();
-  await pipeline.deleteApplication(user.id, id);
-  revalidatePath("/applications");
-  revalidatePath("/");
+  const result = await pipeline.deleteApplication(user.id, id);
+  void archive.purgeExpiredFor(user.id).catch(() => {});
+  revalidateEverywhere();
+  return result;
 }
 
 export async function addActivityAction(input: {
@@ -1037,34 +1044,44 @@ export async function addActivityAction(input: {
   revalidatePath("/");
 }
 
-export async function createTaskAction(input: {
-  title: string;
-  detail?: string;
-  dueAt?: string | null;
-  applicationId?: string | null;
-}) {
+export async function createTaskAction(
+  input: {
+    title: string;
+    detail?: string;
+    dueAt?: string | null;
+  } & pipeline.TaskSubjectInput,
+) {
   const user = await requireUser();
   await pipeline.createTask(user.id, input);
   revalidatePath("/");
-  revalidatePath("/tasks");
-  if (input.applicationId) revalidatePath(`/applications/${input.applicationId}`);
+  // The subject's own screen shows its tasks, so it has to be refreshed too.
+  revalidateSubject(input);
 }
 
 export async function updateTaskAction(
   id: string,
-  patch: { title?: string; detail?: string; dueAt?: string | null; applicationId?: string | null },
+  patch: { title?: string; detail?: string; dueAt?: string | null } & pipeline.TaskSubjectInput,
 ) {
   const user = await requireUser();
   await pipeline.updateTask(user.id, id, patch);
   revalidatePath("/");
-  revalidatePath("/tasks");
+  revalidateSubject(patch);
+}
+
+/** The detail page of whatever a task was just hung on, if it has one. */
+function revalidateSubject(input: pipeline.TaskSubjectInput) {
+  if (input.applicationId) revalidatePath(`/applications/${input.applicationId}`);
+  if (input.companyId) revalidatePath(`/crm/companies/${input.companyId}`);
+  if (input.contactId) revalidatePath(`/crm/contacts/${input.contactId}`);
+  if (input.resumeId) revalidatePath(`/resumes/${input.resumeId}`);
+  if (input.roleId) revalidatePath(`/me/${input.roleId}`);
+  if (input.noteId) revalidatePath("/me");
 }
 
 export async function toggleTaskAction(id: string, done: boolean) {
   const user = await requireUser();
   await pipeline.setTaskDone(user.id, id, done);
   revalidatePath("/");
-  revalidatePath("/tasks");
   revalidatePath("/applications");
 }
 
@@ -1072,7 +1089,6 @@ export async function deleteTaskAction(id: string) {
   const user = await requireUser();
   await pipeline.deleteTask(user.id, id);
   revalidatePath("/");
-  revalidatePath("/tasks");
 }
 
 /**
@@ -1086,9 +1102,121 @@ export async function scheduleContactPingAction(id: string, date: string) {
   const user = await requireUser();
   await pipeline.updateContact(user.id, id, { nextFollowUpAt: date || null });
   revalidatePath("/");
-  revalidatePath("/tasks");
   revalidatePath("/crm/contacts");
   revalidatePath(`/crm/contacts/${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// The archive
+// ---------------------------------------------------------------------------
+
+/** Everywhere a record could have been showing before it moved. */
+function revalidateEverywhere() {
+  revalidatePath("/");
+  revalidatePath("/archive");
+  revalidatePath("/applications");
+  revalidatePath("/crm/companies");
+  revalidatePath("/crm/contacts");
+}
+
+export async function archiveRecordsAction(kind: archive.ArchiveKind, ids: string[]) {
+  const user = await requireUser();
+  const result = await archive.archiveRecords(user.id, kind, ids);
+  // The act that fills the bin is the act that should trim it, which is what
+  // bounds it on an instance nobody restarts and nobody signs out of.
+  void archive.purgeExpiredFor(user.id).catch(() => {});
+  revalidateEverywhere();
+  return result;
+}
+
+export async function restoreRecordsAction(kind: archive.ArchiveKind, ids: string[]) {
+  const user = await requireUser();
+  const result = await archive.restoreRecords(user.id, kind, ids);
+  revalidateEverywhere();
+  return result;
+}
+
+export async function deleteArchivedAction(kind: archive.ArchiveKind, ids: string[]) {
+  const user = await requireUser();
+  const result = await archive.deleteArchived(user.id, kind, ids);
+  revalidateEverywhere();
+  return result;
+}
+
+/**
+ * No expectCount here, unlike the tool.
+ *
+ * The dialog states the number and the click IS the confirmation. The count
+ * guard exists for the assistant, which has no dialog and can only be stopped
+ * by being made to say back what it read.
+ */
+export async function emptyArchiveAction(kind?: archive.ArchiveKind) {
+  const user = await requireUser();
+  const result = await archive.emptyArchive(user.id, kind ? { kind } : undefined);
+  revalidateEverywhere();
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Bulk changes from the CRM lists
+// ---------------------------------------------------------------------------
+
+export async function tagCompaniesAction(
+  ids: string[],
+  change: { add?: string[]; remove?: string[] },
+) {
+  const user = await requireUser();
+  const result = await pipeline.tagCompanies(user.id, ids, change);
+  revalidatePath("/crm/companies");
+  revalidatePath("/applications");
+  return result;
+}
+
+export async function tagContactsAction(
+  ids: string[],
+  change: { add?: string[]; remove?: string[] },
+) {
+  const user = await requireUser();
+  const result = await pipeline.tagContacts(user.id, ids, change);
+  revalidatePath("/crm/contacts");
+  return result;
+}
+
+export async function scheduleContactPingsAction(ids: string[], date: string) {
+  const user = await requireUser();
+  const result = await pipeline.scheduleContactPings(user.id, ids, date);
+  revalidatePath("/crm/contacts");
+  revalidatePath("/");
+  return result;
+}
+
+/**
+ * Which optional fields a pipeline view draws.
+ *
+ * The view is positional and typed, not a key in a patch bag: a mistyped one
+ * would otherwise be silently dropped and reported as saved.
+ */
+export async function setPipelineFieldsAction(view: PipelineView, fields: string[]) {
+  const user = await requireUser();
+  const result = await me.setPipelineFields(user.id, view, fields);
+  revalidatePath("/applications");
+  return result;
+}
+
+/**
+ * Save a column width after a drag.
+ *
+ * No revalidatePath: the table already has the new width on screen — it has
+ * been rendering it since the pointer moved — so refreshing the route would
+ * repaint the whole list to arrive at the layout it is already showing.
+ */
+export async function setColumnWidthsAction(
+  list: ColumnList,
+  widths: Record<string, number>,
+  options?: { reset?: boolean },
+) {
+  const user = await requireUser();
+  return me.setColumnWidths(user.id, list, widths, options);
 }
 
 export async function createContactAction(input: {
@@ -1268,10 +1396,13 @@ export async function mergeCompaniesAction(keepId: string, mergeId: string) {
   return { id: survivor.id, name: survivor.name, merged: survivor.merged };
 }
 
+/** Archives, now. The name stays because the button still says Delete. */
 export async function deleteCompanyAction(id: string) {
   const user = await requireUser();
-  await pipeline.deleteCompany(user.id, id);
-  revalidatePath("/crm/companies");
+  const result = await pipeline.deleteCompany(user.id, id);
+  void archive.purgeExpiredFor(user.id).catch(() => {});
+  revalidateEverywhere();
+  return result;
 }
 
 export async function saveContactAction(
@@ -1332,11 +1463,13 @@ export async function setContactCompaniesAction(id: string, companyIds: string[]
   }));
 }
 
+/** Archives, now. The name stays because the button still says Delete. */
 export async function deleteCrmContactAction(id: string) {
   const user = await requireUser();
-  await pipeline.deleteContact(user.id, id);
-  revalidatePath("/crm/contacts");
-  revalidatePath("/crm/companies");
+  const result = await pipeline.deleteContact(user.id, id);
+  void archive.purgeExpiredFor(user.id).catch(() => {});
+  revalidateEverywhere();
+  return result;
 }
 
 /**
@@ -1348,7 +1481,7 @@ export async function deleteCrmContactAction(id: string) {
  */
 export async function getApplicationForPanelAction(id: string) {
   const user = await requireUser();
-  const [application, resumeList, tagOptions, companies, settings, googleConnection] =
+  const [application, resumeList, tagOptions, companies, settings, googleConnection, fieldValues] =
     await Promise.all([
       pipeline.getApplication(user.id, id),
       resumes.listResumeNames(user.id),
@@ -1356,6 +1489,7 @@ export async function getApplicationForPanelAction(id: string) {
       pipeline.listCompanies(user.id),
       getSettings(),
       accounts.accountAccess(user.id),
+      pipeline.applicationFieldValues(user.id),
     ]);
   if (!application) throw new Error("That application is gone.");
   // Only when one is attached — the document carries the owner's photo as a
@@ -1376,8 +1510,6 @@ export async function getApplicationForPanelAction(id: string) {
       workMode: application.workMode,
       salaryRange: application.salaryRange,
       tags: application.tags,
-      excitement: application.excitement,
-      fit: application.fit,
       notes: application.notes,
       appliedAt: application.appliedAt?.toISOString() ?? null,
       nextFollowUpAt: application.nextFollowUpAt?.toISOString() ?? null,
@@ -1405,6 +1537,7 @@ export async function getApplicationForPanelAction(id: string) {
     })),
     resumes: resumeList.map((resume) => ({ id: resume.id, name: resume.name })),
     tagOptions: tagOptions.map(asOption),
+    fieldValues,
     company: {
       id: application.companyId,
       name: application.company.name,

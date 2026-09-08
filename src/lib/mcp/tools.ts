@@ -10,6 +10,28 @@ import * as system from "@/lib/data/system";
 import * as pipelineShare from "@/lib/data/pipeline-share";
 import * as users from "@/lib/data/users";
 import * as waitlist from "@/lib/data/waitlist";
+import * as archive from "@/lib/data/archive";
+import {
+  FIELDS,
+  NO_FIELDS,
+  PIPELINE_VIEWS,
+  visibleFields,
+} from "@/lib/pipeline-fields";
+import {
+  COLUMNS,
+  COLUMN_LISTS,
+  LIST_LABEL,
+  columnKeys,
+  parseWidths,
+  widthsFor,
+} from "@/lib/column-widths";
+import {
+  exportApplicationsCsv,
+  exportCompaniesCsv,
+  exportContactsCsv,
+  exportFilename,
+} from "@/lib/data/export";
+import { parsePipelineFilters } from "@/lib/pipeline-filters";
 import * as connections from "@/lib/data/connections";
 import * as onboarding from "@/lib/data/onboarding";
 import * as accountsData from "@/lib/data/accounts";
@@ -27,7 +49,7 @@ import {
   deleteVariable,
 } from "@/lib/settings";
 import { billedUserCount, linkBillingCustomer, syncAllBilling } from "@/lib/billing";
-import { sendEmail, testEmail } from "@/lib/email";
+import { renderEmailTemplate, sendEmail } from "@/lib/email";
 import { isAdmin, createEphemeralSession, destroySession, SESSION_COOKIE } from "@/lib/auth";
 import { parseResumeDoc, RESUME_DOC_SHAPE } from "@/lib/resume-schema";
 import { diffResumeDocs } from "@/lib/resume-diff";
@@ -150,6 +172,21 @@ const b = (args: Json, key: string) => (typeof args[key] === "boolean" ? (args[k
 const a = (args: Json, key: string) =>
   Array.isArray(args[key]) ? (args[key] as string[]).map(String) : undefined;
 
+/** Like requiredArray, but an empty list is a meaningful answer here. */
+function requiredArrayAllowingEmpty(args: Json, key: string): string[] {
+  const value = a(args, key);
+  if (!value) throw new Error(`Missing required array argument "${key}"`);
+  return value;
+}
+
+function requiredArray(args: Json, key: string): string[] {
+  const value = a(args, key);
+  if (!value || value.length === 0) {
+    throw new Error(`Missing required array argument "${key}"`);
+  }
+  return value;
+}
+
 function required(args: Json, key: string): string {
   const value = args[key];
   if (typeof value !== "string" || !value.trim()) {
@@ -205,10 +242,35 @@ function enumArg<T extends string>(args: Json, key: string, allowed: readonly T[
   throw new Error(`Unknown ${key} "${value}". Use one of: ${allowed.join(", ")}.`);
 }
 
+/** The same rule for a list: one bad entry fails the call rather than narrowing nothing. */
+function enumArrayArg<T extends string>(
+  args: Json,
+  key: string,
+  allowed: readonly T[],
+): T[] | undefined {
+  const values = a(args, key);
+  if (values === undefined) return undefined;
+  for (const value of values) {
+    if (!(allowed as readonly string[]).includes(value)) {
+      throw new Error(`Unknown ${key} "${value}". Use one of: ${allowed.join(", ")}.`);
+    }
+  }
+  return values as T[];
+}
+
 const TAG_COLORS = ["slate", "blue", "teal", "green", "amber", "red", "violet", "pink"] as const;
 const TAG_KINDS = ["APPLICATION", "COMPANY", "CONTACT", "INDUSTRY", "SIZE", "LOCATION"] as const;
 const COMPANY_FILTERS = ["active", "applied", "never-applied", "with-contacts"] as const;
 const CONTACT_FILTERS = ["ping-due", "with-application", "no-company"] as const;
+const ARCHIVE_KIND_VALUES = ["company", "contact", "application"] as const;
+const EXPORT_KINDS = ["companies", "contacts", "applications"] as const;
+const COMPANY_SORTS = ["name", "applied", "apps", "people"] as const;
+const CONTACT_SORTS = ["name", "company", "ping", "touch"] as const;
+const SORT_DIRECTIONS = ["asc", "desc"] as const;
+const COMPANY_MISSING = ["website", "industry", "location"] as const;
+const CONTACT_MISSING = ["email", "tags"] as const;
+const PIPELINE_VIEW_VALUES = ["board", "list", "calendar"] as const;
+const COLUMN_LIST_VALUES = ["pipeline", "companies", "contacts"] as const;
 
 /**
  * The profile as a tool should see it.
@@ -1287,6 +1349,7 @@ export const tools: McpTool[] = [
         "For a 'Leadership & Activities' section, use an experience-kind section with that heading — organisation, role, location and dates all lay out correctly.",
         "In Harvard, education `details` render as plain lines (thesis, relevant coursework, honours), not bullets.",
         "Set visible: false to keep a section in the document but off the page.",
+        "Sections and entries carry an `id`. Never invent one — leave it out and the app assigns it — but when you have read a document with get_resume and are writing it back, keep the ids you were given: they are how the editor tells one entry from another.",
         "Aim for roughly 40-48 rendered lines per page; call preview_resume_text to sanity-check length before saving.",
         "Photos: off unless asked. showPhoto draws the user's profile picture (set_profile_photo), never one you supply per document. Harvard never renders one — it is a US academic format and a face on it is wrong. US and UK applications generally omit photos; much of Europe and Latin America expects one.",
       ],
@@ -1700,6 +1763,53 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => resumes.deleteResume(ctx.userId, required(args, "id")),
   },
   {
+    name: "reorder_resume",
+    title: "Move a section, entry or bullet",
+    description:
+      "Move one piece of a resume to a different position — a section, an entry inside it, or a bullet inside that. Use this instead of update_resume whenever only the ORDER changes: update_resume replaces the whole document, so reordering that way means reproducing every word of it and risks dropping content you did not mean to touch. This moves one thing and leaves the rest untouched. Name the thing that moves by giving `section`, plus `entry` if you are moving an entry, plus `bullet` if you are moving a bullet — the deepest one you name is what moves. Each of them takes an id, the name it goes by (a heading, a company or school, the bullet's own words) or its number in the list, so you can pass what the user said. `position` is 1-based: 1 puts it first, and anything past the end puts it last. Returns what moved, from where to where, and the section order that resulted. If nothing matches, the error lists what is actually there — read it and try again rather than falling back to update_resume.",
+    inputSchema: object(
+      {
+        id: str("Resume id"),
+        section: str("The section: its id, its heading, or its 1-based number"),
+        entry: str(
+          "An entry inside that section: its id, the company/school/project it names, or its 1-based number. Give this to move the entry, or to say where a bullet lives.",
+        ),
+        bullet: str(
+          "A bullet inside that entry: its text (or enough of it to match) or its 1-based number. Give this to move a bullet.",
+        ),
+        position: num("Where it lands, 1-based. 1 is first; past the end is last."),
+      },
+      ["id", "section", "position"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      resumes.reorderResume(ctx.userId, required(args, "id"), {
+        section: required(args, "section"),
+        entry: args.entry === undefined ? undefined : String(args.entry),
+        bullet: args.bullet === undefined ? undefined : String(args.bullet),
+        position: Number(args.position),
+      }),
+  },
+  {
+    name: "check_resume_fit",
+    title: "Check what to cut from a resume",
+    description:
+      "Reach for this when a resume runs long and the question is what to cut. Returns its bullets ranked longest first — each with the entry it sits under and the path to it — and its sections ranked by how much room they take, so the two obvious levers are in front of you: shorten the worst offenders, or hide a whole section. It RANKS; it does not measure. The page count it reports is the same estimate preview_resume_text gives and carries the same limit — it cannot see the type size, leading or margins, and only a browser can. Call export_resume_pdf for the real number, then call this to decide what goes. Nothing is written: read it, propose the cuts to the user, and make them with update_resume once they agree. Cutting a bullet is deleting something true they did, so say which ones you would drop and why rather than dropping them.",
+    inputSchema: object({ id: str("Resume id") }, ["id"]),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => resumes.resumeFitReport(ctx.userId, required(args, "id")),
+  },
+  {
     name: "preview_resume_text",
     title: "Preview a resume document as text",
     description:
@@ -1914,8 +2024,8 @@ export const tools: McpTool[] = [
         stage: { type: "string", enum: STAGE_VALUES, description: "Starting stage. Default WISHLIST." },
         jobUrl: str("Link to the posting"),
         jobDescription: str("The full job posting text"),
-        location: str("Job location"),
-        workMode: str("Remote | Hybrid | On-site"),
+        location: str("Job location. Free text — call list_field_values first and reuse a spelling already in use."),
+        workMode: str("Remote, Hybrid, On-site, or however they say it. Free text: list_field_values has the ones already in use."),
         salaryRange: str("Advertised or expected compensation"),
         tagIds: strArray("Tag ids from list_tags, kind APPLICATION. Exact; wins over tags."),
         tags: strArray(
@@ -1923,8 +2033,6 @@ export const tools: McpTool[] = [
         ),
         sources: strArray("What tags used to be called. Still works; tags wins."),
         source: str("The old single-value spelling. Ignored when tags or sources is passed."),
-        excitement: num("1-5 how much they want this"),
-        fit: num("1-5 how strong a fit they are"),
         notes: str("Any notes"),
         appliedAt: str("ISO date they applied"),
         nextFollowUpAt: str("ISO date to follow up. Auto-set from the stage if omitted."),
@@ -1954,8 +2062,6 @@ export const tools: McpTool[] = [
           tags: a(args, "tags"),
           sources: a(args, "sources"),
           source: s(args, "source"),
-          excitement: n(args, "excitement"),
-          fit: n(args, "fit"),
           notes: s(args, "notes"),
           appliedAt: s(args, "appliedAt"),
           nextFollowUpAt: s(args, "nextFollowUpAt"),
@@ -1977,8 +2083,8 @@ export const tools: McpTool[] = [
         stage: { type: "string", enum: STAGE_VALUES, description: "New stage" },
         jobUrl: str("Posting link"),
         jobDescription: str("Job posting text"),
-        location: str("Location"),
-        workMode: str("Remote | Hybrid | On-site"),
+        location: str("Location. Free text — list_field_values first, and an empty string clears it."),
+        workMode: str("Work mode. Free text — list_field_values first, and an empty string clears it."),
         salaryRange: str("Compensation"),
         tagIds: strArray("Tag ids. Exact; wins over tags. REPLACES the whole set."),
         tags: strArray("Tag names — REPLACES the whole set, matched or created as above"),
@@ -1986,8 +2092,6 @@ export const tools: McpTool[] = [
         source: str(
           "The old single-value spelling. WARNING: this also REPLACES the entire set with just this one value — read the current list from get_application first, or use tags to write the full list. Ignored when tags or sources is passed.",
         ),
-        excitement: num("1-5"),
-        fit: num("1-5"),
         notes: str("Notes"),
         appliedAt: str("ISO date applied"),
         nextFollowUpAt: str("ISO date of next follow-up, or empty string to clear"),
@@ -2017,8 +2121,6 @@ export const tools: McpTool[] = [
           tags: a(args, "tags"),
           sources: a(args, "sources"),
           source: s(args, "source"),
-          excitement: n(args, "excitement"),
-          fit: n(args, "fit"),
           notes: s(args, "notes"),
           appliedAt: s(args, "appliedAt"),
           nextFollowUpAt: s(args, "nextFollowUpAt"),
@@ -2078,8 +2180,9 @@ export const tools: McpTool[] = [
   },
   {
     name: "delete_application",
-    title: "Delete an application",
-    description: "Permanently delete an application and its timeline.",
+    title: "Archive an application",
+    description:
+      "Put an application in the archive. It leaves the board, the list, the calendar and the funnel, taking its timeline and its tasks with it, and restore_records brings the lot back for a set number of days — 30 by default — before it is deleted for good. Nothing is destroyed here. Still reach for move_application_stage with REJECTED, WITHDRAWN or GHOSTED whenever the thread actually ended: the funnel and diagnose_search are built from applications that ended, and archiving one takes it out of that record entirely. Archive is for something that should never have been tracked; a stage is for something that ended.",
     inputSchema: object({ id: str("Application id") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -2140,7 +2243,7 @@ export const tools: McpTool[] = [
     name: "list_follow_ups",
     title: "List follow-ups that are due",
     description:
-      "The 'who do I need to chase today' tool. Returns two lists: applications whose follow-up date has arrived or passed, and contacts whose ping date has — the people you meant to get back in touch with. Both are due work; plan a day from the pair.",
+      "The 'what has come round' tool, and the same thing the bell in the app counts. Returns three lists: applications whose follow-up date has arrived or passed, contacts whose ping date has — the people you meant to get back in touch with — and tasks that are due or already late. All three are debts with a date on them; plan a day from the set. Each task carries `overdue`, which separates late from due today. Reach for list_tasks when the date does not matter and list_schedule when the question is about a window of time rather than about what is owed now.",
     inputSchema: object({
       withinDays: num("Look ahead this many days. 0 = due now, 7 = due within a week."),
     }),
@@ -2152,11 +2255,15 @@ export const tools: McpTool[] = [
     },
     handler: async (args, ctx) => {
       const withinDays = n(args, "withinDays") ?? 0;
-      const [applications, contacts] = await Promise.all([
+      // The rich rows for the two the caller usually acts on, and dueNow for
+      // the tasks — which is the same function the bell counts from, so the
+      // app and an assistant can never disagree about what is owed.
+      const [applications, contacts, due] = await Promise.all([
         pipeline.followUpsDue(ctx.userId, withinDays),
         pipeline.contactFollowUpsDue(ctx.userId, withinDays),
+        pipeline.dueNow(ctx.userId, withinDays),
       ]);
-      return { applications, contacts };
+      return { applications, contacts, tasks: due.tasks, total: due.total };
     },
   },
   {
@@ -2229,6 +2336,78 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) => pipeline.diagnoseSearch(ctx.userId),
+  },
+  {
+    name: "get_funnel",
+    title: "Get the funnel, rung by rung",
+    description:
+      "The numbers behind the flow chart on the analytics page: for each rung of the ladder — applied, phone screen, interview, final round, offer — how many ever got that far, how many went on, how many are still sitting there, and how many left at that exact point and where they went (rejected, ghosted, withdrawn, offer accepted). Progress is measured by the furthest stage an application actually reached, so a rejection after two interviews is counted as leaking out of the interview rung rather than the applied one — which is the whole reason to look at this rather than at raw stage counts. `visited` says how many were genuinely in a rung, `reached` how many got at least that deep; they differ when someone skips a step, and only `visited` is honest about whether a stage happened. Wishlist rows are counted separately and are not in the funnel at all, because nothing was ever sent. Archived applications are excluded. Use export_funnel_image for the picture. Read-only. Says nothing is there yet rather than dividing by zero.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => pipeline.funnelFlows(ctx.userId),
+  },
+  {
+    name: "export_funnel_image",
+    title: "Export the funnel as an image",
+    description:
+      "Render the funnel — the Sankey flow chart of where every application ended up — as an image file and return a download url. This is the thing people post: it shows the shape of a search without naming a single company, role or person, so it is safe to share in a way almost nothing else here is. Ask for png when it is going into a message, a slide or a post; svg when it wants to stay sharp at any size, or when this instance has no headless browser to make a png with — the tool says which formats it can actually produce and picks svg when png is not on offer. The url opens in the browser they are already signed in to; it is not a public link and nobody else can fetch it. Nothing is saved: the image is drawn fresh from the pipeline each time it is fetched. Refuses when nothing has been applied to yet.",
+    inputSchema: object({
+      format: str("png or svg. Defaults to png where the host can render one, svg otherwise."),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const png = pdfRenderingAvailable();
+      const asked = (s(args, "format") ?? "").toLowerCase();
+      if (asked && asked !== "png" && asked !== "svg") {
+        throw new Error(`Cannot render "${asked}". Ask for png or svg.`);
+      }
+      if (asked === "png" && !png) {
+        throw new Error(
+          "This instance has no headless browser, so it cannot render a PNG. Ask for svg — it opens anywhere an image does.",
+        );
+      }
+
+      const { applied, rungs, wishlist } = await pipeline.funnelFlows(ctx.userId);
+      if (applied === 0) {
+        throw new Error(
+          "Nothing to chart yet — no applications have been sent, so the funnel is empty.",
+        );
+      }
+
+      const format = asked || (png ? "png" : "svg");
+      const url = `${ctx.baseUrl}/api/funnel/${format}`;
+      const stages = rungs.filter((rung) => rung.visited > 0).length;
+      return withLinks(
+        {
+          url,
+          format,
+          applied,
+          wishlist,
+          stages,
+          pngAvailable: png,
+          formats: png ? ["png", "svg"] : ["svg"],
+        },
+        [
+          {
+            type: "resource_link",
+            uri: url,
+            name: `Job search funnel (${format.toUpperCase()})`,
+            description: `${applied} application${applied === 1 ? "" : "s"} across ${stages} stage${stages === 1 ? "" : "s"}. No company or role names on it.`,
+            mimeType: format === "png" ? "image/png" : "image/svg+xml",
+          },
+        ],
+      );
+    },
   },
   {
     name: "share_pipeline",
@@ -2319,7 +2498,7 @@ export const tools: McpTool[] = [
     name: "save_view",
     title: "Save a pipeline view under a name",
     description:
-      "Name a cut of the pipeline so it can be reopened in one click. The query is the pipeline URL's own parameters without the leading '?', and every filter combines with every other: view (board | list | calendar); f (comma-separated stages, plus 'overdue' as a flag that ANDs rather than replacing the stages, and 'closed' which expands to the four endings); src (comma-separated tag ids from list_tags); co (company ids); cv (resume ids, or 'none' for applications with no resume attached); w (minimum days sitting in the current stage); qd (minimum days since anything at all was logged — the chasing question, which is not the same as w); x (minimum excitement, 1-5); sort (followUp | company | stage | updated | salary | waiting | quiet) and dir; q (search across company, role, notes, location, work mode, the posting text and tag names); month (YYYY-MM, calendar only). Example: name 'Referrals gone quiet', query 'view=list&f=APPLIED,SCREEN&qd=14&sort=quiet&dir=desc'. Saving under a name that already exists REPLACES that view rather than creating a second one, which is how you edit one. Anything outside those parameters is dropped. co and cv hold ids, so a view naming a company later folded away by merge_companies simply stops matching it.",
+      "Name a cut of the pipeline so it can be reopened in one click. The query is the pipeline URL's own parameters without the leading '?', and every filter combines with every other: view (board | list | calendar); f (comma-separated stages, plus 'overdue' as a flag that ANDs rather than replacing the stages, and 'closed' which expands to the four endings); src (comma-separated tag ids from list_tags); co (company ids); cv (resume ids, or 'none' for applications with no resume attached); w (minimum days sitting in the current stage); qd (minimum days since anything at all was logged — the chasing question, which is not the same as w); sort (followUp | company | stage | updated | salary | waiting | quiet) and dir; q (search across company, role, notes, location, work mode, the posting text and tag names); month (YYYY-MM, calendar only). Example: name 'Referrals gone quiet', query 'view=list&f=APPLIED,SCREEN&qd=14&sort=quiet&dir=desc'. Saving under a name that already exists REPLACES that view rather than creating a second one, which is how you edit one. Anything outside those parameters is dropped. co and cv hold ids, so a view naming a company later folded away by merge_companies simply stops matching it.",
     inputSchema: object(
       {
         name: str("What to call it, e.g. 'Chasing'"),
@@ -2375,7 +2554,7 @@ export const tools: McpTool[] = [
     name: "list_tasks",
     title: "List tasks",
     description:
-      "To-dos, each optionally attached to an application and with a due date. Open ones first, soonest due first. This is what someone means by 'what do I need to do' — pair it with list_follow_ups, which covers the chasing this list deliberately does not: an application's follow-up date and a person's ping are not tasks and never appear here.",
+      "To-dos, each with a due date and — at most — one thing it is about: an application, a company, a person, a resume, a role in Me, or a note, whichever is set. Open ones first, soonest due first. This is what someone means by 'what do I need to do' — pair it with list_follow_ups, which covers the chasing this list deliberately does not: an application's follow-up date and a person's ping are not tasks and never appear here.",
     inputSchema: object({
       done: bool("Filter by completion state. Omit for all."),
       limit: num("How many at most. Default 100."),
@@ -2392,13 +2571,19 @@ export const tools: McpTool[] = [
   {
     name: "create_task",
     title: "Create a task",
-    description: "Add a to-do, optionally attached to an application and with a due date.",
+    description:
+      "Add a to-do, with a due date and — at most — one thing it is about. A task can hang off an application, a company, a person, a resume, a role in Me, or a note; pass the id of whichever ONE it concerns, and none of them for a task that is about nothing in particular. Passing two is refused rather than guessed at. Attaching it matters: the task shows on that record's own screen, and it goes with it if the record is ever deleted. `detail` is the room for what the task actually involves, which the title should not have to carry. Ids that are not this person's, or are in the archive, are refused.",
     inputSchema: object(
       {
         title: str("What needs doing"),
-        detail: str("Any extra detail"),
+        detail: str("The longer version — what it involves, who said it, what to reference"),
         dueAt: str("ISO date it is due"),
         applicationId: str("Attach to this application"),
+        companyId: str("Or to a company"),
+        contactId: str("Or to a person"),
+        resumeId: str("Or to a resume"),
+        roleId: str("Or to a role in Me"),
+        noteId: str("Or to a note"),
       },
       ["title"],
     ),
@@ -2415,6 +2600,11 @@ export const tools: McpTool[] = [
           detail: s(args, "detail"),
           dueAt: s(args, "dueAt"),
           applicationId: s(args, "applicationId"),
+          companyId: s(args, "companyId"),
+          contactId: s(args, "contactId"),
+          resumeId: s(args, "resumeId"),
+          roleId: s(args, "roleId"),
+          noteId: s(args, "noteId"),
         }),
       }),
   },
@@ -2435,14 +2625,19 @@ export const tools: McpTool[] = [
     name: "update_task",
     title: "Update a task",
     description:
-      "Reword a task, move its due date, or hook it to a different application. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for applicationId to unhook it. Use complete_task to tick it off — done is not settable here.",
+      "Reword a task, move its due date, or hook it to something different. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for any of the subject ids to unhook it. Setting one subject CLEARS the others, because a task is about at most one thing — so moving a task from an application to a person is one call with contactId, not two. Use complete_task to tick it off; done is not settable here.",
     inputSchema: object(
       {
         id: str("Task id"),
         title: str("What needs doing"),
-        detail: str("Any extra detail — replaces what is there"),
+        detail: str("The longer version — replaces what is there"),
         dueAt: str("ISO date it is due, or empty string to clear it"),
-        applicationId: str("Application to attach to, or empty string to unhook"),
+        applicationId: str("Attach to this application, or empty string to unhook"),
+        companyId: str("Or to a company"),
+        contactId: str("Or to a person"),
+        resumeId: str("Or to a resume"),
+        roleId: str("Or to a role in Me"),
+        noteId: str("Or to a note"),
       },
       ["id"],
     ),
@@ -2461,6 +2656,11 @@ export const tools: McpTool[] = [
           detail: s(args, "detail"),
           dueAt: s(args, "dueAt"),
           applicationId: s(args, "applicationId"),
+          companyId: s(args, "companyId"),
+          contactId: s(args, "contactId"),
+          resumeId: s(args, "resumeId"),
+          roleId: s(args, "roleId"),
+          noteId: s(args, "noteId"),
         }),
       ),
   },
@@ -2478,20 +2678,320 @@ export const tools: McpTool[] = [
     },
     handler: async (args, ctx) => pipeline.deleteTask(ctx.userId, required(args, "id")),
   },
+  {
+    name: "export_csv",
+    title: "Export a list as CSV",
+    description:
+      "One of the three lists as a spreadsheet file, returned as CSV text you can hand straight to somebody. 'companies' and 'contacts' take the same cuts list_companies and list_contacts take, so 'export every fintech company I have never applied to' is one call: narrow it with list_companies first, then pass the same arguments here. 'applications' takes the pipeline's own filters through `query`, the same string the app puts in its URL. Every export ALWAYS includes closed applications — somebody exporting before a clear-out wants the rejections, and a file that quietly dropped them would look complete and be wrong at the only moment it mattered. `ids` narrows to particular rows, so you can export exactly what you just listed — it INTERSECTS with the other arguments rather than replacing them, so send it on its own unless you mean 'these rows, and only the ones that also match'. Archived records are never included; use list_archive for those. Read-only: it writes nothing and changes nothing.",
+    inputSchema: object(
+      {
+        kind: {
+          type: "string",
+          enum: [...EXPORT_KINDS],
+          description: "companies | contacts | applications",
+        },
+        ids: strArray("Only these rows, by id. Narrows whatever the other arguments left, so on its own it is exactly this set."),
+        search: str("For companies and contacts: the same search the list tools take"),
+        filter: str("For companies and contacts: the same one-word cut the list tools take"),
+        tagIds: strArray("For companies and contacts: tag ids, as list_companies takes them"),
+        industryIds: strArray("For companies: tag ids of kind INDUSTRY"),
+        sizeIds: strArray("For companies: tag ids of kind SIZE"),
+        locationIds: strArray("For companies: tag ids of kind LOCATION"),
+        companyIds: strArray("For contacts: only people linked to these companies"),
+        quietDays: num("For contacts: nothing logged for at least this many days"),
+        missing: strArray("The same blank-field cuts the list tools take. These AND."),
+        sort: str("The same sort key the matching list tool takes"),
+        dir: { type: "string", enum: [...SORT_DIRECTIONS], description: "asc | desc" },
+        query: str(
+          "For applications: a pipeline query string, e.g. \"f=SCREEN,INTERVIEW&src=<tagId>\" — the same one the app puts in its URL",
+        ),
+      },
+      ["kind"],
+    ),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const kind = enumArg(args, "kind", EXPORT_KINDS) ?? "companies";
+      const ids = a(args, "ids");
+      const dir = enumArg(args, "dir", SORT_DIRECTIONS);
+      if (kind === "companies") {
+        return {
+          filename: exportFilename("companies"),
+          csv: await exportCompaniesCsv(
+            ctx.userId,
+            defined({
+              search: s(args, "search"),
+              filter: enumArg(args, "filter", COMPANY_FILTERS),
+              tagIds: a(args, "tagIds"),
+              industryIds: a(args, "industryIds"),
+              sizeIds: a(args, "sizeIds"),
+              locationIds: a(args, "locationIds"),
+              missing: enumArrayArg(args, "missing", COMPANY_MISSING),
+              sort: enumArg(args, "sort", COMPANY_SORTS),
+              dir,
+              ids,
+            }),
+          ),
+        };
+      }
+      if (kind === "contacts") {
+        return {
+          filename: exportFilename("contacts"),
+          csv: await exportContactsCsv(
+            ctx.userId,
+            defined({
+              search: s(args, "search"),
+              filter: enumArg(args, "filter", CONTACT_FILTERS),
+              tagIds: a(args, "tagIds"),
+              companyIds: a(args, "companyIds"),
+              quietDays: n(args, "quietDays"),
+              missing: enumArrayArg(args, "missing", CONTACT_MISSING),
+              sort: enumArg(args, "sort", CONTACT_SORTS),
+              dir,
+              ids,
+            }),
+          ),
+        };
+      }
+      const query = s(args, "query");
+      return {
+        filename: exportFilename("applications"),
+        csv: await exportApplicationsCsv(
+          ctx.userId,
+          defined({
+            filters: query
+              ? parsePipelineFilters(
+                  (key) => new URLSearchParams(query).get(key) ?? undefined,
+                  pipeline.STAGES,
+                )
+              : undefined,
+            ids,
+          }),
+        ),
+      };
+    },
+  },
+  {
+    name: "get_pipeline_fields",
+    title: "What each pipeline view shows",
+    description:
+      "Which optional fields the board, the table and the calendar draw before you open anything, and everything each one COULD draw. Reach for it when somebody asks what their board shows, says it is too busy or too bare, or wants to know why a field is not on a card. Returns one entry per view: the catalogue of fields with a label each, and which are on. On the board and the table, three things are never in a catalogue and are always drawn — the company, the role title and the stage — because a card without them is not shorter, it is unreadable, and on the table the stage cell is the editor the table exists for. The calendar is the exception and only for stage: a chip is one line of its own title, so stage is genuinely extra there and is off by default. A view whose list comes back empty is on its defaults, which is not the same as showing nothing. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => {
+      const profile = await me.getProfile(ctx.userId);
+      const stored = {
+        board: profile.boardFields,
+        list: profile.listFields,
+        calendar: profile.calendarFields,
+      };
+      return PIPELINE_VIEWS.map((view) => ({
+        view,
+        showing: [...visibleFields(view, stored[view])],
+        onDefaults: stored[view].length === 0,
+        available: FIELDS[view].map((field) => ({
+          key: field.key,
+          label: field.label,
+          inDefaults: field.standard,
+        })),
+      }));
+    },
+  },
+  {
+    name: "set_pipeline_fields",
+    title: "Choose what a pipeline view shows",
+    description:
+      "Set which optional fields one pipeline view draws. REPLACES that view's whole list, so call get_pipeline_fields first, decide the full set, and send it — sending one key turns off everything else on that view. One view per call: the board, the table and the calendar have different catalogues and there is no field they all share. Pass an empty list to put that view back on its defaults, which also means it picks up any field added to the catalogue later; pass ['none'] to mean genuinely nothing, which is a different thing and is why the empty list cannot mean it. A key that is not in that view's catalogue is refused rather than ignored. This is a display preference and changes no data — nothing here archives, deletes or edits an application.",
+    inputSchema: object(
+      {
+        view: {
+          type: "string",
+          enum: [...PIPELINE_VIEW_VALUES],
+          description: "board | list | calendar",
+        },
+        fields: strArray(
+          "The whole set for that view, from get_pipeline_fields. Empty for the defaults, ['none'] for nothing.",
+        ),
+      },
+      ["view", "fields"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      // enumArg, not a computed key: a mistyped view would otherwise be dropped
+      // by `pick` and reported back as a success over a board that never moved.
+      const view = enumArg(args, "view", PIPELINE_VIEW_VALUES);
+      if (!view) throw new Error('Missing required string argument "view"');
+      const fields = requiredArrayAllowingEmpty(args, "fields");
+      const known = new Set(FIELDS[view].map((field) => field.key));
+      for (const key of fields) {
+        if (key !== NO_FIELDS && !known.has(key)) {
+          throw new Error(
+            `"${key}" is not a field the ${view} draws. Use one of: ${[...known].join(", ")}, or "none".`,
+          );
+        }
+      }
+      const stored = await me.setPipelineFields(ctx.userId, view, fields);
+      return {
+        view,
+        showing: [...visibleFields(view, fields)],
+        onDefaults: fields.length === 0,
+        stored,
+      };
+    },
+  },
+  {
+    name: "list_field_values",
+    title: "Locations and work modes already in use",
+    description:
+      "Every location and every work mode already on one of this person's live applications, most-used first with a count each. Call it BEFORE writing either field on create_application or update_application: both are free text and always will be — 'Remote (US, PST overlap)' is a real answer no list survives — but writing 'remote' next to an existing 'Remote' leaves two values that never group together, and this is the cheap way not to. Match case-insensitively against what comes back and reuse that spelling; a genuinely new value is still just a string, so send it. Archived applications do not contribute. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => pipeline.applicationFieldValues(ctx.userId),
+  },
+  {
+    name: "get_column_widths",
+    title: "How wide each list's columns are",
+    description:
+      "The column widths on the three tables you can resize — the pipeline's table view, the companies list and the contacts list — with each column's default, its minimum and its maximum beside the width it is actually drawing at. Reach for it when somebody says a column is too narrow to read, wants their layout described, or before set_column_widths, which needs the keys. Each list also has a name column that flexes to fill whatever the others leave; it is not in the catalogue and has no width, because widening a fixed column is what makes the name narrower. `onDefaults` is true for a list nothing has been stored for. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => {
+      const profile = await me.getProfile(ctx.userId);
+      const stored = parseWidths(profile.columnWidths);
+      return COLUMN_LISTS.map((list) => ({
+        list,
+        label: LIST_LABEL[list],
+        onDefaults: stored[list] === undefined,
+        columns: COLUMNS[list].map((column) => ({
+          key: column.key,
+          label: column.label,
+          width: widthsFor(list, stored)[column.key],
+          default: column.width,
+          min: column.min,
+          max: column.max,
+        })),
+      }));
+    },
+  },
+  {
+    name: "set_column_widths",
+    title: "Resize a list's columns",
+    description:
+      "Set how wide one or more columns are on one list, in pixels. MERGES rather than replaces: a column you leave out keeps the width it had, which is the opposite of set_pipeline_fields and is deliberate — 'make Salary wider' should not reset every other column on the way past. Pass reset: true with no widths to put the whole list back on its defaults, which also means it picks up the catalogue's width for any column added later. A width outside a column's min and max is clamped to the nearest end rather than refused, because the useful reading of 'make it as wide as it goes' is the maximum, not an error; a key that is not a column on that list IS refused, because that one is a typo. Call get_column_widths first for the keys and the limits. This is a display preference and changes no data.",
+    inputSchema: object(
+      {
+        list: {
+          type: "string",
+          enum: [...COLUMN_LIST_VALUES],
+          description: "pipeline | companies | contacts",
+        },
+        widths: {
+          type: "object",
+          description:
+            "Column key to width in pixels, e.g. { \"salary\": 180 }. Omit with reset: true.",
+          additionalProperties: { type: "number" },
+        },
+        reset: bool("Put the whole list back on its default widths"),
+      },
+      ["list"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const list = enumArg(args, "list", COLUMN_LIST_VALUES);
+      if (!list) throw new Error('Missing required string argument "list"');
+      const reset = b(args, "reset") ?? false;
+      const raw = args.widths;
+      const widths: Record<string, number> = {};
+      if (raw !== undefined) {
+        if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+          throw new Error('"widths" must be an object of column key to pixel width.');
+        }
+        const known = new Set(columnKeys(list));
+        for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+          // A typo is refused; an out-of-range number is clamped downstream.
+          // Those are different mistakes and deserve different answers.
+          if (!known.has(key)) {
+            throw new Error(
+              `"${key}" is not a column on the ${list} list. Use one of: ${columnKeys(list).join(", ")}.`,
+            );
+          }
+          if (typeof value !== "number" || !Number.isFinite(value)) {
+            throw new Error(`Width for "${key}" must be a number of pixels.`);
+          }
+          widths[key] = value;
+        }
+      }
+      if (!reset && Object.keys(widths).length === 0) {
+        throw new Error("Pass widths to set, or reset: true to go back to the defaults.");
+      }
+      const stored = await me.setColumnWidths(ctx.userId, list, widths, { reset });
+      const drawn = widthsFor(list, stored);
+      return {
+        list,
+        onDefaults: stored[list] === undefined,
+        // What it actually drew at, not what was asked for: the difference is
+        // the clamp, and reporting the request back would hide it.
+        columns: COLUMNS[list].map((column) => ({ key: column.key, width: drawn[column.key] })),
+      };
+    },
+  },
   // --- CRM: companies and the people at them -------------------------------
   {
     name: "list_companies",
     title: "List companies",
     description:
-      "Every company on file, with how many applications and contacts each one has, plus lastAppliedAt (when you last applied there) and openApplications (how many are still live). Use this to answer 'who have I applied to', to find a companyId before calling get_company, or to spot companies missing a website — the website is what makes their logo appear in the pipeline. Every row carries its tags: industry, size, location and anything else, all as labels rather than the single strings they used to be. Pass search to match on name, notes or a tag; pass tagIds to cut to the ones wearing a particular label; pass filter to cut the list: 'active' = something still in flight, 'applied' = ever applied, 'never-applied' = researched but never sent anything, 'with-contacts' = you know someone there.",
+      "Every company on file, with how many applications and contacts each one has, plus lastAppliedAt (when you last applied there) and openApplications (how many are still live). Reach for this to answer 'who have I applied to', to find a companyId before get_company, or to cut the list down to something specific before working through it. Every row carries its tags: industry, size, location and free tags, all as labels rather than the single strings they used to be. Everything below ANDs, so one call asks for 'fintech, remote, never applied'. search matches the name, the website, your notes and any tag name. filter is one cut and only one. industryIds, sizeIds and locationIds each take tag ids of that kind from list_tags and match a company wearing ANY id in the group — so a group ORs inside itself and ANDs with the others. tagIds is the loose one: it matches a tag of any kind, which is what to use when you have an id and do not care which list it came from. missing finds the gaps worth fixing in one sitting, and those AND with each other. sort is name, applied, apps or people; every sort but name defaults to most-first, and companies you have never applied to sort last whichever way 'applied' points, because that is a question about the others. Ids only — call list_tags first to turn 'fintech' into an id; a name here would narrow nothing and hand you every company as if that were the answer. Archived companies are never returned; list_archive is where those are. Read-only: it saves nothing and creates no tags.",
     inputSchema: object({
-      search: str("Match name, notes or any tag — industry and location included"),
-      tagIds: strArray("Only companies wearing one of these tags. Ids from list_tags."),
+      search: str("Match name, website, notes or any tag — industry and location included"),
+      tagIds: strArray("Only companies wearing one of these tags, of any kind. Ids from list_tags."),
+      industryIds: strArray("Tag ids of kind INDUSTRY. Matches a company wearing any of them."),
+      sizeIds: strArray("Tag ids of kind SIZE."),
+      locationIds: strArray("Tag ids of kind LOCATION."),
+      missing: {
+        type: "array",
+        items: { type: "string", enum: [...COMPANY_MISSING] },
+        description: "Fields that are blank: website | industry | location. These AND with each other.",
+      },
       filter: {
         type: "string",
         enum: [...COMPANY_FILTERS],
         description: "Cut the list: active | applied | never-applied | with-contacts",
       },
+      sort: {
+        type: "string",
+        enum: [...COMPANY_SORTS],
+        description: "name | applied | apps | people. Default name.",
+      },
+      dir: { type: "string", enum: [...SORT_DIRECTIONS], description: "asc | desc" },
     }),
     annotations: {
       readOnlyHint: true,
@@ -2500,11 +3000,20 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) =>
-      pipeline.listCompanies(ctx.userId, {
-        search: s(args, "search"),
-        tagIds: a(args, "tagIds"),
-        filter: enumArg(args, "filter", COMPANY_FILTERS),
-      }),
+      pipeline.listCompanies(
+        ctx.userId,
+        defined({
+          search: s(args, "search"),
+          tagIds: a(args, "tagIds"),
+          industryIds: a(args, "industryIds"),
+          sizeIds: a(args, "sizeIds"),
+          locationIds: a(args, "locationIds"),
+          missing: enumArrayArg(args, "missing", COMPANY_MISSING),
+          filter: enumArg(args, "filter", COMPANY_FILTERS),
+          sort: enumArg(args, "sort", COMPANY_SORTS),
+          dir: enumArg(args, "dir", SORT_DIRECTIONS),
+        }),
+      ),
   },
   {
     name: "get_company",
@@ -2619,9 +3128,9 @@ export const tools: McpTool[] = [
   },
   {
     name: "delete_company",
-    title: "Delete a company",
+    title: "Archive a company",
     description:
-      "Remove a company record. Refuses while applications still point at it — move or delete those first, so tidying up a company can never take an application with it. Contacts survive and simply lose their employer.",
+      "Put a company in the archive. It leaves the CRM, every picker, every filter and the pipeline, and restore_records brings it back for a set number of days — 30 by default — before it is deleted for good. Nothing is destroyed here. Every application still pointing at it goes into the archive with it and comes back with it; this used to refuse while those existed and no longer needs to. The people who represent it are NOT archived: somebody is a founder at one company and an advisor at another, so they keep every other company and simply lose this one. Returns how many applications went with it. To fold a duplicate employer into the one you are keeping without archiving anything, use merge_companies.",
     inputSchema: object({ id: str("Company id") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -2677,17 +3186,30 @@ export const tools: McpTool[] = [
     name: "list_contacts",
     title: "List contacts",
     description:
-      "Recruiters, hiring managers and referrals. Narrow by application, by company, by a search across name, title, relationship, email, notes, employer and tags, or by filter: 'ping-due' = their follow-up date has arrived, 'with-application' = attached to an application, 'no-company' = nowhere on file. Returns each person with `companies` — a list, because someone can be a founder at one place and an advisor at another — their `tags`, and the application they are attached to. companyId matches anyone linked to that company, not only those whose main job it is.",
+      "Recruiters, hiring managers, referrals and the friend who might put in a word. Reach for this to find a contactId before get_contact or update_contact, to see who you already know somewhere before an interview, or to build the list you are about to work through. Returns each person with `companies` — a list, because someone can be a founder at one place and an advisor at another — their `tags`, their next ping date, the application they are attached to, and their most recent logged activity. Everything below ANDs. search matches name, title, relationship, email, notes, employer names and tag names. filter is one cut and only one. companyIds matches anyone linked to ANY of those companies — linked, not employed by, so an advisor at one of them counts; companyId is the single-company shorthand for the same thing. tagIds takes CONTACT tag ids from list_tags. quietDays is the networking question: everyone you have logged nothing against for at least that many days, counting from the day you added somebody you have never logged anything against at all, so people you filed and forgot come back rather than hiding behind a blank. missing finds the gaps: 'email' means nobody you can write to, 'tags' means filed under nothing so no tag filter will ever find them. sort is name, company (people with nobody on file last), ping (soonest first, no date last) or touch (longest since you logged anything, first). log_activity with a contactId is what moves the last-touch date; update_contact's nextFollowUpAt is what schedules the next ping. Archived people are never returned; list_archive is where those are. Read-only; it saves nothing.",
     inputSchema: object({
       applicationId: str("Limit to one application"),
       companyId: str("Limit to people linked to one company"),
+      companyIds: strArray("Limit to people linked to any of these companies"),
       search: str("Match name, title, relationship, email, notes, company or tag"),
       tagIds: strArray("Only people wearing one of these tags. Ids from list_tags, kind CONTACT."),
+      quietDays: num("Only people with nothing logged for at least this many days"),
+      missing: {
+        type: "array",
+        items: { type: "string", enum: [...CONTACT_MISSING] },
+        description: "Fields that are blank: email | tags. These AND with each other.",
+      },
       filter: {
         type: "string",
         enum: [...CONTACT_FILTERS],
         description: "Cut the list: ping-due | with-application | no-company",
       },
+      sort: {
+        type: "string",
+        enum: [...CONTACT_SORTS],
+        description: "name | company | ping | touch. Default name.",
+      },
+      dir: { type: "string", enum: [...SORT_DIRECTIONS], description: "asc | desc" },
     }),
     annotations: {
       readOnlyHint: true,
@@ -2696,15 +3218,21 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) =>
-      pipeline.listContacts(ctx.userId, {
-        ...defined({
+      pipeline.listContacts(
+        ctx.userId,
+        defined({
           applicationId: s(args, "applicationId"),
           companyId: s(args, "companyId"),
+          companyIds: a(args, "companyIds"),
           search: s(args, "search"),
           tagIds: a(args, "tagIds"),
+          quietDays: n(args, "quietDays"),
+          missing: enumArrayArg(args, "missing", CONTACT_MISSING),
           filter: enumArg(args, "filter", CONTACT_FILTERS),
+          sort: enumArg(args, "sort", CONTACT_SORTS),
+          dir: enumArg(args, "dir", SORT_DIRECTIONS),
         }),
-      }),
+      ),
   },
   {
     name: "get_contact",
@@ -2797,9 +3325,9 @@ export const tools: McpTool[] = [
   },
   {
     name: "delete_contact",
-    title: "Delete a contact",
+    title: "Archive a contact",
     description:
-      "Remove a person. The companies they represented and any application they were attached to stay.",
+      "Put a person in the archive with their whole timeline — every call, coffee and reply logged against them. Nothing is destroyed, and restore_records brings all of it back for a set number of days, 30 by default. The companies they represent and the application they were attached to are untouched; they simply stop appearing on either. To take somebody off one application without archiving them, use update_contact with an empty applicationId.",
     inputSchema: object({ id: str("Contact id") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -2872,6 +3400,239 @@ export const tools: McpTool[] = [
           applicationId: s(args, "applicationId"),
         }),
       }),
+  },
+  {
+    name: "tag_companies",
+    title: "Tag companies in bulk",
+    description:
+      "Add or remove tags across a set of companies in one act — 'these nine are all fintech', 'take Dream list off these four'. ADD and REMOVE, never replace: a bulk write that replaced the set would mean tagging nine companies as fintech quietly stripping the size, location and everything else off every one of them. Ids only, from list_tags, and each must be a tag of kind INDUSTRY, SIZE, LOCATION or COMPANY — a tag of any other kind is refused rather than attached, because nothing in the app renders an application tag on a company and no picker could ever take it back off. Ids that are not this person's, or are in the archive, are skipped rather than failing the call. Returns which companies changed and which were skipped. Use update_company when you are setting one company's lists deliberately; this is for a selection.",
+    inputSchema: object(
+      {
+        ids: strArray("Company ids to change"),
+        add: strArray("Tag ids to attach. Kind INDUSTRY, SIZE, LOCATION or COMPANY."),
+        remove: strArray("Tag ids to take off"),
+      },
+      ["ids"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      pipeline.tagCompanies(ctx.userId, requiredArray(args, "ids"), {
+        add: a(args, "add"),
+        remove: a(args, "remove"),
+      }),
+  },
+  {
+    name: "tag_contacts",
+    title: "Tag people in bulk",
+    description:
+      "Add or remove CONTACT tags across a set of people in one act — 'these six are all referrals'. ADD and REMOVE, never replace, for the same reason tag_companies does not replace: a bulk overwrite loses every other label somebody already carries. Ids only, from list_tags with kind CONTACT; a tag of any other kind is refused. Ids that are not this person's, or are in the archive, are skipped rather than failing the call. Use update_contact when you are setting one person's tags deliberately.",
+    inputSchema: object(
+      {
+        ids: strArray("Contact ids to change"),
+        add: strArray("Tag ids to attach. Kind CONTACT."),
+        remove: strArray("Tag ids to take off"),
+      },
+      ["ids"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      pipeline.tagContacts(ctx.userId, requiredArray(args, "ids"), {
+        add: a(args, "add"),
+        remove: a(args, "remove"),
+      }),
+  },
+  {
+    name: "schedule_contact_pings",
+    title: "Put people on the chase list",
+    description:
+      "Set one next-ping date across a set of people — 'chase everyone I met at the conference in two weeks'. Takes an ISO date; an empty string clears the date instead, taking all of them off the chase list. A date it cannot read is REFUSED rather than treated as empty, so a vague 'next Tuesday' fails loudly instead of silently unscheduling everybody in the batch. Due pings surface in list_follow_ups and list_schedule alongside due applications. Ids that are not this person's, or are in the archive, are skipped. Use update_contact's nextFollowUpAt for one person.",
+    inputSchema: object(
+      {
+        ids: strArray("Contact ids"),
+        date: str("ISO date to ping them, or an empty string to clear it"),
+      },
+      ["ids", "date"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      // Not `required`, which refuses an empty string — and an empty string is
+      // the documented way to take everyone off the chase list.
+      const date = args["date"];
+      if (typeof date !== "string") {
+        throw new Error('Missing required string argument "date"');
+      }
+      return pipeline.scheduleContactPings(ctx.userId, requiredArray(args, "ids"), date);
+    },
+  },
+
+  // --- ARCHIVE: what has been deleted -------------------------------------
+  {
+    name: "list_archive",
+    title: "What is in the archive",
+    description:
+      "Everything this person has deleted and can still get back. Deleting a company, a person or an application in Hired does not destroy it: it lands in the archive and is deleted for good a set number of days later — 30 unless this instance changed it, and this tool reports the figure in force. Reach for it when they ask where something went, say they deleted something by mistake, or want to know what is about to disappear. Returns one row per item with its kind, id, what it was called, a one-line subtitle, when it was archived, and purgeAt — the moment it goes for good, or null when this instance keeps things forever. Each row also says what would come back with it, so you can say 'restoring Stripe brings 3 applications back' before doing it, and flags a company whose name a live company has since taken, which is the one thing that can make a restore fail. Pass the kind and ids to restore_records, or to delete_archived to finish the job now. Read-only: it saves nothing and it purges nothing.",
+    inputSchema: object({
+      kind: {
+        type: "string",
+        enum: [...ARCHIVE_KIND_VALUES],
+        description: "Only this kind: company | contact | application",
+      },
+      search: str("Match the name, or a role title and its company"),
+      limit: num("How many of each kind at most. Default 200."),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      archive.listArchive(
+        ctx.userId,
+        defined({
+          kind: enumArg(args, "kind", ARCHIVE_KIND_VALUES),
+          search: s(args, "search"),
+          limit: n(args, "limit"),
+        }),
+      ),
+  },
+  {
+    name: "archive_records",
+    title: "Delete, reversibly",
+    description:
+      "Delete records the reversible way: they leave every list, board, picker, filter and count in the app and land in the archive, where restore_records brings them back for a set number of days — 30 by default — before they are deleted for good. This is what to use whenever somebody says to delete or remove a company, a person or an application; delete_company, delete_contact and delete_application do exactly this for one at a time. Takes ONE kind and the ids of that kind. Archiving a company takes every application still pointing at it, with their timelines and their tasks, and brings them all back together on restore — it no longer refuses while applications exist, because nothing is destroyed here. The people who represent a company are NOT archived with it: somebody is a founder at one place and an advisor at another, so they keep every other company and simply lose this one. Ids that are not this person's, or are already in the archive, are skipped rather than failing the call. Nothing here is permanent — delete_archived is.",
+    inputSchema: object(
+      {
+        kind: {
+          type: "string",
+          enum: [...ARCHIVE_KIND_VALUES],
+          description: "company | contact | application",
+        },
+        ids: strArray("Ids of that kind"),
+      },
+      ["kind", "ids"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      archive.archiveRecords(
+        ctx.userId,
+        enumArg(args, "kind", ARCHIVE_KIND_VALUES) ?? "company",
+        requiredArray(args, "ids"),
+      ),
+  },
+  {
+    name: "restore_records",
+    title: "Bring archived records back",
+    description:
+      "Take records out of the archive and put them back in the app. Call list_archive first for the kind and the ids. Restoring a company also restores every application that went into the archive WITH it — but not one the person had binned separately beforehand, which stays where they put it. Restoring an application whose company is still archived brings the company back too, because an application with no company is a row nothing can draw. Ids that are not in the archive are skipped rather than failing, so restoring a list twice is harmless. The one thing that can genuinely fail is a name: company names are unique per person, so restoring 'Stripe' while a live 'Stripe' exists is refused for that company alone and reported in skipped with the reason — everything else in the same call still comes back, and preview_company_merge and merge_companies are how to fold the two together afterwards. Returns what was restored, what came back alongside it, and what was skipped and why.",
+    inputSchema: object(
+      {
+        kind: {
+          type: "string",
+          enum: [...ARCHIVE_KIND_VALUES],
+          description: "company | contact | application",
+        },
+        ids: strArray("Ids of that kind, from list_archive"),
+      },
+      ["kind", "ids"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      archive.restoreRecords(
+        ctx.userId,
+        enumArg(args, "kind", ARCHIVE_KIND_VALUES) ?? "company",
+        requiredArray(args, "ids"),
+      ),
+  },
+  {
+    name: "delete_archived",
+    title: "Destroy archived records now",
+    description:
+      "Destroy archived records immediately, without waiting for the retention window. IRREVERSIBLE, with nothing behind it: no second bin, no undo, no copy anywhere. It only reaches records that are ALREADY in the archive, which is what makes it impossible to destroy anything in this app in a single step and means this can never surprise somebody who has not already deleted the thing once. Destroying a company also destroys every application archived with it, timelines and tasks included; a company that still has a LIVE application is refused outright rather than taking it down too. Call list_archive first, tell the person exactly what will go and in what numbers, and get a plain yes before calling this. Most of the time there is nothing to do here: the archive clears itself when the window runs out, so the only reason to reach for this is something somebody wants gone now.",
+    inputSchema: object(
+      {
+        kind: {
+          type: "string",
+          enum: [...ARCHIVE_KIND_VALUES],
+          description: "company | contact | application",
+        },
+        ids: strArray("Ids of that kind, from list_archive"),
+      },
+      ["kind", "ids"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      archive.deleteArchived(
+        ctx.userId,
+        enumArg(args, "kind", ARCHIVE_KIND_VALUES) ?? "company",
+        requiredArray(args, "ids"),
+      ),
+  },
+  {
+    name: "empty_archive",
+    title: "Empty the archive",
+    description:
+      "Empty the archive completely, or one kind of it. Everything in it is destroyed immediately and none of it comes back. This is the most destructive tool on this server — it can take years of applications, interview timelines and the people behind them in one call — so never reach for it because somebody said 'clean up', 'tidy my pipeline' or 'get rid of the old stuff'. It REFUSES unless expectCount matches the number of items in the archive right now: call list_archive, tell the person how many things are about to go and what they are, and pass back the count it reported. If anything changed in between, the call fails rather than deleting more than you told them about. Use delete_archived when they mean specific things rather than all of it. Returns how many of each kind were destroyed — destroying a company takes the applications archived with it, so the number can be larger than the count of rows they saw.",
+    inputSchema: object(
+      {
+        expectCount: num("How many items list_archive just reported. The call fails if it moved."),
+        kind: {
+          type: "string",
+          enum: [...ARCHIVE_KIND_VALUES],
+          description: "Only this kind. Omit to empty the whole archive.",
+        },
+      },
+      ["expectCount"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const kind = enumArg(args, "kind", ARCHIVE_KIND_VALUES);
+      const expected = n(args, "expectCount");
+      if (expected === undefined) throw new Error('Missing required number argument "expectCount"');
+      const { total, counts } = await archive.listArchive(ctx.userId, defined({ kind }));
+      const actual = kind ? counts[kind] : total;
+      if (actual !== expected) {
+        throw new Error(
+          `The archive holds ${actual} ${kind ? `${kind} ` : ""}item(s), not ${expected}. Read it back with list_archive and confirm what is about to go.`,
+        );
+      }
+      return archive.emptyArchive(ctx.userId, defined({ kind }));
+    },
   },
 
   // -------------------------------------------------------------------------
@@ -3681,8 +4442,12 @@ export const tools: McpTool[] = [
   {
     name: "admin_send_test_email",
     title: "Send a test email",
-    description: "Proves the Resend configuration actually delivers. Returns the exact error if it does not.",
-    inputSchema: object({ to: str("Where to send it. Defaults to your own address.") }),
+    description:
+      "Proves the Resend configuration actually delivers, and doubles as the way to look at what this instance's mail actually looks like. Returns the exact error if it does not send. `template` picks which of the three designs to send: `test` (the default, a short confirmation), `invite` (the real invitation email filled with placeholder material) or `waitlist` (the notice the owner gets when a stranger asks for access). The samples are marked [Sample] in the subject and their links go nowhere, so proofreading an invitation costs nobody a real invitation token.",
+    inputSchema: object({
+      to: str("Where to send it. Defaults to your own address."),
+      template: str("Which email to send: test, invite or waitlist. Defaults to test."),
+    }),
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -3693,10 +4458,11 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => {
       const settings = await getSettings();
       const to = s(args, "to") || ctx.user.email;
-      const result = await sendEmail({ to, ...testEmail(settings.instanceName), settings });
+      const template = s(args, "template") || "test";
+      const result = await sendEmail({ to, ...renderEmailTemplate(template, settings), settings });
       return result.ok
-        ? { ok: true, to, id: result.id }
-        : { ok: false, to, error: result.error };
+        ? { ok: true, to, template, id: result.id }
+        : { ok: false, to, template, error: result.error };
     },
   },
   {

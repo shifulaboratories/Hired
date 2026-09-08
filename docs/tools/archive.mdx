@@ -1,0 +1,99 @@
+---
+title: "Archive tools"
+sidebarTitle: "Archive"
+description: "Five tools over what has been deleted: reading the bin, putting things back, and getting rid of them for good."
+icon: "trash-can"
+---
+
+Deleting a company, a person or an application does not destroy it. The record gets an
+archive date, drops out of every list, board, picker, filter and count in the app, and
+waits out a retention window — 30 days unless an admin changed it — before it is deleted
+for good.
+
+That means two different acts, and only one of them is final:
+
+<CardGroup cols={2}>
+  <Card title="Reversible" icon="rotate-left">
+    `archive_records` and the three `delete_*` tools. Everything they touch is still there
+    and comes back whole with `restore_records`.
+  </Card>
+  <Card title="Final" icon="triangle-exclamation">
+    `delete_archived` and `empty_archive`. Nothing is behind these — no second bin, no
+    undo. Read the archive back to the person before calling either.
+  </Card>
+</CardGroup>
+
+Neither final tool can reach a live record: both only ever match rows that are already in
+the archive. Nothing in this app can be destroyed in one step.
+
+<Note>
+  Archiving a company takes every application still pointing at it, and restoring the
+  company brings back exactly those — not one the person binned separately beforehand,
+  which stays where they put it. The people who represent a company are never archived
+  with it.
+</Note>
+
+Roles, highlights, notes, resumes, tasks, tags and saved views are not archived. Deleting
+one of those is immediate and final, and their own tool descriptions say so.
+
+### `list_archive`
+
+_What is in the archive_
+
+Everything this person has deleted and can still get back. Deleting a company, a person or an application in Hired does not destroy it: it lands in the archive and is deleted for good a set number of days later — 30 unless this instance changed it, and this tool reports the figure in force. Reach for it when they ask where something went, say they deleted something by mistake, or want to know what is about to disappear. Returns one row per item with its kind, id, what it was called, a one-line subtitle, when it was archived, and purgeAt — the moment it goes for good, or null when this instance keeps things forever. Each row also says what would come back with it, so you can say 'restoring Stripe brings 3 applications back' before doing it, and flags a company whose name a live company has since taken, which is the one thing that can make a restore fail. Pass the kind and ids to restore_records, or to delete_archived to finish the job now. Read-only: it saves nothing and it purges nothing.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `kind` | enum | Only this kind: company \| contact \| application  `company` · `contact` · `application` |
+| `search` | string | Match the name, or a role title and its company |
+| `limit` | number | How many of each kind at most. Default 200. |
+
+### `archive_records`
+
+_Delete, reversibly_
+
+Delete records the reversible way: they leave every list, board, picker, filter and count in the app and land in the archive, where restore_records brings them back for a set number of days — 30 by default — before they are deleted for good. This is what to use whenever somebody says to delete or remove a company, a person or an application; delete_company, delete_contact and delete_application do exactly this for one at a time. Takes ONE kind and the ids of that kind. Archiving a company takes every application still pointing at it, with their timelines and their tasks, and brings them all back together on restore — it no longer refuses while applications exist, because nothing is destroyed here. The people who represent a company are NOT archived with it: somebody is a founder at one place and an advisor at another, so they keep every other company and simply lose this one. Ids that are not this person's, or are already in the archive, are skipped rather than failing the call. Nothing here is permanent — delete_archived is.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `kind` | enum | **required** — company \| contact \| application  `company` · `contact` · `application` |
+| `ids` | string[] | **required** — Ids of that kind |
+
+### `restore_records`
+
+_Bring archived records back_
+
+Take records out of the archive and put them back in the app. Call list_archive first for the kind and the ids. Restoring a company also restores every application that went into the archive WITH it — but not one the person had binned separately beforehand, which stays where they put it. Restoring an application whose company is still archived brings the company back too, because an application with no company is a row nothing can draw. Ids that are not in the archive are skipped rather than failing, so restoring a list twice is harmless. The one thing that can genuinely fail is a name: company names are unique per person, so restoring 'Stripe' while a live 'Stripe' exists is refused for that company alone and reported in skipped with the reason — everything else in the same call still comes back, and preview_company_merge and merge_companies are how to fold the two together afterwards. Returns what was restored, what came back alongside it, and what was skipped and why.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `kind` | enum | **required** — company \| contact \| application  `company` · `contact` · `application` |
+| `ids` | string[] | **required** — Ids of that kind, from list_archive |
+
+### `delete_archived`
+
+_Destroy archived records now_
+
+Destroy archived records immediately, without waiting for the retention window. IRREVERSIBLE, with nothing behind it: no second bin, no undo, no copy anywhere. It only reaches records that are ALREADY in the archive, which is what makes it impossible to destroy anything in this app in a single step and means this can never surprise somebody who has not already deleted the thing once. Destroying a company also destroys every application archived with it, timelines and tasks included; a company that still has a LIVE application is refused outright rather than taking it down too. Call list_archive first, tell the person exactly what will go and in what numbers, and get a plain yes before calling this. Most of the time there is nothing to do here: the archive clears itself when the window runs out, so the only reason to reach for this is something somebody wants gone now.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `kind` | enum | **required** — company \| contact \| application  `company` · `contact` · `application` |
+| `ids` | string[] | **required** — Ids of that kind, from list_archive |
+
+### `empty_archive`
+
+_Empty the archive_
+
+Empty the archive completely, or one kind of it. Everything in it is destroyed immediately and none of it comes back. This is the most destructive tool on this server — it can take years of applications, interview timelines and the people behind them in one call — so never reach for it because somebody said 'clean up', 'tidy my pipeline' or 'get rid of the old stuff'. It REFUSES unless expectCount matches the number of items in the archive right now: call list_archive, tell the person how many things are about to go and what they are, and pass back the count it reported. If anything changed in between, the call fails rather than deleting more than you told them about. Use delete_archived when they mean specific things rather than all of it. Returns how many of each kind were destroyed — destroying a company takes the applications archived with it, so the number can be larger than the count of rows they saw.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `expectCount` | number | **required** — How many items list_archive just reported. The call fails if it moved. |
+| `kind` | enum | Only this kind. Omit to empty the whole archive.  `company` · `contact` · `application` |

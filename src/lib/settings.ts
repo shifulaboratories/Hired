@@ -26,6 +26,9 @@ export const SETTING_KEYS = {
   publicUrl: "public_url",
   landingUrl: "landing_url",
   companyLogos: "company_logos",
+  archiveRetentionDays: "archive_retention_days",
+  /** Bookkeeping the sweep owns, not a knob. See listVariables. */
+  archiveSweptAt: "archive_swept_at",
   googleClientId: "google_client_id",
   googleClientSecret: "google_client_secret",
   googleAllowSignup: "google_allow_signup",
@@ -47,6 +50,11 @@ export type InstanceSettings = {
   landingUrl: string;
   /** Off means no request ever leaves the browser for a logo. */
   companyLogos: boolean;
+  /**
+   * Days a deleted company, person or application waits in the archive before
+   * it is destroyed. 0 keeps everything until somebody empties it by hand.
+   */
+  archiveRetentionDays: number;
   /** Google sign-in. Empty client id means the button is not shown at all. */
   googleClientId: string;
   googleClientSecret: string;
@@ -136,6 +144,16 @@ export const VARIABLES: VariableDef[] = [
     group: "Instance",
     placeholder: "",
     fallback: "1",
+  },
+  {
+    key: SETTING_KEYS.archiveRetentionDays,
+    field: "archiveRetentionDays",
+    label: "Archive retention",
+    help: "How many days a deleted company, person or application waits in the archive before it is deleted for good. Everyone on this instance gets the same window. 0 keeps everything until somebody empties it by hand.",
+    kind: "text",
+    group: "Instance",
+    placeholder: "30",
+    fallback: "30",
   },
   {
     key: SETTING_KEYS.googleClientId,
@@ -298,6 +316,7 @@ export async function getSettings(): Promise<InstanceSettings> {
     publicUrl: raw(SETTING_KEYS.publicUrl),
     landingUrl: raw(SETTING_KEYS.landingUrl),
     companyLogos: raw(SETTING_KEYS.companyLogos) !== "0",
+    archiveRetentionDays: retentionDays(raw(SETTING_KEYS.archiveRetentionDays)),
     googleClientId: raw(SETTING_KEYS.googleClientId),
     googleClientSecret: raw(SETTING_KEYS.googleClientSecret),
     googleAllowSignup: raw(SETTING_KEYS.googleAllowSignup) === "1",
@@ -308,6 +327,21 @@ export async function getSettings(): Promise<InstanceSettings> {
     stripeWebhookSecret: raw(SETTING_KEYS.stripeWebhookSecret),
     stripePaymentLink: raw(SETTING_KEYS.stripePaymentLink),
   };
+}
+
+/**
+ * How long the archive holds on to something, as a number of days.
+ *
+ * Every other field in InstanceSettings is a raw string or a "1"/"0" toggle;
+ * this one is arithmetic, so it is parsed once here rather than at each of the
+ * three places that count days. Clamped rather than rejected: an admin who
+ * types "3650" gets ten years, one who types "banana" gets the default back,
+ * and neither ends up with a bin that empties immediately.
+ */
+export function retentionDays(raw: string): number {
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 0) return 30;
+  return Math.min(parsed, 3650);
 }
 
 export async function setSetting(key: string, value: string) {
@@ -442,7 +476,10 @@ export async function listVariables(): Promise<VariableRow[]> {
   });
 
   const custom = rows
-    .filter((row) => !BY_KEY.has(row.key))
+    // archive_swept_at is a clock the sweep keeps, not a knob anybody sets. An
+    // operator screen of settings should not carry a timestamp that changes on
+    // its own every hour.
+    .filter((row) => !BY_KEY.has(row.key) && row.key !== SETTING_KEYS.archiveSweptAt)
     .map((row) => ({
       key: row.key,
       label: row.key,

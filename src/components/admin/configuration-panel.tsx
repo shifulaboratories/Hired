@@ -20,6 +20,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { FilterChip } from "@/components/filter-chip";
@@ -67,7 +74,13 @@ export function ConfigurationPanel({
   variables: Variable[];
   google: { configured: boolean; redirectUri: string };
   microsoft: { configured: boolean; redirectUri: string };
-  email: { configured: boolean; fromEmail: string; ownEmail: string };
+  email: {
+    configured: boolean;
+    fromEmail: string;
+    ownEmail: string;
+    /** Which designs Send test can send. From EMAIL_TEMPLATES, which is server-side. */
+    templates: { key: string; label: string }[];
+  };
   billing: { configured: boolean; billedUsers: number; webhookUrl: string };
 }) {
   const router = useRouter();
@@ -322,7 +335,11 @@ export function ConfigurationPanel({
             {!filtering && group.name === "Email" && (
               <>
                 <Separator className="my-5" />
-                <TestEmail ownEmail={email.ownEmail} configured={email.configured} />
+                <TestEmail
+                  ownEmail={email.ownEmail}
+                  configured={email.configured}
+                  templates={email.templates}
+                />
               </>
             )}
             {!filtering && group.name === "Billing" && (
@@ -645,8 +662,19 @@ function WebhookUrl({ url }: { url: string }) {
   );
 }
 
-function TestEmail({ ownEmail, configured }: { ownEmail: string; configured: boolean }) {
+function TestEmail({
+  ownEmail,
+  configured,
+  templates,
+}: {
+  ownEmail: string;
+  configured: boolean;
+  templates: { key: string; label: string }[];
+}) {
   const [to, setTo] = useState(ownEmail);
+  // Which of the three designs goes out. Sending the real invitation to
+  // yourself is how you proofread it without minting a token for a stranger.
+  const [template, setTemplate] = useState(templates[0]?.key ?? "test");
   const [testing, startTesting] = useTransition();
 
   return (
@@ -660,13 +688,25 @@ function TestEmail({ ownEmail, configured }: { ownEmail: string; configured: boo
           placeholder="you@example.com"
           className="min-w-[14rem] flex-1"
         />
+        <Select value={template} onValueChange={setTemplate}>
+          <SelectTrigger className="w-[13rem]" aria-label="Which email to send">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {templates.map((item) => (
+              <SelectItem key={item.key} value={item.key}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button
           variant="outline"
           disabled={testing}
           onClick={() =>
             startTesting(async () => {
-              const result = await sendTestEmailAction(to);
-              if (result.ok) toast.success(`Test email sent to ${result.to}`);
+              const result = await sendTestEmailAction(to, template);
+              if (result.ok) toast.success(`Sent to ${result.to}`);
               else toast.error(result.error, { duration: 8000 });
             })
           }
@@ -677,7 +717,7 @@ function TestEmail({ ownEmail, configured }: { ownEmail: string; configured: boo
       </div>
       <p className="text-muted-foreground text-xs">
         {configured
-          ? "If it fails, the exact reason from Resend is shown — usually an unverified domain."
+          ? "The samples are the real designs with placeholder details, so you can see what people get. If a send fails, the exact reason from Resend is shown — usually an unverified domain."
           : "Save a key and a from address first. Until then this reports what is missing."}
       </p>
     </div>

@@ -36,7 +36,9 @@ export async function setupStatus(userId: string): Promise<SetupStatus> {
     }),
     db.role.findFirst({ where: { userId }, select: { id: true } }),
     db.highlight.findFirst({ where: { userId }, select: { id: true } }),
-    db.application.findFirst({ where: { userId }, select: { id: true } }),
+    // Archiving your only application un-ticks the step, which is honest: the
+    // setup strip asks whether you have started, not whether you ever did.
+    db.application.findFirst({ where: { userId, archivedAt: null }, select: { id: true } }),
   ]);
 
   const steps: SetupStep[] = [

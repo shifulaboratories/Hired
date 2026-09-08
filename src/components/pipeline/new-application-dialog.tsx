@@ -27,17 +27,20 @@ import {
 import { BOARD_STAGES, STAGE_LABEL } from "@/lib/data/pipeline";
 import type { Stage } from "@prisma/client";
 import { createApplicationAction, parsePostingAction } from "@/server/actions";
-import { RatingInput } from "@/components/pipeline/rating-input";
 import { TagPicker, type TagOption } from "@/components/tags/tag-picker";
+import { ValuePicker } from "@/components/pipeline/value-picker";
 import type { TagValue } from "@/components/tags/tag-chip";
 
 export function NewApplicationDialog({
   resumes,
   tagOptions,
+  fieldValues,
 }: {
   resumes: { id: string; name: string }[];
   /** Every source category on file, with usage counts. */
   tagOptions: TagOption[];
+  /** Locations already in use, so the first application matches the others. */
+  fieldValues: { location: { value: string; count: number }[] };
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -52,7 +55,6 @@ export function NewApplicationDialog({
     location: "",
     salaryRange: "",
     tags: [] as TagValue[],
-    excitement: 3,
     jobDescription: "",
     resumeId: "",
   });
@@ -216,10 +218,12 @@ export function NewApplicationDialog({
 
           <div className="space-y-1.5">
             <Label>Location</Label>
-            <Input
+            <ValuePicker
               value={form.location}
-              onChange={(event) => setForm({ ...form, location: event.target.value })}
-              placeholder="Remote (US)"
+              options={fieldValues.location}
+              onChange={(location) => setForm({ ...form, location })}
+              placeholder="Anywhere"
+              ariaLabel="Location"
             />
           </div>
           <div className="space-y-1.5">
@@ -239,14 +243,6 @@ export function NewApplicationDialog({
               options={tagOptions}
               placeholder="Where did this come from?"
               onChange={(tags) => setForm({ ...form, tags })}
-            />
-          </div>
-
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label>How much do you want this?</Label>
-            <RatingInput
-              value={form.excitement}
-              onChange={(excitement) => setForm({ ...form, excitement })}
             />
           </div>
 

@@ -572,104 +572,6 @@ pre, code { font-family: var(--mono); }
   gap: 10px;
 }
 
-/* --- The pipeline board --------------------------------------------------- */
-
-.board-wrap { position: relative; }
-.board-wrap::after {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  right: 0;
-  width: 104px;
-  pointer-events: none;
-  background: linear-gradient(to left, var(--background) 34%, transparent);
-}
-
-.board {
-  display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  padding-bottom: 6px;
-  scrollbar-width: none;
-}
-.board::-webkit-scrollbar { display: none; }
-
-.col { display: flex; flex-direction: column; width: 256px; flex-shrink: 0; }
-.col-head { display: flex; align-items: center; gap: 7px; padding: 0 4px; margin-bottom: 8px; }
-.col-head .stage-chip {
-  padding: 2px 6px;
-  border-radius: var(--r-chip);
-  font-size: 12px;
-  font-weight: 600;
-}
-.col-head .count { font-family: var(--mono); font-size: 12px; color: var(--faint); }
-.col-body {
-  background: var(--canvas);
-  border-radius: 12px;
-  box-shadow: var(--shadow-hairline);
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 176px;
-  flex: 1;
-  transition: background-color 0.2s var(--settle), box-shadow 0.2s var(--settle);
-}
-.col-body.hot {
-  background: var(--primary-tint);
-  box-shadow: 0 0 0 1px var(--primary);
-}
-.col-empty {
-  flex: 1;
-  display: grid;
-  place-items: center;
-  font-size: 11.5px;
-  color: var(--faint);
-}
-
-/* A stripe of the stage's colour down the edge, so a column reads as one thing
-   at a glance and a mis-dropped card is obvious. */
-.app-row {
-  position: relative;
-  background: var(--card);
-  border-radius: var(--r-card);
-  box-shadow: var(--shadow-card);
-  padding: 12px 12px 12px 14px;
-  overflow: hidden;
-}
-.app-row::before {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  left: 0;
-  width: 3px;
-  background: var(--tone);
-}
-.app-row-top { display: flex; align-items: flex-start; gap: 8px; }
-.app-row .co { font-size: 13px; font-weight: 600; }
-.app-row .role { font-size: 12px; color: var(--faint); }
-.app-row-meta {
-  margin-top: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.app-row-meta span { display: inline-flex; align-items: center; gap: 4px; }
-.app-row-meta svg { width: 10px; height: 10px; }
-.app-row-foot {
-  margin-top: 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.app-row-foot .right { margin-left: auto; display: flex; align-items: center; gap: 7px; }
-.app-row-foot .overdue { color: var(--destructive); font-weight: 500; }
-
 /* The company monogram, with a stable hue per name — decoration under a chip
    that is doing the actual work. */
 .mono-av {
@@ -715,54 +617,6 @@ pre, code { font-family: var(--mono); }
 /* Highlight strength, as the app draws it: five marks, the lit ones in amber. */
 .stars { flex-shrink: 0; letter-spacing: 0.06em; font-size: 11px; line-height: 1.55; color: var(--warning); }
 .stars i { font-style: normal; color: var(--faint); }
-
-/* --- The funnel and the diagnosis ---------------------------------------- */
-
-.funnel-row { display: flex; align-items: center; gap: 10px; padding: 5px 7px; border-radius: var(--r-control); }
-.funnel-row .step { width: 168px; flex-shrink: 0; font-size: 12.5px; color: var(--muted); }
-.funnel-row .of { width: 62px; flex-shrink: 0; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
-.funnel-row .rate { width: 40px; flex-shrink: 0; text-align: right; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.funnel-row.weak .rate { font-weight: 600; color: var(--tone); }
-.funnel-row .track {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--inset);
-  overflow: hidden;
-}
-.funnel-row .track i {
-  position: absolute;
-  inset-block: 0;
-  left: 0;
-  border-radius: 999px;
-  background: var(--tone);
-  width: var(--w, 0%);
-  transform-origin: left;
-  transition: scale 0.9s var(--enter);
-  transition-delay: calc(var(--i, 0) * 90ms);
-}
-.js [data-grow] .funnel-row .track i { scale: 0 1; }
-.js [data-grow].in .funnel-row .track i { scale: 1 1; }
-.funnel-row .median { width: 78px; flex-shrink: 0; text-align: right; font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
-
-/* Six weeks of volume, this week on the right. */
-.velocity { display: flex; align-items: flex-end; gap: 6px; height: 46px; max-width: 240px; }
-.velocity div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; justify-content: flex-end; }
-.velocity span.n { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
-.velocity i {
-  width: 100%;
-  border-radius: 3px 3px 0 0;
-  background: var(--stage-screen);
-  height: var(--h, 4px);
-  transform-origin: bottom;
-  transition: scale 0.7s var(--enter);
-  transition-delay: calc(var(--i, 0) * 70ms);
-}
-.velocity i.now { background: var(--primary); }
-.js [data-grow] .velocity i { scale: 1 0; }
-.js [data-grow].in .velocity i { scale: 1 1; }
 
 /* Highlight strength, as the app draws it: five marks, the lit ones in amber. */
 .stars { flex-shrink: 0; letter-spacing: 0.06em; font-size: 11px; line-height: 1.5; color: var(--warning); }
@@ -1331,74 +1185,300 @@ body.show-slots .shot { outline: 1px dashed color-mix(in oklch, var(--primary) 5
 .cell.wide { grid-column: span 6; }
 .cell.third { grid-column: span 2; }
 
+/* A bento rather than four equal squares: one landscape card across the top,
+   three portrait ones under it. The big one puts its drawing beside the words;
+   the three put theirs underneath, where they line up along the bottom of the
+   row. Both fall back to the same stacked layout on a phone. */
+.cell.b-hero { grid-column: span 6; }
+.cell.b-third { grid-column: span 2; }
+
 .cell-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); margin-bottom: 11px; }
 .cell h3 { font-size: 15px; margin-bottom: 6px; }
 .cell p { font-size: 13.5px; color: var(--muted); }
 .cell .art { margin-top: 16px; }
 
-/* ===========================================================================
-   THE TOUR — sticky chapters
-   =========================================================================== */
-
-/* One measure for the whole page, so every section starts at the same left
-   edge. The chapter list is a sticky bar rather than a rail for the same
-   reason: a 210px rail would have pushed the product shots into a column too
-   narrow to be shots of anything. */
-.tour { display: block; }
-
-.chapters {
-  position: sticky;
-  top: 54px;
-  z-index: 20;
-  display: flex;
-  gap: 4px;
-  margin-bottom: 40px;
-  padding: 8px 0;
-  background: color-mix(in oklch, var(--page) 93%, transparent);
-  backdrop-filter: saturate(180%) blur(22px);
-  -webkit-backdrop-filter: saturate(180%) blur(22px);
-  box-shadow: inset 0 -1px 0 var(--rim);
-  overflow-x: auto;
-  scrollbar-width: none;
+@media (min-width: 901px) {
+  .cell.b-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+    gap: 34px;
+    align-items: center;
+    padding: 26px 28px;
+  }
+  .cell.b-hero .viz { margin: 0; padding: 0; }
+  .cell.b-hero h3 { font-size: 17px; }
+  .cell.b-hero > p { max-width: 54ch; }
 }
-.chapters::-webkit-scrollbar { display: none; }
 
-.chapter {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 168px;
-  text-align: left;
-  padding: 11px 14px 13px;
-  border-radius: var(--r-card) var(--r-card) 0 0;
-  transition: background-color 0.25s var(--settle);
+/* ---------------------------------------------------------------------------
+   The drawings inside the bento
+
+   Four small diagrams, one per part, drawn from the same tokens as the product
+   and animated off the card's own `.in` — the reveal observer already puts that
+   class there, so none of this needs a line of JavaScript or a second
+   observer. Nothing loops: every one plays once when its card arrives and then
+   holds, and the reduced-motion block at the end of this file lands them all in
+   their finished state instead.
+
+   They are diagrams, not screenshots. The tour further down has the real
+   screens at the width the app is actually used at; a screenshot shrunk to
+   280px would be illegible as a screenshot and useless as a diagram.
+   --------------------------------------------------------------------------- */
+
+/* Every drawing is roughly one height, so four cards of the same word count
+   come out roughly the same height and the bento reads by width rather than by
+   accident. */
+.viz {
+  margin-top: auto;
+  padding-top: 18px;
+  min-width: 0;
 }
-.chapter::before {
-  content: "";
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 0;
-  height: 2px;
-  border-radius: 999px;
-  background: var(--tone);
+
+.cell .viz-inner,
+.viz > * { min-width: 0; }
+
+/* The shared bar: a rule that draws itself from the left. Every drawing below
+   is made of these plus a couple of shapes. */
+.viz i {
+  display: block;
+  height: 5px;
+  width: var(--w, 100%);
+  border-radius: 3px;
+  background: var(--rim);
+  transform-origin: left center;
+}
+
+.js .viz i {
   scale: 0 1;
-  opacity: 0;
-  transform-origin: left;
-  transition: scale 0.4s var(--enter), opacity 0.25s linear;
+  transition: scale 0.6s var(--enter);
+  transition-delay: calc(var(--i, 0) * 70ms + 180ms);
 }
-.chapter.on { background: var(--wash); }
-.chapter.on::before { scale: 1 1; opacity: 1; }
-.chapter .ct { display: block; font-size: 14px; font-weight: 600; letter-spacing: -0.012em; color: var(--muted); transition: color 0.25s var(--settle); }
-.chapter.on .ct { color: var(--foreground); }
-.chapter p { font-size: 12.5px; color: var(--faint); margin-top: 3px; line-height: 1.45; }
 
-.scenes { display: flex; flex-direction: column; gap: clamp(56px, 8vw, 104px); min-width: 0; }
-.scene { scroll-margin-top: 46px; min-width: 0; }
-.scene-note {
-  margin-top: 14px;
+/* Every bar except the one the loop owns outright — see the fresh line
+   below, which starts at nothing and is brought in by its cycle. */
+.js .cell.in .viz i:not(.vz-fresh) { scale: 1 1; }
+
+/* --- Me: raw material in, one polished bullet out ------------------------- */
+
+.viz-record {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vz-head {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 2px;
+}
+
+.vz-note {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--r-card);
+  background: var(--inset);
+  box-shadow: var(--shadow-hairline);
+}
+
+/* The one line that got pulled out of all that. It lifts off the notes it came
+   from, which is the whole claim the card is making. */
+.vz-pull {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: var(--r-card);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.js .vz-pull {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 0.5s var(--enter),
+    transform 0.7s var(--enter),
+    box-shadow 0.7s var(--enter);
+  transition-delay: 0.72s;
+}
+
+.js .cell.in .vz-pull { opacity: 1; transform: none; }
+
+.vz-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tone); flex-shrink: 0; }
+.vz-pull-lines { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
+.vz-pull-lines i { background: color-mix(in oklch, var(--tone) 34%, var(--rim)); }
+
+.vz-tag {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tone);
+  background: color-mix(in oklch, var(--tone) var(--stage-wash), transparent);
+  padding: 3px 6px;
+  border-radius: var(--r-chip);
+}
+
+/* --- Resumes: the document assembling ------------------------------------ */
+
+.viz-page { position: relative; }
+
+.vz-paper {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 14px 14px;
+  border-radius: var(--r-card);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.vz-paper .vz-nm { height: 8px; width: 44%; margin: 0 auto 2px; background: var(--muted); transform-origin: center; }
+.vz-paper .vz-rule { height: 2px; background: var(--rim-strong); margin-bottom: 3px; }
+.vz-paper .vz-gap { margin-top: 5px; background: color-mix(in oklch, var(--tone) 40%, var(--rim)); height: 7px; }
+
+.vz-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -8px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tone);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  padding: 4px 8px;
+  border-radius: var(--r-chip);
+}
+
+.js .vz-badge {
+  opacity: 0;
+  transform: translateY(6px) scale(0.94);
+  transition: opacity 0.4s var(--enter), transform 0.5s var(--enter);
+  transition-delay: calc(var(--i, 0) * 70ms + 180ms);
+}
+
+.js .cell.in .vz-badge { opacity: 1; transform: none; }
+
+/* --- Pipeline: a card one column further along ---------------------------- */
+
+.viz-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 11px;
+  border-radius: var(--r-card);
+  background: var(--inset);
+  box-shadow: var(--shadow-hairline);
+}
+
+.vz-col { display: flex; flex-direction: column; gap: 6px; }
+.vz-col b { display: block; height: 3px; border-radius: 2px; background: var(--tone); opacity: 0.85; }
+
+.vz-col i {
+  height: 17px;
+  width: 100%;
+  border-radius: 5px;
+  background: var(--card);
+  box-shadow: var(--shadow-hairline);
+  scale: none;
+}
+
+/* The card that is moving. It lives in a row of its own beneath the four
+   columns, one column wide, so a step is one translate and nothing in the
+   board has to reflow or be measured. */
+.vz-trip {
+  display: block;
+  grid-column: 1;
+  height: 17px;
+  width: 100%;
+  border-radius: 5px;
+  background: var(--card);
+  box-shadow: var(--shadow-card), inset 2px 0 0 var(--stage-applied);
+  scale: none;
+}
+
+/* --- People: three on one thread, and the one who is due ------------------ */
+
+.viz-people { position: relative; display: flex; flex-direction: column; gap: 8px; }
+
+.vz-thread {
+  position: absolute;
+  left: 13px;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  background: var(--rim);
+  transform-origin: top;
+}
+
+.js .vz-thread {
+  scale: 1 0;
+  transition: scale 0.7s var(--enter);
+  transition-delay: 0.2s;
+}
+
+.js .cell.in .vz-thread { scale: 1 1; }
+
+.vz-who {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  border-radius: var(--r-card);
+  background: var(--card);
+  box-shadow: var(--shadow-hairline);
+}
+
+.js .vz-who {
+  opacity: 0;
+  transform: translateX(10px);
+  transition: opacity 0.45s var(--enter), transform 0.6s var(--enter);
+  transition-delay: calc(var(--i, 0) * 110ms + 320ms);
+}
+
+.js .cell.in .vz-who { opacity: 1; transform: none; }
+
+.vz-face {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  background: var(--inset);
+  box-shadow: var(--shadow-hairline);
+}
+
+.vz-bars { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
+
+.vz-when {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .js .viz i,
+  .js .vz-thread { scale: none !important; }
+  .js .vz-pull,
+  .js .vz-badge,
+  .js .vz-who { opacity: 1 !important; transform: none !important; }
+  .js .vz-col i.vz-moved { transform: none !important; box-shadow: var(--shadow-hairline) !important; }
 }
 
 /* ===========================================================================
@@ -1475,82 +1555,6 @@ body.show-slots .shot { outline: 1px dashed color-mix(in oklch, var(--primary) 5
 .under > summary svg { width: 13px; height: 13px; transition: transform 0.25s var(--settle); }
 .under[open] > summary svg { transform: rotate(90deg); }
 .under .inner { margin-top: 26px; }
-
-/* ===========================================================================
-   THE TOOL CATALOGUE
-   =========================================================================== */
-
-.tools-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 18px; }
-
-.filter {
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  color: var(--muted);
-  box-shadow: var(--shadow-hairline);
-  transition: color 0.15s var(--settle), box-shadow 0.15s var(--settle), background-color 0.15s var(--settle);
-}
-.filter:hover { color: var(--foreground); }
-.filter.on {
-  color: var(--tone, var(--foreground));
-  background: color-mix(in oklch, var(--tone, var(--primary)) 15%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--tone, var(--primary)) 45%, transparent);
-}
-
-.search {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--inset);
-  box-shadow: var(--shadow-hairline);
-  min-width: 210px;
-}
-.search svg { width: 13px; height: 13px; color: var(--faint); flex-shrink: 0; }
-.search input {
-  flex: 1;
-  min-width: 0;
-  background: none;
-  border: 0;
-  outline: 0;
-  color: var(--foreground);
-  font-family: var(--mono);
-  font-size: 12px;
-}
-.search input::placeholder { color: var(--faint); }
-
-.tool-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
-  gap: 8px;
-}
-.tool {
-  --tone: var(--faint);
-  background: var(--card);
-  border-radius: var(--r-card);
-  box-shadow: var(--shadow-hairline);
-  padding: 11px 13px;
-  transition: box-shadow 0.18s var(--settle), background-color 0.18s var(--settle);
-}
-.tool:hover { box-shadow: var(--shadow-card); background: var(--popover); }
-.tool.gone { display: none; }
-.tool .n {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--foreground);
-}
-.tool .n i { width: 5px; height: 5px; border-radius: 50%; background: var(--tone); flex-shrink: 0; }
-.tool .d { margin-top: 5px; font-size: 12px; line-height: 1.5; color: var(--faint); }
-.tool.flow { background: var(--canvas); box-shadow: 0 0 0 1px color-mix(in oklch, var(--tone) 30%, transparent); }
-
-.tools-count { font-family: var(--mono); font-size: 12px; color: var(--faint); margin-top: 14px; }
-.tools-empty { display: none; padding: 26px 0; font-size: 13.5px; color: var(--muted); }
-.tools-empty.on { display: block; }
 
 /* ===========================================================================
    DOORS, FAQ, FOOTER
@@ -1998,7 +2002,7 @@ footer { position: relative; isolation: isolate; overflow: hidden; padding-block
 @media (max-width: 900px) {
   .stage { grid-template-columns: minmax(0, 1fr); }
   .hero-copy { max-width: 100%; }
-  .cell, .cell.third { grid-column: span 6; }
+  .cell, .cell.third, .cell.b-hero, .cell.b-third { grid-column: span 6; }
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .foot { grid-template-columns: 1fr; gap: 36px; }
   .foot-brand { max-width: 52ch; }
@@ -2014,7 +2018,7 @@ footer { position: relative; isolation: isolate; overflow: hidden; padding-block
   :root { --gutter: 18px; }
   .tiers.pair { grid-template-columns: minmax(0, 1fr); }
   .bento { grid-template-columns: minmax(0, 1fr); }
-  .cell, .cell.wide, .cell.third { grid-column: span 1; }
+  .cell, .cell.wide, .cell.third, .cell.b-hero, .cell.b-third { grid-column: span 1; }
   .foot-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .foot-base .fill { flex: 0 0 100%; }
   .foot-mark { right: -104px; bottom: -104px; }
@@ -2482,11 +2486,6 @@ footer { position: relative; isolation: isolate; overflow: hidden; padding-block
   .btn-primary::after { display: none; }
 }
 
-/* The mark over the headline. Bigger than anything else on the page that isn't
-   a screenshot, because it is the only place the object is the subject rather
-   than a label attached to the word "Hired". */
-.hero-mark { margin-bottom: 26px; }
-
 /* In the nav it is a label again, and has to sit on the same baseline as the
    word beside it. */
 .brand .mark3d > svg { border-radius: 6px; }
@@ -2687,4 +2686,670 @@ footer { position: relative; isolation: isolate; overflow: hidden; padding-block
 
 @media (max-width: 620px) {
   .signup-form { padding: 18px; }
+}
+
+/* ===========================================================================
+   THE CONVERSATION, SHOWN
+
+   The claim of this section is that there is nothing to learn — you say a
+   sentence and the record changes. So it shows one being said, next to the
+   list of other sentences that work.
+
+   The working state between question and answer is the part that matters here
+   and the part a screenshot of a chat can never show: the tool chips landing
+   one at a time and going green as each call returns is what actually happens
+   in a client, and it is the difference between "it replies" and "it did
+   something".
+   =========================================================================== */
+
+.talk {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.talk .says { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+@media (max-width: 1040px) {
+  .talk { grid-template-columns: minmax(0, 1fr); }
+  .talk .says { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+}
+
+.chat { padding: 16px 18px 14px; }
+.chat .panel-head { gap: 9px; }
+.chat .panel-head .mark { width: 18px; height: 18px; }
+.chat .tape { gap: 16px; }
+
+/* Long enough to be a real answer, short enough to read as a message. */
+.chat .said { max-width: 62ch; }
+
+/* The one indicator on this page that repeats, and it is the same exception
+   the typing caret already takes: it says a thing is in progress and it stops
+   when that thing does. Four passes and it is out of iterations, so even if
+   the script that hides it never ran, nothing here animates forever. */
+.answer { position: relative; }
+.answer .think { position: absolute; inset: 0; }
+
+.think-say {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--faint);
+}
+
+/* The shape of the answer before there is an answer, in the space the finished
+   line already reserved. Two passes of light across each bar and it stops — by
+   which time the reply has replaced it anyway. */
+.think-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.think-skel i {
+  display: block;
+  height: 9px;
+  width: var(--w, 100%);
+  border-radius: 4px;
+  background:
+    linear-gradient(100deg, var(--rim) 34%, color-mix(in oklch, var(--rim-strong) 70%, white) 50%, var(--rim) 66%)
+    0 0 / 300% 100%;
+  animation: skel-sweep 1.4s linear 3 both;
+  animation-delay: calc(var(--i, 0) * 0.1s);
+}
+
+@keyframes skel-sweep {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+
+.think-dots { display: inline-flex; gap: 4px; }
+
+.think-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--faint);
+  animation: think-dot 1.15s var(--settle) 4 both;
+  animation-delay: calc(var(--i, 0) * 0.13s);
+}
+
+@keyframes think-dot {
+  0%, 100% { opacity: 0.28; transform: translateY(0); }
+  38% { opacity: 1; transform: translateY(-3px); }
+}
+
+/* The bottom of the window. Not an input — there is nothing to type into on a
+   landing page, and a box that looks live and does nothing is worse than a
+   picture of one. It is here because it is what makes the panel legible as a
+   chat at a glance. */
+.chat-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 9px 10px 9px 13px;
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--shadow-hairline);
+}
+
+.chat-field { flex: 1; min-width: 0; font-size: 13px; color: var(--faint); }
+
+.chat-send {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .think-dots i { animation: none; opacity: 0.6; }
+  .think-skel i { animation: none; background: var(--rim); }
+}
+
+/* ===========================================================================
+   THE BILLING SWITCH
+
+   Two buttons, not a checkbox: a toggle with no labelled states makes you read
+   the price to work out which way it is pointing. Both prices are in the
+   markup and the annual one ships hidden, so with no scripting the page is the
+   monthly price and this control is not there at all — which is the honest
+   fallback, because the monthly figure is the one anybody comparing starts
+   from.
+   =========================================================================== */
+
+.plan-switch {
+  display: flex;
+  width: fit-content;
+  gap: 3px;
+  margin: 26px auto 0;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--inset);
+  box-shadow: var(--shadow-hairline);
+}
+
+.plan-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 15px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  transition:
+    background-color 0.22s var(--settle),
+    box-shadow 0.22s var(--settle),
+    color 0.22s var(--settle);
+}
+
+.plan-switch button:hover { color: var(--foreground); }
+
+.plan-switch button.on {
+  color: var(--foreground);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+/* The saving, said on the button rather than in a footnote. */
+.plan-switch .off {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--success);
+  background: color-mix(in oklch, var(--success) 13%, transparent);
+  padding: 2px 6px;
+  border-radius: var(--r-chip);
+}
+
+/* `.tier .price span` is the "/ month" beside the figure — small and faint —
+   and it would otherwise catch the spans holding the figure itself now that
+   there are two of them. Put the number back. */
+.tier .price b span { font: inherit; color: inherit; letter-spacing: inherit; }
+
+/* The number changes; the card must not jump while it does. `tabular-nums` on
+   .price b already holds the width, so this is only the fade. */
+.tier .price b span,
+.tier .terms span { animation: plan-swap 0.28s var(--enter) 1 both; }
+
+@keyframes plan-swap {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The saving is the reason to press the second button, so it shrinks rather
+   than disappears — a toggle with no stated benefit is a toggle nobody tries. */
+@media (max-width: 480px) {
+  .plan-switch button { padding: 7px 11px; gap: 6px; font-size: 12.5px; }
+  .plan-switch .off { font-size: 9px; padding: 2px 5px; letter-spacing: 0.02em; }
+}
+
+/* ===========================================================================
+   THE TWO FILES
+
+   The section's argument, as a thing rather than a sentence: their record of
+   you, thick and full and shut; yours of them, thin and half empty. Two cards
+   on one preserve-3d stage at different depths, so tilting the stage slides
+   them past each other. The parallax is what does the work — an extrusion on a
+   flat card reads as a drop shadow, but two objects that move at different
+   rates read as a space with things in it.
+
+   The tilt follows the pointer, which is the page's third kind of motion: no
+   duration, no direction of its own, and gone when the cursor leaves. The rows
+   filling in play once on entry, like everything else.
+   =========================================================================== */
+
+.why { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
+
+@media (min-width: 940px) {
+  .why {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 460px);
+    gap: 48px;
+    align-items: center;
+  }
+}
+
+/* A card pushed towards the viewer is drawn larger, so the stage needs room
+   at the edges or the front one grows out of its own column. */
+.files { perspective: 1400px; padding: 10px 14px; }
+
+.files-stage {
+  position: relative;
+  height: 330px;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--rx, 5deg)) rotateY(var(--ry, -9deg));
+  transition: transform 0.5s var(--settle);
+}
+
+.file {
+  position: absolute;
+  border-radius: var(--r-panel);
+  background: var(--card);
+  padding: 16px 18px;
+  /* The stacked offsets are the slab's side. They are painted in the card's own
+     space, so they turn with it — a real extrusion for the price of a shadow. */
+  box-shadow:
+    var(--shadow-card),
+    7px 8px 0 -1px var(--inset),
+    14px 16px 0 -2px color-mix(in oklch, var(--inset) 70%, var(--rim));
+}
+
+/* Theirs: further back, wider, and full to the edges. */
+.file-theirs {
+  left: 0;
+  top: 0;
+  width: 72%;
+  transform: translateZ(-42px);
+}
+
+/* Yours: in front, smaller, and mostly gaps. */
+.file-yours {
+  right: 0;
+  bottom: 0;
+  width: 58%;
+  transform: translateZ(28px);
+}
+
+.file-cap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 12px;
+}
+
+.file-theirs .file-cap { color: var(--muted); }
+.file-cap svg { color: var(--faint); }
+
+.file-rows { display: flex; flex-direction: column; gap: 7px; }
+
+.file-rows span {
+  display: block;
+  height: 6px;
+  width: var(--w, 100%);
+  border-radius: 3px;
+  background: var(--rim);
+  transform-origin: left center;
+}
+
+/* Theirs is written in ink; yours is what you can still remember. */
+.file-theirs .file-rows span {
+  background: color-mix(in oklch, var(--stage-applied) 26%, var(--rim));
+}
+
+/* The line that was never written down. */
+.file-rows span.none {
+  height: 6px;
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--rim);
+  border-radius: 3px;
+}
+
+.file-foot {
+  margin-top: 13px;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.js .files .file-rows span {
+  scale: 0 1;
+  transition: scale 0.55s var(--enter);
+  transition-delay: calc(var(--i, 0) * 55ms + 220ms);
+}
+
+.js .files.in .file-rows span { scale: 1 1; }
+
+/* Each card arrives from its own depth, so the space is established before
+   anything is written into it. */
+.js .files .file {
+  opacity: 0;
+  transition:
+    opacity 0.7s var(--enter),
+    translate 0.9s var(--enter);
+}
+
+.js .files .file-theirs { translate: -14px -10px; }
+.js .files .file-yours { translate: 18px 14px; transition-delay: 0.12s; }
+.js .files.in .file { opacity: 1; translate: 0 0; }
+
+@media (max-width: 939px) {
+  .files-stage { height: 300px; max-width: 460px; margin-inline: auto; }
+}
+
+/* The front card overlaps the back one, which is the point — but not far
+   enough into its footer to cut a word in half. On a narrow stage there is
+   only room for the short version. */
+@media (max-width: 700px) {
+  .file-theirs .file-foot .roomy { display: none; }
+}
+
+@media (max-width: 460px) {
+  .files-stage { height: 268px; }
+  .file { padding: 13px 14px; }
+  .file-theirs { width: 78%; }
+  .file-yours { width: 66%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .files-stage { transition: none; }
+  .js .files .file-rows span { scale: none !important; }
+  .js .files .file { opacity: 1 !important; translate: 0 0 !important; }
+}
+
+/* ===========================================================================
+   CARDS THAT ANSWER THE CURSOR
+
+   Three things, all of them reflections of where the pointer is and all of them
+   gone the moment it leaves: a light inside the card (above), a light along its
+   edge, and a lean of about two degrees towards the cursor.
+
+   The lean is written to the `rotate` property rather than to `transform`,
+   because `transform` on these cards already belongs to the reveal — it is what
+   slides them up on entry — and two owners of one property is a bug waiting for
+   whoever edits the other one. `rotate` composes with it instead.
+   =========================================================================== */
+
+.bento { perspective: 1600px; }
+
+[data-lean] {
+  transition:
+    rotate 0.45s var(--settle),
+    translate 0.45s var(--settle),
+    box-shadow 0.25s var(--settle);
+}
+
+/* The edge, lit from wherever the cursor is. A ring rather than a glow: the
+   card already has an inside light, and two glows on one object is fog. */
+[data-spot]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  background: radial-gradient(
+    300px circle at var(--mx, 50%) var(--my, 0%),
+    color-mix(in oklch, var(--tone, var(--primary)) 92%, transparent),
+    color-mix(in oklch, var(--tone, var(--primary)) 30%, transparent) 34%,
+    transparent 64%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s var(--settle);
+}
+
+[data-spot]:hover::after { opacity: 1; }
+
+/* A couple of the drawings acknowledge the hover too, in the smallest way that
+   still says the card is live: the pulled-out bullet lifts a little further off
+   the notes it came from, and the card that just moved stage sits up. */
+.cell:hover .vz-pull { translate: 0 -2px; box-shadow: var(--shadow-raised); }
+.vz-pull { transition: translate 0.3s var(--settle), box-shadow 0.3s var(--settle); }
+
+.cell:hover .vz-col i.vz-moved { box-shadow: var(--shadow-card), inset 2px 0 0 var(--stage-interview); }
+.vz-who { transition: box-shadow 0.3s var(--settle); }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-lean] { rotate: none !important; translate: 0 0 !important; }
+}
+
+/* A tilt needs a pointer to tilt towards. */
+@media (hover: none) {
+  [data-spot]::after { display: none; }
+}
+
+/* The line that replaced the tool catalogue. The catalogue itself was eighty
+   function names kept by hand, already stale against a hundred and four, and
+   written for whoever reads function names — which is not who this page is
+   for. The manual generates the real list and keeps it right. */
+.tools-more {
+  max-width: 62ch;
+  margin-top: 30px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.tools-more a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--primary) 34%, transparent);
+  text-underline-offset: 3px;
+}
+
+.tools-more a:hover { text-decoration-color: currentColor; }
+
+/* One line, said once, under the hero form. */
+.hero-who {
+  margin-top: 16px;
+  max-width: 58ch;
+  font-size: 13.5px;
+  color: var(--faint);
+  text-wrap: balance;
+}
+
+/* ===========================================================================
+   THE DRAWINGS, RUNNING
+
+   The four bento drawings used to play once on entry and hold. That made them
+   illustrations of a thing rather than the thing happening, which is the whole
+   reason they are there. They loop now.
+
+   That is a deliberate exception to this file's own "nothing loops" rule, and
+   it is bounded three ways:
+
+   1. Every cycle starts and ends at the drawing's resting state — the state
+      the entry animation leaves it in. So a paused cycle, a cycle that never
+      starts, and no cycle at all are all the same picture. That is what makes
+      the rest of this safe.
+   2. Nothing runs off screen. `.live` is added by an observer when the drawing
+      comes into view and taken off when it leaves (see motion.js), so a phone
+      is not compositing four loops while somebody reads the FAQ.
+   3. `calm` never adds `.live`, so anyone who asked their system to settle
+      down gets the still picture and nothing else.
+
+   Everything below animates `transform`, `scale` and `opacity` only, so all of
+   it runs on the compositor. The delays hold each loop back until the entry
+   reveal has finished, and the four periods are deliberately coprime-ish so the
+   section never falls into step with itself and starts reading as a metronome.
+   =========================================================================== */
+
+/* --- Me: a line is filed, and a highlight comes out of it ------------------ */
+
+/* The line that arrives. Not part of the entry stagger — it belongs to the
+   loop, so it starts at nothing and the loop brings it in. */
+.js .viz-record .vz-fresh { scale: 0 1; }
+.js .cell.in .viz-record .vz-fresh { scale: 0 1; }
+
+.js .viz-record.live .vz-fresh {
+  animation: file-a-line 9s var(--settle) 1.6s infinite both;
+}
+
+@keyframes file-a-line {
+  0%, 10% { scale: 0 1; }
+  20%, 74% { scale: 1 1; }
+  84%, 100% { scale: 0 1; }
+}
+
+/* The bullet that gets pulled out of it, a beat later. */
+.js .viz-record.live .vz-pull {
+  animation: pull-a-bullet 9s var(--settle) 1.6s infinite both;
+}
+
+@keyframes pull-a-bullet {
+  0%, 24% { transform: none; }
+  34%, 70% { transform: translateY(-4px); }
+  82%, 100% { transform: none; }
+}
+
+.js .viz-record.live .vz-tag {
+  animation: tag-lands 9s var(--settle) 1.6s infinite both;
+}
+
+@keyframes tag-lands {
+  0%, 26% { opacity: 0.45; scale: 0.94; }
+  36%, 70% { opacity: 1; scale: 1; }
+  84%, 100% { opacity: 0.45; scale: 0.94; }
+}
+
+/* --- Resumes: the same evidence, rebuilt for a different posting ----------- */
+
+/* Each body line collapses and comes back at `--alt` of its own length, so the
+   document is visibly re-selected rather than merely redrawn. The name and the
+   rule under it never move: it is the same person either way. */
+.js .viz-page.live .vz-body,
+.js .viz-page.live .vz-gap {
+  animation: retailor 10s var(--enter) 1.8s infinite both;
+  animation-delay: calc(1.8s + var(--i, 0) * 40ms);
+}
+
+@keyframes retailor {
+  0%, 14% { scale: 1 1; }
+  26%, 30% { scale: 0 1; }
+  42%, 68% { scale: var(--alt, 1) 1; }
+  78%, 82% { scale: 0 1; }
+  94%, 100% { scale: 1 1; }
+}
+
+.js .viz-page.live .vz-badge {
+  animation: badge-blink 10s var(--settle) 1.8s infinite both;
+}
+
+@keyframes badge-blink {
+  0%, 40% { opacity: 1; transform: none; }
+  46% { opacity: 0.35; transform: translateY(2px); }
+  56%, 100% { opacity: 1; transform: none; }
+}
+
+/* --- Pipeline: one card walks the board ----------------------------------- */
+
+/* One column plus one gap. Written once here so the four steps below cannot
+   drift apart from the grid they are stepping across. */
+.viz-board { --step: calc(100% + 8px); }
+
+.js .viz-board.live .vz-trip {
+  animation: walk-the-board 11s var(--settle) 1.4s infinite both;
+}
+
+@keyframes walk-the-board {
+  /* `opacity` has to be pinned here and at 84%, not only where it changes: a
+     property that first appears at 90% is interpolated all the way from 0%,
+     which is a ninety-per-cent-long fade to nothing rather than a card. */
+  0%, 12% {
+    opacity: 1;
+    transform: none;
+    box-shadow: var(--shadow-card), inset 2px 0 0 var(--stage-applied);
+  }
+  /* Lifted mid-move, the way a card looks between two columns. */
+  18% { transform: translateX(calc(var(--step) * 0.5)) translateY(-2px); box-shadow: var(--shadow-overlay), inset 2px 0 0 var(--stage-screen); }
+  24%, 34% { transform: translateX(var(--step)); box-shadow: var(--shadow-card), inset 2px 0 0 var(--stage-screen); }
+  40% { transform: translateX(calc(var(--step) * 1.5)) translateY(-2px); box-shadow: var(--shadow-overlay), inset 2px 0 0 var(--stage-interview); }
+  46%, 56% { transform: translateX(calc(var(--step) * 2)); box-shadow: var(--shadow-card), inset 2px 0 0 var(--stage-interview); }
+  62% { transform: translateX(calc(var(--step) * 2.5)) translateY(-2px); box-shadow: var(--shadow-overlay), inset 2px 0 0 var(--stage-offer); }
+  68%, 84% { opacity: 1; transform: translateX(calc(var(--step) * 3)); box-shadow: var(--shadow-card), inset 2px 0 0 var(--stage-offer); }
+  /* Offered, and off the board. The next one starts at the beginning. */
+  90%, 96% { transform: translateX(calc(var(--step) * 3)) scale(0.9); opacity: 0; box-shadow: var(--shadow-card), inset 2px 0 0 var(--stage-offer); }
+  97% { transform: none; opacity: 0; box-shadow: var(--shadow-card), inset 2px 0 0 var(--stage-applied); }
+  100% { transform: none; opacity: 1; box-shadow: var(--shadow-card), inset 2px 0 0 var(--stage-applied); }
+}
+
+/* --- People: the follow-up that comes due --------------------------------- */
+
+/* Both labels sit in the same box, so nothing moves when one replaces the
+   other and the row never changes width. */
+.vz-when { position: relative; display: inline-grid; }
+.vz-when > b,
+.vz-when > em {
+  grid-area: 1 / 1;
+  font-style: normal;
+  font-weight: inherit;
+  white-space: nowrap;
+}
+
+.vz-when > em {
+  opacity: 0;
+  color: var(--warning);
+  background: color-mix(in oklch, var(--warning) 14%, transparent);
+  padding: 3px 7px;
+  margin: -3px -7px;
+  border-radius: var(--r-chip);
+  text-transform: uppercase;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+}
+
+/* Each row takes its turn, a third of the cycle apart. */
+.js .viz-people.live .vz-who {
+  animation: comes-due 12s var(--settle) infinite both;
+  animation-delay: calc(1.5s + var(--i, 0) * 4s);
+}
+
+.js .viz-people.live .vz-who > .vz-when > em {
+  animation: due-mark 12s var(--settle) infinite both;
+  animation-delay: calc(1.5s + var(--i, 0) * 4s);
+}
+
+.js .viz-people.live .vz-who > .vz-face {
+  animation: due-face 12s var(--settle) infinite both;
+  animation-delay: calc(1.5s + var(--i, 0) * 4s);
+}
+
+.js .viz-people.live .vz-who > .vz-when > b {
+  animation: due-swap 12s var(--settle) infinite both;
+  animation-delay: calc(1.5s + var(--i, 0) * 4s);
+}
+
+@keyframes comes-due {
+  0%, 3% { box-shadow: var(--shadow-hairline); }
+  8%, 26% { box-shadow: var(--shadow-card); }
+  31%, 100% { box-shadow: var(--shadow-hairline); }
+}
+
+@keyframes due-mark {
+  0%, 4% { opacity: 0; }
+  9%, 25% { opacity: 1; }
+  30%, 100% { opacity: 0; }
+}
+
+@keyframes due-face {
+  0%, 4% { color: var(--muted); background: var(--inset); }
+  9%, 25% { color: var(--warning); background: color-mix(in oklch, var(--warning) 14%, transparent); }
+  30%, 100% { color: var(--muted); background: var(--inset); }
+}
+
+@keyframes due-swap {
+  0%, 4% { opacity: 1; }
+  9%, 25% { opacity: 0; }
+  30%, 100% { opacity: 1; }
+}
+
+/* `.live` is never added for anyone who asked their system to calm down, so
+   none of the above can start. This is the belt to that pair of braces — and it
+   puts the one element the loop owns outright back where it belongs. */
+@media (prefers-reduced-motion: reduce) {
+  .js .viz-record .vz-fresh,
+  .js .cell.in .viz-record .vz-fresh { scale: 1 1 !important; }
+  .viz, .viz * { animation: none !important; }
 }

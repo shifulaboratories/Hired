@@ -4,18 +4,12 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { BriefcaseIcon, CalendarIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   createTaskAction,
   deleteTaskAction,
@@ -23,19 +17,26 @@ import {
   updateTaskAction,
 } from "@/server/actions";
 import { cn, relativeDay } from "@/lib/utils";
+import { DateField } from "@/components/ui/date-field";
+import {
+  SubjectPicker,
+  subjectColumns,
+  type SubjectOption,
+} from "@/components/tasks/subject-picker";
+import { SUBJECT_LABEL, type TaskSubjectKind, type TaskSubjectView } from "@/lib/task-subject";
 
 export type TaskRow = {
   id: string;
   title: string;
+  detail: string;
   /** Full ISO, for reading a date off; empty when it has no due date. */
   dueISO: string;
   /** yyyy-mm-dd, what a date input wants. Empty when undated. */
   dueDate: string;
   done: boolean;
-  application: { id: string; roleTitle: string; company: string } | null;
+  /** Whatever this one is about, already resolved. Null for a loose task. */
+  subject: TaskSubjectView | null;
 };
-
-export type RoleOption = { id: string; label: string };
 
 /** The buckets, in the order a person works down them. */
 const BUCKETS = [
@@ -66,22 +67,32 @@ function bucketOf(dueISO: string): BucketKey {
 /**
  * Everything you owe yourself, as one worked list.
  *
- * The dashboard has a five-line version of this and that is all it should
- * have: it is a glance. This is the page you open when you actually mean to
- * clear the list, so a task here can be reworded, re-dated, hooked to a role
- * and deleted — none of which was possible anywhere in the app before, tasks
- * being write-once and tick-once.
+ * The bell in the top bar is the glance — what has come round, five words
+ * each. This is the front page, where you actually mean to clear the list, so
+ * a task here can be reworded, re-dated, hooked to a role and deleted — none
+ * of which was possible anywhere in the app before, tasks being write-once and
+ * tick-once.
  *
  * Grouped by when rather than by what: an overdue thing and a Thursday thing
  * are different problems, and a flat list sorted by date makes you work that
  * out for yourself every time you look.
  */
-export function TaskPanel({ tasks, roles }: { tasks: TaskRow[]; roles: RoleOption[] }) {
+export function TaskPanel({
+  tasks,
+  subjects,
+}: {
+  tasks: TaskRow[];
+  /** Everything a task can be hung on, across all six kinds. */
+  subjects: SubjectOption[];
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [draft, setDraft] = useState("");
   const [draftDue, setDraftDue] = useState("");
-  const [draftRole, setDraftRole] = useState("none");
+  const [draftDetail, setDraftDetail] = useState("");
+  const [draftSubject, setDraftSubject] = useState<{ kind: TaskSubjectKind; id: string } | null>(
+    null,
+  );
   const [showDone, setShowDone] = useState(false);
 
   const open = useMemo(() => tasks.filter((task) => !task.done), [tasks]);
@@ -116,11 +127,23 @@ export function TaskPanel({ tasks, roles }: { tasks: TaskRow[]; roles: RoleOptio
   const add = () => {
     const title = draft.trim();
     if (!title) return;
-    setDraft("");
     const dueAt = draftDue;
-    const applicationId = draftRole === "none" ? null : draftRole;
+    const detail = draftDetail.trim();
+    const subject = draftSubject;
+    // Cleared before the write, not after: a second task typed while the first
+    // is still in flight should start from an empty form.
+    setDraft("");
     setDraftDue("");
-    act(() => createTaskAction({ title, dueAt: dueAt || null, applicationId }));
+    setDraftDetail("");
+    setDraftSubject(null);
+    act(() =>
+      createTaskAction({
+        title,
+        detail,
+        dueAt: dueAt || null,
+        ...subjectColumns(subject),
+      }),
+    );
   };
 
   return (
@@ -139,27 +162,32 @@ export function TaskPanel({ tasks, roles }: { tasks: TaskRow[]; roles: RoleOptio
             disabled={pending}
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            type="date"
-            value={draftDue}
-            onChange={(event) => setDraftDue(event.target.value)}
-            className="h-9 w-40 text-[13px] md:h-8"
-            aria-label="Due date"
+        {/* The detail only appears once there is a task to detail. An empty
+            second box above an empty first box is a form; one line is a
+            thing you type into. */}
+        {draft.trim() && (
+          <Textarea
+            value={draftDetail}
+            onChange={(event) => setDraftDetail(event.target.value)}
+            placeholder="What it involves, who said it, what to reference…"
+            className="min-h-16 text-[13px]"
+            disabled={pending}
           />
-          <Select value={draftRole} onValueChange={setDraftRole}>
-            <SelectTrigger size="sm" className="w-56" aria-label="About which role">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Not about a role</SelectItem>
-              {roles.map((role) => (
-                <SelectItem key={role.id} value={role.id}>
-                  {role.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <DateField
+            value={draftDue}
+            onChange={setDraftDue}
+            ariaLabel="Due date"
+            placeholder="No due date"
+            className="w-48"
+          />
+          <SubjectPicker
+            value={draftSubject}
+            options={subjects}
+            onChange={setDraftSubject}
+            className="w-56"
+          />
           <Button size="sm" onClick={add} disabled={pending || !draft.trim()} className="ml-auto">
             Add task
           </Button>
@@ -189,7 +217,7 @@ export function TaskPanel({ tasks, roles }: { tasks: TaskRow[]; roles: RoleOptio
                     <TaskItem
                       key={task.id}
                       task={task}
-                      roles={roles}
+                      subjects={subjects}
                       pending={pending}
                       act={act}
                     />
@@ -246,12 +274,12 @@ export function TaskPanel({ tasks, roles }: { tasks: TaskRow[]; roles: RoleOptio
 
 function TaskItem({
   task,
-  roles,
+  subjects,
   pending,
   act,
 }: {
   task: TaskRow;
-  roles: RoleOption[];
+  subjects: SubjectOption[];
   pending: boolean;
   act: (work: () => Promise<unknown>, message?: string) => void;
 }) {
@@ -308,13 +336,15 @@ function TaskItem({
             {task.title}
           </button>
         )}
-        {task.application && (
+        {task.detail && (
+          <p className="text-faint mt-0.5 line-clamp-2 text-[12px]">{task.detail}</p>
+        )}
+        {task.subject && (
           <Link
-            href={`/applications/${task.application.id}`}
+            href={task.subject.href}
             className="text-faint hover:text-foreground mt-0.5 flex items-center gap-1 text-[11.5px] transition-colors"
           >
-            <BriefcaseIcon className="size-3" />
-            {task.application.roleTitle} · {task.application.company}
+            {SUBJECT_LABEL[task.subject.kind]} · {task.subject.label}
           </Link>
         )}
       </div>
@@ -331,41 +361,20 @@ function TaskItem({
       {/* The date and the role are edits, not decoration: a task that has
           slipped gets moved rather than re-typed. */}
       <div className="flex items-center gap-1">
-        <label className="relative">
-          <span className="sr-only">Due date for {task.title}</span>
-          <CalendarIcon className="text-faint pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
-          <Input
-            type="date"
-            value={task.dueDate}
-            disabled={pending}
-            onChange={(event) =>
-              act(() => updateTaskAction(task.id, { dueAt: event.target.value || null }))
-            }
-            className="h-8 w-[8.5rem] pl-7 text-[12px]"
-          />
-        </label>
-        <Select
-          value={task.application?.id ?? "none"}
-          onValueChange={(value) =>
-            act(() => updateTaskAction(task.id, { applicationId: value === "none" ? null : value }))
-          }
-        >
-          <SelectTrigger
-            size="sm"
-            className="w-9 justify-center px-0 [&>svg:last-child]:hidden"
-            aria-label={`Role for ${task.title}`}
-          >
-            <BriefcaseIcon className="size-3.5" />
-          </SelectTrigger>
-          <SelectContent align="end">
-            <SelectItem value="none">Not about a role</SelectItem>
-            {roles.map((role) => (
-              <SelectItem key={role.id} value={role.id}>
-                {role.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <DateField
+          value={task.dueDate}
+          onChange={(dueAt) => act(() => updateTaskAction(task.id, { dueAt: dueAt || null }))}
+          ariaLabel={`Due date for ${task.title}`}
+          placeholder="No due date"
+          className="w-44"
+        />
+        <SubjectPicker
+          size="sm"
+          className="w-40"
+          value={task.subject ? { kind: task.subject.kind, id: task.subject.id } : null}
+          options={subjects}
+          onChange={(next) => act(() => updateTaskAction(task.id, subjectColumns(next)))}
+        />
         <Button
           variant="ghost"
           size="icon-sm"

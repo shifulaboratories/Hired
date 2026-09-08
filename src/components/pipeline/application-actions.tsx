@@ -201,7 +201,11 @@ export function ApplicationActions({
           <DropdownMenuItem
             variant="destructive"
             onSelect={() => {
-              if (!confirm(`Delete the ${application.company} application? This cannot be undone.`))
+              if (
+                !confirm(
+                  `Delete the ${application.company} application? Its timeline and tasks go with it, and you can restore all of it from the archive.`,
+                )
+              )
                 return;
               run(() => deleteApplicationAction(application.id), "Deleted");
             }}

@@ -602,7 +602,7 @@ async function termsFor(
 
   if (subject.kind === "contact") {
     const contact = await db.contact.findFirst({
-      where: { id: subject.id, userId },
+      where: { id: subject.id, userId, archivedAt: null },
       select: { name: true, email: true },
     });
     if (!contact) throw new Error(`No contact with id ${subject.id}`);
@@ -613,11 +613,16 @@ async function termsFor(
 
   if (subject.kind === "company") {
     const company = await db.company.findFirst({
-      where: { id: subject.id, userId },
+      where: { id: subject.id, userId, archivedAt: null },
       select: {
         name: true,
         website: true,
-        contacts: { select: { contact: { select: { email: true } } } },
+        // Through the join to the person: an archived contact's address must
+        // not widen what this company matches on.
+        contacts: {
+          where: { contact: { archivedAt: null } },
+          select: { contact: { select: { email: true } } },
+        },
       },
     });
     if (!company) throw new Error(`No company with id ${subject.id}`);
@@ -633,11 +638,11 @@ async function termsFor(
 
   if (subject.kind === "application") {
     const application = await db.application.findFirst({
-      where: { id: subject.id, userId },
+      where: { id: subject.id, userId, archivedAt: null },
       select: {
         roleTitle: true,
         company: { select: { name: true, website: true } },
-        contacts: { select: { email: true } },
+        contacts: { where: { archivedAt: null }, select: { email: true } },
       },
     });
     if (!application) throw new Error(`No application with id ${subject.id}`);
@@ -663,9 +668,10 @@ async function termsFor(
     select: {
       name: true,
       applications: {
+        where: { archivedAt: null },
         select: {
           company: { select: { website: true } },
-          contacts: { select: { email: true } },
+          contacts: { where: { archivedAt: null }, select: { email: true } },
         },
       },
     },
@@ -795,13 +801,13 @@ export async function listMatchedEvents(
 
   const [companies, contacts] = await Promise.all([
     db.company.findMany({
-      where: { userId },
+      where: { userId, archivedAt: null },
       select: {
         id: true,
         name: true,
         website: true,
         applications: {
-          where: { closedAt: null },
+          where: { closedAt: null, archivedAt: null },
           orderBy: { updatedAt: "desc" },
           take: 1,
           select: { id: true },
@@ -809,13 +815,17 @@ export async function listMatchedEvents(
       },
     }),
     db.contact.findMany({
-      where: { userId, email: { not: "" } },
+      where: { userId, email: { not: "" }, archivedAt: null },
       select: {
         id: true,
         name: true,
         email: true,
         applicationId: true,
-        companies: { take: 1, select: { company: { select: { id: true, name: true } } } },
+        companies: {
+          where: { company: { archivedAt: null } },
+          take: 1,
+          select: { company: { select: { id: true, name: true } } },
+        },
       },
     }),
   ]);

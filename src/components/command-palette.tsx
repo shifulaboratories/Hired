@@ -12,7 +12,8 @@ import {
   FileTextIcon,
   KanbanIcon,
   ListChecksIcon,
-  LayoutDashboardIcon,
+  Trash2Icon,
+  ChartNoAxesColumnIcon,
   PlusIcon,
   SettingsIcon,
   UsersIcon,
@@ -218,8 +219,8 @@ export function CommandPalette({
         ) : (
           <>
             <CommandGroup heading="Go to">
-              <CommandItem value="go-dashboard" onSelect={() => go("/")}>
-                <LayoutDashboardIcon /> Dashboard
+              <CommandItem value="go-today tasks dashboard" onSelect={() => go("/")}>
+                <ListChecksIcon /> Today
               </CommandItem>
               <CommandItem value="go-me" onSelect={() => go("/me")}>
                 <CircleUserRoundIcon /> Me
@@ -230,14 +231,20 @@ export function CommandPalette({
               <CommandItem value="go-pipeline" onSelect={() => go("/applications")}>
                 <KanbanIcon /> Pipeline
               </CommandItem>
-              <CommandItem value="go-tasks" onSelect={() => go("/tasks")}>
-                <ListChecksIcon /> Tasks
+              <CommandItem
+                value="go-analytics stats funnel chart"
+                onSelect={() => go("/?tab=analytics")}
+              >
+                <ChartNoAxesColumnIcon /> Analytics
               </CommandItem>
               <CommandItem value="go-companies" onSelect={() => go("/crm/companies")}>
                 <BuildingIcon /> Companies
               </CommandItem>
               <CommandItem value="go-contacts" onSelect={() => go("/crm/contacts")}>
                 <UsersIcon /> Contacts
+              </CommandItem>
+              <CommandItem value="go-archive trash bin deleted" onSelect={() => go("/archive")}>
+                <Trash2Icon /> Archive
               </CommandItem>
               <CommandItem value="go-settings" onSelect={() => go("/settings")}>
                 <SettingsIcon /> Settings

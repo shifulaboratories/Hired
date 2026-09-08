@@ -118,12 +118,31 @@ icon: "circle-question"
     stays. Paying again turns it back on.
   </Accordion>
 
+  <Accordion title="I deleted something by mistake. Is it gone?">
+    Not for a while. Deleting a company, a person or an application puts it in the
+    [archive](/tools/archive) rather than destroying it: it leaves every list, board,
+    picker, filter and count, and waits — thirty days by default, an instance setting —
+    before it is deleted for good. Open **Archive** and restore it, or say "what's in my
+    archive" and `restore_records` brings it back.
+
+    Archiving a company takes its applications with it and returns exactly those on
+    restore; the people at it stay where they are, because somebody is a founder at one
+    company and an advisor at another. The two acts that really do destroy something —
+    emptying the archive, and deleting from inside it — cannot reach anything that is not
+    already in there.
+
+    Everything else deletable — a role, a highlight, a note, a resume, a task, a tag, a
+    saved view — is gone when you delete it, and the app says so before it does it.
+  </Accordion>
+
   <Accordion title="How do I get my data out?">
     On a self-hosted instance, `pg_dump` — the database is the whole thing, photos
     included, because they are stored in the owning row rather than in a file store.
 
     From either kind of instance, `get_me_snapshot` returns everything in the knowledge
     base in one call, and `list_resumes` plus `get_resume` returns every document as JSON.
+    For the search itself, `export_csv` — or the **Export** button on either CRM list —
+    returns companies, people or applications as a spreadsheet, filters and all.
     Ask your assistant to write them to files.
   </Accordion>
 

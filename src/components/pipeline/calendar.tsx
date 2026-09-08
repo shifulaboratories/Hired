@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
-import type { ScheduleKind } from "@/lib/data/pipeline";
+import type { Stage } from "@prisma/client";
+import { STAGE_LABEL, STAGE_TONE, type ScheduleKind } from "@/lib/data/pipeline";
 import { cn } from "@/lib/utils";
 
 export type CalendarEntry = {
@@ -9,6 +10,10 @@ export type CalendarEntry = {
   /** ISO day, YYYY-MM-DD, already in the month being shown. */
   day: string;
   title: string;
+  /** The role, or the person's title — whatever the title does not already say. */
+  detail: string;
+  /** Null for anything that is not an application. */
+  stage: Stage | null;
   applicationId: string | null;
   contactId: string | null;
   done: boolean | null;
@@ -68,13 +73,21 @@ export function PipelineCalendar({
   month,
   entries,
   today,
+  fields,
 }: {
   year: number;
   month: number;
   entries: CalendarEntry[];
   /** Passed in from the server so the grid and the highlight agree. */
   today: string;
+  /**
+   * What a chip shows besides its title. A chip has room for very little, so
+   * the catalogue is two things — everything else on a schedule entry is
+   * already inside the title and would print the same words twice.
+   */
+  fields: string[];
 }) {
+  const shows = new Set(fields);
   const { from } = monthWindow(year, month);
   const byDay = new Map<string, CalendarEntry[]>();
   for (const entry of entries) {
@@ -168,7 +181,11 @@ export function PipelineCalendar({
               </div>
               <div className="space-y-0.5">
                 {items.slice(0, 4).map((entry) => (
-                  <CalendarChip key={`${entry.kind}-${entry.id}`} entry={entry} />
+                  <CalendarChip
+                    key={`${entry.kind}-${entry.id}`}
+                    entry={entry}
+                    fields={shows}
+                  />
                 ))}
                 {items.length > 4 && (
                   <div className="text-faint px-1 text-[11px]">+{items.length - 4} more</div>
@@ -184,7 +201,7 @@ export function PipelineCalendar({
   );
 }
 
-function CalendarChip({ entry }: { entry: CalendarEntry }) {
+function CalendarChip({ entry, fields }: { entry: CalendarEntry; fields: Set<string> }) {
   const body = (
     <span
       className={cn(
@@ -198,6 +215,17 @@ function CalendarChip({ entry }: { entry: CalendarEntry }) {
         style={{ background: KIND_TONE[entry.kind] }}
       />
       <span className="truncate">{entry.title}</span>
+      {fields.has("detail") && entry.detail && (
+        <span className="text-faint hidden truncate lg:inline">{entry.detail}</span>
+      )}
+      {fields.has("stage") && entry.stage && (
+        <span
+          className="stage-chip hidden shrink-0 rounded-chip px-1 text-[10px] font-medium lg:inline"
+          style={{ ["--tone" as string]: STAGE_TONE[entry.stage] }}
+        >
+          {STAGE_LABEL[entry.stage]}
+        </span>
+      )}
     </span>
   );
 

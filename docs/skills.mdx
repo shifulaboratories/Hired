@@ -45,18 +45,24 @@ first tool call rather than after its first mistake.
 
 It carries:
 
-- **The four areas** and which tool is the fastest way into each.
+- **The four areas** and which tool is the fastest way into each, plus the two things that
+  cut across them — tags, and the archive that deleting sends things to.
 - **The rule that matters most** — never invent experience, employers, dates or metrics —
   with the specific failure it exists to prevent, which is quiet upgrading during
   tailoring rather than invention from nothing.
 - **The replace-versus-append table.** `update_role`, `update_resume`, `update_company`
-  and `update_contact` all replace what you send; `append_role_background` adds. Getting
-  this wrong silently deletes work, so it is written out as a table.
+  and `update_contact` all replace what you send; `append_role_background` adds, and so do
+  the bulk tools. Getting this wrong silently deletes work, so it is written out as a table
+  — the row that earns its place is the one saying "tag these nine as fintech" written as
+  nine `update_company` calls strips the size and location off all nine.
 - **The order of operations** before writing anything: search Me, snapshot it for
   profile and dates, read the company record, then draft.
 - **A reminder to read your notes and look for the ones marked `GUARDRAIL`**, because your
   own standing rules override anything an assistant would otherwise infer. `list_notes`
   takes no arguments and returns all of them, so the picking-out happens on the way back.
+- **What is reversible and what is not.** Deleting a company, a person or an application
+  archives it; everything else is gone when it goes. The two acts that really destroy
+  something get read back to you before they run.
 - **Saying what you did.** You cannot see tool calls; a resume that changed without
   explanation is one you have to re-read from scratch.
 
@@ -91,8 +97,15 @@ and the weekly review.
   "had a call".
 - **Read before writing research.** `update_company` replaces the notes field. Losing
   someone's research by writing over it is the worst outcome available in the tool.
+- **An ending is a stage, not a deletion.** `REJECTED` and `GHOSTED` keep an application in
+  the funnel, which is the only thing that can say where the search is losing people.
+  Deleting takes it out — and archives it, so it is recoverable for thirty days.
+- **Working a list rather than a record.** Both CRM lists filter and sort the same way the
+  list tools do, acts that cover a selection have their own add-and-remove tools, and
+  `export_csv` hands back the whole list as a spreadsheet.
 - **What not to do:** do not log the same thing twice, do not move a stage nobody told you
-  about, and do not create a company record just to have one.
+  about, do not create a company record just to have one, and do not empty the archive
+  without reading it back first.
 
 ## Do you need them?
 

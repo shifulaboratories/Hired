@@ -48,12 +48,15 @@ const SECTIONS = [
   { file: "resumes.mdx", first: "get_resume_format", last: "preview_resume_text",
     title: "Resumes", icon: "file-lines",
     blurb: "writing documents, previewing them, publishing, exporting." },
-  { file: "pipeline.mdx", first: "pipeline_stats", last: "delete_task",
+  { file: "pipeline.mdx", first: "pipeline_stats", last: "set_column_widths",
     title: "Pipeline", icon: "list-check",
     blurb: "applications, stages, timeline, tasks, follow-ups, views, sharing, diagnosis." },
-  { file: "crm.mdx", first: "list_companies", last: "create_contact",
+  { file: "crm.mdx", first: "list_companies", last: "schedule_contact_pings",
     title: "CRM", icon: "building",
-    blurb: "companies and the people at them." },
+    blurb: "companies and the people at them, one at a time or a selection at once." },
+  { file: "archive.mdx", first: "list_archive", last: "empty_archive",
+    title: "Archive", icon: "trash-can",
+    blurb: "what has been deleted, putting it back, and getting rid of it for good." },
   { file: "accounts.mdx", first: "list_linked_accounts", last: "search_calendar",
     title: "Mail & Calendar", icon: "envelope",
     blurb: "the threads and meetings behind any record, read live from your own Google, Microsoft 365 or IMAP and CalDAV accounts." },
@@ -140,6 +143,15 @@ const COMPANY_FILTERS = ["active", "applied", "never-applied", "with-contacts"];
 const CONTACT_FILTERS = ["ping-due", "with-application", "no-company"];
 const TAG_COLORS = ["slate", "blue", "teal", "green", "amber", "red", "violet", "pink"];
 const TAG_KINDS = ["APPLICATION", "COMPANY", "CONTACT", "INDUSTRY", "SIZE", "LOCATION"];
+const ARCHIVE_KIND_VALUES = ["company", "contact", "application"];
+const EXPORT_KINDS = ["companies", "contacts", "applications"];
+const COMPANY_SORTS = ["name", "applied", "apps", "people"];
+const CONTACT_SORTS = ["name", "company", "ping", "touch"];
+const SORT_DIRECTIONS = ["asc", "desc"];
+const COMPANY_MISSING = ["website", "industry", "location"];
+const CONTACT_MISSING = ["email", "tags"];
+const PIPELINE_VIEW_VALUES = ["board", "list", "calendar"];
+const COLUMN_LIST_VALUES = ["pipeline", "companies", "contacts"];
 
 for (const [name, values] of [
   ["ACTIVITY_VALUES", ACTIVITY_VALUES],
@@ -147,6 +159,15 @@ for (const [name, values] of [
   ["CONTACT_FILTERS", CONTACT_FILTERS],
   ["TAG_COLORS", TAG_COLORS],
   ["TAG_KINDS", TAG_KINDS],
+  ["ARCHIVE_KIND_VALUES", ARCHIVE_KIND_VALUES],
+  ["EXPORT_KINDS", EXPORT_KINDS],
+  ["COMPANY_SORTS", COMPANY_SORTS],
+  ["CONTACT_SORTS", CONTACT_SORTS],
+  ["SORT_DIRECTIONS", SORT_DIRECTIONS],
+  ["COMPANY_MISSING", COMPANY_MISSING],
+  ["CONTACT_MISSING", CONTACT_MISSING],
+  ["PIPELINE_VIEW_VALUES", PIPELINE_VIEW_VALUES],
+  ["COLUMN_LIST_VALUES", COLUMN_LIST_VALUES],
 ]) {
   const declared = new RegExp(`${name}[^=]*=\\s*\\[([\\s\\S]*?)\\]`).exec(src);
   if (!declared) throw new Error(`tools.ts no longer declares ${name}`);
@@ -168,6 +189,8 @@ for (const [name, values] of [
 const scope = {
   str, num, bool, strArray, object,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
+  ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,
+  COMPANY_MISSING, CONTACT_MISSING, PIPELINE_VIEW_VALUES, COLUMN_LIST_VALUES,
 };
 const scopeKeys = Object.keys(scope);
 const scopeValues = Object.values(scope);

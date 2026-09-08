@@ -23,10 +23,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientMark, ClientTile } from "@/components/client-mark";
 import {
   AccountSheet,
-  AddAccountSheet,
   ImapSheet,
   featureWords,
   markFor,
@@ -195,16 +195,19 @@ function Status({ tone, children }: { tone: "live" | "idle" | "off" | "warn"; ch
 }
 
 /**
- * The tile. One brand mark, a name, one line of status, and the whole thing
- * is the button — there is nothing to do on a tile except open it.
+ * One wired-up thing, as a row.
+ *
+ * A row rather than a tile because the answer a person wants here is a column
+ * of yes/no, and a tile grid makes four connections take a screen to say what
+ * four lines say. The whole row is the button; there is nothing to do to one
+ * except open it.
  */
-function Tile({
+function WiredRow({
   mark,
   title,
   meta,
   status,
   onClick,
-  className,
 }: {
   mark: string;
   title: string;
@@ -212,46 +215,24 @@ function Tile({
   meta?: string;
   status: React.ReactNode;
   onClick: () => void;
-  className?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={cn(
-        "bg-card hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-ring/50 group flex min-h-[7.25rem] flex-col items-start gap-3 rounded-xl border p-4 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none",
-        className,
-      )}
+      className="bg-card hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-ring/50 group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
     >
-      <div className="flex w-full items-start justify-between gap-2">
-        <ClientTile client={mark} size={40} />
-        <ArrowUpRightIcon className="text-faint group-hover:text-foreground size-3.5 shrink-0 transition-colors" />
-      </div>
-      <div className="min-w-0 w-full">
+      <ClientTile client={mark} size={32} />
+      <div className="min-w-0 flex-1">
         <div className="truncate text-[13.5px] font-medium">{title}</div>
-        {meta && <div className="text-faint truncate text-xs">{meta}</div>}
-        <div className="mt-1.5">{status}</div>
+        {/* The status drops under the name on a phone rather than off the row.
+            "Is it set up" is the whole question this screen answers, so it is
+            the last thing that should be hidden to save width. */}
+        <div className="text-faint truncate text-xs sm:hidden">{status}</div>
+        {meta && <div className="text-faint hidden truncate text-xs sm:block">{meta}</div>}
       </div>
-    </button>
-  );
-}
-
-function AddTile({ onClick, pending }: { onClick: () => void; pending: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={pending}
-      className="text-muted-foreground hover:border-primary/40 hover:text-foreground focus-visible:ring-ring/50 flex min-h-[7.25rem] flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-4 text-center transition-colors focus-visible:ring-[3px] focus-visible:outline-none disabled:opacity-60"
-    >
-      {pending ? (
-        <LoaderCircleIcon className="size-5 animate-spin" />
-      ) : (
-        <span className="bg-muted flex size-10 items-center justify-center rounded-xl">
-          <PlusIcon className="size-[18px]" />
-        </span>
-      )}
-      <span className="text-[13px] font-medium">Connect an assistant</span>
+      <div className="hidden shrink-0 sm:block">{status}</div>
+      <ArrowUpRightIcon className="text-faint group-hover:text-foreground size-3.5 shrink-0 transition-colors" />
     </button>
   );
 }
@@ -491,49 +472,220 @@ function ConnectionSheet({
 // Picking a client
 // ---------------------------------------------------------------------------
 
-function PickerSheet({
+/** One way to connect an account: a link out to a consent screen, a form, or a promise. */
+function AccountOption({
+  mark,
+  name,
+  tagline,
+  href,
+  onClick,
+  disabled,
+  soon,
+}: {
+  mark: string;
+  name: string;
+  tagline: string;
+  href?: string;
+  onClick?: () => void;
+  /** Why it cannot be used right now, in a sentence. */
+  disabled?: string;
+  soon?: boolean;
+}) {
+  const body = (
+    <>
+      <ClientTile client={mark} size={36} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-[13px] font-medium">
+          {name}
+          {soon && (
+            <span className="bg-muted text-muted-foreground rounded-chip px-1.5 py-0.5 text-[10.5px] font-medium">
+              Coming soon
+            </span>
+          )}
+        </div>
+        <div className="text-faint text-xs leading-snug">{disabled ?? tagline}</div>
+      </div>
+      {!disabled && !soon && <PlusIcon className="text-faint size-4 shrink-0" />}
+    </>
+  );
+  const className = cn(
+    "flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+    disabled || soon
+      ? "opacity-60"
+      : "hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none",
+  );
+  if (disabled || soon) return <div className={className}>{body}</div>;
+  if (href) {
+    return (
+      <a href={href} className={className}>
+        {body}
+      </a>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} className={className}>
+      {body}
+    </button>
+  );
+}
+
+/**
+ * The library: everything that can be wired to this workspace, in one place.
+ *
+ * It replaced a picker that listed only the MCP clients, which quietly said
+ * that adding an assistant and connecting Google were different kinds of act.
+ * They are the same act from a person's side — "wire this thing up" — so both
+ * live here, one tab each, and the screen behind them is a status row rather
+ * than two grids of the same tiles.
+ *
+ * Everything is listed, connected or not. A row for a client you already use
+ * says so and opens it rather than making a second connection; that is
+ * deliberate, because "did I already add Cursor?" is the question this page
+ * exists to answer, and hiding what is already on makes it unanswerable.
+ */
+function LibrarySheet({
   open,
   onOpenChange,
+  connections,
   onPick,
+  onOpenConnection,
+  accounts,
+  onOpenAccount,
+  onImap,
   pending,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  connections: ConnectionRow[];
   onPick: (client: string) => void;
+  onOpenConnection: (id: string) => void;
+  accounts: AccountsProps;
+  onOpenAccount: (id: string) => void;
+  onImap: () => void;
   pending: boolean;
 }) {
   const products = MCP_CLIENTS.filter((entry) => entry.category !== "any");
   const generic = MCP_CLIENTS.filter((entry) => entry.category === "any");
+  const mine = new Map<string, ConnectionRow>();
+  for (const connection of connections) {
+    if (!mine.has(connection.client)) mine.set(connection.client, connection);
+  }
 
-  const option = (entry: (typeof MCP_CLIENTS)[number]) => (
-    <button
-      key={entry.id}
-      type="button"
-      disabled={pending}
-      onClick={() => onPick(entry.id)}
-      className="hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-ring/50 flex items-center gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none disabled:opacity-60"
-    >
-      <ClientTile client={entry.id} size={36} />
-      <div className="min-w-0">
-        <div className="text-[13px] font-medium">{entry.name}</div>
-        <div className="text-faint truncate text-xs">{entry.tagline}</div>
-      </div>
-    </button>
-  );
+  const option = (entry: (typeof MCP_CLIENTS)[number]) => {
+    const existing = mine.get(entry.id);
+    return (
+      <button
+        key={entry.id}
+        type="button"
+        disabled={pending}
+        onClick={() => (existing ? onOpenConnection(existing.id) : onPick(entry.id))}
+        className="hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-ring/50 flex items-center gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none disabled:opacity-60"
+      >
+        <ClientTile client={entry.id} size={36} />
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-medium">{entry.name}</div>
+          <div className="text-faint truncate text-xs">{entry.tagline}</div>
+        </div>
+        {existing ? (
+          <Status tone="live">Connected</Status>
+        ) : (
+          <PlusIcon className="text-faint size-4 shrink-0" />
+        )}
+      </button>
+    );
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto p-5 sm:max-w-xl sm:p-6">
-        <SheetTitle className="text-[17px] font-semibold tracking-tight">Connect an assistant</SheetTitle>
+        <SheetTitle className="text-[17px] font-semibold tracking-tight">Add to this workspace</SheetTitle>
         <SheetDescription className="mt-1 text-xs">
-          Each client gets its own URL, so one can be disconnected later without breaking the
-          rest. Pick where you are pasting it and the setup steps follow.
+          Assistants read and write your workspace over MCP. Accounts are what the workspace
+          reads on your behalf.
         </SheetDescription>
-        <div className="mt-5 grid gap-2 sm:grid-cols-2">{products.map(option)}</div>
-        <div className="text-faint mt-5 mb-2 text-[11.5px] font-medium tracking-wide uppercase">
-          Anything else
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">{generic.map(option)}</div>
+
+        <Tabs defaultValue="assistants" className="mt-5">
+          <TabsList>
+            <TabsTrigger value="assistants">
+              <ZapIcon className="hidden size-3.5 sm:block" /> Assistants
+            </TabsTrigger>
+            <TabsTrigger value="accounts">
+              <MailIcon className="hidden size-3.5 sm:block" /> Accounts
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="assistants" className="mt-4">
+            <p className="text-muted-foreground mb-3 text-xs">
+              Each client gets its own URL, so one can be cut off later without breaking the
+              rest. Pick where you are pasting it and the setup steps follow.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">{products.map(option)}</div>
+            <div className="text-faint mt-5 mb-2 text-[11.5px] font-medium tracking-wide uppercase">
+              Anything else
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">{generic.map(option)}</div>
+          </TabsContent>
+
+          <TabsContent value="accounts" className="mt-4">
+            <p className="text-muted-foreground mb-3 text-xs">
+              Live and read-only. Nothing is copied into this instance — every screen asks at
+              the moment you open it, and disconnecting deletes the only thing held. Connect
+              more than one if recruiters write to more than one.
+            </p>
+            {accounts.list.length > 0 && (
+              <div className="mb-4 grid gap-2 sm:grid-cols-2">
+                {accounts.list.map((account) => (
+                  <button
+                    key={account.id}
+                    type="button"
+                    onClick={() => onOpenAccount(account.id)}
+                    className="hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-ring/50 flex items-center gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
+                  >
+                    <ClientTile client={markFor(account.provider)} size={36} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] font-medium">{account.label || account.providerLabel}</div>
+                      <div className="text-faint truncate text-xs">{account.email}</div>
+                    </div>
+                    {account.lastError ? (
+                      <Status tone="warn">Needs you</Status>
+                    ) : (
+                      <Status tone="live">Connected</Status>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <AccountOption
+                mark="google"
+                name="Google"
+                tagline="Gmail and Google Calendar. Leave either unticked."
+                href="/api/auth/google?data=1"
+                disabled={accounts.googleReady ? undefined : "Needs an admin: Admin → Configuration → Sign-in."}
+              />
+              <AccountOption
+                mark="microsoft"
+                name="Microsoft 365"
+                tagline="Outlook mail and calendar, work or Outlook.com."
+                href="/api/auth/microsoft"
+                disabled={accounts.microsoftReady ? undefined : "Needs an admin: Admin → Configuration → Accounts."}
+              />
+              <AccountOption
+                mark="imap"
+                name="Any other provider"
+                tagline="IMAP and CalDAV: Fastmail, iCloud, Yahoo, self-hosted."
+                onClick={onImap}
+              />
+            </div>
+            <div className="text-faint mt-5 mb-2 text-[11.5px] font-medium tracking-wide uppercase">
+              Where you get nudged
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <AccountOption mark="slack" name="Slack" tagline="Follow-ups due and interviews today, in a channel." soon />
+              <AccountOption mark="discord" name="Discord" tagline="The same, in a server you already have open." soon />
+            </div>
+          </TabsContent>
+        </Tabs>
       </SheetContent>
     </Sheet>
   );
@@ -564,7 +716,6 @@ export function ConnectionsPanel({
   const [picking, setPicking] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [openAccountId, setOpenAccountId] = useState<string | null>(null);
-  const [addingAccount, setAddingAccount] = useState(false);
   const [imap, setImap] = useState<{ open: boolean; prefill: AccountView | null }>({ open: false, prefill: null });
   const used = useMemo(() => connections.filter((c) => c.lastUsedAt).length, [connections]);
 
@@ -626,85 +777,75 @@ export function ConnectionsPanel({
         </div>
       )}
 
-      <section className="space-y-3">
-        <div>
-          <h3 className="text-[13px] font-semibold">Assistants</h3>
-          <p className="text-muted-foreground text-xs">
-            Read and write your workspace over MCP. Each has its own URL; open one for the
-            setup steps, to test it, or to cut it off.
-          </p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {connections.map((connection) => {
-            const label = clientName(connection.client);
-            const lastUsed = ago(connection.lastUsedAt);
-            return (
-              <Tile
-                key={connection.id}
-                mark={connection.client}
-                title={connection.name}
-                meta={label !== connection.name ? label : undefined}
-                status={
-                  lastUsed ? (
-                    <Status tone="live">used {lastUsed}</Status>
-                  ) : (
-                    <Status tone="idle">never used</Status>
-                  )
-                }
-                onClick={() => setOpenId(connection.id)}
-              />
-            );
-          })}
-          <AddTile onClick={() => setPicking(true)} pending={pending} />
-        </div>
-      </section>
+      {/* One row, not two grids.
+          What is wired up is a short list and the question about it is short
+          too — is this on, and does it need me. Two labelled grids of the same
+          tile spent most of a screen restating that an assistant and an
+          account are different kinds of thing, which is a distinction the
+          library makes when you are adding one and nobody needs while reading.
+          Adding anything is the button above; this is the answer, at a glance. */}
+      <section className="space-y-2">
+        {connections.map((connection) => {
+          const label = clientName(connection.client);
+          const lastUsed = ago(connection.lastUsedAt);
+          return (
+            <WiredRow
+              key={connection.id}
+              mark={connection.client}
+              title={connection.name}
+              meta={label !== connection.name ? label : "Assistant"}
+              status={
+                lastUsed ? (
+                  <Status tone="live">used {lastUsed}</Status>
+                ) : (
+                  <Status tone="idle">never used</Status>
+                )
+              }
+              onClick={() => setOpenId(connection.id)}
+            />
+          );
+        })}
 
-      <section className="space-y-3">
-        <div>
-          <h3 className="text-[13px] font-semibold">Accounts</h3>
-          <p className="text-muted-foreground text-xs">
-            What the workspace reads on your behalf: your mail and calendar, from Google,
-            Microsoft 365 or any IMAP and CalDAV provider. Live and read-only; nothing is copied here.
-          </p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {accounts.list.map((account) => {
-            const words = featureWords(account.provider);
-            return (
-              <Tile
-                key={account.id}
-                mark={markFor(account.provider)}
-                title={account.label || account.providerLabel}
-                meta={account.email}
-                status={
-                  account.lastError ? (
-                    <Status tone="warn">Needs reconnecting</Status>
-                  ) : (
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <Status tone={account.mail ? "live" : "off"}>
-                        <MailIcon className="size-3" /> {words.mail}
-                      </Status>
-                      <Status tone={account.calendar ? "live" : "off"}>
-                        <CalendarIcon className="size-3" /> {words.calendar}
-                      </Status>
-                    </span>
-                  )
-                }
-                onClick={() => setOpenAccountId(account.id)}
-              />
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => setAddingAccount(true)}
-            className="text-muted-foreground hover:border-primary/40 hover:text-foreground focus-visible:ring-ring/50 flex min-h-[7.25rem] flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-4 text-center transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
-          >
-            <span className="bg-muted flex size-10 items-center justify-center rounded-xl">
-              <PlusIcon className="size-[18px]" />
-            </span>
-            <span className="text-[13px] font-medium">Connect an account</span>
-          </button>
-        </div>
+        {accounts.list.map((account) => {
+          const words = featureWords(account.provider);
+          return (
+            <WiredRow
+              key={account.id}
+              mark={markFor(account.provider)}
+              title={account.label || account.providerLabel}
+              meta={account.email}
+              status={
+                account.lastError ? (
+                  <Status tone="warn">Needs reconnecting</Status>
+                ) : (
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <Status tone={account.mail ? "live" : "off"}>
+                      <MailIcon className="size-3" /> {words.mail}
+                    </Status>
+                    <Status tone={account.calendar ? "live" : "off"}>
+                      <CalendarIcon className="size-3" /> {words.calendar}
+                    </Status>
+                  </span>
+                )
+              }
+              onClick={() => setOpenAccountId(account.id)}
+            />
+          );
+        })}
+
+        <button
+          type="button"
+          onClick={() => setPicking(true)}
+          disabled={pending}
+          className="text-muted-foreground hover:border-primary/40 hover:text-foreground focus-visible:ring-ring/50 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed px-3 py-2.5 text-[13px] transition-colors focus-visible:ring-[3px] focus-visible:outline-none disabled:opacity-60"
+        >
+          {pending ? (
+            <LoaderCircleIcon className="size-3.5 animate-spin" />
+          ) : (
+            <PlusIcon className="size-3.5" />
+          )}
+          Add an assistant or an account
+        </button>
       </section>
 
       <p className="text-muted-foreground text-xs leading-relaxed">
@@ -724,7 +865,26 @@ export function ConnectionsPanel({
         />
       )}
 
-      <PickerSheet open={picking} onOpenChange={setPicking} onPick={add} pending={pending} />
+      <LibrarySheet
+        open={picking}
+        onOpenChange={setPicking}
+        connections={connections}
+        onPick={add}
+        onOpenConnection={(id) => {
+          setPicking(false);
+          setOpenId(id);
+        }}
+        accounts={accounts}
+        onOpenAccount={(id) => {
+          setPicking(false);
+          setOpenAccountId(id);
+        }}
+        onImap={() => {
+          setPicking(false);
+          setImap({ open: true, prefill: null });
+        }}
+        pending={pending}
+      />
 
       {openAccount && (
         <AccountSheet
@@ -740,17 +900,6 @@ export function ConnectionsPanel({
           }}
         />
       )}
-
-      <AddAccountSheet
-        open={addingAccount}
-        onOpenChange={setAddingAccount}
-        googleReady={accounts.googleReady}
-        microsoftReady={accounts.microsoftReady}
-        onImap={() => {
-          setAddingAccount(false);
-          setImap({ open: true, prefill: null });
-        }}
-      />
 
       {imap.open && (
         <ImapSheet

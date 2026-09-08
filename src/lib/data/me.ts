@@ -1,5 +1,12 @@
 import type { NoteKind } from "@prisma/client";
 import { db } from "@/lib/db";
+import type { PipelineView } from "@/lib/pipeline-fields";
+import {
+  parseWidths,
+  withWidths,
+  type ColumnList,
+  type StoredWidths,
+} from "@/lib/column-widths";
 import { pick } from "@/lib/data/patch";
 import { resolvePhoto } from "@/lib/photo";
 
@@ -34,6 +41,62 @@ export async function getProfile(userId: string) {
   const existing = await db.profile.findUnique({ where: { userId } });
   if (existing) return existing;
   return db.profile.create({ data: { userId } });
+}
+
+/**
+ * Which optional fields each pipeline view draws, for this person.
+ *
+ * A separate writer rather than a key on ProfilePatch, and deliberately: that
+ * type is also what `importResume` accepts for its `profile` argument, and an
+ * assistant filling in somebody's details off a CV has no business reshaping
+ * their board. It also takes the view positionally, so a mistyped one is a
+ * compile error rather than a key `pick` silently drops.
+ */
+export async function setPipelineFields(
+  userId: string,
+  view: PipelineView,
+  fields: string[],
+): Promise<{ boardFields: string[]; listFields: string[]; calendarFields: string[] }> {
+  const column = { board: "boardFields", list: "listFields", calendar: "calendarFields" } as const;
+  const profile = await db.profile.upsert({
+    where: { userId },
+    create: { userId, [column[view]]: fields },
+    update: { [column[view]]: fields },
+  });
+  return {
+    boardFields: profile.boardFields,
+    listFields: profile.listFields,
+    calendarFields: profile.calendarFields,
+  };
+}
+
+/**
+ * How wide this person's list columns are.
+ *
+ * A read-modify-write rather than a Json merge, because Prisma has no partial
+ * update for a Json column: writing `{ pipeline: { stage: 160 } }` would
+ * replace the whole map and drop the CRM's widths with it. The merge is in
+ * `withWidths`, which is also where clamping happens, so a tool and a drag
+ * handle cannot disagree about what 4000 means.
+ *
+ * `reset` is how a list goes back to its defaults: it clears that list's own
+ * entry rather than writing every column's default width in, so a column added
+ * to the catalogue later is sized by the catalogue and not by a stored number
+ * that predates it.
+ */
+export async function setColumnWidths(
+  userId: string,
+  list: ColumnList,
+  widths: Record<string, number>,
+  options?: { reset?: boolean },
+): Promise<StoredWidths> {
+  const profile = await getProfile(userId);
+  const next = withWidths(parseWidths(profile.columnWidths), list, widths, options);
+  const saved = await db.profile.update({
+    where: { userId },
+    data: { columnWidths: next },
+  });
+  return parseWidths(saved.columnWidths);
 }
 
 export type ProfilePatch = Partial<{

@@ -7,6 +7,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Prisma, User, UserRole } from "@prisma/client";
 import { db } from "@/lib/db";
+import { sweepArchive } from "@/lib/data/archive";
 import { getSettings } from "@/lib/settings";
 import { baseUrlFrom } from "@/lib/request-url";
 
@@ -439,7 +440,11 @@ export async function userByMcpToken(
   const stale =
     !connection.lastUsedAt || now - connection.lastUsedAt.getTime() > LAST_USED_RESOLUTION_MS;
   if (stale) {
-    // Never let bookkeeping fail a real request.
+    // Piggybacking on the once-a-minute-per-connection throttle already here,
+    // which closes the assistant-only case: an instance nobody signs into and
+    // nobody restarts still clears its archive. Never let bookkeeping fail a
+    // real request.
+    void sweepArchive().catch(() => {});
     void db.mcpConnection
       .update({
         where: { id: connection.id },

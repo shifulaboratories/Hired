@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { scheduleContactPingAction } from "@/server/actions";
+import { DateField } from "@/components/ui/date-field";
 
 export type PingCandidate = { id: string; name: string; detail: string };
 
@@ -97,12 +98,13 @@ export function PingScheduler({ contacts }: { contacts: PingCandidate[] }) {
             </Command>
           </PopoverContent>
         </Popover>
-        <Input
-          type="date"
+        <DateField
           value={date}
-          onChange={(event) => setDate(event.target.value)}
-          className="h-9 w-36 text-[13px] md:h-8"
-          aria-label="When to ping them"
+          onChange={setDate}
+          ariaLabel="When to ping them"
+          placeholder="Pick a day"
+          className="w-44"
+          clearable={false}
         />
       </div>
       <Button

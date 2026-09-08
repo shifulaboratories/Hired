@@ -9,7 +9,7 @@ export default function NotFound() {
           That page doesn&apos;t exist. It may have been deleted.
         </p>
         <Button asChild variant="outline">
-          <Link href="/">Back to the dashboard</Link>
+          <Link href="/">Back to your list</Link>
         </Button>
       </main>
   );

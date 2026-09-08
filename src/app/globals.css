@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark *):not(.theme-light *));
 
 /* ---------------------------------------------------------------------------
    The palette is near-monochrome on purpose.
@@ -17,7 +17,26 @@
    component by hand.
    --------------------------------------------------------------------------- */
 
-:root {
+/* `.theme-light` is the light theme, available as a subtree rather than as the
+   state of the whole document. It is how the front door stays paper-coloured
+   for somebody whose app is set to dark — see the block near the bottom of this
+   file. It works because a custom property set on an element beats one
+   inherited from an ancestor no matter how specific that ancestor's selector
+   is, so these declarations win over `.dark` on the `html` element without
+   fighting it. Nothing is duplicated: this is the same block, wearing two
+   names. Anything that wants to force light needs `color-scheme` too, which is
+   below, because `:root` must not have it.
+
+   The third selector is the page *behind* the door. A subtree cannot reach the
+   element the browser paints the canvas from, so without it a rubber-band
+   overscroll on a phone shows a near-black sliver above paper. `.auth-field` is
+   the door and nothing else, and the child combinator keeps this a cheap
+   `:has()` for every other page — one that has to re-check only when body's own
+   children change. If the tree above the door ever gains a wrapper this stops
+   matching, and what breaks is the overscroll gutter, not the door. */
+:root,
+.theme-light,
+body:has(> .auth-field.theme-light) {
   --radius: 0.625rem;
 
   /* --- Surfaces -----------------------------------------------------------
@@ -691,9 +710,16 @@
 }
 
 @media print {
+  /* The margin lives on the PAGE BOX, not on the paper.
+     It used to be padding on .resume-paper with @page { margin: 0 }, and
+     padding on a box that fragments is sliced: page one got the top, the last
+     page got the bottom, and every page between them got none. Measured out of
+     the real PDF, page two of a two-page resume started 12px from the sheet's
+     edge where page one started at 61px, and page one ran to within 23px of the
+     bottom. @page cannot read a custom property, so the size is stated here and
+     each document's own margin is emitted by the route that prints it. */
   @page {
     size: letter;
-    margin: 0;
   }
 
   html,
@@ -708,18 +734,50 @@
   }
 
   .resume-paper {
-    width: 8.5in !important;
+    /* auto, not 8.5in: the page box is already the sheet minus its margins, so
+       the paper fills it and the content width is what it always was. */
+    width: auto !important;
     min-height: 0 !important;
+    padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
     margin: 0 !important;
   }
+}
 
-  .rp-block {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
+/* The editor measures the document here: one column per page, sized to the
+   page's content box, so CSS fragmentation puts each element where the printer
+   would. Hidden with visibility rather than display:none or content-visibility,
+   both of which skip layout and would leave nothing to measure. */
+.rp-measure-host {
+  position: absolute;
+  left: -99999px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  contain: layout style;
+  width: var(--rp-page-w);
+  height: var(--rp-page-h);
+  column-width: var(--rp-page-w);
+  column-gap: 0;
+  column-fill: auto;
+}
+
+.rp-measure-host .resume-paper {
+  width: var(--rp-page-w);
+  min-height: 0;
+  padding: 0;
+}
+
+/* Outside @media print on purpose: break-inside is inert without a
+   fragmentation context, so this changes nothing on screen — but the editor
+   measures the document inside a multi-column host, which IS one, and it has to
+   see the same rule the printer does. Two copies of the rule that decides where
+   pages break is how a preview and a PDF drift apart. */
+.rp-block {
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 /* ---------------------------------------------------------------------------
@@ -735,7 +793,36 @@
    Everything here is one element deep and behind `prefers-reduced-motion`: the
    block at the top of this file already flattens every duration, so the calm
    path gets the same picture holding still.
+
+   And it is always light. The door is not part of the room: it is reached from
+   the marketing site, which is paper, and it is what a stranger sees before
+   there is a person here to have a preference. A dark card at the end of a
+   light page reads as a different product. The theme inside the app is
+   untouched — signing in from this page lands you in whatever you had set.
    --------------------------------------------------------------------------- */
+
+/* Every colour on the door already comes from a token, so forcing the theme is
+   mostly a matter of wearing the other set of tokens. These three are what that
+   does not cover:
+
+   `color` because `body` resolved `var(--foreground)` before this subtree got a
+   say, and what inherits down is the answer, not the question — near-white ink
+   on the paper card, which is how this was caught. Any inherited property set
+   from a token above the door has to be re-stated here; `color` is the only one
+   in this file, and `* { border-color }` is not, because a universal selector
+   re-resolves at every element.
+
+   `color-scheme` because the browser paints its own furniture — autofill, a
+   scrollbar, a checkbox — and would paint it for a dark page behind light
+   fields.
+
+   `accent-color` for the same reason, one step ahead of it: the checkbox is
+   the one control here that is the browser's own. */
+.theme-light {
+  color: var(--foreground);
+  color-scheme: light;
+  accent-color: var(--primary);
+}
 
 .auth-field {
   position: relative;
@@ -803,8 +890,11 @@
   animation: auth-drift-c 51s var(--ease-drift, ease-in-out) infinite alternate;
 }
 
-/* A light theme is paper, and paper takes far less colour before it stains. */
-:root:not(.dark) .auth-aurora {
+/* A light theme is paper, and paper takes far less colour before it stains.
+   The front door is always the light theme now, so the second selector is the
+   one that fires; the first is kept for a light-theme surface elsewhere. */
+:root:not(.dark) .auth-aurora,
+.theme-light .auth-aurora {
   opacity: 0.42;
 }
 

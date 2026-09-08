@@ -10,6 +10,9 @@ import {
   type ResumeDoc,
 } from "@/lib/resume-schema";
 import { getMeSnapshot, listHighlights } from "@/lib/data/me";
+import { fitReport } from "@/lib/resume-fit";
+import { reorderDoc, type ReorderInput } from "@/lib/resume-reorder";
+import { LINES_PER_PAGE } from "@/lib/resume-text";
 
 // Rendering helpers live in resume-text.ts (client-safe); re-exported so server
 // callers can keep reaching them through this module.
@@ -82,13 +85,17 @@ export async function listResumes(userId: string, opts: ResumeListOpts = {}) {
     },
     orderBy,
     include: {
-      _count: { select: { applications: true } },
+      // Live applications only. A resume's track record is the case for using
+      // it again, and an application the person deleted has no place in it —
+      // the same rule pipelineStats and diagnoseSearch follow.
+      _count: { select: { applications: { where: { archivedAt: null } } } },
       // The base's name is what the lineage chip prints; one join beats a
       // per-card lookup.
       baseResume: { select: { id: true, name: true } },
       // Only what the outcome summary needs: the current stage, and the slice
       // of the timeline that proves an interview or an offer ever happened.
       applications: {
+        where: { archivedAt: null },
         select: {
           stage: true,
           activities: {
@@ -151,6 +158,9 @@ export async function getResume(userId: string, id: string) {
       // application named its resume and a resume named nothing back, so
       // "which jobs did I send this to" meant reading the pipeline.
       applications: {
+        // An archived application is a page this list would link to and the
+        // pipeline would refuse to render.
+        where: { archivedAt: null },
         orderBy: { updatedAt: "desc" },
         select: {
           id: true,
@@ -342,6 +352,52 @@ export type BulletEvidence = {
  * entry names a role, only that role's highlights can back it: crediting a
  * Stripe line to a note about another employer discredits the whole thing.
  */
+/**
+ * What to cut when a resume runs long.
+ *
+ * Ranks rather than measures. The page count here is the same estimate
+ * preview_resume_text reports and carries the same caveat — it cannot see the
+ * type size or the margins, and only a browser can. export_resume_pdf renders
+ * one and reports the real number. What this answers is the question the real
+ * number leaves you with: which pieces are big enough to be worth cutting.
+ */
+export async function resumeFitReport(userId: string, id: string) {
+  const resume = await db.resume.findFirst({ where: { id, userId } });
+  if (!resume) throw new Error(`No resume with id ${id}`);
+  const doc = parseResumeDoc(resume.data);
+  const report = fitReport(doc, LINES_PER_PAGE);
+  return {
+    resume: { id: resume.id, name: resume.name },
+    ...report,
+    fontSize: resume.fontSize,
+    lineHeight: resume.lineHeight,
+    pageMargin: resume.pageMargin,
+  };
+}
+
+/**
+ * Move one section, entry or bullet without rewriting the document.
+ *
+ * The alternative is update_resume, which replaces what you send: an assistant
+ * reordering two sections that way has to reproduce the whole document from
+ * memory, and the failure mode is silently dropping half a job. This reads,
+ * moves and writes back, so nothing can be lost on the way.
+ */
+export async function reorderResume(userId: string, id: string, input: ReorderInput) {
+  const resume = await db.resume.findFirst({ where: { id, userId } });
+  if (!resume) throw new Error(`No resume with id ${id}`);
+  const { doc, moved } = reorderDoc(parseResumeDoc(resume.data), input);
+  await db.resume.update({ where: { id: resume.id }, data: { data: doc as unknown as object } });
+  return {
+    resume: { id: resume.id, name: resume.name },
+    moved,
+    sections: doc.sections.map((section, at) => ({
+      position: at + 1,
+      heading: section.heading || section.kind,
+    })),
+  };
+}
+
 export async function traceResumeEvidence(userId: string, id: string) {
   const resume = await db.resume.findFirst({ where: { id, userId } });
   if (!resume) throw new Error(`No resume with id ${id}`);
@@ -414,7 +470,7 @@ export async function createResumeForApplication(
   options?: { baseId?: string; name?: string },
 ) {
   const application = await db.application.findFirst({
-    where: { id: applicationId, userId },
+    where: { id: applicationId, userId, archivedAt: null },
     include: { company: { select: { name: true } } },
   });
   if (!application) throw new Error(`No application with id ${applicationId}`);

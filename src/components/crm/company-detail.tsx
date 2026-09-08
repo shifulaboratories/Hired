@@ -21,7 +21,12 @@ import type { SaveState } from "@/hooks/use-autosave";
 import { STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
 import { linkHref } from "@/lib/social";
 import { companyDomain } from "@/lib/company";
-import { createContactAction, deleteCompanyAction, saveCompanyAction } from "@/server/actions";
+import {
+  createContactAction,
+  deleteCompanyAction,
+  restoreRecordsAction,
+  saveCompanyAction,
+} from "@/server/actions";
 import { relativeDay } from "@/lib/utils";
 
 export type CompanyFields = {
@@ -154,22 +159,35 @@ export function CompanyDetail({
   const domain = logos ? companyDomain({ name: values.name, website: values.website }) : null;
 
   const remove = () => {
-    // deleteCompany REFUSES while applications point here — it does not take
-    // them with it. The old copy promised the opposite, so the warning was a
-    // threat followed by an error toast. Say what will actually happen.
-    if (applications.length > 0) {
-      toast.error(
-        `${company.name} still has ${applications.length === 1 ? "an application" : `${applications.length} applications`}. Move or delete ${applications.length === 1 ? "it" : "those"} first, or merge this company into another.`,
-      );
+    // It no longer refuses while applications point here, and the copy no
+    // longer threatens: the company and its applications go to the archive
+    // together and come back together. What this has to say is what goes with
+    // it and what does not.
+    const takes =
+      applications.length > 0
+        ? ` ${applications.length === 1 ? "Its application goes" : `All ${applications.length} applications go`} with it, timelines and tasks included.`
+        : "";
+    const stays =
+      contacts.length > 0
+        ? ` The ${contacts.length === 1 ? "person" : `${contacts.length} people`} on file here stay, and lose this one company.`
+        : "";
+    if (!confirm(`Delete ${company.name}?${takes}${stays} You can restore it from the archive.`)) {
       return;
     }
-    const cost = contacts.length > 0
-      ? ` The ${contacts.length === 1 ? "person" : `${contacts.length} people`} on file here stay, and lose their employer.`
-      : "";
-    if (!confirm(`Delete ${company.name}?${cost} This cannot be undone.`)) return;
     startTransition(async () => {
       try {
-        await deleteCompanyAction(company.id);
+        const result = await deleteCompanyAction(company.id);
+        toast.success(
+          `${company.name} moved to the archive${result.withIt ? `, ${result.withIt}` : ""}`,
+          {
+            action: {
+              label: "Undo",
+              onClick: () => {
+                void restoreRecordsAction("company", [company.id]).then(() => router.refresh());
+              },
+            },
+          },
+        );
         router.push("/crm/companies");
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Could not delete that company.");

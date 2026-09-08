@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -21,7 +21,6 @@ import {
   ChevronsLeftRightIcon,
   ChevronsRightLeftIcon,
   FileTextIcon,
-  FlameIcon,
   MapPinIcon,
   MessageSquareIcon,
   MoonIcon,
@@ -32,6 +31,7 @@ import { BOARD_STAGES, STAGE_LABEL, STAGE_TONE, TERMINAL_STAGES } from "@/lib/da
 import { SHOW_QUIET_AFTER, STALE_AFTER, hasGoneQuiet } from "@/lib/quiet";
 import { ApplicationActions } from "@/components/pipeline/application-actions";
 import { CompanyAvatar } from "@/components/pipeline/company-avatar";
+import { TagChip } from "@/components/tags/tag-chip";
 import { useOpenApplication } from "@/components/pipeline/application-panel";
 import { cn, relativeDay } from "@/lib/utils";
 import { moveStageAction } from "@/server/actions";
@@ -46,7 +46,6 @@ export type Card = {
   stage: Stage;
   location: string;
   salaryRange: string;
-  excitement: number;
   nextFollowUpAt: string | null;
   resumeName: string | null;
   activityCount: number;
@@ -56,7 +55,19 @@ export type Card = {
   jobUrl: string;
   /** Null when logos are off, or no domain could be worked out. */
   domain: string | null;
+  /** Off by default on a card: a board is scanned, not read. */
+  tags: { id: string; name: string; color: string }[];
 };
+
+/**
+ * Which optional fields a card draws, as context rather than a prop.
+ *
+ * A card is four components deep — board, column, draggable, card — and
+ * threading a set through all four to be read only at the bottom is four
+ * signatures changed for one value that never varies within a render.
+ */
+const VisibleFields = createContext<Set<string>>(new Set());
+const useVisibleFields = () => useContext(VisibleFields);
 
 export function PipelineBoard({
   open,
@@ -64,11 +75,15 @@ export function PipelineBoard({
   // Which columns to draw. Filtering to one stage should show that column on
   // its own rather than five empty ones beside it.
   columns = BOARD_STAGES,
+  fields,
 }: {
   open: Card[];
   closed: Card[];
   columns?: Stage[];
+  /** What each card shows. Every key of BOARD_FIELDS that is turned on. */
+  fields: string[];
 }) {
+  const shows = useMemo(() => new Set(fields), [fields]);
   const openPanel = useOpenApplication();
   const [cards, setCards] = useState(open);
   const [dragging, setDragging] = useState<Card | null>(null);
@@ -156,6 +171,7 @@ export function PipelineBoard({
   };
 
   return (
+    <VisibleFields.Provider value={shows}>
     <div className="space-y-8">
       <DndContext
         sensors={sensors}
@@ -221,6 +237,7 @@ export function PipelineBoard({
         </section>
       )}
     </div>
+    </VisibleFields.Provider>
   );
 }
 
@@ -371,6 +388,7 @@ function DraggableCard({ card }: { card: Card }) {
 }
 
 function ApplicationCard({ card, overlay = false }: { card: Card; overlay?: boolean }) {
+  const shows = useVisibleFields();
   const overdue = card.nextFollowUpAt ? new Date(card.nextFollowUpAt) < new Date() : false;
   const openPanel = useOpenApplication();
 
@@ -403,30 +421,31 @@ function ApplicationCard({ card, overlay = false }: { card: Card; overlay?: bool
           </div>
           <div className="text-faint truncate text-[12px]">{card.roleTitle}</div>
         </div>
-        {card.excitement >= 4 && (
-          <FlameIcon className="mt-0.5 size-3 shrink-0 text-[var(--warning)]" />
-        )}
       </div>
 
-      {(card.location || card.salaryRange) && (
+      {((shows.has("location") && card.location) ||
+        (shows.has("salary") && card.salaryRange) ||
+        (shows.has("tags") && card.tags.length > 0)) && (
         <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]">
-          {card.location && (
+          {shows.has("location") && card.location && (
             <span className="flex items-center gap-1">
               <MapPinIcon className="size-2.5" />
               {card.location}
             </span>
           )}
-          {card.salaryRange && (
+          {shows.has("salary") && card.salaryRange && (
             <span className="flex items-center gap-1">
               <BuildingIcon className="size-2.5" />
               {card.salaryRange}
             </span>
           )}
+          {shows.has("tags") &&
+            card.tags.map((tag) => <TagChip key={tag.id} tag={tag} className="text-[10.5px]" />)}
         </div>
       )}
 
       <div className="mt-2.5 flex items-center gap-2">
-        {card.nextFollowUpAt && (
+        {shows.has("followUp") && card.nextFollowUpAt && (
           <span
             className={cn(
               "flex items-center gap-1 text-[11px]",
@@ -441,7 +460,9 @@ function ApplicationCard({ card, overlay = false }: { card: Card; overlay?: bool
             existed to answer and could not. Below a week it is noise, so it
             says nothing; past the stage's own threshold it turns the colour
             of the diagnosis that agrees with it. */}
-        {card.quietDays >= SHOW_QUIET_AFTER && STALE_AFTER[card.stage] !== undefined && (
+        {shows.has("quiet") &&
+          card.quietDays >= SHOW_QUIET_AFTER &&
+          STALE_AFTER[card.stage] !== undefined && (
           <span
             className={cn(
               "flex items-center gap-1 text-[11px]",
@@ -454,10 +475,10 @@ function ApplicationCard({ card, overlay = false }: { card: Card; overlay?: bool
             <MoonIcon className="size-2.5" />
             {card.quietDays}d quiet
           </span>
-        )}
+          )}
         <div className="text-muted-foreground ml-auto flex items-center gap-2 text-[11px]">
-          {card.resumeName && <FileTextIcon className="size-2.5" />}
-          {card.activityCount > 0 && (
+          {shows.has("resume") && card.resumeName && <FileTextIcon className="size-2.5" />}
+          {shows.has("activity") && card.activityCount > 0 && (
             <span className="flex items-center gap-0.5">
               <MessageSquareIcon className="size-2.5" />
               {card.activityCount}

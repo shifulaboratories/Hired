@@ -32,11 +32,33 @@ just *talk* to it.
   read-only link shares the board with whoever is helping you — a friend, a coach, a former
   manager — showing companies, roles, stages and follow-up dates, and never your salaries,
   notes, contacts or job descriptions.
-- **Tasks** — everything you owe on one page. The things you wrote down, grouped by overdue,
-  today, the next seven days, later and no date, each rewordable and re-datable in place and
-  attachable to the role it's about; and beside them the chase list, the follow-ups and pings
-  whose dates have come round, where the verbs are "logged it" and "push it out three days".
-  Ticking a task and logging a chase mean different things, so they don't share a column.
+- **Nothing is deleted by accident** — pressing Delete on a company, a person or an
+  application puts it in an archive rather than destroying it. It leaves every list, board,
+  picker, filter and count immediately, and waits thirty days — an instance setting, or zero
+  to keep everything — before it is deleted for good. Archiving a company takes its
+  applications with it and brings exactly those back on restore, leaving one you binned
+  separately where you put it; the people stay, because somebody is a founder at one company
+  and an advisor at another. Every delete offers an Undo, each list says when that kind has
+  something in the bin, and the two acts that really do destroy something can only reach what
+  is already in there — so nothing in this app can be destroyed in one step.
+- **Today** — everything you owe, and it is the first thing the app opens to. The things you
+  wrote down, grouped by overdue, today, the next seven days, later and no date, each
+  rewordable and re-datable in place and attachable to the role it's about; and beside them
+  the chase list, the follow-ups and pings whose dates have come round, where the verbs are
+  "logged it" and "push it out three days". Ticking a task and logging a chase mean different
+  things, so they don't share a column. On every other screen a bell in the top bar carries
+  one number — follow-ups due, pings due, tasks past their date — and opens them grouped.
+  Nothing in it can be dismissed: a thing leaves that list by being dealt with.
+- **Analytics** — the second tab on that same page, because it is the same subject at a
+  different altitude: one click away, never in the way of the list. The funnel drawn as a
+  flow chart: applications enter on the left, the survivors carry across to the phone screen, the interview, the
+  final round and the offer, and everything that leaves peels off to where it went —
+  rejected, no response, withdrew, offer accepted, still going. A rejection after two
+  interviews leaks out of the interview rung, not the applied one, because progress is
+  measured by how far it actually got. **Share chart** hands it to you as a PNG or an SVG
+  with no company, role or person named anywhere on it — only the shape — which is what
+  makes it the one thing here that is safe to post. Under it: response rate, what is in
+  flight, the diagnosis of which step is losing people, and recent activity.
 - **CRM** — companies and the people at them, as records you can visit. A company page holds
   their website, whatever you have learned about them, and their industries, sizes and
   locations as labels rather than text boxes — a company is plausibly both fintech and
@@ -45,6 +67,17 @@ just *talk* to it.
   job listings, each one a click from the posting it came from. The company list says when
   you last applied and what's still live, and both lists filter — to the companies where you
   know someone, to the people whose ping is due — while the search box matches any label.
+  Both lists filter properly now: industry, size, location and tags on companies, tags,
+  company and how long since you logged anything on people, plus the gaps worth fixing in one
+  sitting ("no website", "no email", "filed under nothing"). The Filter button opens on the
+  dimensions rather than on every value at once — pick Industry, then pick from industries —
+  and typing searches across all of them together. Dimensions AND with each other and OR
+  inside themselves, every count is counted against what the other filters left, and every
+  column that has an answer sorts, from its heading or from a Sort control that still works
+  on a phone. Drag the divider between two columns to set their widths, which follow you
+  between devices. Tick rows to tag a batch, put a batch on the chase list, delete a batch,
+  or export just those; each list exports to CSV on its own, honouring whatever you have
+  narrowed it to.
   Contacts attach to applications straight from the CRM rather than being retyped, and
   removing one from an application never deletes the person. A person keeps every way you
   can reach them — LinkedIn, X, Instagram, GitHub, their own site, and anything else you
@@ -57,7 +90,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  106 tools any MCP client can call (138 if you're an admin). Claude, Claude Code, ChatGPT,
+  124 tools any MCP client can call (156 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **Multi-user** — invite whoever you like. Each person gets a completely private workspace;
   admins manage accounts but never see anyone's career history, resumes or applications. Admin lives
@@ -234,7 +267,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Hit **Test** next to any connection and the app calls its own endpoint the way a client
-would, then tells you how many tools answered — 106, or 138 if you're an admin.
+would, then tells you how many tools answered — 124, or 156 if you're an admin.
 
 #### One connection per client
 
@@ -320,8 +353,15 @@ won't let a caller omit.
 4. Save, then **Send test** to prove it works — if it fails you get Resend's exact reason,
    which is almost always an unverified domain.
 
+Three emails leave an instance: the invitation somebody gets when you add them, the notice you
+get when a stranger asks for access, and that test. They carry the instance name and the mark,
+and they follow the same near-monochrome palette as the app, dark theme included. **Send test**
+picks which one goes out, so you can read the invitation in your own inbox before anyone else
+gets it — the sample is the real design with placeholder details and a link that goes nowhere,
+so proofreading it costs nobody a real invitation.
+
 You can do all of this by talking to Claude instead: *"is email set up? configure Resend with
-this key and send a test."*
+this key, then send me the invitation email so I can see it."*
 
 ### Signing in with Google (optional)
 
@@ -417,12 +457,13 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-106 tools. Ninety-eight of them are the data tools across the four areas, your mail and
-calendar accounts, and your own account; the other eight are the workflows below, published
-as tools as well as prompts, because prompt support is optional in MCP clients and tool
-support isn't. Call one and it hands back a step-by-step plan that it then follows. Admins
-get 32 more — 31 data tools and a ninth workflow — and members never even see those in the
-tool list, so nobody is tempted by a permission they don't have.
+124 tools. One hundred and sixteen of them are the data tools across the four areas, the
+archive that cuts through all of them, your mail and calendar accounts, and your own
+account; the other eight are the workflows below, published as tools as well as prompts,
+because prompt support is optional in MCP clients and tool support isn't. Call one and it
+hands back a step-by-step plan that it then follows. Admins get 32 more — 31 data tools and
+a ninth workflow — and members never even see those in the tool list, so nobody is tempted
+by a permission they don't have.
 
 | Workflow | What it does |
 | --- | --- |
@@ -433,7 +474,7 @@ tool list, so nobody is tempted by a permission they don't have.
 | **Research a company into the CRM** | Gathers what's known, works out what's missing, and writes it back to their record without flattening what was already there. |
 | **Prepare for an interview** | Pulls the posting, the timeline, the company research, the people involved and your own evidence into one prep sheet. |
 | **Log what happened this week** | You ramble; it files everything to the right role, application, or note. |
-| **Bring the pipeline up to date from your inbox** | Reads a week of your Gmail and Calendar, tells you what moved, and proposes what to log — nothing is written until you say yes. |
+| **Bring the pipeline up to date from your inbox** | Reads a week of your mail and calendar, tells you what moved, and proposes what to log — nothing is written until you say yes. |
 | **Invite and onboard someone** *(admin)* | Invites a person, hands you the link if email isn't set up, and drafts the message to send them. |
 
 Every client is instructed never to invent experience, employers, dates, or metrics. If there's
@@ -473,7 +514,10 @@ anything already there.
 **Resumes** — `get_resume_format` describes the document shape, then `create_resume` /
 `update_resume` / `duplicate_resume` build and tailor them. `preview_resume_text` renders a
 draft and estimates page count *without* saving, so Claude can check length before
-committing. `publish_resume` turns one into a shareable link and hands back the URL;
+committing, and `check_resume_fit` ranks what to cut when it runs long — the longest
+bullets, and which sections are carrying the most weight. `reorder_resume` moves one
+section, job or bullet without rewriting the document, so "lead with the Stripe job" costs
+one call rather than a full rewrite. `publish_resume` turns one into a shareable link and hands back the URL;
 `unpublish_resume` destroys it. `export_resume_pdf` renders a real PDF server-side and
 reports the page count it actually came out to. A duplicated resume remembers what it was
 tailored from, so `compare_resumes` can say exactly what a variant changed — bullets added,
@@ -482,17 +526,31 @@ applications it went out with, how many reached an interview, how many reached a
 
 **Pipeline** — `capture_job_posting` turns a posting URL into a tracked application in one
 move, company and description included. Then applications and stages, an activity timeline,
-tasks — `list_tasks`, `create_task`, `update_task`, `complete_task`, `delete_task` —
+tasks — `list_tasks`, `create_task`, `update_task`, `complete_task`, `delete_task`, each
+task about at most one thing and that thing being an application, a company, a person, a
+resume, a role in Me, a note, or nothing at all —
 `list_follow_ups` for
 what's overdue, `list_schedule` for a whole window of dated work at once, `pipeline_stats` for
 the shape of your search, and `diagnose_search`, which reads the funnel and tells you which
-step is losing people rather than handing you six numbers to interpret.
+step is losing people rather than handing you six numbers to interpret. `export_csv` returns
+any of the three lists as a spreadsheet, `get_pipeline_fields` / `set_pipeline_fields` choose
+how much each view shows before you open anything, `get_column_widths` /
+`set_column_widths` are the same idea for how wide each table column is, and
+`list_field_values` says which locations and work modes you already use, so a new application
+does not become the third spelling of Remote.
 
 **CRM** — `list_companies` / `get_company` / `create_company` / `update_company` /
 `delete_company` for the companies you're talking to, and `get_contact` / `update_contact` /
 `delete_contact` for the people at them, each carrying every way to reach them rather than
 just a LinkedIn URL. A company's `website` is what puts their logo on your
-pipeline. Deleting one refuses while applications still point at it.
+pipeline. Deleting one archives it and takes its applications with it, and the people at it
+stay where they are.
+
+**Archive** — `list_archive` says what has been deleted and when each thing is due to go,
+`restore_records` brings it back, and `delete_archived` and `empty_archive` are the only two
+acts on the server that cannot be undone. Neither can reach anything that is not already in
+the archive, and `empty_archive` refuses unless you pass back the count `list_archive` just
+reported — which forces reading the bin to somebody before emptying it.
 
 **Tags** — `list_tags`, `create_tag`, `update_tag`, `delete_tag` and `seed_tags` manage the
 one catalogue behind all of it. A tag's `kind` says which list it belongs to — where an
@@ -533,12 +591,34 @@ section and just rename the heading; organisation, role, location and dates all 
 correctly.
 
 The format is a starting point, not a cage. The Design menu (palette icon in the editor)
-switches template, font, accent, size, leading and margins per resume, and the ⌃/⌄ buttons
-on each section reorder them. Harvard's own convention puts Education first — that's right
+switches template, font, accent, size, leading and margins per resume. Sections, the jobs
+inside them and the bullets inside those all reorder by dragging the grip on the left — or
+with the ⌃/⌄ buttons, or from the keyboard: tab to a grip, press space, and the arrow keys
+move it. Harvard's own convention puts Education first — that's right
 for students and recent graduates, and wrong for most people with real work history, so the
 default order leads with Experience.
 
+Nothing you do in the editor is one-way. Undo and redo sit next to the save indicator and
+answer to ⌘Z and ⇧⌘Z — except inside a text field, where ⌘Z still takes back what you typed,
+which is what you meant. A sentence undoes as a sentence rather than a letter at a time.
+Deleting a job or a section also raises a toast that offers it straight back, because a
+delete is the one thing worth catching before the autosave does.
+
 The other templates — Classic, Modern, Compact, Editorial — are all still there.
+
+## Where the page ends
+
+The editor draws a line across the preview everywhere the paper runs out, labelled with the
+page it starts, and says *"splits here"* when an entry is cut in half by the break. That's
+measured, not guessed: a second invisible copy of the document is laid out in page-sized
+columns and the browser is asked where it actually broke, so the line lands where the PDF
+will break and moves as you type.
+
+When it runs to two pages the badge in the toolbar stops reporting the count and offers to
+fix it. Open it and you get what is on the last page in order, the sections you could hide —
+kept in the document, off the page, and undoable — and your longest bullets with the words on
+the button that removes each one. `check_resume_fit` is the same advice over MCP, so *"what
+should I cut to get this to one page?"* answers with the same list.
 
 ## One photo, every document
 

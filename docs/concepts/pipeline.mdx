@@ -58,6 +58,19 @@ advances — steel, blue, violet, pink, then gold at the offer — so two chips 
 "further along" without you knowing which label is which. The endings sit outside that
 rotation, because they mean something other than progress.
 
+### An ending is not a deletion
+
+`REJECTED`, `GHOSTED` and `WITHDRAWN` close an application and keep it: it drops off the
+board, stays in the funnel, and `list_applications` returns it with `includeClosed`. That is
+what you want for almost everything that ends, because a rejection you cannot count is a
+rejection you cannot learn from.
+
+Deleting is the other thing, and it is reversible. `delete_application` puts the row in the
+[archive](/tools/archive), where it leaves every list, board, picker, filter and count and
+waits — thirty days by default — before it is deleted for good. `restore_records` brings it
+back. If you want it out of the way but still counted, close it; if you want it gone, delete
+it and the archive holds the door open.
+
 ## Capturing something
 
 <CardGroup cols={2}>
@@ -98,9 +111,10 @@ Tags are records you own, not free text: each one is a name and a colour, and `l
 `create_tag`, `update_tag` and `delete_tag` manage them. The same table holds the labels on
 companies and people — `kind` says which list a tag belongs to, so a location called
 `Remote` never collides with a way of working called `Remote`. Deleting a tag takes it off
-everything that carried it and leaves those records otherwise untouched — unlike
-`delete_company`, which refuses. A label you cannot remove is worse than one you delete by
-mistake.
+everything that carried it and leaves those records otherwise untouched — and unlike a
+company, a person or an application, a tag really is gone rather than going to the archive.
+A label is not a record with a history: what wore it is untouched apart from no longer
+wearing it, and a label you cannot remove is worse than one you delete by mistake.
 
 Write them by `tagIds` when you have them, or by name in `tags`. Names are matched
 case-insensitively against what exists — `linkedin` lands on your existing `LinkedIn` — and
@@ -172,8 +186,9 @@ weeks" lives. In the app, both land on **Tasks**.
     activity already logged. The right call for "what does my week look like".
   </Card>
   <Card title="list_tasks" icon="square-check">
-    To-dos, with or without a due date, optionally attached to an application.
-    `update_task` moves one, `complete_task` ticks it off, `delete_task` removes it.
+    To-dos, with or without a due date, and about at most one thing: an application, a
+    company, a person, a resume, a role in Me, a note — or nothing at all. `update_task`
+    moves one, `complete_task` ticks it off, `delete_task` removes it.
   </Card>
 </CardGroup>
 
@@ -202,15 +217,30 @@ says so plainly rather than inventing a trend.
 ## Views and cuts
 
 The pipeline toolbar picks the view — a drag-and-drop **board**, a sortable **table**, or
-a month **calendar** of everything with a date on it — plus the stage filter and a search.
+a month **calendar** of everything with a date on it — plus a filter and a search.
 
 Filters combine — all of them, with each other. "Screening and interviewing" is one view
 rather than two trips, and so are "screening but only the overdue ones" and "closed, but
-only the ghostings". The stage chips are the fast lane; everything unbounded lives behind
-the **Filter** button beside the search: its tags, the company, which resume
-went out, how long it has sat still, and how much you want it. Every count you see is
-counted against the rows the other filters left, so a chip never claims twelve when the
-search has left one.
+only the ghostings".
+
+Everything lives behind the **Filter** button beside the search: the stage, its tags, the
+company, which resume went out, how long it has sat still, and how much you want it. It
+opens on the dimensions rather than on every value at once — click **Stage** and you get the
+stages, click **Company** and you get companies — and typing searches across all of them
+together, saying which dimension each match came from. Every count you see is counted
+against the rows the other filters left, so a row never claims twelve when the search has
+left one.
+
+Two chips stay above the board: **Everything**, and **Needs a nudge**. The stages used to sit
+beside them as a row you scrolled sideways, above a board whose columns are the stages;
+they are a dimension like any other and they live in the menu now. What is overdue is not —
+the front page is built around it and the bell counts it, so it stays one click from
+anywhere.
+
+Location and work mode are free text and stay that way — "Remote (US, PST overlap)" is a
+real answer no list survives — but the field offers what you have already used, most-used
+first, so a workspace does not end up with three spellings of Remote. `list_field_values`
+is the same list over MCP, and it is the call to make before writing either field.
 
 The table edits in place: stage, follow-up, salary and location are the cells themselves,
 and selecting rows closes a batch out in one action. Two columns count days: **Waiting** is
@@ -233,7 +263,6 @@ view=list&f=APPLIED,SCREEN&sort=waiting&dir=desc
 | `co` | Comma-separated company ids |
 | `cv` | Comma-separated resume ids, or `none` for the ones with no resume attached |
 | `w` | Minimum days sitting in the current stage |
-| `x` | Minimum excitement, 1-5 |
 | `sort`, `dir` | Column and direction |
 | `q` | Search text — company, role, notes, location, work mode, the posting, and tag names |
 | `month` | `YYYY-MM`, for the calendar view |
@@ -270,13 +299,33 @@ should not have, and a pause you can undo does not fix that.
 
 ## In the app
 
-The dashboard leads with what is due and what has gone quiet. **Pipeline** is the board,
-table and calendar. Opening an application slides it in from the right, so you keep your
+**Today** — the front page — leads with what is due, and the bell in the top bar carries
+the count of it on every other screen. Its second tab, **Analytics**, is where the numbers
+went: the funnel drawn as a flow chart, the diagnosis, the response rate, and a **Share
+chart** button that hands you the flow chart as a PNG or an SVG with no company or role
+name anywhere on it. **Pipeline** is the board, table and calendar. Opening an application slides it in from the right, so you keep your
 place on the board — posting, timeline, contacts, tasks and the resume you attached, all
 on one panel.
 
-**Tasks** is the page you clear the list from, and the dashboard's five-line version links
-to it. Two columns, deliberately not merged: the things you wrote down, grouped by overdue,
+Every view also decides how much it shows before you open anything. The **Fields** button
+picks per view — a board card, a table row and a calendar chip have nothing in common except
+that all three can be too busy — and the choice follows you between devices rather than
+living in the URL, because a saved view is a cut of the data and this is not. The same is
+true of how wide each column of the table is: drag the divider between two headings and the
+width is saved to your profile, so it is the same on your laptop and your phone. The company
+column takes whatever the rest leave, which is why widening one narrows it rather than
+pushing the table off the side. `get_column_widths` and `set_column_widths` are the same
+thing over MCP.
+
+On the board
+and in the table, the company, the role title and the stage are never in the list: a card
+without them is not shorter, it is unreadable, and in the table the stage cell is the editor
+the table exists for. The calendar is the exception, and only for stage — a chip is one line
+of an entry's own title, so the stage is genuinely extra there, and it is off by default.
+
+**Today** is the page you clear the list from, and it is what `/` opens to — the numbers
+used to sit there and now sit one tab over, because you open this app to do the next thing
+rather than to read your own statistics. Two columns, deliberately not merged: the things you wrote down, grouped by overdue,
 today, the next seven days, later and undated — each one rewordable, re-datable and
 attachable to a role in place — and beside them the chase list, the follow-ups and pings
 whose dates have come round, where the verbs are "logged it" and "push it out three days".

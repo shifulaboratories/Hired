@@ -1,7 +1,7 @@
 ---
 title: "Pipeline tools"
 sidebarTitle: "Pipeline"
-description: "Thirty-two tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
+description: "Forty tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
 icon: "list-check"
 ---
 
@@ -148,15 +148,13 @@ Track a new job. Paste the full posting into jobDescription — it is what you w
 | `stage` | enum | Starting stage. Default WISHLIST.  `WISHLIST` · `APPLIED` · `SCREEN` · `INTERVIEW` · `FINAL` · `OFFER` · `ACCEPTED` · `REJECTED` · `WITHDRAWN` · `GHOSTED` |
 | `jobUrl` | string | Link to the posting |
 | `jobDescription` | string | The full job posting text |
-| `location` | string | Job location |
-| `workMode` | string | Remote \| Hybrid \| On-site |
+| `location` | string | Job location. Free text — call list_field_values first and reuse a spelling already in use. |
+| `workMode` | string | Remote, Hybrid, On-site, or however they say it. Free text: list_field_values has the ones already in use. |
 | `salaryRange` | string | Advertised or expected compensation |
 | `tagIds` | string[] | Tag ids from list_tags, kind APPLICATION. Exact; wins over tags. |
 | `tags` | string[] | How to file it, by NAME, and several at once is normal: ['LinkedIn', 'Referral'] for a posting a friend also flagged. Matched case-insensitively against the tags that exist and created only when nothing matches, so call list_tags first. |
 | `sources` | string[] | What tags used to be called. Still works; tags wins. |
 | `source` | string | The old single-value spelling. Ignored when tags or sources is passed. |
-| `excitement` | number | 1-5 how much they want this |
-| `fit` | number | 1-5 how strong a fit they are |
 | `notes` | string | Any notes |
 | `appliedAt` | string | ISO date they applied |
 | `nextFollowUpAt` | string | ISO date to follow up. Auto-set from the stage if omitted. |
@@ -179,15 +177,13 @@ Update fields on an application. Changing `stage` here also writes a timeline en
 | `stage` | enum | New stage  `WISHLIST` · `APPLIED` · `SCREEN` · `INTERVIEW` · `FINAL` · `OFFER` · `ACCEPTED` · `REJECTED` · `WITHDRAWN` · `GHOSTED` |
 | `jobUrl` | string | Posting link |
 | `jobDescription` | string | Job posting text |
-| `location` | string | Location |
-| `workMode` | string | Remote \| Hybrid \| On-site |
+| `location` | string | Location. Free text — list_field_values first, and an empty string clears it. |
+| `workMode` | string | Work mode. Free text — list_field_values first, and an empty string clears it. |
 | `salaryRange` | string | Compensation |
 | `tagIds` | string[] | Tag ids. Exact; wins over tags. REPLACES the whole set. |
 | `tags` | string[] | Tag names — REPLACES the whole set, matched or created as above |
 | `sources` | string[] | What tags used to be called. REPLACES the whole set; tags wins. |
 | `source` | string | The old single-value spelling. WARNING: this also REPLACES the entire set with just this one value — read the current list from get_application first, or use tags to write the full list. Ignored when tags or sources is passed. |
-| `excitement` | number | 1-5 |
-| `fit` | number | 1-5 |
 | `notes` | string | Notes |
 | `appliedAt` | string | ISO date applied |
 | `nextFollowUpAt` | string | ISO date of next follow-up, or empty string to clear |
@@ -222,9 +218,9 @@ Advance or close an application. Automatically logs the change to the timeline a
 
 ### `delete_application`
 
-_Delete an application_
+_Archive an application_
 
-Permanently delete an application and its timeline.
+Put an application in the archive. It leaves the board, the list, the calendar and the funnel, taking its timeline and its tasks with it, and restore_records brings the lot back for a set number of days — 30 by default — before it is deleted for good. Nothing is destroyed here. Still reach for move_application_stage with REJECTED, WITHDRAWN or GHOSTED whenever the thread actually ended: the funnel and diagnose_search are built from applications that ended, and archiving one takes it out of that record entirely. Archive is for something that should never have been tracked; a stage is for something that ended.
 
 **Overwrites or deletes.**
 
@@ -261,7 +257,7 @@ Recent timeline entries across the whole search, or for one application. Good fo
 
 _List follow-ups that are due_
 
-The 'who do I need to chase today' tool. Returns two lists: applications whose follow-up date has arrived or passed, and contacts whose ping date has — the people you meant to get back in touch with. Both are due work; plan a day from the pair.
+The 'what has come round' tool, and the same thing the bell in the app counts. Returns three lists: applications whose follow-up date has arrived or passed, contacts whose ping date has — the people you meant to get back in touch with — and tasks that are due or already late. All three are debts with a date on them; plan a day from the set. Each task carries `overdue`, which separates late from due today. Reach for list_tasks when the date does not matter and list_schedule when the question is about a window of time rather than about what is owed now.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -300,6 +296,24 @@ _Diagnose the job search_
 Works out what is actually going wrong with the search, rather than reporting counts. Returns a one-sentence verdict naming which step of the funnel is losing people — no responses at all is a resume or targeting problem, responses that die at the phone screen is a story problem, interviews that do not convert is something else again — plus per-step conversion, median days spent in each stage, weekly volume for the last six weeks, applications that have gone quiet, and the response rate of each resume so you can see which one is working. Progress is measured by the furthest stage an application ever reached, so a rejection after a final round counts as having got that far. Reach for this before giving advice about a search: it is the difference between 'send more applications' and 'stop sending, the resume is the problem'. Says so plainly when there is not enough data yet. Read-only.
 
 No arguments.
+
+### `get_funnel`
+
+_Get the funnel, rung by rung_
+
+The numbers behind the flow chart on the analytics page: for each rung of the ladder — applied, phone screen, interview, final round, offer — how many ever got that far, how many went on, how many are still sitting there, and how many left at that exact point and where they went (rejected, ghosted, withdrawn, offer accepted). Progress is measured by the furthest stage an application actually reached, so a rejection after two interviews is counted as leaking out of the interview rung rather than the applied one — which is the whole reason to look at this rather than at raw stage counts. `visited` says how many were genuinely in a rung, `reached` how many got at least that deep; they differ when someone skips a step, and only `visited` is honest about whether a stage happened. Wishlist rows are counted separately and are not in the funnel at all, because nothing was ever sent. Archived applications are excluded. Use export_funnel_image for the picture. Read-only. Says nothing is there yet rather than dividing by zero.
+
+No arguments.
+
+### `export_funnel_image`
+
+_Export the funnel as an image_
+
+Render the funnel — the Sankey flow chart of where every application ended up — as an image file and return a download url. This is the thing people post: it shows the shape of a search without naming a single company, role or person, so it is safe to share in a way almost nothing else here is. Ask for png when it is going into a message, a slide or a post; svg when it wants to stay sharp at any size, or when this instance has no headless browser to make a png with — the tool says which formats it can actually produce and picks svg when png is not on offer. The url opens in the browser they are already signed in to; it is not a public link and nobody else can fetch it. Nothing is saved: the image is drawn fresh from the pipeline each time it is fetched. Refuses when nothing has been applied to yet.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `format` | string | png or svg. Defaults to png where the host can render one, svg otherwise. |
 
 ### `share_pipeline`
 
@@ -341,7 +355,7 @@ No arguments.
 
 _Save a pipeline view under a name_
 
-Name a cut of the pipeline so it can be reopened in one click. The query is the pipeline URL's own parameters without the leading '?', and every filter combines with every other: view (board | list | calendar); f (comma-separated stages, plus 'overdue' as a flag that ANDs rather than replacing the stages, and 'closed' which expands to the four endings); src (comma-separated tag ids from list_tags); co (company ids); cv (resume ids, or 'none' for applications with no resume attached); w (minimum days sitting in the current stage); qd (minimum days since anything at all was logged — the chasing question, which is not the same as w); x (minimum excitement, 1-5); sort (followUp | company | stage | updated | salary | waiting | quiet) and dir; q (search across company, role, notes, location, work mode, the posting text and tag names); month (YYYY-MM, calendar only). Example: name 'Referrals gone quiet', query 'view=list&f=APPLIED,SCREEN&qd=14&sort=quiet&dir=desc'. Saving under a name that already exists REPLACES that view rather than creating a second one, which is how you edit one. Anything outside those parameters is dropped. co and cv hold ids, so a view naming a company later folded away by merge_companies simply stops matching it.
+Name a cut of the pipeline so it can be reopened in one click. The query is the pipeline URL's own parameters without the leading '?', and every filter combines with every other: view (board | list | calendar); f (comma-separated stages, plus 'overdue' as a flag that ANDs rather than replacing the stages, and 'closed' which expands to the four endings); src (comma-separated tag ids from list_tags); co (company ids); cv (resume ids, or 'none' for applications with no resume attached); w (minimum days sitting in the current stage); qd (minimum days since anything at all was logged — the chasing question, which is not the same as w); sort (followUp | company | stage | updated | salary | waiting | quiet) and dir; q (search across company, role, notes, location, work mode, the posting text and tag names); month (YYYY-MM, calendar only). Example: name 'Referrals gone quiet', query 'view=list&f=APPLIED,SCREEN&qd=14&sort=quiet&dir=desc'. Saving under a name that already exists REPLACES that view rather than creating a second one, which is how you edit one. Anything outside those parameters is dropped. co and cv hold ids, so a view naming a company later folded away by merge_companies simply stops matching it.
 
 **Overwrites or deletes.**
 
@@ -377,7 +391,7 @@ Everything with a date attached between two dates, merged into one list sorted e
 
 _List tasks_
 
-To-dos, each optionally attached to an application and with a due date. Open ones first, soonest due first. This is what someone means by 'what do I need to do' — pair it with list_follow_ups, which covers the chasing this list deliberately does not: an application's follow-up date and a person's ping are not tasks and never appear here.
+To-dos, each with a due date and — at most — one thing it is about: an application, a company, a person, a resume, a role in Me, or a note, whichever is set. Open ones first, soonest due first. This is what someone means by 'what do I need to do' — pair it with list_follow_ups, which covers the chasing this list deliberately does not: an application's follow-up date and a person's ping are not tasks and never appear here.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -388,14 +402,19 @@ To-dos, each optionally attached to an application and with a due date. Open one
 
 _Create a task_
 
-Add a to-do, optionally attached to an application and with a due date.
+Add a to-do, with a due date and — at most — one thing it is about. A task can hang off an application, a company, a person, a resume, a role in Me, or a note; pass the id of whichever ONE it concerns, and none of them for a task that is about nothing in particular. Passing two is refused rather than guessed at. Attaching it matters: the task shows on that record's own screen, and it goes with it if the record is ever deleted. `detail` is the room for what the task actually involves, which the title should not have to carry. Ids that are not this person's, or are in the archive, are refused.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `title` | string | **required** — What needs doing |
-| `detail` | string | Any extra detail |
+| `detail` | string | The longer version — what it involves, who said it, what to reference |
 | `dueAt` | string | ISO date it is due |
 | `applicationId` | string | Attach to this application |
+| `companyId` | string | Or to a company |
+| `contactId` | string | Or to a person |
+| `resumeId` | string | Or to a resume |
+| `roleId` | string | Or to a role in Me |
+| `noteId` | string | Or to a note |
 
 ### `complete_task`
 
@@ -414,15 +433,20 @@ Mark a task done, or reopen it with done: false.
 
 _Update a task_
 
-Reword a task, move its due date, or hook it to a different application. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for applicationId to unhook it. Use complete_task to tick it off — done is not settable here.
+Reword a task, move its due date, or hook it to something different. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for any of the subject ids to unhook it. Setting one subject CLEARS the others, because a task is about at most one thing — so moving a task from an application to a person is one call with contactId, not two. Use complete_task to tick it off; done is not settable here.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Task id |
 | `title` | string | What needs doing |
-| `detail` | string | Any extra detail — replaces what is there |
+| `detail` | string | The longer version — replaces what is there |
 | `dueAt` | string | ISO date it is due, or empty string to clear it |
-| `applicationId` | string | Application to attach to, or empty string to unhook |
+| `applicationId` | string | Attach to this application, or empty string to unhook |
+| `companyId` | string | Or to a company |
+| `contactId` | string | Or to a person |
+| `resumeId` | string | Or to a resume |
+| `roleId` | string | Or to a role in Me |
+| `noteId` | string | Or to a note |
 
 ### `delete_task`
 
@@ -435,3 +459,75 @@ Remove a task outright. Use complete_task instead when it actually got done — 
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Task id |
+
+### `export_csv`
+
+_Export a list as CSV_
+
+One of the three lists as a spreadsheet file, returned as CSV text you can hand straight to somebody. 'companies' and 'contacts' take the same cuts list_companies and list_contacts take, so 'export every fintech company I have never applied to' is one call: narrow it with list_companies first, then pass the same arguments here. 'applications' takes the pipeline's own filters through `query`, the same string the app puts in its URL. Every export ALWAYS includes closed applications — somebody exporting before a clear-out wants the rejections, and a file that quietly dropped them would look complete and be wrong at the only moment it mattered. `ids` narrows to particular rows, so you can export exactly what you just listed — it INTERSECTS with the other arguments rather than replacing them, so send it on its own unless you mean 'these rows, and only the ones that also match'. Archived records are never included; use list_archive for those. Read-only: it writes nothing and changes nothing.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `kind` | enum | **required** — companies \| contacts \| applications  `companies` · `contacts` · `applications` |
+| `ids` | string[] | Only these rows, by id. Narrows whatever the other arguments left, so on its own it is exactly this set. |
+| `search` | string | For companies and contacts: the same search the list tools take |
+| `filter` | string | For companies and contacts: the same one-word cut the list tools take |
+| `tagIds` | string[] | For companies and contacts: tag ids, as list_companies takes them |
+| `industryIds` | string[] | For companies: tag ids of kind INDUSTRY |
+| `sizeIds` | string[] | For companies: tag ids of kind SIZE |
+| `locationIds` | string[] | For companies: tag ids of kind LOCATION |
+| `companyIds` | string[] | For contacts: only people linked to these companies |
+| `quietDays` | number | For contacts: nothing logged for at least this many days |
+| `missing` | string[] | The same blank-field cuts the list tools take. These AND. |
+| `sort` | string | The same sort key the matching list tool takes |
+| `dir` | enum | asc \| desc  `asc` · `desc` |
+| `query` | string | For applications: a pipeline query string, e.g. "f=SCREEN,INTERVIEW&src=<tagId>" — the same one the app puts in its URL |
+
+### `get_pipeline_fields`
+
+_What each pipeline view shows_
+
+Which optional fields the board, the table and the calendar draw before you open anything, and everything each one COULD draw. Reach for it when somebody asks what their board shows, says it is too busy or too bare, or wants to know why a field is not on a card. Returns one entry per view: the catalogue of fields with a label each, and which are on. On the board and the table, three things are never in a catalogue and are always drawn — the company, the role title and the stage — because a card without them is not shorter, it is unreadable, and on the table the stage cell is the editor the table exists for. The calendar is the exception and only for stage: a chip is one line of its own title, so stage is genuinely extra there and is off by default. A view whose list comes back empty is on its defaults, which is not the same as showing nothing. Read-only.
+
+No arguments.
+
+### `set_pipeline_fields`
+
+_Choose what a pipeline view shows_
+
+Set which optional fields one pipeline view draws. REPLACES that view's whole list, so call get_pipeline_fields first, decide the full set, and send it — sending one key turns off everything else on that view. One view per call: the board, the table and the calendar have different catalogues and there is no field they all share. Pass an empty list to put that view back on its defaults, which also means it picks up any field added to the catalogue later; pass ['none'] to mean genuinely nothing, which is a different thing and is why the empty list cannot mean it. A key that is not in that view's catalogue is refused rather than ignored. This is a display preference and changes no data — nothing here archives, deletes or edits an application.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `view` | enum | **required** — board \| list \| calendar  `board` · `list` · `calendar` |
+| `fields` | string[] | **required** — The whole set for that view, from get_pipeline_fields. Empty for the defaults, ['none'] for nothing. |
+
+### `list_field_values`
+
+_Locations and work modes already in use_
+
+Every location and every work mode already on one of this person's live applications, most-used first with a count each. Call it BEFORE writing either field on create_application or update_application: both are free text and always will be — 'Remote (US, PST overlap)' is a real answer no list survives — but writing 'remote' next to an existing 'Remote' leaves two values that never group together, and this is the cheap way not to. Match case-insensitively against what comes back and reuse that spelling; a genuinely new value is still just a string, so send it. Archived applications do not contribute. Read-only.
+
+No arguments.
+
+### `get_column_widths`
+
+_How wide each list's columns are_
+
+The column widths on the three tables you can resize — the pipeline's table view, the companies list and the contacts list — with each column's default, its minimum and its maximum beside the width it is actually drawing at. Reach for it when somebody says a column is too narrow to read, wants their layout described, or before set_column_widths, which needs the keys. Each list also has a name column that flexes to fill whatever the others leave; it is not in the catalogue and has no width, because widening a fixed column is what makes the name narrower. `onDefaults` is true for a list nothing has been stored for. Read-only.
+
+No arguments.
+
+### `set_column_widths`
+
+_Resize a list's columns_
+
+Set how wide one or more columns are on one list, in pixels. MERGES rather than replaces: a column you leave out keeps the width it had, which is the opposite of set_pipeline_fields and is deliberate — 'make Salary wider' should not reset every other column on the way past. Pass reset: true with no widths to put the whole list back on its defaults, which also means it picks up the catalogue's width for any column added later. A width outside a column's min and max is clamped to the nearest end rather than refused, because the useful reading of 'make it as wide as it goes' is the maximum, not an error; a key that is not a column on that list IS refused, because that one is a typo. Call get_column_widths first for the keys and the limits. This is a display preference and changes no data.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `list` | enum | **required** — pipeline \| companies \| contacts  `pipeline` · `companies` · `contacts` |
+| `widths` | object | Column key to width in pixels, e.g. { "salary": 180 }. Omit with reset: true. |
+| `reset` | boolean | Put the whole list back on its default widths |

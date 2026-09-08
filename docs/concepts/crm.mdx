@@ -78,15 +78,26 @@ correct result: the alternative is guessing which of two records to destroy. In 
 company page has a **Merge** button, and it pre-selects the other company when the two
 names reduce to the same key.
 
-Deleting a company refuses while applications still point at it — move or delete those
-first, so tidying up can never take an application with it. People survive and simply
-lose that one link; anywhere else they represent is untouched.
+Deleting a company no longer refuses while applications point at it, and no longer needs
+to: it and every application still pointing at it go into the archive together, and come
+back together. The people stay — somebody is a founder at one company and an advisor at
+another — and simply lose that one link.
+
+### Filters and sorting
+
+The **Filter** button opens on the dimensions — Industry, Size, Location, Tags, Gaps — and
+you step into one to pick from its values, rather than scrolling one list of everything.
+Typing searches across all of them at once and says which dimension each match came from.
+Sorting is the column headings, or a **Sort** control beside the filter that lists every key
+including the ones whose column is hidden on a narrow screen. Dragging the divider between
+two headings sets their widths, which are saved to your profile rather than the URL, so the
+list looks the same on every device.
 
 ### Filters
 
-`list_companies` takes a `search` across name, notes and every tag name — industry and
-location included — a `tagIds` cut to the companies wearing particular labels, and a
-`filter`:
+`list_companies` takes a `search` across name, website, notes and every tag name, four tag
+cuts — `industryIds`, `sizeIds`, `locationIds` and the kind-agnostic `tagIds` — a `missing`
+list for the gaps worth fixing in one sitting, a `sort`, and a `filter`:
 
 | Filter | Shows |
 | --- | --- |
@@ -152,10 +163,10 @@ where it gets remembered, and "when did I last talk to them?" is answered from
 ### Pings
 
 `nextFollowUpAt` on a contact is where "ping Sarah in two weeks" actually lives. Due pings
-surface in `list_follow_ups` alongside due applications, and on the dashboard and the
-tasks page. The `ping-due` filter on `list_contacts` is the same question asked directly.
+surface in `list_follow_ups` alongside due applications, on the front page, and in the bell
+in the top bar. The `ping-due` filter on `list_contacts` is the same question asked directly.
 
-In the app it is scheduled from **Tasks** rather than from the person's own page: a date
+In the app it is scheduled from **Today** rather than from the person's own page: a date
 box halfway down a record you opened to read is not where anyone plans a week.
 
 Two other filters: `with-application` and `no-company` — `no-company` means nowhere on

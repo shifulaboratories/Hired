@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import type { Stage } from "@prisma/client";
 import { PageHeader, PageShell } from "@/components/page-header";
 import {
+  applicationFieldValues,
   BOARD_STAGES,
   STAGES,
   STAGE_LABEL,
@@ -11,9 +12,17 @@ import {
 import { listSchedule } from "@/lib/data/schedule";
 import { listResumeNames } from "@/lib/data/resumes";
 import { listTags } from "@/lib/data/tags";
+import { archiveCounts } from "@/lib/data/archive";
+import { getProfile } from "@/lib/data/me";
+import { parseWidths } from "@/lib/column-widths";
+import { FieldsMenu } from "@/components/pipeline/fields-menu";
+import { Button } from "@/components/ui/button";
+import { DownloadIcon } from "lucide-react";
+import { visibleFields } from "@/lib/pipeline-fields";
+import { ArchiveNote } from "@/components/archive/archive-note";
 import { PipelineBoard } from "@/components/pipeline/board";
 import { PipelineList } from "@/components/pipeline/list";
-import { parseSort, sortRows, type ListRow } from "@/lib/pipeline-list";
+import { parseSort, sortRows, toListRow, type ListRow } from "@/lib/pipeline-list";
 import {
   PipelineCalendar,
   monthWindow,
@@ -86,7 +95,12 @@ export default async function ApplicationsPage({
       listTags(user.id, "APPLICATION"),
       listApplications(user.id, { includeClosed: true }),
     ]);
+  const bin = await archiveCounts(user.id);
+  // Every view's field set on every load, so the Fields menu paints the change
+  // immediately rather than after a round trip.
+  const profile = await getProfile(user.id);
   const share = await getPipelineShare(user.id);
+  const fieldValues = await applicationFieldValues(user.id);
   const shareBase = `${headerProto}://${headerHost}`;
 
   // Normalised the same way a view is saved, so "is this the view I am looking
@@ -130,7 +144,9 @@ export default async function ApplicationsPage({
         application.nextFollowUpAt !== null &&
         application.nextFollowUpAt.getTime() <= now,
     ).length,
-    closed: forStages.filter((application) => TERMINAL_STAGES.includes(application.stage)).length,
+    // Relaxed on stages, so a stage row counts what turning it on would show
+    // rather than what is already through the stage filter. It feeds the Stage
+    // dimension in the Filter menu, which is where the stages went.
     byStage: Object.fromEntries(
       STAGES.map((stage) => [stage, forStages.filter((a) => a.stage === stage).length]),
     ) as Record<Stage, number>,
@@ -173,6 +189,7 @@ export default async function ApplicationsPage({
         ? [{ id: "none", name: "No resume attached", count: resumeTally.get("none") ?? 0 }]
         : []),
     ],
+    stages: counts.byStage,
   };
 
   const chrome = (content: React.ReactNode) => (
@@ -192,6 +209,7 @@ export default async function ApplicationsPage({
           dir={one("dir")}
           action={
             <NewApplicationDialog
+              fieldValues={fieldValues}
               resumes={resumes.map((resume) => ({ id: resume.id, name: resume.name }))}
               tagOptions={tagOptions.map((tag) => ({
                 id: tag.id,
@@ -210,6 +228,30 @@ export default async function ApplicationsPage({
               }
             />
           }
+          fields={
+            <FieldsMenu
+              view={view}
+              visible={[
+                ...visibleFields(
+                  view,
+                  view === "board"
+                    ? profile.boardFields
+                    : view === "list"
+                      ? profile.listFields
+                      : profile.calendarFields,
+                ),
+              ]}
+            />
+          }
+          exportLink={
+            view === "calendar" ? undefined : (
+              <Button asChild variant="outline" size="sm" className="shrink-0">
+                <a href={`/api/export/applications?${currentQuery}`} download>
+                  <DownloadIcon /> Export
+                </a>
+              </Button>
+            )
+          }
           views={
             <SavedViews
               views={savedViews.map((v) => ({ id: v.id, name: v.name, query: v.query }))}
@@ -218,6 +260,7 @@ export default async function ApplicationsPage({
           }
         />
         {content}
+        <ArchiveNote kind="application" count={bin.application} />
       </PageShell>
     </ApplicationPanelProvider>
   );
@@ -246,6 +289,8 @@ export default async function ApplicationsPage({
       id: entry.id,
       day: entry.date.toISOString().slice(0, 10),
       title: entry.title,
+      detail: entry.detail,
+      stage: entry.stage,
       applicationId: entry.applicationId,
       contactId: entry.contactId,
       done: entry.done,
@@ -257,6 +302,7 @@ export default async function ApplicationsPage({
         month={month}
         entries={entries}
         today={new Date().toISOString().slice(0, 10)}
+        fields={[...visibleFields("calendar", profile.calendarFields)]}
       />,
     );
   }
@@ -267,25 +313,20 @@ export default async function ApplicationsPage({
   );
 
   if (view === "list") {
-    const rows: ListRow[] = visible.map((application) => ({
-      id: application.id,
-      company: application.company.name,
-      roleTitle: application.roleTitle,
-      stage: application.stage,
-      location: application.location,
-      salaryRange: application.salaryRange,
-      excitement: application.excitement,
-      nextFollowUpAt: application.nextFollowUpAt?.toISOString() ?? null,
-      activityCount: application._count.activities,
-      updatedAt: application.updatedAt.toISOString(),
-      daysInStage: application.daysInStage,
-      quietDays: application.quietDays,
-      jobUrl: application.jobUrl,
-      domain: domainFor(application),
-    }));
+    const rows: ListRow[] = visible.map((application) =>
+      toListRow(application, domainFor(application)),
+    );
     const sort = parseSort(one("sort"));
     const desc = one("dir") === "desc";
-    return chrome(<PipelineList rows={sortRows(rows, sort, desc)} sort={sort} desc={desc} />);
+    return chrome(
+      <PipelineList
+        rows={sortRows(rows, sort, desc)}
+        sort={sort}
+        desc={desc}
+        fields={[...visibleFields("list", profile.listFields)]}
+        widths={parseWidths(profile.columnWidths)}
+      />,
+    );
   }
 
   const toCard = (application: (typeof everyApplication)[number]) => ({
@@ -295,13 +336,13 @@ export default async function ApplicationsPage({
     stage: application.stage,
     location: application.location,
     salaryRange: application.salaryRange,
-    excitement: application.excitement,
     nextFollowUpAt: application.nextFollowUpAt ? application.nextFollowUpAt.toISOString() : null,
     resumeName: application.resume?.name ?? null,
     activityCount: application._count.activities,
     quietDays: application.quietDays,
     jobUrl: application.jobUrl,
     domain: domainFor(application),
+    tags: application.tags,
   });
 
   // Which columns the board draws. Filtering to one stage should show that one
@@ -320,6 +361,7 @@ export default async function ApplicationsPage({
       open={visible.filter((a) => !TERMINAL_STAGES.includes(a.stage)).map(toCard)}
       closed={visible.filter((a) => TERMINAL_STAGES.includes(a.stage)).map(toCard)}
       columns={columns}
+      fields={[...visibleFields("board", profile.boardFields)]}
     />,
   );
 }

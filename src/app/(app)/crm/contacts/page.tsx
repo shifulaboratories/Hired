@@ -1,20 +1,47 @@
 import Link from "next/link";
-import { MailIcon, UsersIcon } from "lucide-react";
-import { EmptyState, PageHeader, PageShell } from "@/components/page-header";
+import { DownloadIcon } from "lucide-react";
+import { PageHeader, PageShell } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { CrmTabs } from "@/components/crm/tabs";
 import { SearchBox } from "@/components/crm/search-box";
-import { CompanyAvatar } from "@/components/pipeline/company-avatar";
-import { CompanyChip } from "@/components/crm/company-chip";
-import { PlatformIcon } from "@/components/crm/platform-icon";
-import { TagChip } from "@/components/tags/tag-chip";
-import { listContacts, type ContactFilter } from "@/lib/data/pipeline";
+import { ContactFilterMenu, type ContactFacets } from "@/components/crm/filter-menu";
+import { ContactsList, type ContactRow } from "@/components/crm/contacts-list";
+import { SortHeader } from "@/components/crm/sort-header";
+import { SortMenu } from "@/components/lists/sort-menu";
+import { ArchiveNote } from "@/components/archive/archive-note";
+import { listContacts } from "@/lib/data/pipeline";
+import { archiveCounts } from "@/lib/data/archive";
+import { listTags } from "@/lib/data/tags";
+import { getProfile } from "@/lib/data/me";
+import { parseWidths } from "@/lib/column-widths";
 import { requireUser } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
 import { BRAND_LABEL, NAMED_PLATFORMS, brandFor, linkHref } from "@/lib/social";
 import { agoDay, cn, relativeDay } from "@/lib/utils";
+import {
+  CONTACT_MISSING,
+  EMPTY_CONTACT_FILTERS,
+  buildContactQuery,
+  contactDesc,
+  hasAnyContactFilter,
+  matchesContact,
+  parseContactFilters,
+  parseContactSort,
+  sortContacts,
+  type ContactCut,
+  type ContactFilters,
+  type ContactSort,
+} from "@/lib/crm-filters";
 
 export const dynamic = "force-dynamic";
+
+/** Same rule as everywhere else: the URL is the state of this screen. */
+const CUTS: { key: ContactCut | null; label: string }[] = [
+  { key: null, label: "Everyone" },
+  { key: "ping-due", label: "Ping due" },
+  { key: "with-application", label: "On an application" },
+  { key: "no-company", label: "No company" },
+];
 
 /**
  * The one link worth a button in a table row.
@@ -33,22 +60,17 @@ function bestLink(contact: {
 }) {
   for (const platform of NAMED_PLATFORMS) {
     const href = linkHref(contact[platform]);
-    if (href) return { href, value: contact[platform], brand: brandFor(contact[platform], platform) };
+    if (href) {
+      const brand = brandFor(contact[platform], platform);
+      return { href, value: contact[platform], label: BRAND_LABEL[brand] };
+    }
   }
   for (const value of contact.otherLinks) {
     const href = linkHref(value);
-    if (href) return { href, value, brand: brandFor(value) };
+    if (href) return { href, value, label: BRAND_LABEL[brandFor(value)] };
   }
   return null;
 }
-
-/** Same rule as everywhere else: the URL is the state of this screen. */
-const FILTERS: { key: ContactFilter | undefined; label: string }[] = [
-  { key: undefined, label: "Everyone" },
-  { key: "ping-due", label: "Ping due" },
-  { key: "with-application", label: "On an application" },
-  { key: "no-company", label: "No company" },
-];
 
 export default async function ContactsPage({
   searchParams,
@@ -57,16 +79,100 @@ export default async function ContactsPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const search = (Array.isArray(params.q) ? params.q[0] : params.q)?.trim() ?? "";
-  const rawFilter = Array.isArray(params.f) ? params.f[0] : params.f;
-  const filter = FILTERS.some((f) => f.key === rawFilter)
-    ? (rawFilter as ContactFilter)
-    : undefined;
-  const [contacts, { companyLogos }] = await Promise.all([
-    listContacts(user.id, { search: search || undefined, filter }),
+  const one = (key: string) => (Array.isArray(params[key]) ? params[key][0] : params[key]);
+
+  const filters = parseContactFilters(one);
+  const sort = parseContactSort(one("sort"));
+  const desc = contactDesc(sort, one("dir"));
+
+  const [everyContact, tagOptions, bin, { companyLogos }, profile] = await Promise.all([
+    listContacts(user.id),
+    listTags(user.id, "CONTACT"),
+    archiveCounts(user.id),
     getSettings(),
+    getProfile(user.id),
   ]);
+  const widths = parseWidths(profile.columnWidths);
+
+  const passing = (except: keyof ContactFilters) =>
+    everyContact.filter((row) =>
+      matchesContact(row, { ...filters, [except]: EMPTY_CONTACT_FILTERS[except] }),
+    );
+
+  const tagCounts = new Map<string, number>();
+  for (const row of passing("tags")) {
+    for (const tag of row.tags) tagCounts.set(tag.id, (tagCounts.get(tag.id) ?? 0) + 1);
+  }
+
+  // The company facet is built from the rows themselves rather than a second
+  // query, the way the pipeline builds its own.
+  const companyCounts = new Map<string, { name: string; count: number }>();
+  for (const row of passing("companies")) {
+    for (const company of row.companies) {
+      const seen = companyCounts.get(company.id);
+      companyCounts.set(company.id, { name: company.name, count: (seen?.count ?? 0) + 1 });
+    }
+  }
+
+  const facets: ContactFacets = {
+    tags: tagOptions
+      .map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+        color: tag.color,
+        count: tagCounts.get(tag.id) ?? 0,
+      }))
+      .filter((tag) => tag.count > 0 || filters.tags.includes(tag.id)),
+    companies: [...companyCounts.entries()]
+      .map(([id, { name, count }]) => ({ id, name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+    missing: Object.fromEntries(
+      CONTACT_MISSING.map((gap) => [
+        gap,
+        everyContact.filter((row) =>
+          matchesContact(row, { ...filters, missing: [...new Set([...filters.missing, gap])] }),
+        ).length,
+      ]),
+    ) as ContactFacets["missing"],
+  };
+
+  const visible = sortContacts(
+    everyContact.filter((contact) => matchesContact(contact, filters)),
+    sort,
+    desc,
+  );
+
+  const cutHref = (cut: ContactCut | null) =>
+    buildContactQuery({ filters: { ...filters, cut }, sort, dir: one("dir") });
+
+  const sortHref = (key: ContactSort) =>
+    buildContactQuery({
+      filters,
+      sort: key,
+      dir: key === sort ? (desc ? "asc" : "desc") : key === "touch" ? "desc" : "asc",
+    });
+
+  const exportHref = `/api/export/contacts?${buildContactQuery({ filters, sort, dir: one("dir") }).split("?")[1] ?? ""}`;
+  const narrowed = hasAnyContactFilter(filters);
   const today = new Date();
+
+  const rows: ContactRow[] = visible.map((contact) => ({
+    id: contact.id,
+    name: contact.name,
+    title: contact.title,
+    relationship: contact.relationship,
+    email: contact.email,
+    tags: contact.tags,
+    companies: contact.companies.map((company) => ({
+      id: company.id,
+      name: company.name,
+      website: company.website,
+    })),
+    nextPing: contact.nextFollowUpAt ? relativeDay(contact.nextFollowUpAt) : "—",
+    pingDue: contact.nextFollowUpAt !== null && contact.nextFollowUpAt <= today,
+    lastTouch: contact.activities[0] ? agoDay(contact.activities[0].occurredAt) : "never",
+    best: bestLink(contact),
+  }));
 
   return (
     <PageShell>
@@ -79,174 +185,131 @@ export default async function ContactsPage({
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <SearchBox placeholder="Search people…" className="w-full sm:w-72" />
+        <ContactFilterMenu filters={filters} facets={facets} sort={sort} dir={one("dir")} />
+        <SortMenu
+          active={sort}
+          desc={desc}
+          ariaLabel="Sort the people"
+          options={[
+            {
+              key: "name",
+              label: "Name",
+              href: sortHref("name"),
+              ascHref: buildContactQuery({ filters, sort: "name", dir: "asc" }),
+              descHref: buildContactQuery({ filters, sort: "name", dir: "desc" }),
+            },
+            {
+              key: "company",
+              label: "Company",
+              href: sortHref("company"),
+              ascHref: buildContactQuery({ filters, sort: "company", dir: "asc" }),
+              descHref: buildContactQuery({ filters, sort: "company", dir: "desc" }),
+            },
+            {
+              key: "ping",
+              label: "Next ping",
+              href: sortHref("ping"),
+              ascHref: buildContactQuery({ filters, sort: "ping", dir: "asc" }),
+              descHref: buildContactQuery({ filters, sort: "ping", dir: "desc" }),
+            },
+            {
+              key: "touch",
+              label: "Last touch",
+              href: sortHref("touch"),
+              ascHref: buildContactQuery({ filters, sort: "touch", dir: "asc" }),
+              descHref: buildContactQuery({ filters, sort: "touch", dir: "desc" }),
+            },
+          ]}
+        />
+        <Button asChild variant="outline" size="sm" className="shrink-0">
+          <a href={exportHref} download>
+            <DownloadIcon /> Export
+          </a>
+        </Button>
         <span className="text-faint nums ml-auto text-[12px]">
-          {contacts.length} {contacts.length === 1 ? "person" : "people"}
+          {narrowed && visible.length !== everyContact.length
+            ? `${visible.length} of ${everyContact.length} people`
+            : `${visible.length} ${visible.length === 1 ? "person" : "people"}`}
         </span>
       </div>
 
       <div className="no-scrollbar -mx-1 mb-3 flex items-center gap-1 overflow-x-auto px-1 pb-0.5">
-        {FILTERS.map(({ key, label }) => {
-          const active = filter === key;
-          const query = new URLSearchParams();
-          if (search) query.set("q", search);
-          if (key) query.set("f", key);
-          const string = query.toString();
+        {CUTS.map(({ key, label }) => {
+          const active = filters.cut === key;
+          const count = everyContact.filter((row) =>
+            matchesContact(row, { ...filters, cut: key }),
+          ).length;
           return (
             <Link
               key={label}
-              href={string ? `/crm/contacts?${string}` : "/crm/contacts"}
+              href={cutHref(key)}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "touch-target flex h-11 shrink-0 items-center rounded-chip px-2 text-[12.5px] transition-colors duration-150 md:h-7",
+                "touch-target flex h-11 shrink-0 items-center gap-1.5 rounded-chip px-2 text-[12.5px] transition-colors duration-150 md:h-7",
                 active
                   ? "bg-accent text-foreground font-medium"
                   : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
               )}
             >
               {label}
+              {count > 0 && <span className="text-faint nums">{count}</span>}
             </Link>
           );
         })}
       </div>
 
-      {contacts.length === 0 ? (
-        <EmptyState
-          icon={UsersIcon}
-          title={search || filter ? "Nobody matches that" : "No contacts yet"}
-          description={
-            search || filter
-              ? "Loosen the search or the filter to see everyone again."
-              : "Open an application and add the recruiter or hiring manager you are talking to, and they will show up here."
-          }
-        />
-      ) : (
-        <div className="bg-card shadow-card overflow-hidden rounded-xl">
-          <div className="eyebrow bg-inset flex items-center gap-3 px-4 py-2">
-            <div className="min-w-0 flex-1">Name</div>
-            <div className="hidden w-44 shrink-0 md:block">Company</div>
-            <div className="hidden w-32 shrink-0 lg:block">Relationship</div>
-            <div className="hidden w-24 shrink-0 text-right sm:block">Next ping</div>
-            <div className="w-24 shrink-0 text-right">Last touch</div>
-            <div className="hidden w-[60px] shrink-0 sm:block" aria-hidden="true" />
-          </div>
+      <ContactsList
+        rows={rows}
+        filtered={narrowed}
+        exportHref={exportHref}
+        logos={companyLogos}
+        widths={widths}
+        header={
+          <>
+            <SortHeader
+              className="min-w-0 flex-1"
+              href={sortHref("name")}
+              label="Name"
+              active={sort === "name"}
+              desc={desc}
+            />
+            <SortHeader
+              col="company"
+              className="hidden w-44 shrink-0 md:block"
+              href={sortHref("company")}
+              label="Company"
+              active={sort === "company"}
+              desc={desc}
+            />
+            <SortHeader
+              col="relationship"
+              className="hidden w-32 shrink-0 lg:block"
+              label="Relationship"
+            />
+            <SortHeader
+              col="ping"
+              className="hidden w-24 shrink-0 sm:block"
+              href={sortHref("ping")}
+              label="Next ping"
+              active={sort === "ping"}
+              desc={desc}
+              align="right"
+            />
+            <SortHeader
+              col="touch"
+              className="w-24 shrink-0"
+              href={sortHref("touch")}
+              label="Last touch"
+              active={sort === "touch"}
+              desc={desc}
+              align="right"
+            />
+            <SortHeader col="links" className="hidden w-[60px] shrink-0 sm:block" label="" />
+          </>
+        }
+      />
 
-          <ul className="divide-y">
-            {contacts.map((contact) => {
-              const pingDue =
-                contact.nextFollowUpAt !== null && contact.nextFollowUpAt <= today;
-              // Not everyone is on LinkedIn. Show whichever address they
-              // actually have, with that platform's own icon.
-              const best = bestLink(contact);
-              return (
-                <li
-                  key={contact.id}
-                  className="hover:bg-accent/50 relative flex items-center transition-colors duration-150"
-                >
-                  {/* One link, stretched over the row by a ::before overlay,
-                      rather than an anchor wrapping the lot. The company is
-                      its own destination and an anchor inside an anchor is
-                      invalid HTML — but a second anchor to the contact would
-                      make every row two tab stops reading the same name. The
-                      overlay keeps the whole row clickable; the chip and the
-                      buttons are positioned, so they paint above it and stay
-                      clickable in their own right. */}
-                  <Link
-                    href={`/crm/contacts/${contact.id}`}
-                    data-nav-item
-                    className="flex min-w-0 flex-1 items-center gap-2.5 py-2.5 pl-4 before:absolute before:inset-0"
-                  >
-                    <CompanyAvatar name={contact.name} domain={null} size={26} />
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-medium">{contact.name}</div>
-                      <div className="text-faint flex items-center gap-1.5 truncate text-[12px]">
-                        <span className="truncate">{contact.title || "No title on file"}</span>
-                        {contact.tags.slice(0, 2).map((tag) => (
-                          <TagChip key={tag.id} tag={tag} className="shrink-0" />
-                        ))}
-                        {contact.tags.length > 2 && (
-                          <span
-                            className="shrink-0"
-                            title={contact.tags.map((tag) => tag.name).join(", ")}
-                          >
-                            +{contact.tags.length - 2}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </Link>
-
-                  {/* The first company they represent, plus a count of the
-                      rest. A row cannot hold four chips without becoming a
-                      paragraph, and the contact's own page has them all. */}
-                  <div className="relative hidden w-44 shrink-0 items-center gap-1.5 px-3 md:flex">
-                    {contact.companies.length > 0 ? (
-                      <>
-                        <CompanyChip
-                          company={contact.companies[0]}
-                          logos={companyLogos}
-                          size="sm"
-                          className="min-w-0"
-                        />
-                        {contact.companies.length > 1 && (
-                          <span
-                            className="text-faint shrink-0 text-[11.5px]"
-                            title={contact.companies.map((company) => company.name).join(", ")}
-                          >
-                            +{contact.companies.length - 1}
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-faint text-[12px]">—</span>
-                    )}
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-3 py-2.5">
-                    <div className="text-faint hidden w-32 shrink-0 truncate text-[12px] lg:block">
-                      {contact.relationship || "—"}
-                    </div>
-                    <div
-                      className={cn(
-                        "nums hidden w-24 shrink-0 text-right text-[12px] sm:block",
-                        pingDue ? "text-destructive font-medium" : "text-faint",
-                      )}
-                    >
-                      {contact.nextFollowUpAt ? relativeDay(contact.nextFollowUpAt) : "—"}
-                    </div>
-                    <div className="nums text-faint w-24 shrink-0 text-right text-[12px]">
-                      {contact.activities[0] ? agoDay(contact.activities[0].occurredAt) : "never"}
-                    </div>
-                  </div>
-
-                  {/* Above the overlay — a nested anchor is invalid HTML and
-                      would make the whole row navigate on a missed click. */}
-                  <div className="relative hidden w-[60px] shrink-0 items-center justify-end gap-0.5 pr-3 pl-3 sm:flex">
-                    {contact.email && (
-                      <Button asChild variant="ghost" size="icon-sm" className="text-faint hover:text-foreground">
-                        <a href={`mailto:${contact.email}`} aria-label={`Email ${contact.name}`}>
-                          <MailIcon />
-                        </a>
-                      </Button>
-                    )}
-                    {best && (
-                      <Button asChild variant="ghost" size="icon-sm" className="text-faint hover:text-foreground">
-                        <a
-                          href={best.href}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          aria-label={`Open ${contact.name} on ${BRAND_LABEL[best.brand]}`}
-                        >
-                          <PlatformIcon value={best.value} />
-                        </a>
-                      </Button>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+      <ArchiveNote kind="contact" count={bin.contact} />
     </PageShell>
   );
 }

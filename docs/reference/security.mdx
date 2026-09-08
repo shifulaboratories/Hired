@@ -136,8 +136,10 @@ would send one to is someone you already decided to send it to.
 
 Before an assistant sees a single tool, it receives a briefing generated for the account
 it is connected as. It carries the four areas, which tool to reach for first in each, the
-fact that connection URLs are credentials that must never be repeated where they will be
-stored — and the standing rules:
+fact that deleting a company, a person or an application archives it and that emptying that
+archive is one of only two acts on the server that cannot be undone, the fact that
+connection URLs are credentials that must never be repeated where they will be stored — and
+the standing rules:
 
 - Never invent experience, employers, dates or metrics. Everything on a resume must trace
   back to something in Me. If evidence is missing, say so and ask.
@@ -145,6 +147,10 @@ stored — and the standing rules:
   already on file.
 - `update_resume` and `update_role` replace what you send. Read first, modify, write back
   whole.
+- Use the bulk tool rather than a loop when the ask covers several records — and the bulk
+  tagging tools add and remove where `update_company` and `update_contact` replace.
+- `export_csv` is the answer to "send me this as a file", rather than assembling one by
+  hand.
 - Prefer a tailored copy over editing a resume already attached to an application.
 - A published resume is readable by anyone holding its link, and unpublishing destroys the
   link rather than pausing it. Say which resume you are publishing, and warn before

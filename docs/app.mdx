@@ -8,11 +8,18 @@ Everything in Hired is reachable from a conversation. The web app is where you g
 *look* at the result, adjust it by hand, and do the two jobs a conversation is bad at:
 direct manipulation and rendering.
 
-The left rail holds Dashboard, Me, CRM and Pipeline — the content. Resumes are a tab on
-Me, because a resume is a view of your own record rather than a separate filing cabinet.
+The left rail holds Today, Me, CRM and Pipeline — the content. Analytics is a tab on Today
+and Resumes is a tab on Me, because both are a second look at something you already have
+open rather than a separate filing cabinet.
 Docs, this manual, Settings and — for admins — Admin are account actions, so they live in
 the profile menu at the top right instead. `⌘K` / `Ctrl+K` opens a search palette: somewhere to go,
 something to create, and every role, resume and application by name.
+
+Beside the profile menu is a bell. It carries one number — everything with a date that has
+come round: follow-ups due, people you meant to ping, tasks past their date — and opens
+them grouped by which of the three they are. Nothing in it can be dismissed. A thing leaves
+that list by being dealt with, which is the only honest way for a count of what you owe to
+reach zero.
 
 **Your work autosaves.** Me, the resume editor, the pipeline and the CRM have no
 save button anywhere; a small indicator tells you when a change has landed. The settings
@@ -22,16 +29,52 @@ Settings → Account and navigating away loses it.
 Both themes are supported. The toggle is on the **Appearance** tab in Settings, not in the
 top bar.
 
-## Dashboard
+## Today
 
 `/`
 
-What is due and what has gone quiet, ahead of everything else. Stats across the top —
-what is in flight, response rate, what you sent this week, how much is on file —
-then follow-ups due, recent activity and open tasks.
+Two tabs, and the first one is the front door: the list, not the numbers. Everything you owe, in two columns that stay
+apart on purpose. On the left the things you wrote down, grouped by overdue, today, the
+next seven days, later and no date — click a title to reword it, change its date in the
+row, or drop it. A task carries a detail as well as a title, and hangs off at most one
+thing: an application, a company, a person, a resume, a role in Me, a note, or nothing.
+Whatever you hang it on shows it, and deleting that thing takes the task with it. On the
+right the chase list: the follow-ups and pings whose dates have come round, where the
+verbs are "logged it" and "push it out three days", plus the box that puts someone new on
+it.
 
-It is the screen to open on a Monday, and it answers the same question `list_follow_ups`
-does, laid out rather than listed.
+Ticking a task and logging a chase are not the same act, which is why they are not one
+list. Above both is a line for reporting what just happened, because that is usually why
+you opened the app.
+
+It answers the same question `list_follow_ups` does, laid out rather than listed. `/tasks`
+still works and lands here.
+
+### Analytics
+
+`/?tab=analytics`
+
+How the search is going, which is the same subject at a different altitude — so it is the
+second tab rather than a screen of its own, one click from the list and never in the way of
+it. `/analytics` still works and lands here.
+
+At the top, the funnel drawn as a flow chart: every application enters on the left as
+"Applied", the survivors carry across to the phone screen, the interview, the final round
+and the offer, and everything that leaves peels off sideways to where it went — rejected,
+no response, withdrew, offer accepted, still going. An application that was rejected after
+two interviews leaks out of the interview rung, not the applied one, because progress is
+measured by how far it actually got. A rung nobody was ever in is not drawn at all.
+
+**Share chart**, on the chart's own card, copies it to the clipboard or downloads it as a
+PNG or an SVG. There is not a company, a role or a person's name on it — only the shape — which is what makes it
+the one thing here that is safe to post. The PNG is rendered server-side by the same
+headless browser the PDF export uses; where an instance has no browser the SVG is offered
+instead and opens anywhere an image does. Over MCP it is `export_funnel_image`, and
+`get_funnel` gives an assistant the numbers behind it.
+
+Below that: what is in flight, response rate, what you sent this week and how much is on
+file; the diagnosis of which step is losing people; what is on the board right now; and
+recent activity.
 
 ## Me
 
@@ -99,11 +142,12 @@ One toolbar across the top picks the view, the cut and the search.
     than a column each.
   </Accordion>
   <Accordion title="Table" icon="table">
-    Sortable, and it edits in place — stage, follow-up, salary and location are the cells
-    themselves. Two columns count days and they answer different questions: **Waiting** is
-    how long it has sat in the stage it is in, **Quiet** is how long since anything at all
-    was logged. Quiet is the one to sort on for chasing, and it pairs with the "Nothing
-    logged for" filter. Select rows to close a batch out in one action.
+    Sortable, resizable, and it edits in place — stage, follow-up, salary and location are
+    the cells themselves, with dates on a calendar rather than a browser's own date box. Two columns count days and they answer different questions:
+    **Waiting** is how long it has sat in the stage it is in, **Quiet** is how long since
+    anything at all was logged. Quiet is the one to sort on for chasing, and it pairs with
+    the "Nothing logged for" filter. Drag the divider between two headings to set their
+    widths, which are saved to your profile. Select rows to close a batch out in one action.
   </Accordion>
   <Accordion title="Calendar" icon="calendar-days">
     A month of everything that has a date on it — follow-ups, task deadlines, logged
@@ -111,9 +155,12 @@ One toolbar across the top picks the view, the cut and the search.
   </Accordion>
 </AccordionGroup>
 
-Filters combine — all of them, with each other. Stage chips are the fast lane; the
-**Filter** button holds the tags, the company, which resume went out, how long something
-has sat still and how much you want it. A cut worth keeping saves under a name.
+Filters combine — all of them, with each other. The **Filter** button holds every
+dimension: the stage, the tags, the company, which resume went out, how long something has
+sat still and how much you want it. It opens on the dimensions and you step into one, so a
+list of stages is a click rather than a scroll past forty companies. Two chips stay above
+the board — **Everything** and **Needs a nudge** — because what is overdue is the one cut
+worth reaching from anywhere. A cut worth keeping saves under a name.
 
 Opening an application slides it in from the right, so you keep your place on the board.
 The people you are talking to come first, then the resume you sent — drawn as the page it
@@ -121,18 +168,23 @@ is, not named in a dropdown — then the timeline. The posting itself is folded 
 you pasted it once and it is the thing on that screen you look at least. The employer is a
 chip: click it for their research, their people and the other roles you have there.
 
-## Tasks
+## Archive
 
-`/tasks`
+`/archive`
 
-Everything you owe, in two columns that stay apart on purpose. On the left the things you
-wrote down, grouped by overdue, today, the next seven days, later and no date — click a
-title to reword it, change its date in the row, hook it to a role or drop it. On the right
-the chase list: the follow-ups and pings whose dates have come round, where the verbs are
-"logged it" and "push it out three days", plus the box that puts someone new on it.
+Everything you have deleted, and how long each thing has left. Deleting a company, a person
+or an application does not destroy it: it drops out of every list, board, picker, filter and
+count immediately, and waits out a retention window — thirty days unless an admin changed it
+— before it goes for good.
 
-Ticking a task and logging a chase are not the same act, which is why they are not one
-list. The dashboard's five-line version links here.
+Restore acts straight away. Delete for good asks first, and the question is built from what
+you ticked: "deleting Stripe also deletes the 3 applications archived with it, and their
+timelines" rather than "delete 4 items". Neither of the two destructive acts can reach
+anything that is not already in here, so nothing in this app can be destroyed in one step.
+
+It is in the profile menu and the command palette rather than the sidebar, but the way you
+will actually get here is the Undo on the toast, or the quiet line under each list saying
+that kind has something in the bin.
 
 ## CRM
 
@@ -143,6 +195,22 @@ its industries and locations as labels; contacts shows who is attached to what, 
 person's tags and the mark of whichever platform they actually answer on. Both filter — to
 the companies where you know someone, to the people whose ping is due — and the search box
 matches tag names as well as everything else.
+
+Behind the Filter button is everything a chip row cannot hold: industry, size, location and
+tags on companies; tags, company and "nothing logged for" on people; and on both, the gaps
+worth fixing in one sitting — no website, no email, filed under nothing. It opens on those
+dimensions rather than on every value at once, so you pick Industry and then pick an
+industry; typing searches across all of them together. Dimensions AND with each other and OR
+inside themselves, and every count is counted against the rows the other filters left.
+
+Sorting is the column headings, or the **Sort** control beside the filter, which lists every
+key — including the ones whose column is hidden on a narrow screen, where the headings are
+not there to click. Dragging the divider between two headings sets their widths; those are
+saved to your profile rather than the URL, so the list looks the same wherever you open it.
+
+Tick rows and a bar appears: tag all of them, put all of them on the chase list, export just
+those, or delete them. Each list exports on its own too, and what comes out is what you were
+looking at — same filters, same search, same order.
 
 A company page carries its details, its research notes, every application you have there
 and every contact who works there. Industry, size, location and its own tags are pickers:
@@ -160,10 +228,12 @@ pasting a URL into an assistant, not changing a password.
 
 <CardGroup cols={3}>
   <Card title="Connections" icon="plug">
-    Everything wired to your workspace, as tiles. Assistants: when each last called in,
-    and — opened — its URL, setup steps, test, rename, rotate, disconnect. Accounts:
-    your own [mail and calendar](/guides/inbox-and-calendar) — Google, Microsoft 365, or
-    IMAP and CalDAV. Plus the three
+    One row per thing wired to your workspace, each saying whether it is on and whether it
+    needs you. Open one for its URL, setup steps, test, rename, rotate, disconnect —
+    or, for a [mail and calendar account](/guides/inbox-and-calendar) — Google, Microsoft 365,
+    or IMAP and CalDAV — to test, reconnect and disconnect.
+    **Connect** opens a library of everything you can add, assistants on one tab and
+    accounts on the other, with what you already have marked as connected. Plus the three
     [skills](/skills), each as a raw `SKILL.md` and as a zip.
   </Card>
   <Card title="Account" icon="user">

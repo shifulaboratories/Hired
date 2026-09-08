@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 /**
  * Installed to a home screen this is a workspace, not a document reader, so it
- * opens standalone and lands on the dashboard. The theme colour matches the
- * dark canvas because dark is the default theme — a light splash followed by a
+ * opens standalone and lands on the list you work from. The theme colour matches
+ * the dark canvas because dark is the default theme — a light splash followed by a
  * dark app is the flash everyone notices.
  */
 export default function manifest(): MetadataRoute.Manifest {

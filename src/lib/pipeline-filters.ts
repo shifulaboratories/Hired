@@ -30,8 +30,6 @@ export type PipelineFilters = {
   waiting: number | null;
   /** Minimum days since ANYTHING happened. Not the same question as waiting. */
   quiet: number | null;
-  /** Minimum excitement, 1-5. */
-  excitement: number | null;
   search: string;
 };
 
@@ -43,7 +41,6 @@ export const EMPTY_FILTERS: PipelineFilters = {
   resumes: [],
   waiting: null,
   quiet: null,
-  excitement: null,
   search: "",
 };
 
@@ -81,7 +78,6 @@ export function parsePipelineFilters(
     resumes: list(one("cv")),
     waiting: positive(one("w")),
     quiet: positive(one("qd")),
-    excitement: positive(one("x")),
     search: one("q")?.trim() ?? "",
   };
 }
@@ -96,7 +92,6 @@ export function hasAnyFilter(filters: PipelineFilters): boolean {
     filters.resumes.length > 0 ||
     filters.waiting !== null ||
     filters.quiet !== null ||
-    filters.excitement !== null ||
     Boolean(filters.search)
   );
 }
@@ -107,7 +102,6 @@ export type FilterableApplication = {
   nextFollowUpAt: Date | null;
   companyId: string;
   resumeId: string | null;
-  excitement: number;
   daysInStage: number;
   quietDays: number;
   tags: { id: string; name: string }[];
@@ -162,8 +156,6 @@ export function matchesFilters(
     if (STALE_AFTER[application.stage] === undefined) return false;
     if (application.quietDays < filters.quiet) return false;
   }
-  if (filters.excitement !== null && application.excitement < filters.excitement) return false;
-
   if (filters.search) {
     const needle = filters.search.toLowerCase();
     const haystack = [
@@ -202,7 +194,6 @@ export function buildPipelineQuery(input: {
   if (filters.resumes.length > 0) params.set("cv", filters.resumes.join(","));
   if (filters.waiting !== null) params.set("w", String(filters.waiting));
   if (filters.quiet !== null) params.set("qd", String(filters.quiet));
-  if (filters.excitement !== null) params.set("x", String(filters.excitement));
   if (filters.search) params.set("q", filters.search);
   if (input.sort) params.set("sort", input.sort);
   if (input.dir) params.set("dir", input.dir);

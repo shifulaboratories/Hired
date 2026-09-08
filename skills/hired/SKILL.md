@@ -7,7 +7,8 @@ description: Orientation for a connected Hired instance — a person's career kn
 
 Hired is one person's career, on their own server. Everything you touch through
 the connector is theirs, it is real, and it is the material a resume gets built from.
-There is no draft copy and no undo.
+There is no draft copy. Deleting a company, a person or an application is reversible —
+it goes to an archive for thirty days — and nothing else is.
 
 ## The four areas
 
@@ -26,6 +27,18 @@ that schedule themselves when a stage changes.
 **CRM** — companies and the people at them, as records in their own right. A company
 holds their website, its tags — industry, size, location — and whatever research has
 accumulated.
+
+Two things cut across all four. **Tags** are the one catalogue behind every label in the
+product — where an application came from, a company's industry, size and location, how you
+know a person — so call `list_tags` before writing any of them rather than minting a
+near-duplicate. And the **archive** is where deleting sends a company, a person or an
+application: `list_archive` says what is in there and when each thing is due to go,
+`restore_records` brings it back.
+
+If they have connected their own Google account — `get_google_connection` says —
+`list_correspondence` returns the real threads and meetings behind any record, read live
+and never stored. Call it before saying where an application stands: the timeline only
+knows what somebody logged by hand.
 
 ## The rule that matters most
 
@@ -58,9 +71,16 @@ silently deletes work.
 | `update_company` | Replaces each field passed, notes included | `get_company` first, then write the combined notes |
 | `update_contact` | Same | `get_contact` first |
 | `append_role_background` | Adds | Safe by default — prefer it |
+| `tag_companies` / `tag_contacts` | **Adds and removes** | The bulk tools, and the exception — safe across a selection |
 
 When someone tells you something new about a job already on file, that is
 `append_role_background`. Not `update_role`.
+
+The bulk tools are the reason that last row matters. "Tag these nine as fintech" written as
+nine `update_company` calls strips the size and location off all nine; `tag_companies` adds
+and removes and leaves everything else alone. The same goes for `move_applications_stage`,
+`schedule_contact_pings` and `archive_records` — when the ask covers several records, use
+the bulk tool rather than a loop.
 
 ## Before you write anything
 
@@ -85,6 +105,15 @@ When someone tells you something new about a job already on file, that is
 - **Dates.** `list_schedule(from, to)` merges follow-ups, task deadlines and logged
   activity into one window. Reach for it whenever the question is about a stretch of
   time rather than one application. `list_follow_ups` is only what is already overdue.
+- **Deleting is reversible, once.** `delete_company`, `delete_contact` and
+  `delete_application` archive rather than destroy — the row leaves every list, board and
+  count and waits out a retention window. `delete_archived` and `empty_archive` are the only
+  two acts that cannot be undone, and neither can reach anything not already in the archive.
+  Never call either without reading `list_archive` back to them and getting a plain yes.
+  Everything else — a role, a highlight, a note, a resume, a task, a tag — really is gone.
+- **A spreadsheet is one call.** `export_csv` returns companies, people or applications as
+  CSV, taking the same filters, search and sort as the matching list tool. Do not assemble
+  one by hand.
 
 ## Saying what you did
 

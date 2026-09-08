@@ -1,15 +1,27 @@
 import Link from "next/link";
 import { CalendarDaysIcon, KanbanIcon, ListIcon } from "lucide-react";
 import type { Stage } from "@prisma/client";
-import { BOARD_STAGES, STAGE_LABEL, STAGE_TONE, TERMINAL_STAGES } from "@/lib/data/pipeline";
+import { STAGE_LABEL, TERMINAL_STAGES } from "@/lib/data/pipeline";
 import { SearchBox } from "@/components/crm/search-box";
 import { FilterMenu, type FilterFacets } from "@/components/pipeline/filter-menu";
-import {
-  buildPipelineQuery,
-  toggleIn,
-  type PipelineFilters,
-} from "@/lib/pipeline-filters";
+import { buildPipelineQuery, type PipelineFilters } from "@/lib/pipeline-filters";
 import { cn } from "@/lib/utils";
+
+/**
+ * What the Filter menu is holding, in words, beside the two chips.
+ *
+ * The stages left the toolbar; without a line like this, turning three of them
+ * on shows a narrowed board whose only explanation is a number on a button.
+ * Named up to three, counted after that, and the four endings collapse to
+ * "Closed" because that is how they were picked.
+ */
+function stageSummary(stages: Stage[]) {
+  const closed = TERMINAL_STAGES.every((stage) => stages.includes(stage));
+  const live = closed ? stages.filter((stage) => !TERMINAL_STAGES.includes(stage)) : stages;
+  const parts = [...live.map((stage) => STAGE_LABEL[stage]), ...(closed ? ["Closed"] : [])];
+  if (parts.length <= 3) return parts.join(", ");
+  return `${parts.slice(0, 2).join(", ")} and ${parts.length - 2} more`;
+}
 
 /**
  * The pipeline's controls, across the top.
@@ -34,7 +46,7 @@ export function parseView(value: string | undefined): PipelineView {
 export type ToolbarCounts = {
   all: number;
   overdue: number;
-  closed: number;
+  /** Per stage, for the Stage dimension inside the Filter menu. */
   byStage: Record<Stage, number>;
 };
 
@@ -62,6 +74,8 @@ export function PipelineToolbar({
   action,
   views,
   share,
+  fields,
+  exportLink,
 }: {
   view: PipelineView;
   filters: PipelineFilters;
@@ -72,15 +86,18 @@ export function PipelineToolbar({
   action: React.ReactNode;
   views: React.ReactNode;
   share: React.ReactNode;
+  /** Which optional fields this view draws. */
+  fields: React.ReactNode;
+  /**
+   * Export what this screen is showing. Absent on the calendar, following the
+   * `limited` precedent below: a calendar has no rows, so "export what's shown"
+   * has no honest answer.
+   */
+  exportLink?: React.ReactNode;
 }) {
   const href = (next: PipelineFilters, nextView: PipelineView = view) =>
     buildPipelineQuery({ view: nextView, filters: next, sort, dir });
 
-  // On whenever the four endings are all in the set — not only when they are
-  // the whole set. Requiring an exact length made the chip read "off" while
-  // closed rows were on screen, and its own href then rebuilt the set it
-  // already had, so clicking it did nothing at all.
-  const closedOn = TERMINAL_STAGES.every((stage) => filters.stages.includes(stage));
   const nothingOn = filters.stages.length === 0 && !filters.overdue;
   return (
     <div className="mb-4 space-y-2.5">
@@ -125,19 +142,23 @@ export function PipelineToolbar({
           limited={view === "calendar"}
         />
 
+        {fields}
         {views}
         {share}
+        {exportLink}
 
         <div className="ml-auto">{action}</div>
       </div>
 
-      {/* Stages combine — "Screening and Interviewing" is one question, not
-          two views. Scrolls sideways on a narrow screen rather than wrapping
-          into a wall of chips. */}
-      {/* Stages combine, and now they combine with everything else too:
-          "screening and overdue" and "closed, but only the ghostings" were
-          both unaskable when these two chips replaced the stage set. */}
-      <div className="no-scrollbar -mx-1 flex items-center gap-1 overflow-x-auto px-1 pb-0.5">
+      {/* Two chips, not twelve.
+          The stages used to sit here as a row you scrolled sideways, above a
+          board whose columns are the stages. They are a dimension like tags or
+          companies and they live in the Filter menu now. What is left is the
+          one cut worth a click from anywhere: what is overdue. The front page
+          is built around it, the bell counts it, and burying it three clicks
+          deep to tidy this row would have cost more than the row did. "Everything" stays beside it because a filter you cannot see the
+          way out of is a trap. */}
+      <div className="flex items-center gap-1">
         <Chip href={href({ ...filters, stages: [], overdue: false })} active={nothingOn} count={counts.all}>
           Everything
         </Chip>
@@ -150,37 +171,11 @@ export function PipelineToolbar({
         >
           Needs a nudge
         </Chip>
-
-        <span className="bg-border mx-1 h-4 w-px shrink-0" />
-
-        {BOARD_STAGES.map((stage) => (
-          <Chip
-            key={stage}
-            href={href({ ...filters, stages: toggleIn(filters.stages, stage) as Stage[] })}
-            active={filters.stages.includes(stage)}
-            count={counts.byStage[stage]}
-            tone={STAGE_TONE[stage]}
-          >
-            {STAGE_LABEL[stage]}
-          </Chip>
-        ))}
-
-        <span className="bg-border mx-1 h-4 w-px shrink-0" />
-
-        <Chip
-          href={href({
-            ...filters,
-            // Subtractive, so turning Closed off keeps the board stages you
-            // also had on rather than clearing the lot.
-            stages: closedOn
-              ? filters.stages.filter((stage) => !TERMINAL_STAGES.includes(stage))
-              : ([...new Set([...filters.stages, ...TERMINAL_STAGES])] as Stage[]),
-          })}
-          active={closedOn}
-          count={counts.closed}
-        >
-          Closed
-        </Chip>
+        {filters.stages.length > 0 && (
+          <span className="text-faint ml-1 text-[12px]">
+            {stageSummary(filters.stages)}
+          </span>
+        )}
       </div>
     </div>
   );

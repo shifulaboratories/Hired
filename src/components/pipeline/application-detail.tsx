@@ -27,6 +27,7 @@ import { CorrespondenceCard, type CorrespondenceAccess } from "@/components/goog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -51,11 +52,11 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SaveIndicator } from "@/components/save-indicator";
-import { RatingInput } from "@/components/pipeline/rating-input";
 import { TagPicker, type TagOption } from "@/components/tags/tag-picker";
 import type { TagValue } from "@/components/tags/tag-chip";
 import { CompanyChip } from "@/components/crm/company-chip";
 import { CompanyAvatar } from "@/components/pipeline/company-avatar";
+import { ValuePicker } from "@/components/pipeline/value-picker";
 import { PaperThumb } from "@/components/resume/paper-thumb";
 import { ResumePaper, type PaperSettings } from "@/components/resume/resume-paper";
 import type { ResumeDoc } from "@/lib/resume-schema";
@@ -63,6 +64,7 @@ import { companyDomain } from "@/lib/company";
 import { useAutosave } from "@/hooks/use-autosave";
 import { ACTIVITY_LABEL, ACTIVITY_OPTIONS, STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
 import { cn, relativeDay } from "@/lib/utils";
+import { DateField } from "@/components/ui/date-field";
 import {
   addActivityAction,
   createContactAction,
@@ -89,8 +91,6 @@ type Application = {
   workMode: string;
   salaryRange: string;
   tags: TagValue[];
-  excitement: number;
-  fit: number;
   notes: string;
   appliedAt: string | null;
   nextFollowUpAt: string | null;
@@ -130,6 +130,7 @@ export function ApplicationDetail({
   tasks,
   resumes,
   tagOptions,
+  fieldValues,
   company,
   companies,
   resumePreview,
@@ -144,6 +145,11 @@ export function ApplicationDetail({
   resumes: { id: string; name: string }[];
   /** Every source category on file, with usage counts. */
   tagOptions: TagOption[];
+  /** Locations and work modes already in use, so the fields can offer them. */
+  fieldValues: {
+    location: { value: string; count: number }[];
+    workMode: { value: string; count: number }[];
+  };
   /** The employer's record, for the chip. Null only if the row is mid-repair. */
   company: { id: string; name: string; website: string } | null;
   /** Every company on file, so changing employer picks one rather than typing. */
@@ -172,8 +178,6 @@ export function ApplicationDetail({
     workMode: application.workMode,
     salaryRange: application.salaryRange,
     tags: application.tags,
-    excitement: application.excitement,
-    fit: application.fit,
     notes: application.notes,
     nextFollowUpAt: application.nextFollowUpAt ? application.nextFollowUpAt.slice(0, 10) : "",
     resumeId: application.resumeId ?? "",
@@ -325,7 +329,11 @@ export function ApplicationDetail({
               <DropdownMenuItem
                 variant="destructive"
                 onSelect={() => {
-                  if (confirm(`Delete the ${values.company} application?`)) {
+                  if (
+                    confirm(
+                      `Delete the ${values.company} application? Its timeline and tasks go with it, and you can restore all of it from the archive.`,
+                    )
+                  ) {
                     void deleteApplicationAction(application.id).then(() => {
                       window.location.href = "/applications";
                     });
@@ -347,47 +355,75 @@ export function ApplicationDetail({
           rail into 688px. 44rem is above the panel and below the page. */}
       <div className="@container">
         <div className="grid gap-6 @min-[44rem]:grid-cols-[minmax(0,1fr)_21rem]">
-        <div className="space-y-6">
-          {/* People first. They are the reason the application moves, and they
-              were previously last in the right rail — in the panel, two
-              scrolls below the fold. */}
-          <ContactsCard applicationId={application.id} company={values.company} contacts={contacts} />
+        {/* Tabs, not one column of eight cards.
+            Everything here is about one application, but not at the same
+            moment: you open it to see where it stands, or to read the posting
+            before an interview, or to write down what just happened. Stacked,
+            the posting and the notes sat three scrolls under the thing you
+            came for. The details rail stays out of the tabs deliberately —
+            stage, follow-up and salary are the answer to "where is this",
+            which is true on every tab. */}
+        <Tabs defaultValue="overview" className="min-w-0">
+          <TabsList className="mb-4">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="timeline">
+              Timeline
+              {activities.length > 0 && (
+                <span className="text-faint nums ml-1 text-[11px]">{activities.length}</span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="posting">Posting</TabsTrigger>
+            <TabsTrigger value="notes">Notes</TabsTrigger>
+          </TabsList>
 
-          {resumePreview ? (
-            <ResumeCard preview={resumePreview} />
-          ) : (
-            <TailorCard applicationId={application.id} company={values.company} />
-          )}
+          <TabsContent value="overview" className="space-y-6">
+            {/* People first. They are the reason the application moves, and they
+                were previously last in the right rail — in the panel, two
+                scrolls below the fold. */}
+            <ContactsCard applicationId={application.id} company={values.company} contacts={contacts} />
 
-          <Timeline applicationId={application.id} activities={activities} />
+            {resumePreview ? (
+              <ResumeCard preview={resumePreview} />
+            ) : (
+              <TailorCard applicationId={application.id} company={values.company} />
+            )}
+          </TabsContent>
 
-          {/* The threads and meetings behind this application: the company's
-              domain and the people attached above. The timeline is what was
-              logged; this is what actually happened. */}
-          <CorrespondenceCard
-            subject={{ kind: "application", id: application.id }}
-            access={googleAccess}
-          />
+          <TabsContent value="timeline" className="space-y-6">
+            <Timeline applicationId={application.id} activities={activities} />
 
-          <JobDescriptionCard
-            value={values.jobDescription}
-            onChange={(jobDescription) => set({ jobDescription })}
-          />
+            {/* The threads and meetings behind this application: the company's
+                domain and the people attached above. The timeline is what was
+                logged; this is what actually happened. */}
+            <CorrespondenceCard
+              subject={{ kind: "application", id: application.id }}
+              access={googleAccess}
+            />
+          </TabsContent>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-[15px]">Notes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Textarea
-                value={values.notes}
-                onChange={(event) => set({ notes: event.target.value })}
-                placeholder="Anything you want to remember about this one."
-                className="min-h-24"
-              />
-            </CardContent>
-          </Card>
-        </div>
+          <TabsContent value="posting">
+            <JobDescriptionCard
+              value={values.jobDescription}
+              onChange={(jobDescription) => set({ jobDescription })}
+            />
+          </TabsContent>
+
+          <TabsContent value="notes">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-[15px]">Notes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Textarea
+                  value={values.notes}
+                  onChange={(event) => set({ notes: event.target.value })}
+                  placeholder="Anything you want to remember about this one."
+                  className="min-h-64"
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
         <div className="space-y-6">
           <Card>
@@ -397,10 +433,11 @@ export function ApplicationDetail({
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
                 <Label>Next follow-up</Label>
-                <Input
-                  type="date"
+                <DateField
                   value={values.nextFollowUpAt}
-                  onChange={(event) => set({ nextFollowUpAt: event.target.value })}
+                  onChange={(nextFollowUpAt) => set({ nextFollowUpAt })}
+                  ariaLabel="Next follow-up"
+                  placeholder="Nothing scheduled"
                 />
                 {values.nextFollowUpAt && (
                   <p className="text-muted-foreground text-xs">
@@ -447,17 +484,22 @@ export function ApplicationDetail({
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1.5">
                   <Label>Location</Label>
-                  <Input
+                  <ValuePicker
                     value={values.location}
-                    onChange={(event) => set({ location: event.target.value })}
+                    options={fieldValues.location}
+                    onChange={(location) => set({ location })}
+                    placeholder="Anywhere"
+                    ariaLabel="Location"
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Mode</Label>
-                  <Input
+                  <ValuePicker
                     value={values.workMode}
-                    onChange={(event) => set({ workMode: event.target.value })}
-                    placeholder="Remote"
+                    options={fieldValues.workMode}
+                    onChange={(workMode) => set({ workMode })}
+                    placeholder="Unset"
+                    ariaLabel="Work mode"
                   />
                 </div>
               </div>
@@ -491,14 +533,6 @@ export function ApplicationDetail({
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>Excitement</Label>
-                <RatingInput value={values.excitement} onChange={(v) => set({ excitement: v })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Fit</Label>
-                <RatingInput value={values.fit} onChange={(v) => set({ fit: v })} />
-              </div>
             </CardContent>
           </Card>
 

@@ -94,6 +94,12 @@ export async function getSharedPipeline(slug: string) {
   const applications = await db.application.findMany({
     where: {
       user: { pipelineShare: { slug } },
+      // Written out rather than spread from a shared constant, because this is
+      // the one read in the app where a missed archive filter is a leak rather
+      // than a bug: this page is unauthenticated, and the owner never looks at
+      // it, so an application they deleted would sit visible to whoever holds
+      // the link until somebody happened to notice.
+      archivedAt: null,
       ...(share.includeClosed ? {} : { stage: { notIn: TERMINAL_STAGES } }),
     },
     orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
@@ -102,7 +108,6 @@ export async function getSharedPipeline(slug: string) {
       roleTitle: true,
       stage: true,
       location: true,
-      excitement: true,
       appliedAt: true,
       nextFollowUpAt: true,
       updatedAt: true,

@@ -124,9 +124,57 @@ export function rid(prefix = "s") {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}${idCounter}`;
 }
 
+/**
+ * Give every section and entry an id of its own.
+ *
+ * Every id defaults to "" and RESUME_DOC_SHAPE never mentions ids, so a
+ * document written through create_resume — the product's main path — arrives
+ * with "" on every section. The editor addressed sections by id, so such a
+ * document had one identity for all of them: hiding one section hid the lot,
+ * and deleting one deleted the document. Healed here rather than at the write,
+ * because the first edit happens before the first save.
+ *
+ * Deterministic on purpose. rid() is random, and a random id minted on every
+ * read would churn between one get_resume and the next, and would make two
+ * parses of the same stored document unequal. Positional names are stable, so
+ * a document parsed twice is the same document.
+ */
+export function ensureIds(doc: ResumeDoc): ResumeDoc {
+  const used = new Set<string>();
+  // Keep an id the document already carries, unless it is blank or a
+  // duplicate; otherwise take the positional name, and walk it until it is
+  // free. Total: it always returns something no other entry holds.
+  const claim = (id: string, positional: string) => {
+    let next = id && !used.has(id) ? id : positional;
+    let n = 2;
+    while (used.has(next)) next = `${positional}_${n++}`;
+    used.add(next);
+    return next;
+  };
+  return {
+    ...doc,
+    sections: doc.sections.map((section, s) => ({
+      ...section,
+      id: claim(section.id, `sec_${s}`),
+      experience: section.experience.map((item, i) => ({
+        ...item,
+        id: claim(item.id, `exp_${s}_${i}`),
+      })),
+      education: section.education.map((item, i) => ({
+        ...item,
+        id: claim(item.id, `edu_${s}_${i}`),
+      })),
+      projects: section.projects.map((item, i) => ({
+        ...item,
+        id: claim(item.id, `prj_${s}_${i}`),
+      })),
+    })),
+  };
+}
+
 export function parseResumeDoc(value: unknown): ResumeDoc {
   const parsed = resumeDocSchema.safeParse(value);
-  if (parsed.success) return parsed.data;
+  if (parsed.success) return ensureIds(parsed.data);
   return emptyResumeDoc();
 }
 
