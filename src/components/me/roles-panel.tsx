@@ -1,8 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRightIcon, BriefcaseIcon, MapPinIcon, SparklesIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  BriefcaseIcon,
+  DownloadIcon,
+  MapPinIcon,
+  PlusIcon,
+  SparklesIcon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/page-header";
 import { Lift, Stagger, StaggerItem } from "@/components/motion";
@@ -27,8 +35,26 @@ export function RolesPanel({ roles }: { roles: RoleCard[] }) {
     return (
       <EmptyState
         icon={BriefcaseIcon}
-        title="No roles yet"
-        description="Add a job, then paste in everything you remember about it. That raw material is what every resume gets built from."
+        title="Nothing on file yet"
+        description="Paste in a resume you already have and it fills this in for you — jobs, dates, bullets. Or add one job by hand and dump everything you remember about it underneath."
+        action={
+          // Links rather than the dialogs themselves: both are already mounted
+          // by the page above and open on a URL parameter, which is what the
+          // setup strip links to as well. One button that works two ways beats
+          // a second copy of a dialog.
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button asChild>
+              <Link href="/me?import=1">
+                <DownloadIcon /> Paste a resume
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/me?new=role">
+                <PlusIcon /> Add a job by hand
+              </Link>
+            </Button>
+          </div>
+        }
       />
     );
   }
