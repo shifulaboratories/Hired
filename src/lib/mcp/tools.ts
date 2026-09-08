@@ -34,13 +34,15 @@ import {
 import { parsePipelineFilters } from "@/lib/pipeline-filters";
 import * as connections from "@/lib/data/connections";
 import * as onboarding from "@/lib/data/onboarding";
-import * as google from "@/lib/data/google";
+import * as accountsData from "@/lib/data/accounts";
+import * as schedule from "@/lib/data/schedule";
 import {
   getSettings,
   updateSettings,
   emailIsConfigured,
   billingIsConfigured,
   googleIsConfigured,
+  microsoftIsConfigured,
   maskSecret,
   listVariables,
   setVariables,
@@ -287,7 +289,7 @@ function withoutPhotoBytes<T extends { photo: string }>(profile: T) {
  * list_correspondence takes exactly one of four ids. Two would be a question
  * with two answers, none is not a question.
  */
-function correspondenceSubject(args: Json): google.CorrespondenceSubject {
+function correspondenceSubject(args: Json): accountsData.CorrespondenceSubject {
   const given = (
     [
       ["contact", s(args, "contactId")],
@@ -295,7 +297,7 @@ function correspondenceSubject(args: Json): google.CorrespondenceSubject {
       ["application", s(args, "applicationId")],
       ["resume", s(args, "resumeId")],
     ] as const
-  ).filter((entry): entry is readonly [google.CorrespondenceSubject["kind"], string] =>
+  ).filter((entry): entry is readonly [accountsData.CorrespondenceSubject["kind"], string] =>
     Boolean(entry[1]?.trim()),
   );
   if (given.length !== 1) {
@@ -1347,6 +1349,7 @@ export const tools: McpTool[] = [
         "For a 'Leadership & Activities' section, use an experience-kind section with that heading — organisation, role, location and dates all lay out correctly.",
         "In Harvard, education `details` render as plain lines (thesis, relevant coursework, honours), not bullets.",
         "Set visible: false to keep a section in the document but off the page.",
+        "Sections and entries carry an `id`. Never invent one — leave it out and the app assigns it — but when you have read a document with get_resume and are writing it back, keep the ids you were given: they are how the editor tells one entry from another.",
         "Aim for roughly 40-48 rendered lines per page; call preview_resume_text to sanity-check length before saving.",
         "Photos: off unless asked. showPhoto draws the user's profile picture (set_profile_photo), never one you supply per document. Harvard never renders one — it is a US academic format and a face on it is wrong. US and UK applications generally omit photos; much of Europe and Latin America expects one.",
       ],
@@ -1758,6 +1761,53 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) => resumes.deleteResume(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "reorder_resume",
+    title: "Move a section, entry or bullet",
+    description:
+      "Move one piece of a resume to a different position — a section, an entry inside it, or a bullet inside that. Use this instead of update_resume whenever only the ORDER changes: update_resume replaces the whole document, so reordering that way means reproducing every word of it and risks dropping content you did not mean to touch. This moves one thing and leaves the rest untouched. Name the thing that moves by giving `section`, plus `entry` if you are moving an entry, plus `bullet` if you are moving a bullet — the deepest one you name is what moves. Each of them takes an id, the name it goes by (a heading, a company or school, the bullet's own words) or its number in the list, so you can pass what the user said. `position` is 1-based: 1 puts it first, and anything past the end puts it last. Returns what moved, from where to where, and the section order that resulted. If nothing matches, the error lists what is actually there — read it and try again rather than falling back to update_resume.",
+    inputSchema: object(
+      {
+        id: str("Resume id"),
+        section: str("The section: its id, its heading, or its 1-based number"),
+        entry: str(
+          "An entry inside that section: its id, the company/school/project it names, or its 1-based number. Give this to move the entry, or to say where a bullet lives.",
+        ),
+        bullet: str(
+          "A bullet inside that entry: its text (or enough of it to match) or its 1-based number. Give this to move a bullet.",
+        ),
+        position: num("Where it lands, 1-based. 1 is first; past the end is last."),
+      },
+      ["id", "section", "position"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      resumes.reorderResume(ctx.userId, required(args, "id"), {
+        section: required(args, "section"),
+        entry: args.entry === undefined ? undefined : String(args.entry),
+        bullet: args.bullet === undefined ? undefined : String(args.bullet),
+        position: Number(args.position),
+      }),
+  },
+  {
+    name: "check_resume_fit",
+    title: "Check what to cut from a resume",
+    description:
+      "Reach for this when a resume runs long and the question is what to cut. Returns its bullets ranked longest first — each with the entry it sits under and the path to it — and its sections ranked by how much room they take, so the two obvious levers are in front of you: shorten the worst offenders, or hide a whole section. It RANKS; it does not measure. The page count it reports is the same estimate preview_resume_text gives and carries the same limit — it cannot see the type size, leading or margins, and only a browser can. Call export_resume_pdf for the real number, then call this to decide what goes. Nothing is written: read it, propose the cuts to the user, and make them with update_resume once they agree. Cutting a bullet is deleting something true they did, so say which ones you would drop and why rather than dropping them.",
+    inputSchema: object({ id: str("Resume id") }, ["id"]),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => resumes.resumeFitReport(ctx.userId, required(args, "id")),
   },
   {
     name: "preview_resume_text",
@@ -2498,7 +2548,7 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) =>
-      pipeline.listSchedule(ctx.userId, required(args, "from"), endOfDay(required(args, "to"))),
+      schedule.listSchedule(ctx.userId, required(args, "from"), endOfDay(required(args, "to"))),
   },
   {
     name: "list_tasks",
@@ -3586,16 +3636,17 @@ export const tools: McpTool[] = [
   },
 
   // -------------------------------------------------------------------------
-  // GMAIL AND CALENDAR
+  // MAIL AND CALENDAR
   //
-  // Read live from the person's own Google account, never copied here. Every
-  // tool in this section reaches Google, so openWorldHint is true throughout.
+  // Read live from the person's own accounts — Google, Microsoft 365, or any
+  // IMAP and CalDAV provider — never copied here. Every tool in this section
+  // reaches outside the instance, so openWorldHint is true throughout.
   // -------------------------------------------------------------------------
   {
-    name: "get_google_connection",
-    title: "Is Gmail and Calendar connected",
+    name: "list_linked_accounts",
+    title: "Which mail and calendar accounts are connected",
     description:
-      "Whether this person has connected their Gmail and Google Calendar, which of the two was granted, which Google address it is, and whether the connection has broken and needs reconnecting. Call this first when a mail or calendar tool fails, or before promising to look something up in their inbox. Connecting cannot be done from here — it is a consent screen at Google — so when `connected` is false, tell them to open Settings → Connections in the app, open the Google tile and press Connect, then come back. Nothing in the inbox is stored on this instance: every read is live, and disconnecting deletes the only thing held, the token.",
+      "Every mailbox and calendar this person has connected for the app to read — Google, Microsoft 365, or an IMAP and CalDAV provider such as Fastmail or iCloud — with which of mail and calendar each provides, its address, when it was last read, and whether it has broken and needs reconnecting (`lastError`). Call this first when a mail or calendar tool fails, or before promising to look something up in their inbox. Google and Microsoft connect through a consent screen in a browser, so they cannot be connected from here: when nothing is listed, tell them to open Settings → Connections in the app and add an account. An IMAP account can be connected with connect_imap_account. Nothing from any inbox is stored on this instance: every read is live, and disconnecting deletes the only thing held, the credential.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -3604,20 +3655,91 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (_args, ctx) => {
-      const connection = await google.getGoogleConnection(ctx.userId);
-      return connection
-        ? { connected: true, ...connection, connectUrl: `${ctx.baseUrl}/settings?tab=connections` }
-        : {
-            connected: false,
-            howToConnect: `Open ${ctx.baseUrl}/settings?tab=connections and open the Google tile, then press Connect Google. It asks for read-only access to Gmail and Calendar; either can be left unticked.`,
-          };
+      const accounts = await accountsData.listLinkedAccounts(ctx.userId);
+      return {
+        accounts,
+        connectUrl: `${ctx.baseUrl}/settings?tab=connections`,
+        ...(accounts.length === 0
+          ? {
+              howToConnect: `Open ${ctx.baseUrl}/settings?tab=connections and add an account. Google and Microsoft 365 ask for read-only access to mail and calendar on a consent screen; any other provider takes an IMAP server and a CalDAV URL with an app password, which connect_imap_account can also do from here.`,
+            }
+          : {}),
+      };
     },
+  },
+  {
+    name: "connect_imap_account",
+    title: "Connect a mailbox by IMAP and a calendar by CalDAV",
+    description:
+      "Connect any mail provider that is not Google or Microsoft — Fastmail, iCloud, Yahoo, a university account, a self-hosted server — by its IMAP server and, optionally, its CalDAV URL. Either half may be left out. Both are logged in to before anything is saved, so a wrong password is an error now rather than a broken tile later. The password must be an APP PASSWORD generated in the provider's security settings, never the account password; say so before asking for one, and never repeat it back or write it anywhere. Connecting an address that is already connected replaces its stored details. Presets worth knowing: Fastmail is imap.fastmail.com with CalDAV at https://caldav.fastmail.com/; iCloud is imap.mail.me.com with CalDAV at https://caldav.icloud.com/; Yahoo is imap.mail.yahoo.com. Read-only: the app can never send, move or delete anything with what it stores.",
+    inputSchema: object(
+      {
+        email: str("The address of the mailbox."),
+        label: str("What to call it on the tile, e.g. 'Work' or 'Old university address'. Optional."),
+        imapHost: str("IMAP server, e.g. imap.fastmail.com. Leave out for a calendar-only account."),
+        imapPort: num("IMAP port. Default 993 (TLS)."),
+        imapUsername: str("IMAP username. Defaults to the address."),
+        imapPassword: str("An app password for IMAP. Never the account password."),
+        caldavUrl: str("CalDAV server or calendar-home URL, e.g. https://caldav.fastmail.com/. Leave out for a mail-only account."),
+        caldavUsername: str("CalDAV username. Defaults to the IMAP username, then the address."),
+        caldavPassword: str("An app password for CalDAV. Defaults to the IMAP password — many providers use one for both."),
+      },
+      ["email"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      accountsData.connectImapAccount(ctx.userId, {
+        email: required(args, "email"),
+        ...defined({
+          label: s(args, "label"),
+          imapHost: s(args, "imapHost"),
+          imapPort: n(args, "imapPort"),
+          imapUsername: s(args, "imapUsername"),
+          imapPassword: s(args, "imapPassword"),
+          caldavUrl: s(args, "caldavUrl"),
+          caldavUsername: s(args, "caldavUsername"),
+          caldavPassword: s(args, "caldavPassword"),
+        }),
+      }),
+  },
+  {
+    name: "test_linked_account",
+    title: "Test a connected account",
+    description:
+      "Read one thing from each half of a connected account — the most recent mail, the events around today — and report whether it answered, with the provider's own words when it did not. The way to find out whether 'no threads' means an empty result or a dead connection. Get the id from list_linked_accounts. Records the outcome on the account (`lastError`), which is why it is not marked read-only.",
+    inputSchema: object({ accountId: str("The account id from list_linked_accounts.") }, ["accountId"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) => accountsData.testAccount(ctx.userId, required(args, "accountId")),
+  },
+  {
+    name: "disconnect_account",
+    title: "Disconnect a mail or calendar account",
+    description:
+      "Forget one connected account: revoke this instance's access where the provider allows it (Google) and delete the credential. Every read from that account stops immediately; nothing else — no contact, application or logged activity — is touched, because nothing from it was ever stored. Other accounts stay connected. Confirm before calling it. Get the id from list_linked_accounts; reconnecting is the same consent screen or form as the first time, under Settings → Connections.",
+    inputSchema: object({ accountId: str("The account id from list_linked_accounts.") }, ["accountId"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) => accountsData.disconnectAccount(ctx.userId, required(args, "accountId")),
   },
   {
     name: "list_correspondence",
     title: "Mail and meetings about one record",
     description:
-      "Every email thread and calendar event in the person's own Google account that involves one thing on the pipeline: a contact (matched on their email address), a company (its website's domain plus everyone on file there), an application (its company's domain plus the people attached to it) or a resume (every application it was sent with). This is the tool for 'what's the latest with Stripe', 'have I heard back from Jane', 'when is my interview' and 'what did the recruiter actually say' — call it before summarising where an application stands, because the pipeline's timeline only knows what was logged by hand. Pass exactly one id. Returns `mail` (threads, newest first, with subject, snippet, participants and a link) and `calendar` (past and upcoming events, with attendees, a Meet link and a link) — either is null when that half is not granted or Google refused, with the reason in `warnings`. `notes` explains a thin result, usually a contact with no email or a company with no website; fix those with update_contact and update_company and call again. Nothing is saved. To read a thread in full, pass its id to get_email_thread; to remember what you learned, log_activity on the application or contact.",
+      "Every email thread and calendar event, across all of the person's connected accounts, that involves one thing on the pipeline: a contact (matched on their email address), a company (its website's domain plus everyone on file there), an application (its company's domain plus the people attached to it) or a resume (every application it was sent with). This is the tool for 'what's the latest with Stripe', 'have I heard back from Jane', 'when is my interview' and 'what did the recruiter actually say' — call it before summarising where an application stands, because the pipeline's timeline only knows what was logged by hand. Pass exactly one id. Returns `mail` (threads, newest first, with subject, snippet, participants, which `account` it came from and a link where the provider has one) and `calendar` (past and upcoming events, with attendees, a meeting link and a link) — either is null when no account provides that half or every account refused, with the reason in `warnings`. `notes` explains a thin result, usually a contact with no email or a company with no website; fix those with update_contact and update_company and call again. Nothing is saved. To read a thread in full, pass its id to get_email_thread; to remember what you learned, log_activity on the application or contact.",
     inputSchema: object({
       contactId: str("A contact id. Matches their email address."),
       companyId: str("A company id. Matches its website's domain and the addresses of its people."),
@@ -3634,20 +3756,21 @@ export const tools: McpTool[] = [
     },
     handler: async (args, ctx) => {
       const subject = correspondenceSubject(args);
-      return google.listCorrespondence(ctx.userId, subject, {
+      return accountsData.listCorrespondence(ctx.userId, subject, {
         ...defined({ limit: n(args, "limit"), days: n(args, "days") }),
       });
     },
   },
   {
     name: "search_email",
-    title: "Search Gmail",
+    title: "Search mail",
     description:
-      "Search the person's Gmail with Gmail's own query syntax — `from:jane@acme.com`, `subject:offer newer_than:7d`, `\"phone screen\"` — or plain words. Reach for this when the question is about mail that does not map to one record: 'did any rejections come in this week', 'find the email with the take-home', 'who have I emailed about referrals'. For mail about a specific contact, company or application, list_correspondence already builds the right query. Returns threads newest first with subject, Gmail's snippet of the latest message, everyone on the thread, when it last moved and a link that opens it in Gmail. Subjects and snippets only — pass a thread id to get_email_thread for the messages themselves. Read-only; nothing is saved, and this tool cannot send, archive or delete anything.",
+      "Search every connected mailbox, or one of them, for free text — 'take-home', 'phone screen', a recruiter's name. On a Gmail account, Gmail's own operators work too: `from:jane@acme.com`, `subject:offer newer_than:7d`, `has:attachment`. Reach for this when the question is about mail that does not map to one record: 'did any rejections come in this week', 'find the email with the take-home', 'who have I emailed about referrals'. For mail about a specific contact, company or application, list_correspondence already builds the right query. Returns threads newest first, merged across accounts, each with its subject, a snippet of the latest message (empty on IMAP), everyone on the thread, when it last moved, which `account` it is in, and a link that opens it in the provider's client where there is one. Subjects and snippets only — pass a thread id to get_email_thread for the messages themselves. `warnings` names any account that did not answer. Read-only; nothing is saved, and this tool cannot send, archive or delete anything.",
     inputSchema: object(
       {
-        query: str("A Gmail search. Operators like from:, to:, subject:, newer_than:7d, has:attachment and label: all work, as do plain words."),
+        query: str("Words to search for. Gmail operators pass through on a Gmail account."),
         limit: num("How many threads at most. Default 20, maximum 50."),
+        accountId: str("Search one account only. Omit for all of them."),
       },
       ["query"],
     ),
@@ -3658,16 +3781,16 @@ export const tools: McpTool[] = [
       openWorldHint: true,
     },
     handler: async (args, ctx) =>
-      google.searchEmail(ctx.userId, {
+      accountsData.searchEmail(ctx.userId, {
         query: required(args, "query"),
-        ...defined({ limit: n(args, "limit") }),
+        ...defined({ limit: n(args, "limit"), accountId: s(args, "accountId") }),
       }),
   },
   {
     name: "get_email_thread",
     title: "Read an email thread",
     description:
-      "One thread in full, oldest message first: who sent each message, to whom, when, and the body as plain text (HTML mail is stripped to text; attachments are never fetched; very long messages are cut). The id comes from list_correspondence or search_email. This is how you find out what a recruiter actually wrote — the dates they proposed, the salary they named, the next step they described — before logging it with log_activity or moving the application with move_application_stage. Quote the mail when you report it; do not paraphrase a number. Read-only, and nothing about the thread changes: it is not marked read.",
+      "One thread in full, oldest message first: who sent each message, to whom, when, and the body as plain text (HTML mail is stripped to text; attachments are never fetched; very long messages are cut). The id comes from list_correspondence or search_email and already says which account it lives in. This is how you find out what a recruiter actually wrote — the dates they proposed, the salary they named, the next step they described — before logging it with log_activity or moving the application with move_application_stage. Quote the mail when you report it; do not paraphrase a number. Read-only, and nothing about the thread changes: it is not marked read.",
     inputSchema: object({ threadId: str("The thread id from list_correspondence or search_email.") }, ["threadId"]),
     annotations: {
       readOnlyHint: true,
@@ -3675,18 +3798,19 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: true,
     },
-    handler: async (args, ctx) => google.getEmailThread(ctx.userId, required(args, "threadId")),
+    handler: async (args, ctx) => accountsData.getEmailThread(ctx.userId, required(args, "threadId")),
   },
   {
     name: "search_calendar",
-    title: "Search Google Calendar",
+    title: "Search calendars",
     description:
-      "Events on the person's primary Google Calendar in a window, optionally filtered by a free-text search over title, description, location and attendee addresses. Use it for 'what interviews do I have this week', 'when did I last meet anyone from Acme' or 'am I free Thursday afternoon' — for a whole week of the pipeline's own dates alongside these meetings, list_schedule merges both. Defaults to thirty days back and sixty ahead. Each event has its title, start and end, whether it is all-day, the attendees with their RSVP, the organizer, a Meet link when there is one, and a link to the event. Read-only; nothing here creates, accepts or declines anything.",
+      "Events across every connected calendar, or one of them, in a window, optionally filtered by words matched against title, description, location and attendee names and addresses. Use it for 'what interviews do I have this week', 'when did I last meet anyone from Acme' or 'am I free Thursday afternoon' — for a whole week of the pipeline's own dates alongside these meetings, list_schedule merges both. Defaults to thirty days back and sixty ahead. Each event has its title, start and end, whether it is all-day, the attendees with their RSVP, the organizer, a meeting link when there is one, which `account` it is on, and a link to the event where the provider has one. `warnings` names any account that did not answer. Read-only; nothing here creates, accepts or declines anything.",
     inputSchema: object({
-      query: str("Words to match against title, description, location and attendee emails. Omit for every event in the window."),
+      query: str("Words to match against title, description, location and attendees. Omit for every event in the window."),
       from: str("Start of the window, ISO date (YYYY-MM-DD). Default: 30 days ago."),
       to: str("End of the window, ISO date (YYYY-MM-DD), inclusive. Default: 60 days ahead."),
       limit: num("How many events at most. Default 100."),
+      accountId: str("Search one account only. Omit for all of them."),
     }),
     annotations: {
       readOnlyHint: true,
@@ -3695,28 +3819,15 @@ export const tools: McpTool[] = [
       openWorldHint: true,
     },
     handler: async (args, ctx) =>
-      google.searchCalendar(ctx.userId, {
+      accountsData.searchCalendar(ctx.userId, {
         ...defined({
           query: s(args, "query"),
           from: s(args, "from") ? startOfDay(required(args, "from")) : undefined,
           to: s(args, "to") ? endOfDay(required(args, "to")) : undefined,
           limit: n(args, "limit"),
+          accountId: s(args, "accountId"),
         }),
       }),
-  },
-  {
-    name: "disconnect_google",
-    title: "Disconnect Gmail and Calendar",
-    description:
-      "Revoke this instance's access to the person's Gmail and Google Calendar and forget the token. Every mail and calendar tool stops working immediately and the panels in the app go back to offering a Connect button; nothing else — no contact, application or logged activity — is touched, because nothing from Google was ever stored. Confirm before calling it. Reconnecting is the same consent screen as the first time, under Settings → Connections.",
-    inputSchema: object({}),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: true,
-      openWorldHint: true,
-    },
-    handler: async (_args, ctx) => google.disconnectGoogleAccount(ctx.userId),
   },
 
   // -------------------------------------------------------------------------
@@ -4372,6 +4483,58 @@ export const tools: McpTool[] = [
       return result.ok
         ? { ok: true, to, template, id: result.id }
         : { ok: false, to, template, error: result.error };
+    },
+  },
+  {
+    name: "admin_get_microsoft_config",
+    title: "Check the Microsoft 365 app registration",
+    description:
+      "Whether members can connect their Microsoft 365 or Outlook.com mail and calendar, and the exact redirect URI to register on the app registration in Microsoft Entra — the value behind AADSTS50011 when it does not match. The client secret comes back masked. This is separate from Google sign-in and from the Google client: it is never used to sign in, only for members who choose to connect an Outlook mailbox under Settings → Connections.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    adminOnly: true,
+    handler: async (_args, ctx) => {
+      const settings = await getSettings();
+      return {
+        configured: microsoftIsConfigured(settings),
+        clientId: settings.microsoftClientId,
+        clientSecret: maskSecret(settings.microsoftClientSecret),
+        redirectUri: `${ctx.baseUrl}/api/auth/microsoft/callback`,
+        help: "In Microsoft Entra admin center: App registrations → New registration. Supported account types: 'Accounts in any organizational directory and personal Microsoft accounts', so both work and personal mailboxes can connect. Platform: Web, with redirectUri as the redirect URI. Under API permissions add Microsoft Graph delegated permissions Mail.Read, Calendars.Read, User.Read and offline_access. Under Certificates & secrets create a client secret and paste its VALUE here with admin_set_microsoft_config — the value is shown once.",
+      };
+    },
+  },
+  {
+    name: "admin_set_microsoft_config",
+    title: "Configure the Microsoft 365 app registration",
+    description:
+      "Set or clear the Microsoft Entra app registration members use to connect Outlook mail and calendar. Pass the Application (client) ID and a client secret VALUE. Clearing the client id takes the Microsoft option off the account picker; accounts already connected keep working until their token needs refreshing, then show as needing reconnecting. Recorded in the admin audit log; the secret is recorded as having changed, never as its value.",
+    inputSchema: object({
+      clientId: str("The Application (client) ID. Empty string to turn the option off."),
+      clientSecret: str("A client secret value from Certificates & secrets. Omit to keep the current one."),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    adminOnly: true,
+    handler: async (args, ctx) => {
+      await updateSettings(
+        ctx.user,
+        defined({
+          microsoftClientId: s(args, "clientId")?.trim(),
+          microsoftClientSecret: s(args, "clientSecret"),
+        }),
+      );
+      const settings = await getSettings();
+      return { configured: microsoftIsConfigured(settings), clientId: settings.microsoftClientId };
     },
   },
   {

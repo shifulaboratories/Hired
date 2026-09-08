@@ -1,7 +1,7 @@
 ---
 title: "Resume tools"
 sidebarTitle: "Resumes"
-description: "Fifteen tools for writing documents, checking their length before saving, comparing a tailored variant against its base, publishing them to a link and exporting real PDFs."
+description: "Seventeen tools for writing documents, checking their length before saving, comparing a tailored variant against its base, publishing them to a link and exporting real PDFs."
 icon: "file-lines"
 ---
 
@@ -201,6 +201,30 @@ _Delete a resume_
 Permanently delete a resume.
 
 **Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Resume id |
+
+### `reorder_resume`
+
+_Move a section, entry or bullet_
+
+Move one piece of a resume to a different position — a section, an entry inside it, or a bullet inside that. Use this instead of update_resume whenever only the ORDER changes: update_resume replaces the whole document, so reordering that way means reproducing every word of it and risks dropping content you did not mean to touch. This moves one thing and leaves the rest untouched. Name the thing that moves by giving `section`, plus `entry` if you are moving an entry, plus `bullet` if you are moving a bullet — the deepest one you name is what moves. Each of them takes an id, the name it goes by (a heading, a company or school, the bullet's own words) or its number in the list, so you can pass what the user said. `position` is 1-based: 1 puts it first, and anything past the end puts it last. Returns what moved, from where to where, and the section order that resulted. If nothing matches, the error lists what is actually there — read it and try again rather than falling back to update_resume.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Resume id |
+| `section` | string | **required** — The section: its id, its heading, or its 1-based number |
+| `entry` | string | An entry inside that section: its id, the company/school/project it names, or its 1-based number. Give this to move the entry, or to say where a bullet lives. |
+| `bullet` | string | A bullet inside that entry: its text (or enough of it to match) or its 1-based number. Give this to move a bullet. |
+| `position` | number | **required** — Where it lands, 1-based. 1 is first; past the end is last. |
+
+### `check_resume_fit`
+
+_Check what to cut from a resume_
+
+Reach for this when a resume runs long and the question is what to cut. Returns its bullets ranked longest first — each with the entry it sits under and the path to it — and its sections ranked by how much room they take, so the two obvious levers are in front of you: shorten the worst offenders, or hide a whole section. It RANKS; it does not measure. The page count it reports is the same estimate preview_resume_text gives and carries the same limit — it cannot see the type size, leading or margins, and only a browser can. Call export_resume_pdf for the real number, then call this to decide what goes. Nothing is written: read it, propose the cuts to the user, and make them with update_resume once they agree. Cutting a bullet is deleting something true they did, so say which ones you would drop and why rather than dropping them.
 
 | Argument | Type | |
 | --- | --- | --- |

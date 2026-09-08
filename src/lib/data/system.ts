@@ -37,6 +37,7 @@ export type SystemEventSource =
   | "email.send"
   | "google.signin"
   | "google.data"
+  | "microsoft.data"
   | "mcp.tool"
   | "app";
 

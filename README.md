@@ -90,7 +90,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  121 tools any MCP client can call (151 if you're an admin). Claude, Claude Code, ChatGPT,
+  125 tools any MCP client can call (157 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -113,12 +113,14 @@ just *talk* to it.
   every migration finished, whether the last invite email actually left, and whether Stripe
   is still calling the webhook, then lists what has failed in the last thirty days. Ask an
   assistant for `admin_health` and you get the same answer without opening a browser.
-- **Your inbox and calendar, on the record** — connect your own Gmail and Google Calendar
-  under Settings → Connections and every contact, company and application shows the real threads
-  and meetings behind it, under the timeline of what you logged. Interviews you accepted in
-  Google Calendar land on the pipeline's calendar view. Read-only and live: nothing from
-  your account is copied to the server, and an assistant asked where an application stands
-  reads the recruiter's reply instead of guessing from a stage.
+- **Your inbox and calendar, on the record** — connect your own mail and calendar under
+  Settings → Connections — Google, Microsoft 365, or anything that speaks IMAP and CalDAV,
+  and more than one if recruiters write to more than one — and every contact, company and
+  application shows the real threads and meetings behind it, under the timeline of what you
+  logged. Interviews you accepted in your real calendar land on the pipeline's calendar view.
+  Read-only and live: nothing from any account is copied to the server, and an assistant
+  asked where an application stands reads the recruiter's reply instead of guessing from a
+  stage.
 - **Sign in how you like** — email and password always work, and an instance that adds a
   Google OAuth client gets a Continue with Google button as well. Google never bypasses an
   invitation: it signs in people who already have an account or an unexpired invite, and
@@ -271,7 +273,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Hit **Test** next to any connection and the app calls its own endpoint the way a client
-would, then tells you how many tools answered — 121, or 151 if you're an admin.
+would, then tells you how many tools answered — 125, or 157 if you're an admin.
 
 #### One connection per client
 
@@ -398,26 +400,38 @@ accounts here are matched by address, so that check is what the whole thing rest
 
 By conversation: `admin_get_google_config`, `admin_set_google_config`.
 
-### Gmail and Calendar (optional, per person)
+### Mail and calendar (optional, per person)
 
-The same OAuth client lets each person connect their own Gmail and Google Calendar under
-**Settings → Connections**. Google asks for read-only access to both; either can be left
-unticked. From then on a contact's page shows the threads with their address and the
-meetings they are invited to, a company's page shows everything from its domain, an
-application's page shows both under its timeline, and the pipeline's calendar view carries
-the interviews from the real calendar. Nothing from anyone's account is copied to the
-server: every page asks Google when it opens, and disconnecting revokes the token and
-deletes the only thing held.
+Each person can connect the accounts recruiters actually write to, under **Settings →
+Connections**, and the app reads them live: a contact's page shows the threads with their
+address and the meetings they are invited to, a company's page shows everything from its
+domain, an application's page shows both under its timeline, and the pipeline's calendar
+view carries the interviews from the real calendar. More than one account merges. Nothing
+from any account is copied to the server: every page asks the provider when it opens, and
+disconnecting revokes what can be revoked and deletes the credential.
 
-Two things in the Cloud console make it work: enable the Gmail API and the Google Calendar
-API in the project, and add the `gmail.readonly` and `calendar.readonly` scopes to the
-consent screen. Gmail's read scope is one Google calls restricted, so leave the consent
-screen in Testing and list the people who will connect as test users rather than going
-through verification for an instance you host for friends.
+Three kinds of account:
 
-By conversation: `get_google_connection`, `list_correspondence`, `search_email`,
-`get_email_thread`, `search_calendar`, `disconnect_google`, and the `inbox_review` workflow
-that reads a week of mail and proposes what to log.
+- **Google** uses the sign-in client above. Two more things in the Cloud console make it
+  work: enable the Gmail API and the Google Calendar API, and add the `gmail.readonly` and
+  `calendar.readonly` scopes to the consent screen. Gmail's read scope is one Google calls
+  restricted, so leave the consent screen in Testing and list the people who will connect as
+  test users rather than going through verification for an instance you host for friends.
+- **Microsoft 365 and Outlook.com** need an app registration in Microsoft Entra, set under
+  **Admin → Configuration → Accounts**: supported account types set to any directory plus
+  personal accounts, a Web redirect URI the screen shows you, the delegated Graph permissions
+  `Mail.Read`, `Calendars.Read`, `User.Read` and `offline_access`, and a client secret.
+- **Anything else** — Fastmail, iCloud, Yahoo, a university account, a self-hosted server —
+  connects by IMAP and CalDAV with an app password, from a form with presets for the common
+  ones. It needs nothing from an admin. Either half can be left out.
+
+The app never sends, so there is no SMTP to configure: read-only is what makes handing over
+an inbox safe, and the permissions it asks for cannot do anything else.
+
+By conversation: `list_linked_accounts`, `connect_imap_account`, `test_linked_account`,
+`disconnect_account`, `list_correspondence`, `search_email`, `get_email_thread`,
+`search_calendar`, and the `inbox_review` workflow that reads a week of mail and proposes
+what to log. Admins: `admin_get_microsoft_config`, `admin_set_microsoft_config`.
 
 ### Everything else you can change
 
@@ -449,13 +463,13 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-121 tools. One hundred and thirteen of them are the data tools across the four areas, the
-archive that cuts through all of them, your Gmail and Calendar, and your account; the other
-eight are the workflows below, published as tools as well as prompts, because prompt support
-is optional in MCP clients and tool support isn't. Call one and it hands back a step-by-step
-plan that it then follows. Admins get 30 more — 29 data tools and a ninth workflow — and
-members never even see those in the tool list, so nobody is tempted by a permission they
-don't have.
+125 tools. One hundred and seventeen of them are the data tools across the four areas, the
+archive that cuts through all of them, your mail and calendar accounts, and your own
+account; the other eight are the workflows below, published as tools as well as prompts,
+because prompt support is optional in MCP clients and tool support isn't. Call one and it
+hands back a step-by-step plan that it then follows. Admins get 32 more — 31 data tools and
+a ninth workflow — and members never even see those in the tool list, so nobody is tempted
+by a permission they don't have.
 
 | Workflow | What it does |
 | --- | --- |
@@ -466,7 +480,7 @@ don't have.
 | **Research a company into the CRM** | Gathers what's known, works out what's missing, and writes it back to their record without flattening what was already there. |
 | **Prepare for an interview** | Pulls the posting, the timeline, the company research, the people involved and your own evidence into one prep sheet. |
 | **Log what happened this week** | You ramble; it files everything to the right role, application, or note. |
-| **Bring the pipeline up to date from your inbox** | Reads a week of your Gmail and Calendar, tells you what moved, and proposes what to log — nothing is written until you say yes. |
+| **Bring the pipeline up to date from your inbox** | Reads a week of your mail and calendar, tells you what moved, and proposes what to log — nothing is written until you say yes. |
 | **Invite and onboard someone** *(admin)* | Invites a person, hands you the link if email isn't set up, and drafts the message to send them. |
 
 Every client is instructed never to invent experience, employers, dates, or metrics. If there's
@@ -506,7 +520,10 @@ anything already there.
 **Resumes** — `get_resume_format` describes the document shape, then `create_resume` /
 `update_resume` / `duplicate_resume` build and tailor them. `preview_resume_text` renders a
 draft and estimates page count *without* saving, so Claude can check length before
-committing. `publish_resume` turns one into a shareable link and hands back the URL;
+committing, and `check_resume_fit` ranks what to cut when it runs long — the longest
+bullets, and which sections are carrying the most weight. `reorder_resume` moves one
+section, job or bullet without rewriting the document, so "lead with the Stripe job" costs
+one call rather than a full rewrite. `publish_resume` turns one into a shareable link and hands back the URL;
 `unpublish_resume` destroys it. `export_resume_pdf` renders a real PDF server-side and
 reports the page count it actually came out to. A duplicated resume remembers what it was
 tailored from, so `compare_resumes` can say exactly what a variant changed — bullets added,
@@ -580,12 +597,34 @@ section and just rename the heading; organisation, role, location and dates all 
 correctly.
 
 The format is a starting point, not a cage. The Design menu (palette icon in the editor)
-switches template, font, accent, size, leading and margins per resume, and the ⌃/⌄ buttons
-on each section reorder them. Harvard's own convention puts Education first — that's right
+switches template, font, accent, size, leading and margins per resume. Sections, the jobs
+inside them and the bullets inside those all reorder by dragging the grip on the left — or
+with the ⌃/⌄ buttons, or from the keyboard: tab to a grip, press space, and the arrow keys
+move it. Harvard's own convention puts Education first — that's right
 for students and recent graduates, and wrong for most people with real work history, so the
 default order leads with Experience.
 
+Nothing you do in the editor is one-way. Undo and redo sit next to the save indicator and
+answer to ⌘Z and ⇧⌘Z — except inside a text field, where ⌘Z still takes back what you typed,
+which is what you meant. A sentence undoes as a sentence rather than a letter at a time.
+Deleting a job or a section also raises a toast that offers it straight back, because a
+delete is the one thing worth catching before the autosave does.
+
 The other templates — Classic, Modern, Compact, Editorial — are all still there.
+
+## Where the page ends
+
+The editor draws a line across the preview everywhere the paper runs out, labelled with the
+page it starts, and says *"splits here"* when an entry is cut in half by the break. That's
+measured, not guessed: a second invisible copy of the document is laid out in page-sized
+columns and the browser is asked where it actually broke, so the line lands where the PDF
+will break and moves as you type.
+
+When it runs to two pages the badge in the toolbar stops reporting the count and offers to
+fix it. Open it and you get what is on the last page in order, the sections you could hide —
+kept in the document, off the page, and undoable — and your longest bullets with the words on
+the button that removes each one. `check_resume_fit` is the same advice over MCP, so *"what
+should I cut to get this to one page?"* answers with the same list.
 
 ## One photo, every document
 

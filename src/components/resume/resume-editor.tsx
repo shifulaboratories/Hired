@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeftIcon,
@@ -17,8 +17,10 @@ import {
   PrinterIcon,
   PaletteIcon,
   PlusIcon,
+  Redo2Icon,
   StarIcon,
   Trash2Icon,
+  Undo2Icon,
   UserRoundIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -47,6 +49,7 @@ import {
 } from "@/components/ui/select";
 import { SaveIndicator } from "@/components/save-indicator";
 import { useAutosave } from "@/hooks/use-autosave";
+import { useHistory } from "@/hooks/use-history";
 import { cn } from "@/lib/utils";
 import {
   blankEducation,
@@ -58,7 +61,12 @@ import {
   type ResumeSection,
   type SectionKind,
 } from "@/lib/resume-schema";
-import { estimateLines } from "@/lib/resume-text";
+import { PageMeasure } from "@/components/resume/page-measure";
+import { DragHandle, SortableList, SortableRow } from "@/components/resume/sortable-list";
+import { moveWithin } from "@/lib/resume-reorder";
+import { PageBreaks } from "@/components/resume/page-breaks";
+import { FitPanel } from "@/components/resume/fit-panel";
+import { emptyLayout, pageBox, type PageLayout } from "@/lib/resume-pagination";
 import { ResumePaper, type PaperSettings } from "@/components/resume/resume-paper";
 import { EvidencePanel, type LinkedApplication } from "@/components/resume/evidence-panel";
 import type { CorrespondenceAccess } from "@/components/google/correspondence-card";
@@ -84,7 +92,6 @@ type Meta = Omit<PaperSettings, "photo"> & {
 };
 
 const ACCENTS = ["#000000", "#B30000", "#0C5B97", "#1f2937", "#6366f1", "#0ea5e9"];
-const LINES_PER_PAGE = 46;
 
 export function ResumeEditor({
   id,
@@ -134,7 +141,25 @@ export function ResumeEditor({
     updateResumeAction(id, { ...next.meta, data: next.doc }),
   );
 
-  const commit = (nextDoc: ResumeDoc, nextMeta: Meta = meta) => {
+  // One snapshot of the whole editable state per undo step. `apply` is what
+  // undo, redo and a toast's Undo all funnel through, so a restored document
+  // saves exactly the way a typed one does.
+  const apply = useCallback((snapshot: { doc: ResumeDoc; meta: Meta }) => {
+    setDoc(snapshot.doc);
+    setMeta(snapshot.meta);
+    push(snapshot);
+  }, [push]);
+  const history = useHistory({ doc, meta }, apply);
+
+  /**
+   * Every change to the document goes through here.
+   *
+   * `step` marks a discrete act — a delete, a drag, a toggle — which gets its
+   * own undo step even if it lands in the middle of a sentence. Everything else
+   * folds into the run of typing around it.
+   */
+  const commit = (nextDoc: ResumeDoc, nextMeta: Meta = meta, options?: { step?: boolean }) => {
+    history.record(options);
     setDoc(nextDoc);
     setMeta(nextMeta);
     push({ doc: nextDoc, meta: nextMeta });
@@ -142,37 +167,84 @@ export function ResumeEditor({
 
   const setMetaValue = <K extends keyof Meta>(key: K, value: Meta[K]) => {
     const next = { ...meta, [key]: value };
+    // Typing a name or a note is text; every other setting is a click, and a
+    // click is its own step.
+    history.record({ step: key !== "name" && key !== "notes" });
     setMeta(next);
     push({ doc, meta: next });
   };
 
-  const lines = useMemo(() => estimateLines(doc), [doc]);
-  const pages = Math.max(1, Math.ceil(lines / LINES_PER_PAGE));
-  const fill = Math.min(100, Math.round(((lines % LINES_PER_PAGE || LINES_PER_PAGE) / LINES_PER_PAGE) * 100));
+  /**
+   * ⌘Z / Ctrl+Z, but never inside a field.
+   *
+   * A textarea has its own undo stack and it is the right one while you are
+   * typing: pressing undo mid-sentence should take back the sentence, not
+   * resurrect the section you deleted a minute ago. So the shortcut only fires
+   * when focus is somewhere that has no text of its own — the preview, the
+   * toolbar, the page. The buttons work from anywhere.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "z" || !(event.metaKey || event.ctrlKey)) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+      event.preventDefault();
+      if (event.shiftKey) history.redo();
+      else history.undo();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [history]);
 
-  const updateSection = (sectionId: string, patch: Partial<ResumeSection>) => {
-    commit({
-      ...doc,
-      sections: doc.sections.map((section) =>
-        section.id === sectionId ? { ...section, ...patch } : section,
-      ),
-    });
+  /** Snapshot the state as it stands, for a toast that offers to put it back. */
+  const undoable = (message: string) => {
+    const before = { doc, meta };
+    toast.success(message, { action: { label: "Undo", onClick: () => history.restore(before) } });
+  };
+
+  // Measured, not estimated: PageMeasure lays the real document out in
+  // page-sized columns and reports where the browser breaks it. The old gauge
+  // assumed 110 characters a line and never saw the type size, leading or
+  // margin, all of which are two clicks away in Design.
+  const [layout, setLayout] = useState<PageLayout>(() => emptyLayout(pageBox(initialMeta.pageMargin)));
+
+  // By position, not by id. Ids are healed on parse now, but a section's
+  // place in the list is the one address that cannot be blank or repeated,
+  // and this is the code that used to edit every section at once.
+  const updateSection = (
+    index: number,
+    patch: Partial<ResumeSection>,
+    options?: { step?: boolean },
+  ) => {
+    commit(
+      {
+        ...doc,
+        sections: doc.sections.map((section, at) =>
+          at === index ? { ...section, ...patch } : section,
+        ),
+      },
+      meta,
+      options,
+    );
   };
 
   const moveSection = (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= doc.sections.length) return;
-    const sections = [...doc.sections];
-    [sections[index], sections[target]] = [sections[target], sections[index]];
-    commit({ ...doc, sections });
+    commit({ ...doc, sections: moveWithin(doc.sections, index, target) }, meta, { step: true });
   };
 
   const addSection = (kind: SectionKind) => {
-    commit({ ...doc, sections: [...doc.sections, blankSection(kind)] });
+    commit({ ...doc, sections: [...doc.sections, blankSection(kind)] }, meta, { step: true });
   };
 
-  const removeSection = (sectionId: string) => {
-    commit({ ...doc, sections: doc.sections.filter((section) => section.id !== sectionId) });
+  const removeSection = (index: number) => {
+    const section = doc.sections[index];
+    undoable(`"${section.heading || section.kind}" removed`);
+    commit({ ...doc, sections: doc.sections.filter((_, at) => at !== index) }, meta, {
+      step: true,
+    });
   };
 
   return (
@@ -193,13 +265,41 @@ export function ResumeEditor({
 
         <SaveIndicator state={state} />
 
-        <Badge
-          variant={pages > 1 ? "warning" : "success"}
-          className="ml-1 hidden tabular-nums sm:inline-flex"
-          title={`~${lines} rendered lines`}
-        >
-          {pages} page{pages > 1 ? "s" : ""} · {fill}% of last
-        </Badge>
+        <div className="flex items-center">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground"
+            disabled={!history.canUndo}
+            onClick={() => history.undo()}
+            aria-label="Undo"
+            title="Undo (⌘Z)"
+          >
+            <Undo2Icon />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground"
+            disabled={!history.canRedo}
+            onClick={() => history.redo()}
+            aria-label="Redo"
+            title="Redo (⇧⌘Z)"
+          >
+            <Redo2Icon />
+          </Button>
+        </div>
+
+        {/* The page count is where "how do I cut this down" gets asked, so it
+            is also where it gets answered. */}
+        <FitPanel
+          doc={doc}
+          layout={layout}
+          onChange={(next, message) => {
+            undoable(message);
+            commit(next, meta, { step: true });
+          }}
+        />
 
         {base && <CompareToBase base={base} doc={doc} />}
 
@@ -308,19 +408,33 @@ export function ResumeEditor({
 
             <HeaderCard doc={doc} onChange={(header) => commit({ ...doc, header })} />
 
-            <div className="space-y-3">
+            <SortableList
+              className="space-y-3"
+              ids={doc.sections.map((section) => section.id)}
+              onReorder={(from, to) =>
+                commit({ ...doc, sections: moveWithin(doc.sections, from, to) }, meta, {
+                  step: true,
+                })
+              }
+            >
               {doc.sections.map((section, index) => (
-                <SectionCard
+                <SortableRow
                   key={section.id}
-                  section={section}
-                  index={index}
-                  total={doc.sections.length}
-                  onChange={(patch) => updateSection(section.id, patch)}
-                  onMove={(direction) => moveSection(index, direction)}
-                  onRemove={() => removeSection(section.id)}
-                />
+                  id={section.id}
+                  label={`Reorder ${section.heading || section.kind}`}
+                >
+                  <SectionCard
+                    section={section}
+                    index={index}
+                    total={doc.sections.length}
+                    onChange={(patch, options) => updateSection(index, patch, options)}
+                    onMove={(direction) => moveSection(index, direction)}
+                    onRemove={() => removeSection(index)}
+                    onUndoable={undoable}
+                  />
+                </SortableRow>
               ))}
-            </div>
+            </SortableList>
 
             <AddSectionMenu onAdd={addSection} existing={doc.sections.map((s) => s.kind)} />
 
@@ -344,14 +458,24 @@ export function ResumeEditor({
             animate={{ scale: 1 }}
           >
             <div
-              className="origin-top-left shadow-2xl"
+              className="relative origin-top-left shadow-2xl"
               style={{ transform: `scale(${zoom})`, width: "8.5in" }}
             >
               <ResumePaper doc={doc} settings={{ ...meta, photo: meta.showPhoto ? photo : "" }} />
+              {/* Inside the scaled box on purpose: the lines are positioned in
+                  the paper's own pixels, so they scale with it and need no
+                  arithmetic against the zoom. */}
+              <PageBreaks layout={layout} />
             </div>
           </motion.div>
         </div>
       </div>
+
+      <PageMeasure
+        doc={doc}
+        settings={{ ...meta, photo: meta.showPhoto ? photo : "" }}
+        onLayout={setLayout}
+      />
     </div>
   );
 }
@@ -480,11 +604,14 @@ function SectionCard({
   onChange,
   onMove,
   onRemove,
+  onUndoable,
 }: {
   section: ResumeSection;
   index: number;
   total: number;
-  onChange: (patch: Partial<ResumeSection>) => void;
+  onChange: (patch: Partial<ResumeSection>, options?: { step?: boolean }) => void;
+  /** Announce something that just got thrown away, with a way back. */
+  onUndoable: (message: string) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
 }) {
@@ -495,10 +622,11 @@ function SectionCard({
       badge={countLabel(section)}
       controls={
         <>
+          <DragHandle className="mr-0.5 size-7" />
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={() => onChange({ visible: !section.visible })}
+            onClick={() => onChange({ visible: !section.visible }, { step: true })}
             aria-label="Toggle visibility"
           >
             {section.visible ? <EyeIcon /> : <EyeOffIcon />}
@@ -554,18 +682,30 @@ function SectionCard({
         {section.kind === "experience" && (
           <ItemList
             items={section.experience}
-            onAdd={() => onChange({ experience: [...section.experience, blankExperience()] })}
-            addLabel="Add job"
-            onRemove={(i) =>
-              onChange({ experience: section.experience.filter((_, index) => index !== i) })
+            onAdd={() =>
+              onChange({ experience: [...section.experience, blankExperience()] }, { step: true })
             }
-            onMove={(i, dir) => onChange({ experience: moveItem(section.experience, i, dir) })}
+            addLabel="Add job"
+            onRemove={(i) => {
+              const item = section.experience[i];
+              onUndoable(`${item.title || item.company || "That role"} removed`);
+              onChange(
+                { experience: section.experience.filter((_, index) => index !== i) },
+                { step: true },
+              );
+            }}
+            onMove={(i, dir) =>
+              onChange({ experience: moveWithin(section.experience, i, i + dir) }, { step: true })
+            }
+            onReorderTo={(from_, to) =>
+              onChange({ experience: moveWithin(section.experience, from_, to) }, { step: true })
+            }
             renderTitle={(item) => item.title || item.company || "New role"}
             render={(item, i) => {
-              const set = (patch: Partial<typeof item>) => {
+              const set = (patch: Partial<typeof item>, options?: { step?: boolean }) => {
                 const experience = [...section.experience];
                 experience[i] = { ...item, ...patch };
-                onChange({ experience });
+                onChange({ experience }, options);
               };
               return (
                 <div className="space-y-2">
@@ -614,7 +754,7 @@ function SectionCard({
                   />
                   <BulletEditor
                     bullets={item.bullets}
-                    onChange={(bullets) => set({ bullets })}
+                    onChange={(bullets, options) => set({ bullets }, options)}
                   />
                 </div>
               );
@@ -625,18 +765,30 @@ function SectionCard({
         {section.kind === "education" && (
           <ItemList
             items={section.education}
-            onAdd={() => onChange({ education: [...section.education, blankEducation()] })}
-            addLabel="Add school"
-            onRemove={(i) =>
-              onChange({ education: section.education.filter((_, index) => index !== i) })
+            onAdd={() =>
+              onChange({ education: [...section.education, blankEducation()] }, { step: true })
             }
-            onMove={(i, dir) => onChange({ education: moveItem(section.education, i, dir) })}
+            addLabel="Add school"
+            onRemove={(i) => {
+              const item = section.education[i];
+              onUndoable(`${item.school || "That entry"} removed`);
+              onChange(
+                { education: section.education.filter((_, index) => index !== i) },
+                { step: true },
+              );
+            }}
+            onMove={(i, dir) =>
+              onChange({ education: moveWithin(section.education, i, i + dir) }, { step: true })
+            }
+            onReorderTo={(from_, to) =>
+              onChange({ education: moveWithin(section.education, from_, to) }, { step: true })
+            }
             renderTitle={(item) => item.school || "New entry"}
             render={(item, i) => {
-              const set = (patch: Partial<typeof item>) => {
+              const set = (patch: Partial<typeof item>, options?: { step?: boolean }) => {
                 const education = [...section.education];
                 education[i] = { ...item, ...patch };
-                onChange({ education });
+                onChange({ education }, options);
               };
               return (
                 <div className="grid grid-cols-2 gap-2">
@@ -669,7 +821,7 @@ function SectionCard({
                   <div className="col-span-2">
                     <BulletEditor
                       bullets={item.details}
-                      onChange={(details) => set({ details })}
+                      onChange={(details, options) => set({ details }, options)}
                       placeholder="Honours, coursework…"
                     />
                   </div>
@@ -682,18 +834,30 @@ function SectionCard({
         {section.kind === "projects" && (
           <ItemList
             items={section.projects}
-            onAdd={() => onChange({ projects: [...section.projects, blankProject()] })}
-            addLabel="Add project"
-            onRemove={(i) =>
-              onChange({ projects: section.projects.filter((_, index) => index !== i) })
+            onAdd={() =>
+              onChange({ projects: [...section.projects, blankProject()] }, { step: true })
             }
-            onMove={(i, dir) => onChange({ projects: moveItem(section.projects, i, dir) })}
+            addLabel="Add project"
+            onRemove={(i) => {
+              const item = section.projects[i];
+              onUndoable(`${item.name || "That project"} removed`);
+              onChange(
+                { projects: section.projects.filter((_, index) => index !== i) },
+                { step: true },
+              );
+            }}
+            onMove={(i, dir) =>
+              onChange({ projects: moveWithin(section.projects, i, i + dir) }, { step: true })
+            }
+            onReorderTo={(from_, to) =>
+              onChange({ projects: moveWithin(section.projects, from_, to) }, { step: true })
+            }
             renderTitle={(item) => item.name || "New project"}
             render={(item, i) => {
-              const set = (patch: Partial<typeof item>) => {
+              const set = (patch: Partial<typeof item>, options?: { step?: boolean }) => {
                 const projects = [...section.projects];
                 projects[i] = { ...item, ...patch };
-                onChange({ projects });
+                onChange({ projects }, options);
               };
               return (
                 <div className="space-y-2">
@@ -720,7 +884,10 @@ function SectionCard({
                     placeholder="One line on what it is"
                     className="min-h-14"
                   />
-                  <BulletEditor bullets={item.bullets} onChange={(bullets) => set({ bullets })} />
+                  <BulletEditor
+                    bullets={item.bullets}
+                    onChange={(bullets, options) => set({ bullets }, options)}
+                  />
                 </div>
               );
             }}
@@ -757,7 +924,12 @@ function SectionCard({
                   variant="ghost"
                   size="icon"
                   className="text-muted-foreground hover:text-destructive shrink-0"
-                  onClick={() => onChange({ skills: section.skills.filter((_, index) => index !== i) })}
+                  onClick={() =>
+                    onChange(
+                      { skills: section.skills.filter((_, index) => index !== i) },
+                      { step: true },
+                    )
+                  }
                 >
                   <Trash2Icon />
                 </Button>
@@ -766,7 +938,9 @@ function SectionCard({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onChange({ skills: [...section.skills, { name: "", skills: [] }] })}
+              onClick={() =>
+                onChange({ skills: [...section.skills, { name: "", skills: [] }] }, { step: true })
+              }
             >
               <PlusIcon /> Add group
             </Button>
@@ -811,9 +985,12 @@ function SectionCard({
                   size="icon"
                   className="text-muted-foreground hover:text-destructive shrink-0"
                   onClick={() =>
-                    onChange({
-                      certifications: section.certifications.filter((_, index) => index !== i),
-                    })
+                    onChange(
+                      {
+                        certifications: section.certifications.filter((_, index) => index !== i),
+                      },
+                      { step: true },
+                    )
                   }
                 >
                   <Trash2Icon />
@@ -824,9 +1001,12 @@ function SectionCard({
               variant="outline"
               size="sm"
               onClick={() =>
-                onChange({
-                  certifications: [...section.certifications, { name: "", issuer: "", date: "" }],
-                })
+                onChange(
+                  {
+                    certifications: [...section.certifications, { name: "", issuer: "", date: "" }],
+                  },
+                  { step: true },
+                )
               }
             >
               <PlusIcon /> Add certification
@@ -838,19 +1018,31 @@ function SectionCard({
           <ItemList
             items={section.items}
             onAdd={() =>
-              onChange({
-                items: [...section.items, { title: "", subtitle: "", meta: "", bullets: [""] }],
-              })
+              onChange(
+                {
+                  items: [...section.items, { title: "", subtitle: "", meta: "", bullets: [""] }],
+                },
+                { step: true },
+              )
             }
             addLabel="Add item"
-            onRemove={(i) => onChange({ items: section.items.filter((_, index) => index !== i) })}
-            onMove={(i, dir) => onChange({ items: moveItem(section.items, i, dir) })}
+            onRemove={(i) => {
+              const item = section.items[i];
+              onUndoable(`${item.title || "That item"} removed`);
+              onChange({ items: section.items.filter((_, index) => index !== i) }, { step: true });
+            }}
+            onMove={(i, dir) =>
+              onChange({ items: moveWithin(section.items, i, i + dir) }, { step: true })
+            }
+            onReorderTo={(from_, to) =>
+              onChange({ items: moveWithin(section.items, from_, to) }, { step: true })
+            }
             renderTitle={(item) => item.title || "New item"}
             render={(item, i) => {
-              const set = (patch: Partial<typeof item>) => {
+              const set = (patch: Partial<typeof item>, options?: { step?: boolean }) => {
                 const items = [...section.items];
                 items[i] = { ...item, ...patch };
-                onChange({ items });
+                onChange({ items }, options);
               };
               return (
                 <div className="space-y-2">
@@ -871,7 +1063,10 @@ function SectionCard({
                       placeholder="Date / meta"
                     />
                   </div>
-                  <BulletEditor bullets={item.bullets} onChange={(bullets) => set({ bullets })} />
+                  <BulletEditor
+                    bullets={item.bullets}
+                    onChange={(bullets, options) => set({ bullets }, options)}
+                  />
                 </div>
               );
             }}
@@ -888,14 +1083,24 @@ function BulletEditor({
   placeholder = "Strong verb, specific scope, measurable outcome",
 }: {
   bullets: string[];
-  onChange: (bullets: string[]) => void;
+  /** `step` marks an edit that is its own undo step rather than typing. */
+  onChange: (bullets: string[], options?: { step?: boolean }) => void;
   placeholder?: string;
 }) {
   return (
-    <div className="space-y-1.5">
+    <SortableList
+      className="space-y-1.5"
+      ids={bullets.map((_, index) => `bullet-${index}`)}
+      onReorder={(from, to) => onChange(moveWithin(bullets, from, to), { step: true })}
+    >
       {bullets.map((bullet, index) => (
-        <div key={index} className="flex items-start gap-1.5">
-          <span className="bg-muted-foreground/40 mt-3 size-1 shrink-0 rounded-full" />
+        <SortableRow
+          key={index}
+          id={`bullet-${index}`}
+          label={`Reorder bullet ${index + 1}`}
+          className="flex items-start gap-1.5"
+        >
+          <DragHandle className="mt-1.5 size-6" />
           <Textarea
             value={bullet}
             onChange={(event) => {
@@ -908,11 +1113,11 @@ function BulletEditor({
                 event.preventDefault();
                 const next = [...bullets];
                 next.splice(index + 1, 0, "");
-                onChange(next);
+                onChange(next, { step: true });
               }
               if (event.key === "Backspace" && bullet === "" && bullets.length > 1) {
                 event.preventDefault();
-                onChange(bullets.filter((_, i) => i !== index));
+                onChange(bullets.filter((_, i) => i !== index), { step: true });
               }
             }}
             placeholder={placeholder}
@@ -923,17 +1128,22 @@ function BulletEditor({
             variant="ghost"
             size="icon-sm"
             className="text-muted-foreground hover:text-destructive mt-0.5 shrink-0"
-            onClick={() => onChange(bullets.filter((_, i) => i !== index))}
+            onClick={() =>
+              onChange(
+                bullets.filter((_, i) => i !== index),
+                { step: true },
+              )
+            }
             aria-label="Remove bullet"
           >
             <Trash2Icon />
           </Button>
-        </div>
+        </SortableRow>
       ))}
-      <Button variant="ghost" size="xs" onClick={() => onChange([...bullets, ""])}>
+      <Button variant="ghost" size="xs" onClick={() => onChange([...bullets, ""], { step: true })}>
         <PlusIcon /> Bullet
       </Button>
-    </div>
+    </SortableList>
   );
 }
 
@@ -944,6 +1154,7 @@ function ItemList<T>({
   onAdd,
   onRemove,
   onMove,
+  onReorderTo,
   addLabel,
 }: {
   items: T[];
@@ -952,17 +1163,25 @@ function ItemList<T>({
   onAdd: () => void;
   onRemove: (index: number) => void;
   onMove: (index: number, direction: -1 | 1) => void;
+  /** A drag landed: this entry moved to that position. */
+  onReorderTo: (from: number, to: number) => void;
   addLabel: string;
 }) {
   return (
     <div className="space-y-2">
+      <SortableList
+        className="space-y-2"
+        ids={items.map((_, index) => `row-${index}`)}
+        onReorder={onReorderTo}
+      >
       {items.map((item, index) => (
+        <SortableRow key={index} id={`row-${index}`} label={`Reorder ${renderTitle(item)}`}>
         <Collapsible
-          key={index}
           title={renderTitle(item)}
           nested
           controls={
             <>
+              <DragHandle className="mr-0.5 size-7" />
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -995,7 +1214,9 @@ function ItemList<T>({
         >
           {render(item, index)}
         </Collapsible>
+        </SortableRow>
       ))}
+      </SortableList>
       <Button variant="outline" size="sm" onClick={onAdd}>
         <PlusIcon /> {addLabel}
       </Button>
@@ -1283,14 +1504,6 @@ function Slider({
       />
     </div>
   );
-}
-
-function moveItem<T>(items: T[], index: number, direction: -1 | 1) {
-  const target = index + direction;
-  if (target < 0 || target >= items.length) return items;
-  const next = [...items];
-  [next[index], next[target]] = [next[target], next[index]];
-  return next;
 }
 
 function countLabel(section: ResumeSection) {

@@ -1,0 +1,155 @@
+---
+title: "Mail and calendar tools"
+sidebarTitle: "Mail & Calendar"
+description: "Eight tools that read the threads and meetings in your own accounts — Google, Microsoft 365, or any IMAP and CalDAV provider — behind any contact, company, application or resume. Live, read-only, never copied."
+icon: "envelope"
+---
+
+The pipeline's timeline only knows what was logged by hand. These tools know what actually
+happened: the recruiter's reply, the interview on the calendar, the rejection that came in
+on a Saturday. `list_correspondence` is the one to reach for first — pass a contact, company,
+application or resume id and it works out what to match on, across every account you have
+connected.
+
+<Info>
+  Everything here is **read-only and live**. The app asks the provider when a tool is called
+  and shows what came back; nothing from an inbox or a calendar is ever written to the
+  instance. None of these tools can send, accept, archive or delete anything, because the
+  permissions asked for do not allow it.
+</Info>
+
+Three kinds of account, one shape of answer:
+
+| Provider | How it connects | Needs from an admin |
+| --- | --- | --- |
+| Google | A consent screen, from **Settings → Connections**. | The [Google client](/self-hosting/google), with the Gmail and Calendar APIs enabled. |
+| Microsoft 365 / Outlook.com | A consent screen, from the same place. | A [Microsoft app registration](/self-hosting/microsoft). |
+| Anything else — Fastmail, iCloud, Yahoo, self-hosted | IMAP and CalDAV with an app password, from the form or with `connect_imap_account`. | Nothing. |
+
+`list_linked_accounts` says what is connected and which halves — mail, calendar — each
+provides. More than one account merges: a thread list is every account's threads sorted
+together, each saying which `account` it came from, and one account failing is a line in
+`warnings` rather than an empty result.
+
+How a record is matched:
+
+| Record | Matched on |
+| --- | --- |
+| Contact | Their email address. |
+| Company | The domain of its website, plus everyone on file there. |
+| Application | The company's domain, plus the people attached to that application. |
+| Resume | Every application it is attached to. |
+
+A thin result usually means a contact with no email or a company with no website — the
+`notes` field says which, and `update_contact` or `update_company` fixes it.
+
+### `list_linked_accounts`
+
+_Which mail and calendar accounts are connected_
+
+Every mailbox and calendar this person has connected for the app to read — Google, Microsoft 365, or an IMAP and CalDAV provider such as Fastmail or iCloud — with which of mail and calendar each provides, its address, when it was last read, and whether it has broken and needs reconnecting (`lastError`). Call this first when a mail or calendar tool fails, or before promising to look something up in their inbox. Google and Microsoft connect through a consent screen in a browser, so they cannot be connected from here: when nothing is listed, tell them to open Settings → Connections in the app and add an account. An IMAP account can be connected with connect_imap_account. Nothing from any inbox is stored on this instance: every read is live, and disconnecting deletes the only thing held, the credential.
+
+No arguments.
+
+### `connect_imap_account`
+
+_Connect a mailbox by IMAP and a calendar by CalDAV_
+
+Connect any mail provider that is not Google or Microsoft — Fastmail, iCloud, Yahoo, a university account, a self-hosted server — by its IMAP server and, optionally, its CalDAV URL. Either half may be left out. Both are logged in to before anything is saved, so a wrong password is an error now rather than a broken tile later. The password must be an APP PASSWORD generated in the provider's security settings, never the account password; say so before asking for one, and never repeat it back or write it anywhere. Connecting an address that is already connected replaces its stored details. Presets worth knowing: Fastmail is imap.fastmail.com with CalDAV at https://caldav.fastmail.com/; iCloud is imap.mail.me.com with CalDAV at https://caldav.icloud.com/; Yahoo is imap.mail.yahoo.com. Read-only: the app can never send, move or delete anything with what it stores.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `email` | string | **required** — The address of the mailbox. |
+| `label` | string | What to call it on the tile, e.g. 'Work' or 'Old university address'. Optional. |
+| `imapHost` | string | IMAP server, e.g. imap.fastmail.com. Leave out for a calendar-only account. |
+| `imapPort` | number | IMAP port. Default 993 (TLS). |
+| `imapUsername` | string | IMAP username. Defaults to the address. |
+| `imapPassword` | string | An app password for IMAP. Never the account password. |
+| `caldavUrl` | string | CalDAV server or calendar-home URL, e.g. https://caldav.fastmail.com/. Leave out for a mail-only account. |
+| `caldavUsername` | string | CalDAV username. Defaults to the IMAP username, then the address. |
+| `caldavPassword` | string | An app password for CalDAV. Defaults to the IMAP password — many providers use one for both. |
+
+### `test_linked_account`
+
+_Test a connected account_
+
+Read one thing from each half of a connected account — the most recent mail, the events around today — and report whether it answered, with the provider's own words when it did not. The way to find out whether 'no threads' means an empty result or a dead connection. Get the id from list_linked_accounts. Records the outcome on the account (`lastError`), which is why it is not marked read-only.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `accountId` | string | **required** — The account id from list_linked_accounts. |
+
+### `disconnect_account`
+
+_Disconnect a mail or calendar account_
+
+Forget one connected account: revoke this instance's access where the provider allows it (Google) and delete the credential. Every read from that account stops immediately; nothing else — no contact, application or logged activity — is touched, because nothing from it was ever stored. Other accounts stay connected. Confirm before calling it. Get the id from list_linked_accounts; reconnecting is the same consent screen or form as the first time, under Settings → Connections.
+
+**Overwrites or deletes.** **Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `accountId` | string | **required** — The account id from list_linked_accounts. |
+
+### `list_correspondence`
+
+_Mail and meetings about one record_
+
+Every email thread and calendar event, across all of the person's connected accounts, that involves one thing on the pipeline: a contact (matched on their email address), a company (its website's domain plus everyone on file there), an application (its company's domain plus the people attached to it) or a resume (every application it was sent with). This is the tool for 'what's the latest with Stripe', 'have I heard back from Jane', 'when is my interview' and 'what did the recruiter actually say' — call it before summarising where an application stands, because the pipeline's timeline only knows what was logged by hand. Pass exactly one id. Returns `mail` (threads, newest first, with subject, snippet, participants, which `account` it came from and a link where the provider has one) and `calendar` (past and upcoming events, with attendees, a meeting link and a link) — either is null when no account provides that half or every account refused, with the reason in `warnings`. `notes` explains a thin result, usually a contact with no email or a company with no website; fix those with update_contact and update_company and call again. Nothing is saved. To read a thread in full, pass its id to get_email_thread; to remember what you learned, log_activity on the application or contact.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `contactId` | string | A contact id. Matches their email address. |
+| `companyId` | string | A company id. Matches its website's domain and the addresses of its people. |
+| `applicationId` | string | An application id. Matches the company's domain and the people attached to this application. |
+| `resumeId` | string | A resume id. Matches every application the resume is attached to. |
+| `limit` | number | How many threads to return at most. Default 20, maximum 50. |
+| `days` | number | How far back to look, in days. Default 365. Calendar events up to 120 days ahead are always included. |
+
+### `search_email`
+
+_Search mail_
+
+Search every connected mailbox, or one of them, for free text — 'take-home', 'phone screen', a recruiter's name. On a Gmail account, Gmail's own operators work too: `from:jane@acme.com`, `subject:offer newer_than:7d`, `has:attachment`. Reach for this when the question is about mail that does not map to one record: 'did any rejections come in this week', 'find the email with the take-home', 'who have I emailed about referrals'. For mail about a specific contact, company or application, list_correspondence already builds the right query. Returns threads newest first, merged across accounts, each with its subject, a snippet of the latest message (empty on IMAP), everyone on the thread, when it last moved, which `account` it is in, and a link that opens it in the provider's client where there is one. Subjects and snippets only — pass a thread id to get_email_thread for the messages themselves. `warnings` names any account that did not answer. Read-only; nothing is saved, and this tool cannot send, archive or delete anything.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `query` | string | **required** — Words to search for. Gmail operators pass through on a Gmail account. |
+| `limit` | number | How many threads at most. Default 20, maximum 50. |
+| `accountId` | string | Search one account only. Omit for all of them. |
+
+### `get_email_thread`
+
+_Read an email thread_
+
+One thread in full, oldest message first: who sent each message, to whom, when, and the body as plain text (HTML mail is stripped to text; attachments are never fetched; very long messages are cut). The id comes from list_correspondence or search_email and already says which account it lives in. This is how you find out what a recruiter actually wrote — the dates they proposed, the salary they named, the next step they described — before logging it with log_activity or moving the application with move_application_stage. Quote the mail when you report it; do not paraphrase a number. Read-only, and nothing about the thread changes: it is not marked read.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `threadId` | string | **required** — The thread id from list_correspondence or search_email. |
+
+### `search_calendar`
+
+_Search calendars_
+
+Events across every connected calendar, or one of them, in a window, optionally filtered by words matched against title, description, location and attendee names and addresses. Use it for 'what interviews do I have this week', 'when did I last meet anyone from Acme' or 'am I free Thursday afternoon' — for a whole week of the pipeline's own dates alongside these meetings, list_schedule merges both. Defaults to thirty days back and sixty ahead. Each event has its title, start and end, whether it is all-day, the attendees with their RSVP, the organizer, a meeting link when there is one, which `account` it is on, and a link to the event where the provider has one. `warnings` names any account that did not answer. Read-only; nothing here creates, accepts or declines anything.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `query` | string | Words to match against title, description, location and attendees. Omit for every event in the window. |
+| `from` | string | Start of the window, ISO date (YYYY-MM-DD). Default: 30 days ago. |
+| `to` | string | End of the window, ISO date (YYYY-MM-DD), inclusive. Default: 60 days ahead. |
+| `limit` | number | How many events at most. Default 100. |
+| `accountId` | string | Search one account only. Omit for all of them. |

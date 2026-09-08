@@ -4666,6 +4666,287 @@ reads, the documented set.
 `src/lib/funnel-sankey.ts`, `src/components/shell.tsx`,
 `src/components/command-palette.tsx`, `src/server/actions.ts`, `README.md`,
 `docs/app.mdx`, `docs/concepts/pipeline.mdx`.
+## 2026-09-06 — A printed resume's margin belongs to the page box
+
+**Every page after the first had no top margin, and page one ran to the sheet's edge.**
+`resume-paper.tsx` carried the document's margin as `padding` on `.resume-paper` while
+`globals.css` said `@page { margin: 0 }`. Padding on a box that fragments across pages is
+sliced — that is what `box-decoration-break: slice`, the default, means — so page one keeps
+the top of it, the last page keeps the bottom, and every page in between gets neither.
+
+Measured out of this app's own PDF rather than argued, by inflating the content streams and
+reading the text matrices: on a two-page resume at a 48px margin, page one's first text sat
+61px from the sheet's top edge and page two's sat **12px** from it, while page one's last
+line ran to within **23px** of the bottom. After the change both pages start 60–61px down.
+
+**The margin moved to `@page`, which means it is emitted per document.** `@page` cannot read
+a custom property and the margin is a per-resume setting, so `PageMarginStyle` renders one
+rule and both printable routes — `/print/[id]` and the public `/r/[slug]` — use it. In print,
+`.resume-paper` drops its padding and goes `width: auto`, filling a page box that is already
+the sheet minus its margins; the content width is 720px at a 48px margin either way, which is
+why **page one is unchanged**. Verified: first text at 61px before and after, and a
+one-page resume still renders as exactly one page.
+
+**`page.pdf()`'s explicit zero margin is gone.** With `preferCSSPageSize: true` Chromium
+honours the CSS, and stating the margin in `pdf.ts` as well would be a second place for it to
+be decided — which is how a PDF and a print page drift apart.
+
+**`.rp-block { break-inside: avoid }` left `@media print`.** It is inert without a
+fragmentation context, so nothing changes on screen. It moved because the editor is about to
+measure the document inside a multi-column host, which *is* a fragmentation context, and the
+rule that decides where pages break has to be the same one the printer reads.
+
+**Applies to:** `src/app/globals.css`, `src/components/resume/page-margin-style.tsx` (new),
+`src/app/print/[id]/page.tsx`, `src/app/r/[slug]/page.tsx`, `src/lib/pdf.ts`.
+
+---
+
+## 2026-09-06 — The editor measures its pages instead of estimating them
+
+**The page badge could not have been right.** `estimateLines()` assumes ~110 characters to a
+line and 46 lines to a page, and takes only the document — it never sees `fontSize`,
+`lineHeight`, `pageMargin` or `template`, all four of which sit in the Design popover two
+clicks from the badge. It was styled warning/success, so it looked authoritative while being
+structurally blind to half its own inputs. The same document now reads 1, 2 or 3 pages
+depending on those settings, and the editor agrees with the real PDF in all three cases.
+
+**The browser does the fragmenting; this code only reads the result.** `PageMeasure` renders
+a second, invisible copy of the document inside a multi-column box whose column is exactly
+one page's content box. CSS fragmentation and paged fragmentation are the same machinery and
+honour the same `break-inside: avoid`, so the column an element lands in is the page it
+prints on. Checked against the real PDF, not assumed: 1/2/3 pages measured, 1/2/3 pages
+printed. The naive `contentHeight / 1056` division does NOT work — it undercounts whenever an
+entry is pushed whole, which is most documents past one page.
+
+**It measures a copy, not the preview.** The preview lives inside `transform: scale()` and a
+scaled element's rectangles are scaled with it, so measuring it would report a page height
+that changed when you zoomed. The hidden host is never scaled. Its paper is rendered with
+`pageMargin: 0` and the margin carried by the column size — the same arrangement the printed
+page uses now that the margin lives on the page box.
+
+**The break line is drawn where content actually breaks, not where the sheet ends.** Those
+are different places, and the difference is the whole point: `break-inside: avoid` pushes an
+entry that will not fit down whole, so the page before it ends early with slack. A rule ruled
+across the geometric boundary cut through a paragraph that in fact prints intact. The line is
+anchored to the element that opens the next page, found by its `data-rp` path and positioned
+with `offsetTop` — a layout value, so it is unaffected by the zoom it sits inside.
+
+**Section wrappers are never the element that "starts" a page.** A `<section>` holding five
+jobs straddles every page it covers, so it is always the first rectangle on the page and
+always a continuation. Naming it made every break read "splits here" and pointed at the
+heading rather than at the entry you could actually move. The opener is now the first
+fragment that *begins* on the page and is not a section wrapper.
+
+**`data-rp` is positional, not id-based.** `resume-schema.ts` defaults every `id` to `""` and
+`RESUME_DOC_SHAPE` never mentions ids, so a document written through `create_resume` — the
+product's main path — carries empty ids throughout. Those were also being used as React keys
+in the renderer; both now key on the index. Positional paths are total and collision-free.
+
+**`estimateLines` stays, but only for the server.** `preview_resume_text` has no browser and
+still needs an answer; its number remains an estimate and `export_resume_pdf` remains the
+measured one. What went is the editor's duplicate `LINES_PER_PAGE`, which sat beside a comment
+in `resume-text.ts` explaining that the constant lives there so the two cannot drift.
+
+**Applies to:** `src/lib/resume-pagination.ts` (new), `src/lib/resume-measure-dom.ts` (new),
+`src/components/resume/{page-measure,page-breaks}.tsx` (new),
+`src/components/resume/{resume-paper,resume-editor}.tsx`, `src/app/globals.css`.
+
+## 2026-09-06 — Telling someone their resume is two pages is not the useful part
+
+The badge knew the page count and stopped there, which is the least useful moment to stop:
+nobody is surprised their resume is two pages, they want it to be one. It is now a panel that
+answers "what do I cut?" — what is on the last page in order, which sections could be hidden,
+and the longest bullets, each with a button that removes it.
+
+**Two sources, one for each half, and that is deliberate.** What is *on* the last page comes
+from the measured layout, so it is exactly what will print. What is *worth cutting* comes from
+`fitReport` in `src/lib/resume-fit.ts`, a pure function over the document with no DOM in it,
+because `check_resume_fit` has to answer the same question on a server with no browser. The
+tool's description says plainly that it ranks rather than measures and points at
+`export_resume_pdf` for a real page count, so an assistant does not quote the estimate as
+fact.
+
+**Hiding a section is offered before deleting a bullet.** It is the biggest single lever and
+the only reversible one — the content stays in the document. The delete button carries the
+bullet's own words in its label, including for screen readers, because that button is
+throwing away something the person actually did.
+
+**Ranked by lines, not characters.** A 90-character bullet that wraps to two lines costs the
+same as a 130-character one that also wraps to two; sorting by length puts the second first
+and gains nothing when you cut it. `fitReport` sorts on estimated lines and shows the
+character count only as a tiebreak.
+
+**The measurement effect must not depend on the settings object.** Found by a click that
+never landed: `PageMeasure` listed `settings` in its dependency array, the editor builds that
+object fresh on every render, and `onLayout` sets state — so reporting a layout scheduled the
+next measurement and the editor re-rendered at frame rate forever. Nothing looked broken (the
+badge showed the right number, the breaks were in the right places) but Playwright could not
+click the badge, which is how it surfaced. The effect now depends on the settings' *values*,
+and reports once per pass rather than once per callback. Anything else that measures the DOM
+and reports upward needs the same care.
+
+**Applies to:** `src/lib/resume-fit.ts` (new), `src/components/resume/fit-panel.tsx` (new),
+`src/lib/data/resumes.ts` (`resumeFitReport`), `src/lib/mcp/tools.ts` (`check_resume_fit`),
+`src/components/resume/{page-measure,resume-editor}.tsx`.
+
+## 2026-09-07 — Every section of an assistant-written resume shared one identity
+
+`resume-schema.ts` defaults every `id` to `""` and `RESUME_DOC_SHAPE` never mentions ids, so
+a document built by `create_resume` — the product's main path — arrived with `id: ""` on
+every section and entry. The editor addressed sections by id. Reproduced rather than
+reasoned about: create a two-section resume over MCP, open it, click the eye on the first
+section, and **both** sections leave the page. `removeSection` filtered on the same
+comparison, so "delete this section" deleted the document. React was also keying the list on
+that value, so every section was key `""`.
+
+**Healed in `parseResumeDoc`, not at the write.** The write path was the obvious place and it
+is too late: a document is read, edited and only then saved, so the first edit happens while
+the ids are still blank. `parseResumeDoc` is the one funnel both reads and writes pass
+through — the fix applies before anything can act on a document, and the repaired ids persist
+on its next save.
+
+**Deterministic ids, not `rid()`.** `rid()` is random. Minted on read, a document would come
+back from `get_resume` with different ids every call, and two parses of one stored document
+would not be equal — which `compare_resumes` and every other read-parse-read path would have
+to defend against. Blank ids take a positional name (`sec_0`, `exp_1_0`), so parsing twice
+gives the same document. `claim()` also walks a name until it is free, so an id the document
+already uses twice is separated rather than trusted.
+
+**The editor now addresses sections by position anyway.** Ids are trustworthy after this, but
+position is the one address that cannot be blank or repeated, and this is the exact code that
+used to edit every section at once. Ids stay for React keys and for the drag reordering that
+is coming.
+
+**Applies to:** `src/lib/resume-schema.ts` (`ensureIds`), `src/components/resume/resume-editor.tsx`,
+`src/lib/mcp/tools.ts` (`get_resume_format` guidance).
+
+## 2026-09-07 — Reordering is a drag, and one call rather than a rewrite
+
+Sections, the entries inside them and the bullets inside those all reorder by dragging now,
+and `reorder_resume` does the same job over MCP. The two halves share `moveWithin` in
+`src/lib/resume-reorder.ts`, so a drag, an arrow button and a tool call cannot disagree about
+what moving something means.
+
+**The tool exists because `update_resume` replaces.** "Put the Stripe job first" through
+`update_resume` means reproducing the entire document from memory, and the failure mode is
+losing a bullet nobody notices for a month. `reorder_resume` reads, moves one thing and
+writes back. This closes a parity gap that predates it: the ⌃/⌄ buttons have always been
+able to reorder and nothing over MCP could, short of a full rewrite.
+
+**Named by whatever the caller has to hand.** `section`, `entry` and `bullet` each accept an
+id, a name or a 1-based number, and an entry answers to *every* name it goes by — a job is
+"Company 3" as readily as "Senior Engineer 3". Matching only the display label was the first
+implementation, and it failed a request for the company with an error that did not even
+contain the word. A miss now lists what is actually there, so an assistant can retry from the
+error instead of falling back to `update_resume`.
+
+**The deepest thing named is what moves.** One tool rather than three: give `section` and it
+moves a section, add `entry` and the entry moves, add `bullet` and the bullet moves. A bullet
+named without an entry is only unambiguous when the section holds one entry — otherwise it is
+a question, and the tool asks it rather than guessing.
+
+**Drag from a handle, not from the row.** Rows here are mostly text inputs, and a card you can
+pick up anywhere is a card you cannot select text in. The handle is a real button, so the
+keyboard gets the same power: tab, space, arrows. Three of these lists nest inside each other
+and dnd-kit handled it without special-casing — verified in a browser that dragging an entry
+does not also move its section.
+
+**Applies to:** `src/lib/resume-reorder.ts` (new), `src/components/resume/sortable-list.tsx`
+(new), `src/lib/data/resumes.ts` (`reorderResume`), `src/lib/mcp/tools.ts`
+(`reorder_resume`), `src/components/resume/resume-editor.tsx` (its local `moveItem` is gone —
+one implementation of a move, not two).
+
+## 2026-09-08 — Undo, and the one place it must keep its hands off
+
+The editor deletes a job in one click and reorders a document with one drag, and until now
+neither had a way back. Undo and redo now sit beside the save indicator, answer to ⌘Z and
+⇧⌘Z, and every destructive action also raises a toast that offers the exact previous
+document back.
+
+**Snapshots, not patches.** `src/hooks/use-history.ts` keeps whole values of
+`{ doc, meta }` — the same object autosave already writes. There is no inverse operation to
+write for each of the twenty ways a document can change, and no chance of the two drifting.
+It costs a reference rather than a copy, because every mutation path in the editor already
+builds a new object instead of mutating the old one.
+
+**⌘Z inside a text field is the field's, not the document's.** A textarea has its own undo
+stack and it is the right one while you are typing: taking back a sentence is what a person
+means mid-sentence, not resurrecting the section they deleted a minute ago. The shortcut
+checks the focused element and stands down for INPUT, TEXTAREA and anything
+contenteditable. The toolbar buttons work from anywhere, so the capability is never
+unreachable — which is also why they exist rather than leaving this keyboard-only and
+invisible.
+
+**Steps are coalesced by time, with an explicit override.** Changes closer together than
+700ms fold into one step, so a typed sentence undoes as a sentence. That alone would merge a
+delete that happened to land mid-sentence into the typing around it, so discrete acts —
+delete, add, drag, toggle, the fit panel's cuts — pass `{ step: true }` and force a boundary.
+The 700ms matches the autosave debounce deliberately: one undo step is about one saved
+revision, which is the model a person already has from watching the indicator. The
+alternative considered and rejected was inferring "structural vs text" from a shape
+signature of the document; it gets reordering wrong (the shape is unchanged) and clever undo
+is worse than predictable undo.
+
+**A toast restores its own snapshot, not the top of the stack.** The toast names one thing
+("Senior Engineer 3" removed) and its Undo puts back the document as it stood at that moment.
+Popping the stack instead would undo whatever happened last, which after a few seconds is
+often something else entirely.
+
+**No MCP tool, and this is the exception's shape.** Undo is editor state, not data: there is
+no stored history to reach for, and every document it restores is reachable through
+`update_resume` and `reorder_resume` already. A conversational "undo that" would need
+version history on `Resume` — a real feature, worth doing on its own terms, not smuggled in
+as a side effect of a keyboard shortcut.
+
+**Applies to:** `src/hooks/use-history.ts` (new), `src/components/resume/resume-editor.tsx`,
+`src/components/resume/fit-panel.tsx` (its `onChange` now names what it cut).
+## 2026-09-03 — Any mailbox: Microsoft 365, IMAP and CalDAV, behind one reader
+
+**`GoogleAccount` became `LinkedAccount`, several per person.** A `provider` column
+(GOOGLE, MICROSOFT, IMAP), provider-neutral `features` ("mail", "calendar") in place of
+Google's scope URLs, and the IMAP and CalDAV fields on the same row. The migration renames
+rather than recreates, so a Google connection made on the previous release survives with
+its scopes rewritten. Unique on (userId, provider, email) rather than userId, because a work
+Outlook and a personal Gmail are both where recruiters write, and every read merges across
+them with the account named on each thread and event.
+
+**One interface, three wire protocols.** `src/lib/accounts/types.ts` defines `MailReader`
+and `CalendarReader`; `google.ts`, `microsoft.ts`, `imap.ts` and `caldav.ts` implement them
+and nothing else in the app knows which answered. Read-only is enforced by the interface
+having no write, not by convention. The data layer resolves credentials — refreshing OAuth
+tokens, keeping Microsoft's rotated refresh token — and collects per-account failures into
+`warnings` so one dead token never hides the other inbox.
+
+**Two libraries, on purpose, for the protocols nobody should hand-roll.** Google and
+Microsoft are six HTTP requests each and stay hand-written. IMAP is a stateful protocol with
+thirty years of server quirks and MIME is worse, so `imapflow` and `mailparser` do that;
+CalDAV discovery differs per server and ICS recurrence is its own specification, so `tsdav`
+and `ical.js` do those. They are the largest dependencies in the app and load only when an
+IMAP account is read. Threads on IMAP are joined by Message-ID and In-Reply-To, which is
+what every mail client does; a reply whose client dropped the header is its own thread.
+
+**App passwords, verified before they are stored.** `connectImapAccount` logs in to both
+servers first, so a wrong password is an error in the form rather than a broken tile.
+Stored as issued, like every other credential here. `connect_imap_account` exists as a tool
+because MCP-first means it must, and its description says never to repeat the password.
+
+**A hostname in a form is a request the server makes.** `assertReachableHost` refuses
+loopback, link-local (where cloud metadata lives), unspecified and multicast targets for
+both IMAP and CalDAV, resolving names so an A record at 127.0.0.1 is refused like the
+literal. Private ranges are allowed on purpose: a mail server on a home LAN is a real
+reason to self-host, and loopback and metadata are where the damage is.
+
+**No SMTP.** The app never sends on anyone's behalf; read-only is what makes handing over an
+inbox safe. Sending is a product decision to make on purpose, not a side effect of "support
+IMAP".
+
+**Slack and Discord are on the picker as coming soon**, greyed, because the user asked for
+them to be visible before they exist. Nothing behind them yet.
+
+**Applies to:** `prisma/schema.prisma`, `src/lib/accounts/`, `src/lib/data/accounts.ts`
+(replacing `data/google.ts`), `src/lib/settings.ts`, `src/app/api/auth/microsoft/`,
+`src/lib/mcp/{tools,handler}.ts`, `src/server/actions.ts`, `src/components/settings/`,
+`src/components/admin/configuration-panel.tsx`, and the manual.
 
 ---
 

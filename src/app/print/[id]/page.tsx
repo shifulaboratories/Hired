@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { getResume } from "@/lib/data/resumes";
 import { ResumePaper } from "@/components/resume/resume-paper";
 import { PrintTrigger } from "@/components/resume/print-trigger";
+import { PageMarginStyle } from "@/components/resume/page-margin-style";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="min-h-svh bg-neutral-200 py-8 print:bg-white print:py-0">
+      <PageMarginStyle pageMargin={resume.pageMargin} />
       <PrintTrigger fileName={resume.name} />
       <div className="mx-auto w-fit bg-white shadow-2xl print:shadow-none">
         <ResumePaper

@@ -62,7 +62,13 @@ export function ResumePaper({
 }) {
   const { template, accent, fontFamily, fontSize, lineHeight, pageMargin } = settings;
   const photo = PHOTO_TEMPLATES.includes(template) ? (settings.photo ?? "") : "";
-  const sections = doc.sections.filter((section) => section.visible && hasContent(section));
+  // The raw index is carried through: `data-rp` addresses doc.sections[i], and
+  // filtering first would renumber them. It also replaces section.id as the
+  // React key — ids default to "" and RESUME_DOC_SHAPE never mentions them, so
+  // every document written through create_resume keys its list on one value.
+  const sections = doc.sections
+    .map((section, index) => ({ section, index }))
+    .filter(({ section }) => section.visible && hasContent(section));
 
   return (
     <div
@@ -84,13 +90,14 @@ export function ResumePaper({
       <Header doc={doc} template={template} linkify={linkify} photo={photo} />
 
       <div style={{ marginTop: template === "harvard" ? "0.95em" : "1.15em" }}>
-        {sections.map((section, index) => (
+        {sections.map(({ section, index }, position) => (
           <SectionBlock
-            key={section.id}
+            key={index}
             section={section}
+            sectionIndex={index}
             template={template}
             linkify={linkify}
-            first={index === 0}
+            first={position === 0}
           />
         ))}
       </div>
@@ -182,7 +189,7 @@ function Header({
   // every item the same size, separated by bullets.
   if (template === "harvard") {
     return (
-      <header className="rp-block" style={{ textAlign: "center" }}>
+      <header className="rp-block" data-rp="header" style={{ textAlign: "center" }}>
         <h1 style={{ fontSize: "1.1em", fontWeight: 700, lineHeight: 1.2 }}>
           {header.name || "Your Name"}
         </h1>
@@ -296,7 +303,7 @@ function Header({
   );
 
   return (
-    <header className={cn("rp-block", centered && "text-center")}>
+    <header className={cn("rp-block", centered && "text-center")} data-rp="header">
       {photo && !centered ? (
         <div style={{ display: "flex", alignItems: "center", gap: editorial ? "1.1em" : "0.9em" }}>
           <div style={{ minWidth: 0, flex: 1 }}>{inner}</div>
@@ -318,26 +325,33 @@ function Header({
 
 function SectionBlock({
   section,
+  sectionIndex,
   template,
   linkify,
   first,
 }: {
   section: ResumeSection;
+  /** Index into doc.sections, so `data-rp` names a place in the document. */
+  sectionIndex: number;
   template: string;
   linkify: boolean;
   first: boolean;
 }) {
+  const at = `s${sectionIndex}`;
   const harvard = template === "harvard";
   const tight = template === "compact";
   const gap = harvard ? "0.85em" : tight ? "0.65em" : "0.95em";
   const entryGap = harvard ? "0.45em" : tight ? "0.5em" : "0.7em";
 
   return (
-    <section style={{ marginBottom: gap, marginTop: harvard && !first ? "0.85em" : 0 }}>
+    <section data-rp={at} style={{ marginBottom: gap, marginTop: harvard && !first ? "0.85em" : 0 }}>
       <SectionHeading heading={section.heading} template={template} />
 
       {section.kind === "summary" && (
-        <p style={{ marginTop: harvard ? "0.3em" : "0.35em", color: harvard ? "inherit" : "#33363f" }}>
+        <p
+          data-rp={`${at}/text`}
+          style={{ marginTop: harvard ? "0.3em" : "0.35em", color: harvard ? "inherit" : "#33363f" }}
+        >
           {section.text}
         </p>
       )}
@@ -345,8 +359,9 @@ function SectionBlock({
       {section.kind === "experience" &&
         section.experience.map((item, index) => (
           <article
-            key={item.id}
+            key={index}
             className="rp-block"
+            data-rp={`${at}/e${index}`}
             style={{ marginTop: index === 0 ? (harvard ? "0.35em" : entryGap) : entryGap }}
           >
             {harvard ? (
@@ -393,15 +408,16 @@ function SectionBlock({
               </p>
             )}
 
-            <Bullets items={item.bullets} tight={tight || harvard} harvard={harvard} />
+            <Bullets items={item.bullets} tight={tight || harvard} harvard={harvard} at={`${at}/e${index}`} />
           </article>
         ))}
 
       {section.kind === "education" &&
         section.education.map((item, index) => (
           <article
-            key={item.id}
+            key={index}
             className="rp-block"
+            data-rp={`${at}/d${index}`}
             style={{
               marginTop: index === 0 ? (harvard ? "0.35em" : tight ? "0.42em" : "0.6em") : harvard ? "0.45em" : tight ? "0.42em" : "0.6em",
             }}
@@ -443,7 +459,7 @@ function SectionBlock({
                     {item.location && <span style={{ color: "#6b6f7d" }}> · {item.location}</span>}
                   </div>
                 )}
-                <Bullets items={item.details} tight={tight} />
+                <Bullets items={item.details} tight={tight} at={`${at}/d${index}`} />
               </>
             )}
           </article>
@@ -452,8 +468,9 @@ function SectionBlock({
       {section.kind === "projects" &&
         section.projects.map((item, index) => (
           <article
-            key={item.id}
+            key={index}
             className="rp-block"
+            data-rp={`${at}/p${index}`}
             style={{
               marginTop: index === 0 ? (harvard ? "0.35em" : tight ? "0.45em" : "0.62em") : harvard ? "0.45em" : tight ? "0.45em" : "0.62em",
             }}
@@ -522,7 +539,7 @@ function SectionBlock({
               </>
             )}
 
-            <Bullets items={item.bullets} tight={tight || harvard} harvard={harvard} />
+            <Bullets items={item.bullets} tight={tight || harvard} harvard={harvard} at={`${at}/p${index}`} />
           </article>
         ))}
 
@@ -537,7 +554,7 @@ function SectionBlock({
           }}
         >
           {section.skills.map((group, index) => (
-            <div key={`${group.name}-${index}`} className="rp-block">
+            <div key={index} className="rp-block" data-rp={`${at}/k${index}`}>
               {group.name && <span style={{ fontWeight: 700 }}>{group.name}:&nbsp;</span>}
               <span style={{ color: harvard ? "inherit" : "#33363f" }}>{group.skills.join(", ")}</span>
             </div>
@@ -549,8 +566,9 @@ function SectionBlock({
         <div style={{ marginTop: harvard ? "0.3em" : "0.35em" }}>
           {section.certifications.map((item, index) => (
             <div
-              key={`${item.name}-${index}`}
+              key={index}
               className="rp-block"
+              data-rp={`${at}/c${index}`}
               style={{ display: "flex", justifyContent: "space-between", gap: "1em" }}
             >
               <span>
@@ -579,8 +597,9 @@ function SectionBlock({
       {section.kind === "custom" &&
         section.items.map((item, index) => (
           <article
-            key={`${item.title}-${index}`}
+            key={index}
             className="rp-block"
+            data-rp={`${at}/x${index}`}
             style={{ marginTop: index === 0 ? (harvard ? "0.35em" : "0.55em") : harvard ? "0.45em" : "0.55em" }}
           >
             {harvard ? (
@@ -613,7 +632,7 @@ function SectionBlock({
                 )}
               </div>
             )}
-            <Bullets items={item.bullets} tight={tight || harvard} harvard={harvard} />
+            <Bullets items={item.bullets} tight={tight || harvard} harvard={harvard} at={`${at}/x${index}`} />
           </article>
         ))}
     </section>
@@ -681,19 +700,27 @@ function Bullets({
   items,
   tight,
   harvard = false,
+  at,
 }: {
   items: string[];
   tight: boolean;
   harvard?: boolean;
+  /** The parent entry's path; each bullet hangs off it as `/b<n>`. */
+  at?: string;
 }) {
-  const clean = items.filter((item) => item.trim());
+  // Indexed before the blanks are dropped, so a path names the bullet's real
+  // position in the document rather than its position among the printed ones.
+  const clean = items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.trim());
   if (clean.length === 0) return null;
   return (
     <ul style={{ marginTop: tight ? "0.18em" : "0.28em" }}>
-      {clean.map((item, index) => (
+      {clean.map(({ item, index }) => (
         <li
           key={index}
           className="rp-bullet"
+          data-rp={at ? `${at}/b${index}` : undefined}
           style={{ color: harvard ? "inherit" : "#33363f", marginTop: "0.12em" }}
         >
           {item}

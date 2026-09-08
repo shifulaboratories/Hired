@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { getResume, listResumeNames } from "@/lib/data/resumes";
 import { getProfile } from "@/lib/data/me";
 import { requireUser } from "@/lib/auth";
-import { getGoogleConnection } from "@/lib/data/google";
+import { accountAccess } from "@/lib/data/accounts";
 import { ResumeEditor } from "@/components/resume/resume-editor";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
   // The editor gets the photo whether or not this document shows it, so the
   // toggle in the design popover previews instantly.
   const profile = await getProfile(user.id);
-  const googleConnection = await getGoogleConnection(user.id);
+  const googleConnection = await accountAccess(user.id);
 
   // The base this variant was tailored from, for the live compare view. A
   // dangling reference (base deleted) resolves to null and the editor simply
@@ -61,9 +61,7 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
         company: application.company.name,
         appliedAt: application.appliedAt?.toISOString() ?? null,
       }))}
-      googleAccess={
-        googleConnection ? { mail: googleConnection.mail, calendar: googleConnection.calendar } : null
-      }
+      googleAccess={googleConnection}
     />
   );
 }

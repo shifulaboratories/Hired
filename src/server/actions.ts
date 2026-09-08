@@ -14,7 +14,7 @@ import * as pipelineShare from "@/lib/data/pipeline-share";
 import * as users from "@/lib/data/users";
 import * as waitlist from "@/lib/data/waitlist";
 import * as connections from "@/lib/data/connections";
-import * as google from "@/lib/data/google";
+import * as accounts from "@/lib/data/accounts";
 import * as onboarding from "@/lib/data/onboarding";
 import {
   authenticate,
@@ -402,18 +402,57 @@ export async function unlinkGoogleAction() {
 }
 
 // ---------------------------------------------------------------------------
-// Gmail and Calendar
+// Mail and calendar accounts
 // ---------------------------------------------------------------------------
 
 /**
- * Connecting is a redirect through Google (/api/auth/google?data=1), not an
- * action. Disconnecting revokes the token at Google and deletes the row.
+ * Google and Microsoft connect by a redirect through their consent screens
+ * (/api/auth/google?data=1, /api/auth/microsoft), not an action. IMAP is a
+ * form, so it is one. Disconnecting revokes where the provider allows it and
+ * deletes the row.
  */
-export async function disconnectGoogleAction() {
+export async function connectImapAccountAction(input: accounts.ImapConnectInput) {
   const user = await requireUser();
-  await google.disconnectGoogleAccount(user.id);
+  try {
+    const account = await accounts.connectImapAccount(user.id, input);
+    revalidatePath("/settings");
+    return { ok: true as const, account: serialiseAccount(account) };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function testAccountAction(accountId: string) {
+  const user = await requireUser();
+  try {
+    const result = await accounts.testAccount(user.id, accountId);
+    revalidatePath("/settings");
+    return { ok: true as const, mail: result.mail, calendar: result.calendar };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function renameAccountAction(accountId: string, label: string) {
+  const user = await requireUser();
+  await accounts.renameLinkedAccount(user.id, accountId, label);
+  revalidatePath("/settings");
+}
+
+export async function disconnectAccountAction(accountId: string) {
+  const user = await requireUser();
+  await accounts.disconnectAccount(user.id, accountId);
   revalidatePath("/settings");
   return { ok: true as const };
+}
+
+function serialiseAccount(account: accounts.LinkedAccountView) {
+  return {
+    ...account,
+    connectedAt: account.connectedAt.toISOString(),
+    lastUsedAt: account.lastUsedAt?.toISOString() ?? null,
+    lastErrorAt: account.lastErrorAt?.toISOString() ?? null,
+  };
 }
 
 /**
@@ -422,25 +461,25 @@ export async function disconnectGoogleAction() {
  * not wait on it. Dates go out as ISO strings so the client can format them.
  */
 export async function correspondenceAction(
-  subject: google.CorrespondenceSubject,
+  subject: accounts.CorrespondenceSubject,
 ): Promise<
   | { ok: true; correspondence: ReturnType<typeof serialiseCorrespondence> }
   | { ok: false; error: string; notConnected: boolean }
 > {
   const user = await requireUser();
   try {
-    const result = await google.listCorrespondence(user.id, subject);
+    const result = await accounts.listCorrespondence(user.id, subject);
     return { ok: true, correspondence: serialiseCorrespondence(result) };
   } catch (error) {
     return {
       ok: false,
       error: error instanceof Error ? error.message : String(error),
-      notConnected: error instanceof google.GoogleNotConnectedError,
+      notConnected: error instanceof accounts.AccountNotConnectedError,
     };
   }
 }
 
-function serialiseCorrespondence(result: google.Correspondence) {
+function serialiseCorrespondence(result: accounts.Correspondence) {
   return {
     subject: result.subject,
     terms: result.terms,
@@ -464,7 +503,7 @@ function serialiseCorrespondence(result: google.Correspondence) {
 export async function emailThreadAction(threadId: string) {
   const user = await requireUser();
   try {
-    const thread = await google.getEmailThread(user.id, threadId);
+    const thread = await accounts.getEmailThread(user.id, threadId);
     return {
       ok: true as const,
       thread: {
@@ -1450,7 +1489,7 @@ export async function getApplicationForPanelAction(id: string) {
       tags.listTags(user.id, "APPLICATION"),
       pipeline.listCompanies(user.id),
       getSettings(),
-      google.getGoogleConnection(user.id),
+      accounts.accountAccess(user.id),
       pipeline.applicationFieldValues(user.id),
     ]);
   if (!application) throw new Error("That application is gone.");
@@ -1527,9 +1566,7 @@ export async function getApplicationForPanelAction(id: string) {
         }
       : null,
     logos: settings.companyLogos,
-    googleAccess: googleConnection
-      ? { mail: googleConnection.mail, calendar: googleConnection.calendar }
-      : null,
+    googleAccess: googleConnection,
   };
 }
 
