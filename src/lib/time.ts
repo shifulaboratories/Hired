@@ -186,6 +186,53 @@ export function daysBetween(from: Date, to: Date, timeZone: string): number {
 }
 
 /**
+ * "Sep 8" — a stored instant, on the reader's calendar.
+ *
+ * Pinned to en-US and given an explicit zone for one reason: `toLocaleDateString`
+ * with neither takes the HOST's locale and the HOST's clock, which is Node on
+ * the server and the reader's machine in the browser. A component that renders
+ * on both then produces two different strings for one render, and React throws
+ * the server's markup away rather than hydrating it.
+ */
+export function shortDay(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    ...(timeZone ? { timeZone } : {}),
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+/**
+ * "Sep 8" — a bare "2026-09-08", with no zone in the question at all.
+ *
+ * A civil date is already somebody's calendar square; it does not need one, and
+ * reading it through a zone is how it drifts by a day. Formatted as UTC because
+ * that is the only way to render a date built as UTC without moving it.
+ */
+export function shortCivilDay(value: string): string {
+  const civil = parseCivilDay(value);
+  if (!civil) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(Date.UTC(civil.year, civil.month - 1, civil.day)));
+}
+
+/**
+ * The zone this process is actually running in, by name.
+ *
+ * `""` is a fine stored value — it means "whatever this host's clock says" —
+ * but it is NOT safe to hand to a component that renders on both sides of a
+ * hydration: on the server it resolves to the machine's zone and in the browser
+ * to the reader's, so the same call produces two different days and React
+ * throws the text away. Resolve it to a name before it crosses that boundary.
+ */
+export function hostZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+/**
  * Whether a string is a zone this runtime actually knows.
  *
  * Anything reaching this came from a browser or from an assistant, and an

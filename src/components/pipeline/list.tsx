@@ -34,7 +34,7 @@ import type { StoredWidths } from "@/lib/column-widths";
 import { moveApplicationsStageAction, moveStageAction, updateApplicationAction } from "@/server/actions";
 import { cn } from "@/lib/utils";
 import { useViewerZone } from "@/components/viewer-zone";
-import { civilDay, civilInstant } from "@/lib/time";
+import { civilDay, civilInstant, shortCivilDay, shortDay } from "@/lib/time";
 
 /**
  * The table view, which is also the fastest way to edit.
@@ -494,7 +494,7 @@ function Row({
 
       {shows("updated") && (
         <Body col="updated" className="nums text-faint hidden w-20 shrink-0 text-right text-[12px] sm:block">
-          {new Date(row.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+          {shortDay(new Date(row.updatedAt), zone)}
         </Body>
       )}
 
@@ -550,9 +550,7 @@ function DateCell({
             overdue && selected && "text-destructive font-medium",
           )}
         >
-          {selected
-            ? selected.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-            : "—"}
+          {value ? shortCivilDay(value) : "—"}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-2">

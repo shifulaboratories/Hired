@@ -13,9 +13,13 @@ import { setTimeZoneAction } from "@/server/actions";
  * that prints "Tomorrow" would be a prop on half the tree, so it arrives here
  * once from the layout instead.
  *
- * The default is deliberately the empty string rather than the browser's zone:
- * empty means "this machine's clock", which in a browser IS the reader's, so a
- * component rendered outside the provider still says something true.
+ * What arrives is always a NAME, never the stored empty string. Empty means
+ * "this machine's clock", which is the server's on one side of a hydration and
+ * the reader's on the other — two different days for one render, and React
+ * throws the markup away. The layout resolves it before it gets here.
+ *
+ * The default outside the provider stays empty, because a component rendered
+ * there is rendered in a browser and the browser's clock is the reader's.
  */
 const ViewerZone = createContext(SERVER_ZONE);
 
@@ -38,16 +42,20 @@ export function useViewerZone(): string {
  */
 export function ViewerZoneProvider({
   zone,
+  stored,
   children,
 }: {
+  /** An IANA name, always — the host's own if this person has not set one. */
   zone: string;
+  /** What is actually on the profile. Empty is what the seeding below fills. */
+  stored: string;
   children: React.ReactNode;
 }) {
   const router = useRouter();
   const seeded = useRef(false);
 
   useEffect(() => {
-    if (zone || seeded.current) return;
+    if (stored || seeded.current) return;
     seeded.current = true;
     const guess = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (!guess) return;
@@ -58,7 +66,7 @@ export function ViewerZoneProvider({
       // Nothing to tell anyone: the app keeps using the server's clock, which
       // is what it did before this existed.
       .catch(() => {});
-  }, [zone, router]);
+  }, [stored, router]);
 
   return <ViewerZone.Provider value={zone}>{children}</ViewerZone.Provider>;
 }

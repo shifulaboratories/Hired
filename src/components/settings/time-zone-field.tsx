@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckIcon, ClockIcon, LoaderCircleIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { setTimeZoneAction } from "@/server/actions";
+import { useViewerZone } from "@/components/viewer-zone";
 
 /**
  * Every zone this browser knows, or a short useful list where it does not.
@@ -67,8 +68,19 @@ export function TimeZoneField({ zone }: { zone: string }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const zones = useMemo(everyZone, []);
-  const device = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const current = zone || device;
+  // Which zone this screen is reading against — resolved by the layout, so the
+  // server and the browser agree on it even when nothing is stored.
+  const resolved = useViewerZone();
+  const current = zone || resolved;
+  // What this particular machine says, and what the clock reads right now: both
+  // are browser facts, and rendering either during SSR is a guess the server
+  // makes about the reader that hydration then contradicts.
+  const [device, setDevice] = useState("");
+  const [clock, setClock] = useState("");
+  useEffect(() => {
+    setDevice(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    setClock(clockAt(current));
+  }, [current]);
 
   const choose = (next: string) => {
     setOpen(false);
@@ -90,7 +102,7 @@ export function TimeZoneField({ zone }: { zone: string }) {
         <div className="text-[13px] font-medium">Your time zone</div>
         <p className="text-muted-foreground text-[12.5px]">
           What counts as today, when a follow-up is overdue, and the 9am a new one is set
-          for. {clockAt(current) ? `It is ${clockAt(current)} there now.` : ""}
+          for. {clock ? `It is ${clock} there now.` : ""}
         </p>
       </div>
       <Popover open={open} onOpenChange={setOpen}>

@@ -5,6 +5,7 @@ import { relativeDay } from "@/lib/utils";
 import { dueNow } from "@/lib/data/pipeline";
 import { WelcomeTour } from "@/components/onboarding/welcome-tour";
 import { ViewerZoneProvider } from "@/components/viewer-zone";
+import { hostZone } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // differently on the two sides of a hydration.
   // Empty until the browser seeds it, and empty means the server's own clock —
   // which is what every date in this app was computed against before this.
-  const zone = profile?.timeZone ?? "";
+  //
+  // Resolved to a name before it goes any further, because it is about to reach
+  // client components: "" means the machine's zone on the server and the
+  // reader's in the browser, which is two different answers for one render.
+  const stored = profile?.timeZone ?? "";
+  const zone = stored || hostZone();
   const notices = [...due.followUps, ...due.pings, ...due.tasks].map((item) => ({
     kind: item.kind,
     id: item.id,
@@ -43,7 +49,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }));
 
   return (
-    <ViewerZoneProvider zone={zone}>
+    <ViewerZoneProvider zone={zone} stored={stored}>
       <Shell
         notices={notices}
         user={{

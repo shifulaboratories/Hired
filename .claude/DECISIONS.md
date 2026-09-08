@@ -5512,3 +5512,27 @@ across `toDate`, `windowEdge` and the two window helpers in `tools.ts`.
 `civilInstant(zone, value, hour…)` in `src/lib/time.ts` is the one copy now;
 it returns null for anything carrying a time, so every caller falls through to
 reading it as an instant with no second parser.
+
+## 2026-09-08 — An empty zone must never cross into a client component
+
+Storing `""` for "this host's clock" is right in the database and in the data
+layer, where there is only one clock. It is wrong the moment it reaches a
+component that renders on both sides of a hydration: on the server `""` resolves
+to the machine's zone and in the browser to the reader's, so one render produces
+two different days and React discards the server's markup. The pipeline list
+threw a hydration error on every first load for exactly this reason.
+
+The layout resolves it now — `stored || hostZone()` — so what `ViewerZoneProvider`
+hands out is always an IANA name. It takes `stored` separately, because the
+browser-seeding decision is about what is on the profile, not about what the
+render resolved to.
+
+The same rule caught two more: `toLocaleDateString` with no `timeZone` uses the
+host's clock, and with no locale uses the host's locale — Node on one side, the
+reader's machine on the other. `shortDay(date, zone)` and `shortCivilDay(value)`
+in `src/lib/time.ts` pin both. **There are around fifteen more `toLocaleDate`/
+`toLocaleString` calls across the app** — admin panels, the activity timeline,
+the correspondence card, the resume list — all still reading the host's clock.
+They are not hydration errors today because they render on one side only, but
+they show the server's day rather than the reader's. That sweep is the next
+piece of this work and is deliberately not in this batch.
