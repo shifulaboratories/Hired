@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowUpRightIcon,
@@ -25,7 +25,13 @@ import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientMark, ClientTile } from "@/components/client-mark";
-import { GoogleDetails, type GoogleConnectionView } from "@/components/settings/google-panel";
+import {
+  AccountSheet,
+  ImapSheet,
+  featureWords,
+  markFor,
+  type AccountView,
+} from "@/components/settings/accounts";
 import { cn } from "@/lib/utils";
 import { MCP_CLIENTS, clientName } from "@/lib/mcp/clients";
 import {
@@ -40,8 +46,8 @@ import {
  * Everything wired to this workspace, as a grid of tiles.
  *
  * Two directions of wiring share the screen. Assistants read and write the
- * workspace over MCP; accounts — Google today — are what the workspace reads
- * on your behalf. They are drawn the same way, a brand mark on a tile with a
+ * workspace over MCP; accounts — Google, Microsoft 365, anything with IMAP
+ * and CalDAV — are what the workspace reads on your behalf. They are drawn the same way, a brand mark on a tile with a
  * one-line status, because the question a person brings here is the same for
  * both: what is connected, is it working, and how do I add or remove one.
  *
@@ -60,14 +66,13 @@ export type ConnectionRow = {
   lastUsedFrom: string;
 };
 
-export type GoogleTileProps = {
-  connection: GoogleConnectionView | null;
-  /** Whether an admin has configured a Google OAuth client at all. */
-  ready: boolean;
-  /** The outcome of a connect that just came back from Google, if one did. */
+export type AccountsProps = {
+  list: AccountView[];
+  /** Whether an admin has configured each consent-screen provider. */
+  googleReady: boolean;
+  microsoftReady: boolean;
+  /** The outcome of a connect that just came back from a provider, if one did. */
   notice: { ok: boolean; message: string } | null;
-  /** Open the Google slide-over on arrival — the callback lands here. */
-  focus: boolean;
 };
 
 function ago(iso: string | null) {
@@ -467,6 +472,63 @@ function ConnectionSheet({
 // Picking a client
 // ---------------------------------------------------------------------------
 
+/** One way to connect an account: a link out to a consent screen, a form, or a promise. */
+function AccountOption({
+  mark,
+  name,
+  tagline,
+  href,
+  onClick,
+  disabled,
+  soon,
+}: {
+  mark: string;
+  name: string;
+  tagline: string;
+  href?: string;
+  onClick?: () => void;
+  /** Why it cannot be used right now, in a sentence. */
+  disabled?: string;
+  soon?: boolean;
+}) {
+  const body = (
+    <>
+      <ClientTile client={mark} size={36} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-[13px] font-medium">
+          {name}
+          {soon && (
+            <span className="bg-muted text-muted-foreground rounded-chip px-1.5 py-0.5 text-[10.5px] font-medium">
+              Coming soon
+            </span>
+          )}
+        </div>
+        <div className="text-faint text-xs leading-snug">{disabled ?? tagline}</div>
+      </div>
+      {!disabled && !soon && <PlusIcon className="text-faint size-4 shrink-0" />}
+    </>
+  );
+  const className = cn(
+    "flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+    disabled || soon
+      ? "opacity-60"
+      : "hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none",
+  );
+  if (disabled || soon) return <div className={className}>{body}</div>;
+  if (href) {
+    return (
+      <a href={href} className={className}>
+        {body}
+      </a>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} className={className}>
+      {body}
+    </button>
+  );
+}
+
 /**
  * The library: everything that can be wired to this workspace, in one place.
  *
@@ -487,8 +549,9 @@ function LibrarySheet({
   connections,
   onPick,
   onOpenConnection,
-  google,
-  onOpenGoogle,
+  accounts,
+  onOpenAccount,
+  onImap,
   pending,
 }: {
   open: boolean;
@@ -496,8 +559,9 @@ function LibrarySheet({
   connections: ConnectionRow[];
   onPick: (client: string) => void;
   onOpenConnection: (id: string) => void;
-  google: GoogleTileProps;
-  onOpenGoogle: () => void;
+  accounts: AccountsProps;
+  onOpenAccount: (id: string) => void;
+  onImap: () => void;
   pending: boolean;
 }) {
   const products = MCP_CLIENTS.filter((entry) => entry.category !== "any");
@@ -565,36 +629,61 @@ function LibrarySheet({
           <TabsContent value="accounts" className="mt-4">
             <p className="text-muted-foreground mb-3 text-xs">
               Live and read-only. Nothing is copied into this instance — every screen asks at
-              the moment you open it, and disconnecting deletes the only thing held.
+              the moment you open it, and disconnecting deletes the only thing held. Connect
+              more than one if recruiters write to more than one.
             </p>
+            {accounts.list.length > 0 && (
+              <div className="mb-4 grid gap-2 sm:grid-cols-2">
+                {accounts.list.map((account) => (
+                  <button
+                    key={account.id}
+                    type="button"
+                    onClick={() => onOpenAccount(account.id)}
+                    className="hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-ring/50 flex items-center gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
+                  >
+                    <ClientTile client={markFor(account.provider)} size={36} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] font-medium">{account.label || account.providerLabel}</div>
+                      <div className="text-faint truncate text-xs">{account.email}</div>
+                    </div>
+                    {account.lastError ? (
+                      <Status tone="warn">Needs you</Status>
+                    ) : (
+                      <Status tone="live">Connected</Status>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={onOpenGoogle}
-                className="hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-ring/50 flex items-center gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
-              >
-                <ClientTile client="google" size={36} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-medium">Google</div>
-                  <div className="text-faint truncate text-xs">
-                    {google.connection?.email ?? "Gmail and Calendar"}
-                  </div>
-                </div>
-                {google.connection ? (
-                  <Status tone="live">Connected</Status>
-                ) : !google.ready ? (
-                  <Status tone="off">Needs an admin</Status>
-                ) : (
-                  <PlusIcon className="text-faint size-4 shrink-0" />
-                )}
-              </button>
+              <AccountOption
+                mark="google"
+                name="Google"
+                tagline="Gmail and Google Calendar. Leave either unticked."
+                href="/api/auth/google?data=1"
+                disabled={accounts.googleReady ? undefined : "Needs an admin: Admin → Configuration → Sign-in."}
+              />
+              <AccountOption
+                mark="microsoft"
+                name="Microsoft 365"
+                tagline="Outlook mail and calendar, work or Outlook.com."
+                href="/api/auth/microsoft"
+                disabled={accounts.microsoftReady ? undefined : "Needs an admin: Admin → Configuration → Accounts."}
+              />
+              <AccountOption
+                mark="imap"
+                name="Any other provider"
+                tagline="IMAP and CalDAV: Fastmail, iCloud, Yahoo, self-hosted."
+                onClick={onImap}
+              />
             </div>
-            {/* Said out loud rather than left as an empty grid: one account is
-                the whole list today, and a person who came here looking for a
-                second one should not have to wonder whether it failed to load. */}
-            <p className="text-faint mt-4 text-xs">
-              Google is the only account Hired reads from today.
-            </p>
+            <div className="text-faint mt-5 mb-2 text-[11.5px] font-medium tracking-wide uppercase">
+              Where you get nudged
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <AccountOption mark="slack" name="Slack" tagline="Follow-ups due and interviews today, in a channel." soon />
+              <AccountOption mark="discord" name="Discord" tagline="The same, in a server you already have open." soon />
+            </div>
           </TabsContent>
         </Tabs>
       </SheetContent>
@@ -613,7 +702,7 @@ export function ConnectionsPanel({
   adminToolCount,
   isAdmin,
   promptCount,
-  google,
+  accounts,
 }: {
   baseUrl: string;
   connections: ConnectionRow[];
@@ -621,19 +710,14 @@ export function ConnectionsPanel({
   adminToolCount: number;
   isAdmin: boolean;
   promptCount: number;
-  google: GoogleTileProps;
+  accounts: AccountsProps;
 }) {
   const [pending, startTransition] = useTransition();
   const [picking, setPicking] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [googleOpen, setGoogleOpen] = useState(false);
+  const [openAccountId, setOpenAccountId] = useState<string | null>(null);
+  const [imap, setImap] = useState<{ open: boolean; prefill: AccountView | null }>({ open: false, prefill: null });
   const used = useMemo(() => connections.filter((c) => c.lastUsedAt).length, [connections]);
-
-  // The callback from Google lands on this tab with `focus` set: open the tile
-  // it came back to, so the outcome is in front of the person, not a click away.
-  useEffect(() => {
-    if (google.focus) setGoogleOpen(true);
-  }, [google.focus]);
 
   const add = (client: string) =>
     startTransition(async () => {
@@ -644,23 +728,8 @@ export function ConnectionsPanel({
     });
 
   const openConnection = connections.find((connection) => connection.id === openId) ?? null;
+  const openAccount = accounts.list.find((account) => account.id === openAccountId) ?? null;
 
-  const googleStatus = !google.ready ? (
-    <Status tone="off">Needs an admin</Status>
-  ) : !google.connection ? (
-    <Status tone="off">Not connected</Status>
-  ) : google.connection.lastError ? (
-    <Status tone="warn">Needs reconnecting</Status>
-  ) : (
-    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <Status tone={google.connection.mail ? "live" : "off"}>
-        <MailIcon className="size-3" /> Gmail
-      </Status>
-      <Status tone={google.connection.calendar ? "live" : "off"}>
-        <CalendarIcon className="size-3" /> Calendar
-      </Status>
-    </span>
-  );
 
   return (
     <div className="space-y-6">
@@ -670,7 +739,12 @@ export function ConnectionsPanel({
           <p className="text-muted-foreground text-sm">
             {connections.length === 1 ? "1 assistant" : `${connections.length} assistants`}
             {used > 0 && connections.length > 1 && `, ${used} in use`} ·{" "}
-            {google.connection ? "Google connected" : "Google not connected"} · {toolCount} tools
+            {accounts.list.length === 0
+              ? "no accounts"
+              : accounts.list.length === 1
+                ? "1 account"
+                : `${accounts.list.length} accounts`}{" "}
+            · {toolCount} tools
             {isAdmin && adminToolCount > 0 && <span> ({adminToolCount} admin)</span>} · {promptCount}{" "}
             workflows
           </p>
@@ -685,21 +759,21 @@ export function ConnectionsPanel({
         </Button>
       </div>
 
-      {google.notice && (
+      {accounts.notice && (
         <div
           className={cn(
             "flex items-start gap-2 rounded-lg border px-3 py-2 text-[13px]",
-            google.notice.ok
+            accounts.notice.ok
               ? "border-success/30 bg-success/8 text-success"
               : "border-destructive/30 bg-destructive/8 text-destructive",
           )}
         >
-          {google.notice.ok ? (
+          {accounts.notice.ok ? (
             <CheckIcon className="mt-0.5 size-3.5 shrink-0" />
           ) : (
             <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
           )}
-          {google.notice.message}
+          {accounts.notice.message}
         </div>
       )}
 
@@ -732,13 +806,32 @@ export function ConnectionsPanel({
           );
         })}
 
-        <WiredRow
-          mark="google"
-          title="Google"
-          meta={google.connection?.email ?? "Gmail and Calendar"}
-          status={googleStatus}
-          onClick={() => setGoogleOpen(true)}
-        />
+        {accounts.list.map((account) => {
+          const words = featureWords(account.provider);
+          return (
+            <WiredRow
+              key={account.id}
+              mark={markFor(account.provider)}
+              title={account.label || account.providerLabel}
+              meta={account.email}
+              status={
+                account.lastError ? (
+                  <Status tone="warn">Needs reconnecting</Status>
+                ) : (
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <Status tone={account.mail ? "live" : "off"}>
+                      <MailIcon className="size-3" /> {words.mail}
+                    </Status>
+                    <Status tone={account.calendar ? "live" : "off"}>
+                      <CalendarIcon className="size-3" /> {words.calendar}
+                    </Status>
+                  </span>
+                )
+              }
+              onClick={() => setOpenAccountId(account.id)}
+            />
+          );
+        })}
 
         <button
           type="button"
@@ -781,35 +874,43 @@ export function ConnectionsPanel({
           setPicking(false);
           setOpenId(id);
         }}
-        google={google}
-        onOpenGoogle={() => {
+        accounts={accounts}
+        onOpenAccount={(id) => {
           setPicking(false);
-          setGoogleOpen(true);
+          setOpenAccountId(id);
+        }}
+        onImap={() => {
+          setPicking(false);
+          setImap({ open: true, prefill: null });
         }}
         pending={pending}
       />
 
-      <Sheet open={googleOpen} onOpenChange={setGoogleOpen}>
-        <SheetContent className="w-full overflow-y-auto p-5 sm:max-w-xl sm:p-6">
-          <div className="flex items-start gap-3">
-            <ClientTile client="google" size={44} />
-            <div className="min-w-0 flex-1">
-              <SheetTitle className="text-[17px] font-semibold tracking-tight">Google</SheetTitle>
-              <SheetDescription className="mt-0.5 text-xs">
-                Your own Gmail and Google Calendar, read live behind every contact, company and
-                application.
-              </SheetDescription>
-            </div>
-          </div>
-          <div className="mt-6">
-            <GoogleDetails
-              connection={google.connection}
-              ready={google.ready}
-              onDisconnected={() => setGoogleOpen(false)}
-            />
-          </div>
-        </SheetContent>
-      </Sheet>
+      {openAccount && (
+        <AccountSheet
+          key={openAccount.id}
+          account={openAccount}
+          open
+          onOpenChange={(next) => {
+            if (!next) setOpenAccountId(null);
+          }}
+          onReconnectImap={(account) => {
+            setOpenAccountId(null);
+            setImap({ open: true, prefill: account });
+          }}
+        />
+      )}
+
+      {imap.open && (
+        <ImapSheet
+          key={imap.prefill?.id ?? "new"}
+          open
+          onOpenChange={(next) => {
+            if (!next) setImap({ open: false, prefill: null });
+          }}
+          prefill={imap.prefill}
+        />
+      )}
     </div>
   );
 }

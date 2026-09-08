@@ -4901,6 +4901,54 @@ as a side effect of a keyboard shortcut.
 **Applies to:** `src/hooks/use-history.ts` (new), `src/components/resume/resume-editor.tsx`,
 `src/components/resume/fit-panel.tsx` (its `onChange` now names what it cut).
 
+## 2026-09-03 — Any mailbox: Microsoft 365, IMAP and CalDAV, behind one reader
+
+**`GoogleAccount` became `LinkedAccount`, several per person.** A `provider` column
+(GOOGLE, MICROSOFT, IMAP), provider-neutral `features` ("mail", "calendar") in place of
+Google's scope URLs, and the IMAP and CalDAV fields on the same row. The migration renames
+rather than recreates, so a Google connection made on the previous release survives with
+its scopes rewritten. Unique on (userId, provider, email) rather than userId, because a work
+Outlook and a personal Gmail are both where recruiters write, and every read merges across
+them with the account named on each thread and event.
+
+**One interface, three wire protocols.** `src/lib/accounts/types.ts` defines `MailReader`
+and `CalendarReader`; `google.ts`, `microsoft.ts`, `imap.ts` and `caldav.ts` implement them
+and nothing else in the app knows which answered. Read-only is enforced by the interface
+having no write, not by convention. The data layer resolves credentials — refreshing OAuth
+tokens, keeping Microsoft's rotated refresh token — and collects per-account failures into
+`warnings` so one dead token never hides the other inbox.
+
+**Two libraries, on purpose, for the protocols nobody should hand-roll.** Google and
+Microsoft are six HTTP requests each and stay hand-written. IMAP is a stateful protocol with
+thirty years of server quirks and MIME is worse, so `imapflow` and `mailparser` do that;
+CalDAV discovery differs per server and ICS recurrence is its own specification, so `tsdav`
+and `ical.js` do those. They are the largest dependencies in the app and load only when an
+IMAP account is read. Threads on IMAP are joined by Message-ID and In-Reply-To, which is
+what every mail client does; a reply whose client dropped the header is its own thread.
+
+**App passwords, verified before they are stored.** `connectImapAccount` logs in to both
+servers first, so a wrong password is an error in the form rather than a broken tile.
+Stored as issued, like every other credential here. `connect_imap_account` exists as a tool
+because MCP-first means it must, and its description says never to repeat the password.
+
+**A hostname in a form is a request the server makes.** `assertReachableHost` refuses
+loopback, link-local (where cloud metadata lives), unspecified and multicast targets for
+both IMAP and CalDAV, resolving names so an A record at 127.0.0.1 is refused like the
+literal. Private ranges are allowed on purpose: a mail server on a home LAN is a real
+reason to self-host, and loopback and metadata are where the damage is.
+
+**No SMTP.** The app never sends on anyone's behalf; read-only is what makes handing over an
+inbox safe. Sending is a product decision to make on purpose, not a side effect of "support
+IMAP".
+
+**Slack and Discord are on the picker as coming soon**, greyed, because the user asked for
+them to be visible before they exist. Nothing behind them yet.
+
+**Applies to:** `prisma/schema.prisma`, `src/lib/accounts/`, `src/lib/data/accounts.ts`
+(replacing `data/google.ts`), `src/lib/settings.ts`, `src/app/api/auth/microsoft/`,
+`src/lib/mcp/{tools,handler}.ts`, `src/server/actions.ts`, `src/components/settings/`,
+`src/components/admin/configuration-panel.tsx`, and the manual.
+
 ## 2026-09-08 — The import review step showed a count where the content should have been
 
 The paste-and-correct dialog let you fix a job's company, title and dates, and then said

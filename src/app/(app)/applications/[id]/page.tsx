@@ -9,7 +9,7 @@ import { listTags } from "@/lib/data/tags";
 import { getResume, listResumeNames } from "@/lib/data/resumes";
 import { requireUser } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
-import { getGoogleConnection } from "@/lib/data/google";
+import { accountAccess } from "@/lib/data/accounts";
 import { ApplicationDetail } from "@/components/pipeline/application-detail";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
       listTags(user.id, "APPLICATION"),
       listCompanies(user.id),
       getSettings(),
-      getGoogleConnection(user.id),
+      accountAccess(user.id),
       applicationFieldValues(user.id),
     ]);
   if (!application) notFound();
@@ -117,9 +117,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
               : null
           }
           logos={companyLogos}
-          googleAccess={
-            googleConnection ? { mail: googleConnection.mail, calendar: googleConnection.calendar } : null
-          }
+          googleAccess={googleConnection}
         />
       </FadeIn>
     </PageShell>

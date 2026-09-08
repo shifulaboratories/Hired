@@ -1,0 +1,51 @@
+---
+title: "Microsoft 365 accounts"
+description: "The app registration that lets members connect their Outlook mail and calendar. Never used for sign-in."
+icon: "microsoft"
+---
+
+Members can connect a Microsoft 365 or Outlook.com account under **Settings →
+Connections**, and the app reads its mail and calendar live behind their contacts, companies
+and applications. That needs an app registration in Microsoft Entra, which an admin sets up
+once. It is separate from Google sign-in and is never used to sign anyone in.
+
+## Setting it up
+
+<Steps>
+  <Step title="Register an app">
+    In the [Microsoft Entra admin center](https://entra.microsoft.com), **App registrations →
+    New registration**. For supported account types pick **Accounts in any organizational
+    directory and personal Microsoft accounts**, so a work mailbox and an Outlook.com mailbox
+    can both connect.
+  </Step>
+  <Step title="Add the redirect URI">
+    **Authentication → Add a platform → Web**, with the redirect URI that **Admin →
+    Configuration → Accounts** shows you, character for character. It is
+    `https://your-instance/api/auth/microsoft/callback`, built from **Public URL** — fix
+    that setting first if it looks wrong. A mismatch is the whole of `AADSTS50011`.
+  </Step>
+  <Step title="Add the permissions">
+    **API permissions → Add a permission → Microsoft Graph → Delegated**: `Mail.Read`,
+    `Calendars.Read`, `User.Read` and `offline_access`. None of these needs admin consent,
+    and none can send, move or delete anything.
+  </Step>
+  <Step title="Create a secret and paste both in">
+    **Certificates & secrets → New client secret.** Copy its **value** — it is shown once —
+    and paste it with the Application (client) ID into **Admin → Configuration → Accounts**.
+    Entra secrets expire, two years at most; note the date somewhere you will see it.
+  </Step>
+</Steps>
+
+The Microsoft option appears on the account picker the moment both are saved, and
+disappears again if the client ID is cleared. Accounts already connected keep working until
+their token next needs refreshing, then show as needing reconnecting.
+
+By conversation: `admin_get_microsoft_config`, `admin_set_microsoft_config`.
+
+## What is stored
+
+A refresh token per connected account, as Microsoft issues it, the same way MCP connection
+tokens are stored. Microsoft rotates refresh tokens on use and the app keeps the newest.
+Nothing read through a token is ever written to the database, and disconnecting deletes the
+row. Microsoft has no revoke endpoint for a single app; a person who wants to be certain can
+also remove the app under their Microsoft account's privacy settings.

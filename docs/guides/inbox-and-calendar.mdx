@@ -11,21 +11,35 @@ calendar view shows the interview you accepted in Google Calendar, and an assist
 
 ## Connecting
 
-**Settings → Connections → Google → Connect Google.** Google asks for read-only access to Gmail and
-Calendar; you can leave either unticked and connect the other. The account you connect does
-not have to be the one you sign in with.
+**Settings → Connections → Connect an account.** Three kinds, and you can connect more than
+one if recruiters write to more than one:
+
+- **Google.** A consent screen asks for read-only access to Gmail and Calendar; leave either
+  unticked and the other still connects. The account does not have to be the one you sign
+  in with.
+- **Microsoft 365 or Outlook.com.** The same, through Microsoft's consent screen, for a work
+  account or a personal one.
+- **Anything else** — Fastmail, iCloud, Yahoo, a university mailbox, a self-hosted server.
+  A short form takes the IMAP server and the CalDAV URL, with presets for the common
+  providers, and an **app password** from your provider's security settings. Never the
+  account password. Both servers are logged in to before anything is saved, so a wrong
+  password is an error now rather than a broken tile later. Either half can be left blank.
 
 <Note>
-  Nothing from your account is copied to the instance. Every page and every tool asks
-  Google at the moment you open it, and disconnecting deletes the only thing held — the
-  token. The app cannot send, accept, archive or delete anything; the permission it asks
-  for does not allow it.
+  Nothing from any account is copied to the instance. Every page and every tool asks the
+  provider at the moment you open it, and disconnecting deletes the only thing held — the
+  token or app password. The app cannot send, accept, archive or delete anything; the
+  permissions it asks for do not allow it, and there is no SMTP to configure because it never
+  sends.
 </Note>
 
-If the button is missing, the instance has no Google OAuth client yet. That is an admin's
-job, under Admin → Configuration → Sign-in, and it is the same client that powers
-Continue with Google — see [Google sign-in](/self-hosting/google) for the two extra
-switches Gmail and Calendar need.
+If Google or Microsoft is missing from the picker, the instance has no client for it yet.
+That is an admin's job: [Google sign-in](/self-hosting/google) for Google, which powers
+Continue with Google too, and a [Microsoft app registration](/self-hosting/microsoft) for
+Microsoft. IMAP and CalDAV need nothing from an admin.
+
+Open any account's tile to **Test** it — one read from each half, with the provider's own
+words when something is wrong — rename it, reconnect it, or disconnect it.
 
 ## What shows where
 
@@ -37,11 +51,13 @@ switches Gmail and Calendar need.
   happened.
 - **A resume** — the mail behind every application it went out with, in the evidence
   panel's "Sent to" tab.
-- **The pipeline calendar** — meetings with anyone on the pipeline appear alongside your
-  follow-ups and tasks, and `list_schedule` returns them the same way.
+- **The pipeline calendar** — meetings with anyone on the pipeline, from every connected
+  calendar, appear alongside your follow-ups and tasks, and `list_schedule` returns them the
+  same way. The same interview on a work and a personal calendar shows once.
 
-Open a thread on any of those and it expands in place; **Open in Gmail** takes you to the
-real thing.
+Open a thread on any of those and it expands in place; **Open in Gmail** or **Open in
+Outlook** takes you to the real thing where the provider has somewhere to go. An IMAP
+account has no web client to link to, so its threads only expand.
 
 ## What to say
 
@@ -50,6 +66,8 @@ real thing.
 - *"Did any rejections come in this week?"* — `search_email`.
 - *"What interviews do I have next week?"* — `search_calendar`, or `list_schedule` for
   the whole week including follow-ups.
+- *"Connect my Fastmail — here's an app password."* — `connect_imap_account`, which logs in
+  before saving and never repeats the password.
 - *"Go through my inbox and bring the pipeline up to date."* — the `inbox_review`
   workflow: it reads every open application's mail, tells you what moved, and proposes the
   `log_activity` and `move_application_stage` calls for you to approve one by one. It

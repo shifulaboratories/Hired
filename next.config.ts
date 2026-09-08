@@ -5,7 +5,10 @@ import { MANUAL_URL } from "./src/lib/links";
 const nextConfig: NextConfig = {
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: false },
-  serverExternalPackages: ["@prisma/client", "@modelcontextprotocol/sdk"],
+  // The mail and calendar libraries are Node-only (sockets, TLS) and are
+  // reached only from the server side of the accounts layer; leaving them
+  // out of the bundle keeps their dynamic requires intact.
+  serverExternalPackages: ["@prisma/client", "@modelcontextprotocol/sdk", "imapflow", "mailparser", "tsdav", "ical.js"],
   experimental: {
     serverActions: { bodySizeLimit: "4mb" },
   },

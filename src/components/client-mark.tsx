@@ -1,4 +1,4 @@
-import { CodeIcon, PlugZapIcon, TerminalIcon } from "lucide-react";
+import { CodeIcon, MailIcon, PlugZapIcon, TerminalIcon } from "lucide-react";
 import { clientMark } from "@/lib/mcp/marks";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +16,8 @@ const FALLBACK_GLYPHS: Record<string, typeof PlugZapIcon> = {
   "generic-http": PlugZapIcon,
   "stdio-bridge": TerminalIcon,
   raw: CodeIcon,
+  // An IMAP account is any provider, so it has no brand to draw.
+  imap: MailIcon,
 };
 
 export function ClientMark({

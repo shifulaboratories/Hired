@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { CLAIMED, ensureDefaultConnection, isClaimed } from "@/lib/auth";
 import { getSettings, googleIsConfigured, type InstanceSettings } from "@/lib/settings";
 import { recordSystemEvent } from "@/lib/data/system";
-import { GOOGLE_DATA_SCOPES, type GoogleGrant } from "@/lib/google-api";
+import { GOOGLE_DATA_SCOPES, type GoogleGrant } from "@/lib/accounts/google";
 
 /**
  * Sign in with Google.
@@ -391,9 +391,9 @@ export function refusalMessage(reason: GoogleRefusal, detail = "") {
     case "cancelled":
       return "Sign-in was cancelled.";
     case "no_refresh_token":
-      return "Google did not hand over a lasting token. Remove Hired under your Google account's third-party access, then connect again.";
+      return "The provider did not hand over a lasting token. Remove Hired under your account's third-party app access, then connect again.";
     case "no_scopes":
-      return "Neither Gmail nor Calendar was allowed on Google's consent screen, so there is nothing to connect. Try again and tick at least one.";
+      return "Neither mail nor calendar was allowed on the consent screen, so there is nothing to connect. Try again and tick at least one.";
     default:
       return "Google sign-in didn't work. Check Admin → Health for the reason.";
   }

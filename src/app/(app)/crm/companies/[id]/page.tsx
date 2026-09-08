@@ -10,7 +10,7 @@ import { tagsOfKind } from "@/lib/data/tags";
 import { companyKey } from "@/lib/company";
 import { requireUser } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
-import { getGoogleConnection } from "@/lib/data/google";
+import { accountAccess } from "@/lib/data/accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
     getCompany(user.id, id),
     getSettings(),
     listCompanies(user.id),
-    getGoogleConnection(user.id),
+    accountAccess(user.id),
   ]);
   if (!company) notFound();
 
@@ -86,9 +86,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
           logos={companyLogos}
           candidates={candidates}
           suggestedMergeId={suggestedMergeId}
-          googleAccess={
-            googleConnection ? { mail: googleConnection.mail, calendar: googleConnection.calendar } : null
-          }
+          googleAccess={googleConnection}
         />
       </FadeIn>
     </PageShell>
