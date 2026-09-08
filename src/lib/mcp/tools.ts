@@ -1,6 +1,6 @@
 import type { ActivityType, NoteKind, Stage, User, UserRole } from "@prisma/client";
 import * as me from "@/lib/data/me";
-import { instantAt } from "@/lib/time";
+import { civilInstant } from "@/lib/time";
 import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
 import * as tags from "@/lib/data/tags";
@@ -296,10 +296,8 @@ function onExistingFrom(args: Json): { onExisting?: "merge" | "skip" } {
  * 13th in Chicago.
  */
 function endOfDay(timeZone: string, value: string) {
-  const civil = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-  if (civil) {
-    return instantAt(timeZone, Number(civil[1]), Number(civil[2]), Number(civil[3]), 23, 59, 59, 999);
-  }
+  const civil = civilInstant(timeZone, value, 23, 59, 59, 999);
+  if (civil) return civil;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`"${value}" is not a date I can read`);
   return date;
@@ -307,10 +305,8 @@ function endOfDay(timeZone: string, value: string) {
 
 /** The other end of endOfDay: a date that fails to parse is an error, not 1970. */
 function startOfDay(timeZone: string, value: string) {
-  const civil = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-  if (civil) {
-    return instantAt(timeZone, Number(civil[1]), Number(civil[2]), Number(civil[3]), 0, 0, 0, 0);
-  }
+  const civil = civilInstant(timeZone, value, 0);
+  if (civil) return civil;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`"${value}" is not a date I can read`);
   return date;
@@ -2802,7 +2798,7 @@ export const tools: McpTool[] = [
       const dir = enumArg(args, "dir", SORT_DIRECTIONS);
       if (kind === "companies") {
         return {
-          filename: exportFilename("companies"),
+          filename: exportFilename("companies", await me.timeZoneOf(ctx.userId)),
           csv: await exportCompaniesCsv(
             ctx.userId,
             defined({
@@ -2822,7 +2818,7 @@ export const tools: McpTool[] = [
       }
       if (kind === "contacts") {
         return {
-          filename: exportFilename("contacts"),
+          filename: exportFilename("contacts", await me.timeZoneOf(ctx.userId)),
           csv: await exportContactsCsv(
             ctx.userId,
             defined({
@@ -2841,7 +2837,7 @@ export const tools: McpTool[] = [
       }
       const query = s(args, "query");
       return {
-        filename: exportFilename("applications"),
+        filename: exportFilename("applications", await me.timeZoneOf(ctx.userId)),
         csv: await exportApplicationsCsv(
           ctx.userId,
           defined({

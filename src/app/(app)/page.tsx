@@ -31,7 +31,7 @@ import { listResumeNames } from "@/lib/data/resumes";
 import { getProfile, listNotes, listRoles } from "@/lib/data/me";
 import { taskSubjectOf } from "@/lib/task-subject";
 import { relativeDay } from "@/lib/utils";
-import { clockIn } from "@/lib/time";
+import { civilDay, clockIn } from "@/lib/time";
 import { timeZoneOf } from "@/lib/data/me";
 import type { Stage } from "@prisma/client";
 
@@ -269,7 +269,7 @@ async function TodayTab({
               title: task.title,
               detail: task.detail,
               dueISO: task.dueAt?.toISOString() ?? "",
-              dueDate: task.dueAt ? task.dueAt.toISOString().slice(0, 10) : "",
+              dueDate: task.dueAt ? civilDay(task.dueAt, zone) : "",
               done: task.done,
               subject: taskSubjectOf(task),
             }))}

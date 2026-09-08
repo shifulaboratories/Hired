@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { scheduleContactPingAction } from "@/server/actions";
+import { useViewerZone } from "@/components/viewer-zone";
+import { civilDay } from "@/lib/time";
 import { DateField } from "@/components/ui/date-field";
 
 export type PingCandidate = { id: string; name: string; detail: string };
@@ -34,7 +36,12 @@ export function PingScheduler({ contacts }: { contacts: PingCandidate[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [person, setPerson] = useState<PingCandidate | null>(null);
-  const [date, setDate] = useState(() => new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
+  const zone = useViewerZone();
+  // A week out on the reader's calendar. `toISOString` would have offered them
+  // UTC's day, which is the wrong one on one side of Greenwich or the other.
+  const [date, setDate] = useState(() =>
+    civilDay(new Date(Date.now() + 7 * 86_400_000), zone),
+  );
   const [pending, startTransition] = useTransition();
 
   const schedule = () => {

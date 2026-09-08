@@ -13,7 +13,7 @@ import {
 } from "@/lib/data/tags";
 import { archiveRecords } from "@/lib/data/archive";
 import { timeZoneOf } from "@/lib/data/me";
-import { atHourInDays, civilDay, endOfDay, instantAt, startOfWeek } from "@/lib/time";
+import { atHourInDays, civilDay, civilInstant, endOfDay, startOfWeek } from "@/lib/time";
 import {
   type CompanyFilters,
   type CompanyMissing,
@@ -893,10 +893,8 @@ function toDate(
   if (value === undefined) return undefined;
   if (value === null || value === "") return null;
   if (typeof value === "string") {
-    const civil = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-    if (civil) {
-      return instantAt(timeZone, Number(civil[1]), Number(civil[2]), Number(civil[3]), 9);
-    }
+    const civil = civilInstant(timeZone, value, 9);
+    if (civil) return civil;
   }
   const d = value instanceof Date ? value : new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
@@ -912,13 +910,11 @@ function toDate(
  */
 function windowEdge(timeZone: string, value: Date | string, edge: "start" | "end"): Date {
   if (typeof value === "string") {
-    const civil = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-    if (civil) {
-      const [, year, month, day] = civil.map(Number) as unknown as [number, number, number, number];
-      return edge === "end"
-        ? instantAt(timeZone, year, month, day, 23, 59, 59, 999)
-        : instantAt(timeZone, year, month, day, 0, 0, 0, 0);
-    }
+    const civil =
+      edge === "end"
+        ? civilInstant(timeZone, value, 23, 59, 59, 999)
+        : civilInstant(timeZone, value, 0);
+    if (civil) return civil;
   }
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? new Date() : date;

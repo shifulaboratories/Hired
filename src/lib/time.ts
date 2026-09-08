@@ -96,6 +96,39 @@ export function instantAt(
   return new Date(guess);
 }
 
+/**
+ * A bare "2026-03-14", split — or null for anything else.
+ *
+ * The distinction this whole file turns on: a string with no time in it is a
+ * CIVIL date, somebody's calendar square, and it has no instant until you say
+ * whose calendar. A string with a time in it already is an instant.
+ */
+export function parseCivilDay(
+  value: string,
+): { year: number; month: number; day: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+}
+
+/**
+ * "2026-03-14" as the instant it starts — or reaches `hour` — where the reader
+ * is. Null for anything that is not a bare civil date, so a caller can fall
+ * through to reading it as an instant.
+ */
+export function civilInstant(
+  timeZone: string,
+  value: string,
+  hour = 0,
+  minute = 0,
+  second = 0,
+  ms = 0,
+): Date | null {
+  const civil = parseCivilDay(value);
+  if (!civil) return null;
+  return instantAt(timeZone, civil.year, civil.month, civil.day, hour, minute, second, ms);
+}
+
 /** Midnight this morning, where the reader is. */
 export function startOfDay(timeZone: string, now = new Date()): Date {
   const { year, month, day } = partsOf(now, timeZone);

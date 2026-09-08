@@ -5449,3 +5449,32 @@ Proven against real Postgres: a person on `America/Los_Angeles` picking the
 where `new Date("2026-03-14")` is the 13th at 5pm; the same holds for a task's
 due date, a contact's ping, a logged activity's date and a one-day
 `list_schedule` window, which finds everything dated that day.
+
+## 2026-09-08 — Never slice an ISO string to get somebody's day
+
+`date.toISOString().slice(0, 10)` was how five places turned a stored instant
+into a date to show or to put in a form field. It is UTC's day, and it was
+quietly wrong in the worst possible way on the editable ones: the application
+form and the pipeline list read a follow-up set for 9am in Auckland as the day
+before, put THAT in the date box, and wrote it back the moment you touched any
+other field on the form. Editing a salary walked the follow-up backwards a day,
+every time, silently. Proven both directions against real Postgres.
+
+Everything that turns an instant into a day for a person now goes through
+`civilDay(date, zone)`: the application form, the pipeline list's inline date,
+the task panel's due date, the ping scheduler's default, the CSV columns and
+the CSV filename. The calendar grid deliberately does not — it is a lattice of
+civil day *strings* with no instant in it, and its keys are compared against
+`civilDay` on the other side, which is exactly right.
+
+The list's overdue colour was the same bug wearing different clothes:
+`new Date("2026-03-14") < Date.now()` reads the civil date as UTC midnight, so
+in Los Angeles everything due today was red from 5pm the day before. It is now
+9am on that day where the reader is — the hour the app itself uses — so the
+list, the board card and the bell all go red at the same moment.
+
+Four copies of the same "is this a bare YYYY-MM-DD" regex had accumulated
+across `toDate`, `windowEdge` and the two window helpers in `tools.ts`.
+`civilInstant(zone, value, hour…)` in `src/lib/time.ts` is the one copy now;
+it returns null for anything carrying a time, so every caller falls through to
+reading it as an instant with no second parser.

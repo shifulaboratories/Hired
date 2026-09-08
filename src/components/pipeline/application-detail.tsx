@@ -65,6 +65,7 @@ import { useAutosave } from "@/hooks/use-autosave";
 import { ACTIVITY_LABEL, ACTIVITY_OPTIONS, STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
 import { cn, relativeDay } from "@/lib/utils";
 import { useViewerZone } from "@/components/viewer-zone";
+import { civilDay } from "@/lib/time";
 import { DateField, parseISODate } from "@/components/ui/date-field";
 import {
   addActivityAction,
@@ -182,8 +183,14 @@ export function ApplicationDetail({
     salaryRange: application.salaryRange,
     tags: application.tags,
     notes: application.notes,
-    appliedAt: application.appliedAt ? application.appliedAt.slice(0, 10) : "",
-    nextFollowUpAt: application.nextFollowUpAt ? application.nextFollowUpAt.slice(0, 10) : "",
+    // The day it fell on where the reader is, not the first ten characters of
+    // a UTC instant — 9am in Auckland is the day before in Greenwich, and this
+    // string is what gets written back when they touch anything else on the
+    // form.
+    appliedAt: application.appliedAt ? civilDay(new Date(application.appliedAt), zone) : "",
+    nextFollowUpAt: application.nextFollowUpAt
+      ? civilDay(new Date(application.nextFollowUpAt), zone)
+      : "",
     resumeId: application.resumeId ?? "",
   });
   const [stage, setStage] = useState(application.stage);
