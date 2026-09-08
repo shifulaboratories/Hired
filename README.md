@@ -59,7 +59,8 @@ just *talk* to it.
   with no company, role or person named anywhere on it — only the shape — which is what
   makes it the one thing here that is safe to post. Under it: response rate, what is in
   flight, the diagnosis of which step is losing people, and recent activity.
-- **CRM** — companies and the people at them, as records you can visit. A company page holds
+- **People** — companies and the people at them, as records you can visit. (The rail says
+  People; the address is still `/crm`.) A company page holds
   their website, whatever you have learned about them, and their industries, sizes and
   locations as labels rather than text boxes — a company is plausibly both fintech and
   infrastructure, and hiring in two cities — alongside every application and every contact

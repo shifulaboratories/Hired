@@ -50,6 +50,14 @@ import { MANUAL_URL } from "@/lib/links";
 // Navigation only. Settings and Admin are account actions, so they live in the
 // profile menu at the top right rather than in the rail.
 //
+// The words here are the ones the welcome tour teaches, and they were not.
+// The tour's second card says "every job you apply to is a card, drag it along"
+// — and then the rail read "Pipeline", a word the tour never uses, next to
+// "CRM", a three-letter acronym this audience has never met. Labels only: the
+// routes stay /applications and /crm, so every link, saved view and bookmark
+// still works, and the command palette carries the old words as search aliases
+// for anyone who does know them.
+//
 // CRM is the one entry with children: it is two peer screens (companies and
 // people), and reaching the second one used to require landing on the first
 // and finding the tabs. The rail names both — but folded away until asked for,
@@ -69,14 +77,14 @@ const NAV: NavItem[] = [
   { href: "/me", label: "Me", icon: CircleUserRoundIcon },
   {
     href: "/crm",
-    label: "CRM",
+    label: "People",
     icon: Building2Icon,
     children: [
       { href: "/crm/companies", label: "Companies" },
       { href: "/crm/contacts", label: "Contacts" },
     ],
   },
-  { href: "/applications", label: "Pipeline", icon: KanbanIcon },
+  { href: "/applications", label: "Board", icon: KanbanIcon },
 ];
 
 // The rail remembers whether you collapsed it. Read after mount so the server

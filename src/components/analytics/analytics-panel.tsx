@@ -57,15 +57,21 @@ export async function AnalyticsPanel({ userId }: { userId: string }) {
   const [roleCount, resumeCount, highlightCount] = counts;
   const maxStage = Math.max(1, ...BOARD_STAGES.map((stage) => stats.counts[stage]));
 
-  if (roleCount === 0 && stats.total === 0 && resumeCount === 0) {
+  // Applications are the honest gate. This used to also require zero roles and
+  // zero resumes, so the moment somebody did what the setup strip told them to
+  // — paste their old resume, which writes Role rows — the tab flipped from a
+  // clean "nothing to measure yet" to a wall of zeros: an empty chart, 0%, 0,
+  // and a card headed "What's working" that had nothing to work with. Every
+  // card here except the Me tile is derived from applications.
+  if (stats.total === 0) {
     return (
       <EmptyState
         icon={ChartNoAxesColumnIcon}
         title="Nothing to measure yet"
-        description="Track an application or two and this fills in: the funnel, the response rate, and a chart of where each one ended up."
+        description="Add a job or two and this fills in: how far each one got, how many came back to you, and where the rest stopped."
         action={
           <Button asChild>
-            <Link href="/applications">Go to the pipeline</Link>
+            <Link href="/applications">Go to the board</Link>
           </Button>
         }
       />

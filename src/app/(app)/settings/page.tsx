@@ -76,7 +76,7 @@ export default async function SettingsPage({
     accountOutcome === "connected"
       ? { ok: true, message: "Account connected. Every contact, company and application page now shows its email and calendar." }
       : accountOutcome === "not_set_up"
-        ? { ok: false, message: "That provider is not set up on this instance yet. An admin adds it under Admin → Configuration." }
+        ? { ok: false, message: "That is not set up here yet. Whoever runs this can add it under Admin → Configuration." }
         : accountOutcome && isGoogleRefusal(accountOutcome)
           ? { ok: false, message: refusalMessage(accountOutcome) }
           : null;
@@ -98,7 +98,7 @@ export default async function SettingsPage({
       <PageHeader
         eyebrow="Settings"
         title="You and your assistants"
-        description="Your account, how the app looks, and everything wired to your workspace: the assistants that read and write it, and the accounts it reads on your behalf. Each connection is yours alone — nobody else's data is reachable through one."
+        description="Your account, how the app looks, and everything wired to it: the assistants that read and write your search, and the mail accounts it reads on your behalf. Each connection is yours alone — nobody else's data is reachable through one."
         actions={
           admin ? (
             <Button variant="outline" size="sm" asChild>

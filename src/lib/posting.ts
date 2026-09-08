@@ -313,9 +313,10 @@ async function resolveGreenhouse(url: URL): Promise<ParsedPosting | null> {
  * fetch-and-parse otherwise.
  */
 export async function loadPosting(rawUrl: string): Promise<ParsedPosting> {
+  const target = withScheme(rawUrl);
   let url: URL | null = null;
   try {
-    url = new URL(rawUrl.trim());
+    url = new URL(target);
   } catch {
     // fetchPostingHtml throws the legible version of this below.
   }
@@ -323,8 +324,24 @@ export async function loadPosting(rawUrl: string): Promise<ParsedPosting> {
     const resolved = await resolveGreenhouse(url);
     if (resolved) return resolved;
   }
-  const html = await fetchPostingHtml(rawUrl);
-  return parsePosting(html, rawUrl);
+  const html = await fetchPostingHtml(target);
+  return parsePosting(html, target);
+}
+
+/**
+ * `boards.greenhouse.io/acme/jobs/123` is a URL to everybody except `new URL`.
+ *
+ * A link copied out of a phone app, or retyped by hand, routinely arrives with
+ * no scheme — and the app answered "That doesn't look like a URL" about a
+ * string that plainly is one, which reads as the app being wrong rather than
+ * particular. Normalising here rather than at the field means the fix reaches
+ * capture_job_posting over MCP too, and everything downstream still runs on the
+ * normalised value: the https-only check, the private-host guard and the
+ * credentials check are all after this.
+ */
+function withScheme(raw: string) {
+  const trimmed = raw.trim();
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
 export function parsePosting(html: string, url: string): ParsedPosting {

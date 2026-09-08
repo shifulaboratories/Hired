@@ -28,7 +28,20 @@ type Item = {
   kind: "application" | "contact";
 };
 
-export function FollowUpList({ items }: { items: Item[] }) {
+export function FollowUpList({
+  items,
+  started = true,
+}: {
+  items: Item[];
+  /**
+   * Whether there is anything that COULD be chased. An empty list means two
+   * different things and the card was only ever saying one of them: a brand-new
+   * account got a green tick and "Every follow-up is scheduled for later",
+   * which is a congratulation for work nobody has done, on the same screen as
+   * a setup strip saying they have not started.
+   */
+  started?: boolean;
+}) {
   const [pending, startTransition] = useTransition();
 
   const snooze = (item: Item, days: number) => {
@@ -59,9 +72,13 @@ export function FollowUpList({ items }: { items: Item[] }) {
         <div className="bg-success-tint text-success mb-3 flex size-10 items-center justify-center rounded-xl">
           <AlarmClockIcon className="size-4" />
         </div>
-        <p className="text-[13px] font-medium">Nothing to chase</p>
+        <p className="text-[13px] font-medium">
+          {started ? "Nothing to chase" : "Nothing to chase yet"}
+        </p>
         <p className="text-muted-foreground mt-1 text-[13px]">
-          Every follow-up is scheduled for later.
+          {started
+            ? "Every follow-up is scheduled for later."
+            : "Move a job along on the board and its next follow-up date sets itself."}
         </p>
       </div>
     );

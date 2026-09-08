@@ -113,14 +113,27 @@ export function ContactsList({
           description={
             filtered
               ? "Loosen the search or the filter to see everyone again."
-              : "Open an application and add the recruiter or hiring manager you are talking to, and they will show up here."
+              : "The recruiters, hiring managers and friends behind the jobs you are chasing. Add one from the job you are talking to them about, or from their company."
           }
           action={
             filtered ? (
               <Button asChild variant="outline" size="sm">
                 <Link href="/crm/contacts">Show everyone</Link>
               </Button>
-            ) : undefined
+            ) : (
+              // There is no add-a-person control anywhere on this screen — the
+              // form lives on a company and on an application — so the empty
+              // state has to point at the two places it does live, or it is a
+              // screen that tells you what it is for and offers no way in.
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button asChild size="sm">
+                  <Link href="/applications">Go to your jobs</Link>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/crm/companies">Or a company</Link>
+                </Button>
+              </div>
+            )
           }
         />
       ) : (

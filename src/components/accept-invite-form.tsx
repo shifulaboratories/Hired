@@ -8,6 +8,7 @@ import {
   AuthCard,
   AuthError,
   GoogleButton,
+  PasswordField,
   SubmitButton,
   authGroup,
   authRise,
@@ -56,6 +57,15 @@ export function AcceptInviteForm({
       {googleReady && (
         <motion.div variants={authRise}>
           <GoogleButton label="Continue with Google" />
+          {/* No token travels with the button, so the callback matches the
+              invitation by the address Google hands back — which means a
+              personal Gmail that is not the invited address quietly matches
+              nothing and lands them on a sign-in screen for an account that
+              does not exist. Naming the address prevents it instead of
+              diagnosing it afterwards. */}
+          <p className="text-faint mt-2 text-center text-[12px]">
+            Use the Google account for {email}. Another address will not match this invitation.
+          </p>
           <div className="my-5 flex items-center gap-3">
             <span className="auth-rule bg-border h-px flex-1" />
             <span className="text-faint text-[11px] tracking-wide uppercase">or</span>
@@ -74,17 +84,16 @@ export function AcceptInviteForm({
 
         <motion.div variants={authRise} className="space-y-2">
           <Label htmlFor="name">Your name</Label>
-          <Input id="name" name="name" autoFocus placeholder="Ada Lovelace" />
+          <Input id="name" name="name" required autoFocus placeholder="Ada Lovelace" />
         </motion.div>
 
         <motion.div variants={authRise} className="space-y-2">
-          <Label htmlFor="password">Choose a password</Label>
-          <Input
+          <PasswordField
             id="password"
-            name="password"
-            type="password"
+            label="Choose a password"
             autoComplete="new-password"
             placeholder="At least 10 characters"
+            minLength={10}
           />
         </motion.div>
 
