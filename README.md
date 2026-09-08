@@ -584,6 +584,12 @@ move it. Harvard's own convention puts Education first — that's right
 for students and recent graduates, and wrong for most people with real work history, so the
 default order leads with Experience.
 
+Nothing you do in the editor is one-way. Undo and redo sit next to the save indicator and
+answer to ⌘Z and ⇧⌘Z — except inside a text field, where ⌘Z still takes back what you typed,
+which is what you meant. A sentence undoes as a sentence rather than a letter at a time.
+Deleting a job or a section also raises a toast that offers it straight back, because a
+delete is the one thing worth catching before the autosave does.
+
 The other templates — Classic, Modern, Compact, Editorial — are all still there.
 
 ## Where the page ends

@@ -4855,3 +4855,48 @@ does not also move its section.
 (new), `src/lib/data/resumes.ts` (`reorderResume`), `src/lib/mcp/tools.ts`
 (`reorder_resume`), `src/components/resume/resume-editor.tsx` (its local `moveItem` is gone —
 one implementation of a move, not two).
+
+## 2026-09-08 — Undo, and the one place it must keep its hands off
+
+The editor deletes a job in one click and reorders a document with one drag, and until now
+neither had a way back. Undo and redo now sit beside the save indicator, answer to ⌘Z and
+⇧⌘Z, and every destructive action also raises a toast that offers the exact previous
+document back.
+
+**Snapshots, not patches.** `src/hooks/use-history.ts` keeps whole values of
+`{ doc, meta }` — the same object autosave already writes. There is no inverse operation to
+write for each of the twenty ways a document can change, and no chance of the two drifting.
+It costs a reference rather than a copy, because every mutation path in the editor already
+builds a new object instead of mutating the old one.
+
+**⌘Z inside a text field is the field's, not the document's.** A textarea has its own undo
+stack and it is the right one while you are typing: taking back a sentence is what a person
+means mid-sentence, not resurrecting the section they deleted a minute ago. The shortcut
+checks the focused element and stands down for INPUT, TEXTAREA and anything
+contenteditable. The toolbar buttons work from anywhere, so the capability is never
+unreachable — which is also why they exist rather than leaving this keyboard-only and
+invisible.
+
+**Steps are coalesced by time, with an explicit override.** Changes closer together than
+700ms fold into one step, so a typed sentence undoes as a sentence. That alone would merge a
+delete that happened to land mid-sentence into the typing around it, so discrete acts —
+delete, add, drag, toggle, the fit panel's cuts — pass `{ step: true }` and force a boundary.
+The 700ms matches the autosave debounce deliberately: one undo step is about one saved
+revision, which is the model a person already has from watching the indicator. The
+alternative considered and rejected was inferring "structural vs text" from a shape
+signature of the document; it gets reordering wrong (the shape is unchanged) and clever undo
+is worse than predictable undo.
+
+**A toast restores its own snapshot, not the top of the stack.** The toast names one thing
+("Senior Engineer 3" removed) and its Undo puts back the document as it stood at that moment.
+Popping the stack instead would undo whatever happened last, which after a few seconds is
+often something else entirely.
+
+**No MCP tool, and this is the exception's shape.** Undo is editor state, not data: there is
+no stored history to reach for, and every document it restores is reachable through
+`update_resume` and `reorder_resume` already. A conversational "undo that" would need
+version history on `Resume` — a real feature, worth doing on its own terms, not smuggled in
+as a side effect of a keyboard shortcut.
+
+**Applies to:** `src/hooks/use-history.ts` (new), `src/components/resume/resume-editor.tsx`,
+`src/components/resume/fit-panel.tsx` (its `onChange` now names what it cut).

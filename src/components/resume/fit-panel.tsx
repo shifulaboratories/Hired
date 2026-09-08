@@ -36,7 +36,11 @@ export function FitPanel({
 }: {
   doc: ResumeDoc;
   layout: PageLayout;
-  onChange: (next: ResumeDoc) => void;
+  /**
+   * Apply a cut. The message names what went, so the editor can offer it back
+   * — this panel is where a bullet is furthest from the text it deletes.
+   */
+  onChange: (next: ResumeDoc, message: string) => void;
 }) {
   const pages = layout.pages;
   const fill = Math.round(layout.lastPageFill * 100);
@@ -124,6 +128,7 @@ export function FitPanel({
                       onClick={() =>
                         onChange(
                           setSectionVisible(doc, Number(section.path.slice(1)), false),
+                          `"${section.heading}" hidden`,
                         )
                       }
                     >
@@ -158,7 +163,7 @@ export function FitPanel({
                         size="icon-sm"
                         className="text-muted-foreground hover:text-destructive shrink-0"
                         aria-label={`Remove the bullet "${bullet.text.slice(0, 40)}"`}
-                        onClick={() => onChange(removeBulletAt(doc, bullet.path))}
+                        onClick={() => onChange(removeBulletAt(doc, bullet.path), "Bullet removed")}
                       >
                         <Trash2Icon />
                       </Button>
