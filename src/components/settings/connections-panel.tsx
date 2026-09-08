@@ -759,6 +759,29 @@ export function ConnectionsPanel({
         </Button>
       </div>
 
+      {/* Nothing has ever called in.
+          This page is where "Let Claude do the typing" sends somebody, and
+          what greeted them was a quiet row that looked like a status line
+          rather than a thing to click. One sentence on what it buys and one
+          button that opens the panel for them: the instructions inside it are
+          already good, the problem was only ever getting there. */}
+      {used === 0 && connections.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setOpenId(connections[0].id)}
+          className="border-primary/30 bg-primary-tint hover:border-primary/50 flex w-full items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-colors"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13.5px] font-medium">Start here: connect Claude</span>
+            <span className="text-muted-foreground block text-[13px]">
+              Two minutes of copy and paste, and after it you can say &ldquo;I applied to Figma
+              yesterday&rdquo; instead of filling in a form. Everything here works without it.
+            </span>
+          </span>
+          <span className="text-primary shrink-0 text-[13px] font-medium">Show me how →</span>
+        </button>
+      )}
+
       {accounts.notice && (
         <div
           className={cn(

@@ -5042,3 +5042,47 @@ documented set.
 `src/components/onboarding/welcome-tour.tsx`, `src/components/dashboard/setup-strip.tsx`,
 `src/components/settings/account-panel.tsx`, `src/app/(app)/layout.tsx`,
 `src/lib/mcp/tools.ts`, `src/server/actions.ts`, `README.md`, `docs/app.mdx`.
+
+---
+
+## 2026-09-08 — What a screen says when there is nothing on it, and what Settings shows first
+
+Walking the app as a genuinely empty account — a real user with a real login and no
+data — turned up three screens that told a beginner nothing, and one that told them far
+too much.
+
+**The empty pipeline drew seven columns saying "Empty" under eight controls that all did
+nothing**: a filter menu with nothing to filter, an export with nothing to export, a share
+link to an empty board. It is the screen the welcome tour has just promised, and it read as
+a broken one. A workspace with nothing tracked now gets one sentence and one button.
+
+**"Nothing tracked" and "the filter matched nothing" look identical and are not.** The
+second still needs the whole toolbar, because that is how you undo the filter — so the
+first-run state is gated on `everyApplication.length === 0 && !hasAnyFilter(filters)`, never
+on the visible rows. Archiving the last application lands in the same branch, so the archive
+note stays under it and there is still a way back.
+
+**Me's roles tab had the words and no button.** Getting in meant noticing a small Import in
+the top corner. It offers both paths now and leads with pasting a resume, which takes a
+minute rather than an afternoon. They are links to `?import=1` and `?new=role`, which the
+page's own dialogs already open — the same thing the setup strip links to, rather than a
+second copy of a dialog.
+
+**Settings → Connections is where "let Claude do the typing" sends somebody, and the
+skills panel dwarfed it.** Three files' worth of `~/.claude/skills/<name>/SKILL.md`, zip
+uploads and folder paths, open by default, above the fold — while the actual task was one
+quiet row that looked like a status line. The skills are folded into a `<details>` now (a
+server component, so no state, and the content stays in the page for ⌘F), and a workspace
+where nothing has ever called in gets one line saying what connecting buys and a button
+that opens the panel. The instructions inside that panel were always good; the problem was
+only ever reaching them.
+
+**Verified** in a browser against a real Postgres on a genuinely empty account: the three
+empty screens, both buttons opening their dialogs, the nudge opening the setup panel, the
+skills opening on click — plus the two cases that must NOT change, a filter matching nothing
+(toolbar kept, first-run state suppressed) and a workspace with data (board unchanged), and
+the nudge correctly absent once something has connected.
+
+**Applies to:** `src/app/(app)/applications/page.tsx`, `src/components/me/roles-panel.tsx`,
+`src/components/settings/skills-panel.tsx`,
+`src/components/settings/connections-panel.tsx`, `docs/app.mdx`.
