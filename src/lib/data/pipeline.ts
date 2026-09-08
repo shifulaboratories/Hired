@@ -2592,7 +2592,7 @@ function verdict(
 }
 
 export async function pipelineStats(userId: string) {
-  const [byStage, total, active, thisWeek, interviews, offers, tasksOpen, followUps] =
+  const [byStage, total, active, thisWeek, interviews, screening, offers, tasksOpen, followUps, flow] =
     await Promise.all([
       // Archived applications leave the funnel with everything else. Half of
       // them would be worse than either: `applied` below is derived as
@@ -2604,27 +2604,42 @@ export async function pipelineStats(userId: string) {
         _count: { _all: true },
       }),
       db.application.count({ where: { userId, archivedAt: null } }),
+      // Not TERMINAL_STAGES alone: that leaves WISHLIST in, so a workspace
+      // holding one job somebody has NOT applied to reported "In flight 1" on
+      // the same screen that says a wishlist row never entered the funnel.
+      // Both consumers — the stat tile and pipeline_stats — mean "sent, and
+      // still alive".
       db.application.count({
-        where: { userId, archivedAt: null, stage: { notIn: TERMINAL_STAGES } },
+        where: { userId, archivedAt: null, stage: { notIn: [...TERMINAL_STAGES, "WISHLIST"] } },
       }),
       db.application.count({
         where: { userId, archivedAt: null, appliedAt: { gte: startOfWeek() } },
       }),
       db.application.count({
-        where: { userId, archivedAt: null, stage: { in: ["SCREEN", "INTERVIEW", "FINAL"] } },
+        where: { userId, archivedAt: null, stage: { in: ["INTERVIEW", "FINAL"] } },
       }),
+      db.application.count({ where: { userId, archivedAt: null, stage: "SCREEN" } }),
       db.application.count({
         where: { userId, archivedAt: null, stage: { in: ["OFFER", "ACCEPTED"] } },
       }),
       db.task.count({ where: { userId, ...LIVE_TASK_PARENT, done: false } }),
       followUpsDue(userId, 0),
+      // 3. The response rate is measured the way the funnel measures it, by
+      // reusing the funnel. It used to be counted from where applications SIT:
+      // one that got a phone screen and was then rejected sits in REJECTED, so
+      // it counted as never having replied — and a search where every employer
+      // answers and then says no reported a 0% response rate, printed directly
+      // above a chart showing every one of them reaching the screen. One rule
+      // about the data, in one place.
+      funnelFlows(userId),
     ]);
 
   const counts = Object.fromEntries(STAGES.map((s) => [s, 0])) as Record<Stage, number>;
   for (const row of byStage) counts[row.stage] = row._count._all;
 
-  const applied = total - counts.WISHLIST;
-  const responded = counts.SCREEN + counts.INTERVIEW + counts.FINAL + counts.OFFER + counts.ACCEPTED;
+  const applied = flow.applied;
+  // Everyone who ever got past "applied", however it ended afterwards.
+  const responded = flow.rungs[0]?.advanced ?? 0;
 
   return {
     counts,
@@ -2632,10 +2647,19 @@ export async function pipelineStats(userId: string) {
     active,
     thisWeek,
     interviews,
+    screening,
     offers,
     tasksOpen,
     followUpsDue: followUps.length,
     responseRate: applied > 0 ? Math.round((responded / applied) * 100) : 0,
+    /**
+     * How many applications that rate is computed from. Under about ten it is
+     * describing luck rather than a search, which the web app acts on by
+     * showing an em dash instead — this is how anything else, an assistant
+     * included, can make the same call rather than quoting a percentage at
+     * somebody who has applied to three things.
+     */
+    responseRateBasis: applied,
   };
 }
 

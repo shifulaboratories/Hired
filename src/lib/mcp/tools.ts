@@ -1904,7 +1904,7 @@ export const tools: McpTool[] = [
     name: "pipeline_stats",
     title: "Pipeline stats",
     description:
-      "Counts by stage, active applications, applications sent this week, interviews, offers, open tasks, follow-ups due and response rate. Start here for any 'how is my search going' question.",
+      "Counts by stage, applications still in flight, applications sent this week, how many are at a phone screen and how many are further into interviews, offers, open tasks, follow-ups due and response rate. Start here for any 'how is my search going' question. Two things worth knowing before you quote a number: `active` counts applications actually sent and still alive, so a wishlist row is not in it; and `responseRate` is measured the way the funnel is, by how far each application ever got, so one that got a phone screen and was then rejected counts as a response. `responseRateBasis` is how many applications that rate is computed from — under about ten it is describing luck rather than a search, and the web app shows a dash instead of a figure. Say so rather than quoting a percentage at somebody who has applied to three things.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
