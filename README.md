@@ -607,6 +607,12 @@ Importing ends where it should: if you had no resume, it builds one from what ju
 opens it. If you already have documents, it stays where it is and offers — topping up your
 material isn't the same as wanting a new draft, and the app shouldn't decide which you meant.
 
+Paste LinkedIn and it's read as LinkedIn. The clipboard doesn't give you a resume — it repeats
+the employer, hangs "· 3 yrs 8 mos" off every date, and groups promotions under one company
+with the company named once, so read straight it produces jobs called "Full-time" and
+promotions filed under no employer at all. That gets folded in first, and the review step says
+so, because the fields won't match what you pasted line for line.
+
 PDFs are deliberately not read directly: a two-column layout comes out interleaved, and a
 wrong parse you can't see is worse than a paste.
 

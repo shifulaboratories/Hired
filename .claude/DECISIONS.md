@@ -5407,3 +5407,44 @@ data belongs, and both callers get the same answer including whether it made one
 `src/server/actions.ts`, `src/components/me/import-dialog.tsx`,
 `src/app/(app)/me/page.tsx`. No tool count change — `create_base_resume` already existed and
 now shares its implementation.
+
+## 2026-09-08 — Reading LinkedIn as LinkedIn
+
+LinkedIn is the document people actually keep current, so it is what they paste — and what the
+clipboard gives you is not a resume. It repeats the employer (logo alt text, then the name,
+then the name again with "· Full-time" on it), hangs its own arithmetic off every date, tags
+the workplace with a middot, and groups promotions under one company with the company named
+once. Read straight, that produced jobs called "Full-time", employers called "3 yrs 8 mos",
+and every promotion filed under no employer at all.
+
+**A normaliser, not a second parser.** `resume-parse-linkedin.ts` rewrites the text into the
+shape `resume-parse.ts` already reads and hands it on. Two parsers would be two answers to
+"what is a job", and they would drift the first time either was touched.
+
+**It fires on two markers, never one.** A single "· Full-time" appears in plenty of ordinary
+resumes, and normalising one as though it were a profile is worse than not trying. Verified
+both ways: the profile is recognised, and an ordinary resume that mentions Full-time is left
+alone and still parses as it did.
+
+**Three things the fixtures caught that reasoning did not.**
+
+*Cleaning and looking ahead in one pass looks ahead at uncleaned text.* Whether a line is a
+company or a title is decided by what follows it, and the first version compared against lines
+whose durations were still attached. It pasted the employer onto location lines and bullets.
+Two passes now: clean everything, then read structure.
+
+*A bullet directly above a title is indistinguishable from an employer, structurally.* Both sit
+two lines above a date. "Grew the data team from two to nine." became an employer. A name now
+has to read like one — seven words or fewer, and not a finished sentence.
+
+*The clipboard's duplicate employer lines are only duplicates after cleaning.* "Northwind
+Trading" and "Northwind Trading · Full-time" are the same line wearing a suffix, so deduping
+before the strip missed it and the bare copy leaked into the document.
+
+**Blank lines are part of the output.** A profile has none — every job runs into the one below
+— and the generic parser separates entries by blank lines. Without inserting them, three jobs
+arrive as one with the others' titles read as its bullets.
+
+**Applies to:** `src/lib/resume-parse-linkedin.ts` (new), `src/lib/resume-parse.ts`. No tool
+and no data change: `import_resume` already says it takes a LinkedIn export, and this is the
+browser's fallback parser for someone who has connected nothing.
