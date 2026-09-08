@@ -280,7 +280,7 @@ async function TodayTab({
                 )}
               </CardHeader>
               <CardContent>
-                <FollowUpList items={chase} started={applications.length + contacts.length > 0} />
+                <FollowUpList items={chase} started={applications.some((a) => a.nextFollowUpAt) || contacts.some((c) => c.nextFollowUpAt)} />
               </CardContent>
             </Card>
 

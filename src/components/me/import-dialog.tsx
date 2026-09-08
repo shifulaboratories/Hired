@@ -59,6 +59,7 @@ export function ImportDialog() {
   const summary = useMemo(() => {
     if (!draft) return "";
     const counts = [
+      [draft.profile?.fullName ? 1 : 0, "name"],
       [roleCount, "job"],
       [draft.education?.length ?? 0, "school"],
       [draft.skillGroups?.reduce((sum, group) => sum + (group.skills?.length ?? 0), 0) ?? 0, "skill"],
@@ -67,7 +68,7 @@ export function ImportDialog() {
     ] as const;
     return counts
       .filter(([n]) => n > 0)
-      .map(([n, word]) => `${n} ${word}${n > 1 ? "s" : ""}`)
+      .map(([n, word]) => (word === "name" ? `a name` : `${n} ${word}${n > 1 ? "s" : ""}`))
       .join(", ");
   }, [draft, roleCount]);
 
@@ -130,6 +131,11 @@ export function ImportDialog() {
       }
     });
   };
+
+  const editProfile = (patch: Partial<NonNullable<ResumeImport["profile"]>>) =>
+    setDraft((current) =>
+      current ? { ...current, profile: { ...(current.profile ?? {}), ...patch } } : current,
+    );
 
   const editRole = (index: number, patch: Partial<NonNullable<ResumeImport["roles"]>[number]>) => {
     setDraft((current) =>
@@ -216,6 +222,72 @@ export function ImportDialog() {
                 ))}
               </ul>
             )}
+
+            {/* The header, which is the whole reason this screen says "check it
+                before it lands".
+                The parser takes the name from the first non-empty line, with
+                the only guard being "under sixty characters and not an email
+                address" — so a document that opens with RESUME, CURRICULUM
+                VITAE, or whatever a two-column PDF happens to put first files
+                that as the person's name. It then goes into Profile, and
+                Profile is what prints at the top of every resume they build
+                and publish. The review showed roles and nothing else, so the
+                one screen built to catch a bad parse never showed the field
+                most likely to be wrong and most expensive to leave wrong. */}
+            <div className="rounded-control border p-2.5">
+              <div className="text-muted-foreground mb-2 text-[11px] font-medium">
+                Goes at the top of every resume
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label className="text-[11px]" htmlFor="import-name">
+                    Name
+                  </Label>
+                  <Input
+                    id="import-name"
+                    value={draft.profile?.fullName ?? ""}
+                    onChange={(event) => editProfile({ fullName: event.target.value })}
+                    placeholder="Nobody found — type it"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]" htmlFor="import-email">
+                    Email
+                  </Label>
+                  <Input
+                    id="import-email"
+                    value={draft.profile?.email ?? ""}
+                    onChange={(event) => editProfile({ email: event.target.value })}
+                    placeholder="you@example.com"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]" htmlFor="import-phone">
+                    Phone
+                  </Label>
+                  <Input
+                    id="import-phone"
+                    value={draft.profile?.phone ?? ""}
+                    onChange={(event) => editProfile({ phone: event.target.value })}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]" htmlFor="import-linkedin">
+                    LinkedIn
+                  </Label>
+                  <Input
+                    id="import-linkedin"
+                    value={draft.profile?.linkedin ?? ""}
+                    onChange={(event) => editProfile({ linkedin: event.target.value })}
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+              <p className="text-faint mt-2 text-[11.5px]">
+                Only the ones you have not filled in already are written.
+              </p>
+            </div>
 
             <div className="space-y-3">
               {(draft.roles ?? []).map((role, index) => (

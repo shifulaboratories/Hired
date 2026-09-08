@@ -68,7 +68,12 @@ export async function setupStatus(userId: string): Promise<SetupStatus> {
 
   return {
     steps,
-    outstanding: steps.some((step) => !step.done),
+    // Connecting an assistant is optional — the card says so in as many words —
+    // and an optional step was holding the strip open forever. Somebody who
+    // never connects anything had three onboarding cards at the top of their
+    // Today screen permanently. It still shows while the strip is up for
+    // another reason, which is where it belongs: beside the two that matter.
+    outstanding: steps.some((step) => step.key !== "connect" && !step.done),
     tourSeenAt: profile?.tourSeenAt ?? null,
   };
 }
