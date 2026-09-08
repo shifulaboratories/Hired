@@ -76,7 +76,6 @@ export function LoginForm({
   signedInHint: SignedInHint | null;
 }) {
   const [state, formAction] = useActionState(loginAction, undefined);
-  const [showPassword, setShowPassword] = useState(false);
 
   /**
    * Reaching this page means there is no session here — it redirects into the
@@ -92,7 +91,7 @@ export function LoginForm({
   }, [signedInHint]);
 
   return (
-    <AuthCard title={instanceName} subtitle="Sign in to your career workspace.">
+    <AuthCard title={instanceName} subtitle="Sign in to your job search.">
       {notice && (
         <motion.p
           variants={authRise}
@@ -127,27 +126,12 @@ export function LoginForm({
           />
         </motion.div>
         <motion.div variants={authRise} className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <div className="relative">
-            <Input
-              id="password"
-              name="password"
-              type={showPassword ? "text" : "password"}
-              required
-              autoComplete="current-password"
-              placeholder="••••••••••"
-              className="pr-10"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((shown) => !shown)}
-              aria-label={showPassword ? "Hide password" : "Show password"}
-              aria-pressed={showPassword}
-              className="text-faint hover:text-foreground absolute inset-y-0 right-0 flex w-10 cursor-pointer items-center justify-center rounded-r-control transition-colors focus-visible:ring-ring/25 focus-visible:ring-2 outline-none"
-            >
-              {showPassword ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
-            </button>
-          </div>
+          <PasswordField
+            id="password"
+            label="Password"
+            autoComplete="current-password"
+            placeholder="••••••••••"
+          />
         </motion.div>
 
         <motion.label
@@ -332,5 +316,65 @@ export function SubmitButton({
         </AnimatePresence>
       </span>
     </Button>
+  );
+}
+
+/**
+ * A password box you can look at.
+ *
+ * The sign-in screen had this and the two screens where you INVENT a password —
+ * the invitation and the first-boot setup — did not: a bare dot field, no
+ * reveal, no minimum enforced in the browser, so the only feedback on a short
+ * one was a round trip to the server. That is the wrong way round. Somebody
+ * typing a password they already know can retype it; somebody making one up on
+ * a phone keyboard needs to see it.
+ *
+ * `minLength` matches the server's rule so the browser says it first, and the
+ * server still says it too — the client is a courtesy, never the check.
+ */
+export function PasswordField({
+  id,
+  name,
+  label,
+  autoComplete,
+  placeholder,
+  minLength,
+  hint,
+}: {
+  id: string;
+  name?: string;
+  label: string;
+  autoComplete: string;
+  placeholder: string;
+  minLength?: number;
+  hint?: string;
+}) {
+  const [shown, setShown] = useState(false);
+  return (
+    <>
+      <Label htmlFor={id}>{label}</Label>
+      <div className="relative">
+        <Input
+          id={id}
+          name={name ?? id}
+          type={shown ? "text" : "password"}
+          required
+          minLength={minLength}
+          autoComplete={autoComplete}
+          placeholder={placeholder}
+          className="pr-10"
+        />
+        <button
+          type="button"
+          onClick={() => setShown((was) => !was)}
+          aria-label={shown ? "Hide password" : "Show password"}
+          aria-pressed={shown}
+          className="text-faint hover:text-foreground absolute inset-y-0 right-0 flex w-10 cursor-pointer items-center justify-center rounded-r-control transition-colors focus-visible:ring-ring/25 focus-visible:ring-2 outline-none"
+        >
+          {shown ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
+        </button>
+      </div>
+      {hint && <p className="text-faint text-[12px]">{hint}</p>}
+    </>
   );
 }

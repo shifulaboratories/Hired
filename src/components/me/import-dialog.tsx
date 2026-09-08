@@ -108,7 +108,19 @@ export function ImportDialog() {
             : "",
           untouched > 0 ? `${untouched} already here, unchanged` : "",
         ].filter(Boolean);
-        toast.success(parts.length ? parts.join("; ") : "Nothing new in that one");
+        if (created === 0 && merged.length === 0 && untouched === 0) {
+          // Nothing in the text was recognised as a job at all — which is not
+          // the same as "nothing new", and is not a success. The raw text is
+          // still kept as a note, which is worth doing; dressing that as an
+          // import sent people back to a Me page that still looked empty with
+          // no idea what had happened.
+          toast.message("Saved as a note", {
+            description:
+              "Nothing in it was read as a job. Check the headings, or paste it to Claude and ask it to bring it in.",
+          });
+        } else {
+          toast.success(parts.length ? parts.join("; ") : "Nothing new in that one");
+        }
         setOpen(false);
         setText("");
         setDraft(null);
@@ -322,7 +334,7 @@ export function ImportDialog() {
               </Button>
               <Button variant="default" onClick={commit} disabled={pending}>
                 {pending && <LoaderCircleIcon className="animate-spin" />}
-                Bring it in
+                {(draft.roles?.length ?? 0) === 0 ? "Save it as a note" : "Bring it in"}
               </Button>
             </>
           ) : (

@@ -186,7 +186,9 @@ function EducationCard({ education }: { education: Education[] }) {
       </CardHeader>
       <CardContent className="space-y-5">
         {education.length === 0 && (
-          <p className="text-muted-foreground py-4 text-center text-sm">Nothing here yet.</p>
+          <p className="text-muted-foreground py-4 text-center text-sm">
+            Where you studied, what in, and when. Resumes draw on this after the roles.
+          </p>
         )}
         <AnimatePresence initial={false}>
           {education

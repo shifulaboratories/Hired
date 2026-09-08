@@ -5161,6 +5161,90 @@ keeps its own copy of every constant an `inputSchema` expression closes over.
 `src/lib/mcp/tools.ts`, `src/components/me/import-dialog.tsx`, `tools/gen-tool-docs.mjs`
 (the Me section now ends at `preview_resume_import`).
 
+---
+
+## 2026-09-08 — A six-lens audit of the first run, and what it turned up
+
+Ran six adversarially-verified lenses over the first-run path — the invitation and sign-in
+screens, every empty state, the vocabulary, the first data-entry moment, dead ends, and the
+Analytics tab. Twenty-seven cited findings. What was acted on, and why each mattered more
+than it looked:
+
+**Analytics was telling a beginner they were failing.** At one application the tab drew
+"Response rate 0%" in 26px directly above a card reading "Too early to tell you anything
+useful" — the two disagreeing, and the big one winning. The figure now waits for the same
+ten applications `diagnoseSearch` already waits for, via the `confident` flag it already
+returns: one threshold, reused, never a second one invented in the component. The em dash
+keeps the card in the row rather than hiding it, so nothing reflows when the tenth lands.
+
+**And its empty gate was wrong in a way that punished doing the right thing.** It required
+zero roles AND zero applications AND zero resumes — so the moment somebody did what the
+setup strip told them to and pasted their old resume (which writes Role rows), the tab
+flipped from a clean empty state to a wall of zeros. Applications are the honest gate;
+every card but the Me tile derives from them.
+
+**The nav used the two words the tour never taught.** The tour's second card teaches
+"board" and the rail said "Pipeline", beside "CRM", an acronym this audience has never met.
+Display labels only — Board and People — with the routes, saved-view query keys, MCP tool
+names and enum values untouched, and the old words kept as command-palette search aliases
+so anyone who does know them still finds the screen.
+
+**Two controls on the first screen could not succeed.** QuickLog matches what you type
+against companies on the board, so on an empty account the most inviting box on the page
+was guaranteed to fail; it now appears with the first job, the way the setup strip clears
+itself. The Chase card drew a green tick and "Every follow-up is scheduled for later" —
+a congratulation for work nobody had done — on the same screen as a strip saying they had
+not started.
+
+**Contacts was a screen you could not add a contact to.** The add form lives on a company
+and on an application, and the empty state's `action` prop was literally `undefined`.
+
+**The list view lied.** "Nothing tracked yet" was hard-coded for zero rows, so a search
+that matched none of twenty-five applications reported an empty workspace. The page
+short-circuits the genuinely-empty case above it, so the only question left at that point
+is whether the person can see the way out.
+
+**Both possible defaults for the new-job Stage field were wrong**, which is why it is now a
+question. Left at Wishlist by somebody who had applied, the card never entered the funnel
+and their analytics said they had applied to nothing; defaulting to Applied invents
+applications nobody sent. Two buttons, plain words, no default, nothing saves until one is
+picked. The rest of the ladder is behind "Further along".
+
+**Smaller, and all real:** the invitation page never said what the product was; its Google
+button dead-ended when a personal address did not match the invited one, so it now names
+the address; the expired-invitation card knew the inviter and refused to say; the name
+typed on that form stopped at the User row and never reached the Profile that every resume
+header reads, so it is seeded in the same transaction with an empty `update` so a re-run
+never overwrites an edit; the two screens where you INVENT a password had no reveal while
+the one where you retype a known one did, so the field is lifted into a shared
+`PasswordField`; `createApplicationAction` had no try/catch, so any throw left the dialog
+open with everything typed, nothing saved and nothing said; the Track it button was live
+from the moment the dialog opened and answered a press with a toast in the far corner; and
+`loadPosting` called `new URL` with no normalisation, so a link copied off a phone without
+`https://` was rejected as "not a URL" — normalising in `loadPosting` rather than at the
+field fixes `capture_job_posting` over MCP too, and passes `javascript://` and `ftp://`
+through unchanged so the protocol guard downstream still rejects them.
+
+**Deliberately not done.** The calendar's empty month was left alone: a blank grid reads
+correctly as "nothing this month" on its own, unlike a board of columns labelled Empty.
+`STAGE_LABEL.WISHLIST` stays "Wishlist" — the board column is self-explanatory, and the
+dialog change already removes the word from the first-run path.
+
+**Verified** in a browser on a genuinely empty account against a real Postgres: fourteen
+assertions covering every change, plus the specific regression the audit named — a pasted
+resume must not flip Analytics to zeros — and the two cases that must not change, a filter
+matching nothing and a workspace with data. Typecheck, build, `gen-tool-docs --check` and
+`migrate diff --exit-code` clean; seven unfiltered archivable reads, the documented set.
+
+**Applies to:** `src/components/analytics/analytics-panel.tsx`, `src/app/(app)/page.tsx`,
+`src/components/dashboard/{follow-up-list,quick-log,setup-strip}.tsx`,
+`src/components/tasks/ping-scheduler.tsx`, `src/components/crm/contacts-list.tsx`,
+`src/components/me/extras-panel.tsx`, `src/components/pipeline/{list,new-application-dialog}.tsx`,
+`src/components/{shell,command-palette,login-form,accept-invite-form,setup-form}.tsx`,
+`src/components/settings/connections-panel.tsx`, `src/app/invite/[token]/page.tsx`,
+`src/lib/{auth,posting}.ts`, `src/lib/data/{users,onboarding}.ts`,
+`src/app/(app)/settings/page.tsx`, `README.md`, `docs/app.mdx`.
+
 ## 2026-09-08 — Which bullets you can actually defend, marked on the bullet
 
 The Evidence panel could already say which of a resume's claims trace back to something the

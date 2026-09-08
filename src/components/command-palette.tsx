@@ -228,8 +228,11 @@ export function CommandPalette({
               <CommandItem value="go-resumes" onSelect={() => go("/me?tab=resumes")}>
                 <FileTextIcon /> Resumes
               </CommandItem>
-              <CommandItem value="go-pipeline" onSelect={() => go("/applications")}>
-                <KanbanIcon /> Pipeline
+              <CommandItem
+                value="go-board pipeline applications jobs"
+                onSelect={() => go("/applications")}
+              >
+                <KanbanIcon /> Board
               </CommandItem>
               <CommandItem
                 value="go-analytics stats funnel chart"
@@ -237,18 +240,20 @@ export function CommandPalette({
               >
                 <ChartNoAxesColumnIcon /> Analytics
               </CommandItem>
-              <CommandItem value="go-companies" onSelect={() => go("/crm/companies")}>
+              <CommandItem value="go-companies crm" onSelect={() => go("/crm/companies")}>
                 <BuildingIcon /> Companies
               </CommandItem>
-              <CommandItem value="go-contacts" onSelect={() => go("/crm/contacts")}>
+              <CommandItem value="go-contacts people crm recruiters" onSelect={() => go("/crm/contacts")}>
                 <UsersIcon /> Contacts
               </CommandItem>
               <CommandItem value="go-archive trash bin deleted" onSelect={() => go("/archive")}>
                 <Trash2Icon /> Archive
               </CommandItem>
-              <CommandItem value="go-settings" onSelect={() => go("/settings")}>
+              <CommandItem
+                value="go-settings connections mcp assistants claude"
+                onSelect={() => go("/settings")}
+              >
                 <SettingsIcon /> Settings
-                <CommandShortcut>MCP</CommandShortcut>
               </CommandItem>
             </CommandGroup>
 

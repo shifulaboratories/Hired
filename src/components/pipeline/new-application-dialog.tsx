@@ -28,6 +28,8 @@ import { BOARD_STAGES, STAGE_LABEL } from "@/lib/data/pipeline";
 import type { Stage } from "@prisma/client";
 import { createApplicationAction, parsePostingAction } from "@/server/actions";
 import { TagPicker, type TagOption } from "@/components/tags/tag-picker";
+import { cn } from "@/lib/utils";
+import { DateField } from "@/components/ui/date-field";
 import { ValuePicker } from "@/components/pipeline/value-picker";
 import type { TagValue } from "@/components/tags/tag-chip";
 
@@ -50,7 +52,8 @@ export function NewApplicationDialog({
   const [form, setForm] = useState({
     company: "",
     roleTitle: "",
-    stage: "WISHLIST" as Stage,
+    stage: "" as Stage | "",
+    appliedAt: "",
     jobUrl: "",
     location: "",
     salaryRange: "",
@@ -106,21 +109,45 @@ export function NewApplicationDialog({
     });
   };
 
+  /** Everything past "applied" — the rare case, behind one more click. */
+  const further: Stage[] = BOARD_STAGES.filter(
+    (stage) => stage !== "WISHLIST" && stage !== "APPLIED",
+  );
+
   const submit = () => {
     if (!form.company.trim() || !form.roleTitle.trim()) {
       toast.error("Company and role are required.");
       return;
     }
+    if (!form.stage) {
+      toast.error("Say whether you have applied yet — it decides where the card goes.");
+      return;
+    }
+    // Narrowed above, but the guard does not survive the spread — so the
+    // stage is written explicitly rather than carried along in `rest`.
+    const stage = form.stage;
     startTransition(async () => {
-      const { tags, ...rest } = form;
-      const id = await createApplicationAction({
-        ...rest,
-        tagIds: tags.map((tag) => tag.id),
-        resumeId: form.resumeId || null,
-      });
-      setOpen(false);
-      toast.success("Tracking it");
-      router.push(`/applications/${id}`);
+      // Unhandled before this: a stale resume id, a tag ownership check or a
+      // server asleep on a small box rejected into nowhere. The spinner
+      // stopped, everything they had typed stayed on screen, nothing was
+      // saved and nothing said so — so they pressed the button again.
+      try {
+        const { tags, ...rest } = form;
+        const id = await createApplicationAction({
+          ...rest,
+          stage,
+          company: form.company.trim(),
+          roleTitle: form.roleTitle.trim(),
+          appliedAt: form.appliedAt || undefined,
+          tagIds: tags.map((tag) => tag.id),
+          resumeId: form.resumeId || null,
+        });
+        setOpen(false);
+        toast.success("Tracking it");
+        router.push(`/applications/${id}`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not track that job.");
+      }
     });
   };
 
@@ -142,10 +169,10 @@ export function NewApplicationDialog({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
-            <Label>Job link</Label>
+            <Label htmlFor="app-url">Job link</Label>
             <div className="flex gap-2">
               <Input
-                autoFocus
+                id="app-url"
                 value={form.jobUrl}
                 onChange={(event) => setForm({ ...form, jobUrl: event.target.value })}
                 onKeyDown={(event) => {
@@ -161,40 +188,98 @@ export function NewApplicationDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Company</Label>
+            <Label htmlFor="app-company">Company</Label>
             <Input
+              id="app-company"
+              autoFocus
               value={form.company}
               onChange={(event) => setForm({ ...form, company: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") submit();
+              }}
               placeholder="Stripe"
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Role</Label>
+            <Label htmlFor="app-role">Role</Label>
             <Input
+              id="app-role"
               value={form.roleTitle}
               onChange={(event) => setForm({ ...form, roleTitle: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") submit();
+              }}
               placeholder="Staff Engineer, Payments"
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Stage</Label>
-            <Select
-              value={form.stage}
-              onValueChange={(value) => setForm({ ...form, stage: value as Stage })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {BOARD_STAGES.map((stage) => (
-                  <SelectItem key={stage} value={stage}>
-                    {STAGE_LABEL[stage]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* A question, not a dropdown of seven board columns.
+              This defaulted to Wishlist, and both possible defaults were
+              wrong. Left alone by somebody who HAD applied, the card sat in
+              Wishlist, never entered the funnel, and their analytics said they
+              had applied to nothing. Defaulting the other way invents
+              applications nobody sent. So it is asked instead — two buttons,
+              plain words, no default and no submit until one is picked. It is
+              one click, and it is the click that makes every number downstream
+              true. "Further along" opens the full ladder for the rarer case of
+              somebody already interviewing when they start tracking. */}
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label>Have you applied yet?</Label>
+            <div className="flex flex-wrap gap-2">
+              <StageChoice
+                active={form.stage === "WISHLIST"}
+                onClick={() => setForm({ ...form, stage: "WISHLIST" })}
+              >
+                Not yet — just saving it
+              </StageChoice>
+              <StageChoice
+                active={form.stage === "APPLIED"}
+                onClick={() => setForm({ ...form, stage: "APPLIED" })}
+              >
+                Yes, I have applied
+              </StageChoice>
+              <Select
+                value={further.includes(form.stage as Stage) ? form.stage : ""}
+                onValueChange={(value) => setForm({ ...form, stage: value as Stage })}
+              >
+                <SelectTrigger
+                  aria-label="Somewhere further along"
+                  className={cn(
+                    "h-auto w-auto min-w-0 gap-1.5 rounded-control px-3 py-1.5 text-[13px]",
+                    further.includes(form.stage as Stage)
+                      ? "border-primary bg-primary-tint text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  <SelectValue placeholder="Further along" />
+                </SelectTrigger>
+                <SelectContent>
+                  {further.map((stage) => (
+                    <SelectItem key={stage} value={stage}>
+                      {STAGE_LABEL[stage]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
+
+          {/* Only once the answer above is "yes". The first session is almost
+              always a backfill — five or ten jobs sent over the past month —
+              and every one of them used to be stamped with today, which dated
+              the follow-up reminders wrong too. Blank means today, the way it
+              always did. */}
+          {form.stage && form.stage !== "WISHLIST" && (
+            <div className="space-y-1.5">
+              <Label>Applied on</Label>
+              <DateField
+                value={form.appliedAt}
+                onChange={(appliedAt) => setForm({ ...form, appliedAt })}
+                ariaLabel="Applied on"
+                placeholder="Today"
+              />
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label>Resume used</Label>
@@ -202,7 +287,7 @@ export function NewApplicationDialog({
               value={form.resumeId || "none"}
               onValueChange={(value) => setForm({ ...form, resumeId: value === "none" ? "" : value })}
             >
-              <SelectTrigger>
+              <SelectTrigger aria-label="Resume used">
                 <SelectValue placeholder="None yet" />
               </SelectTrigger>
               <SelectContent>
@@ -227,8 +312,9 @@ export function NewApplicationDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Compensation</Label>
+            <Label htmlFor="app-salary">Compensation</Label>
             <Input
+              id="app-salary"
               value={form.salaryRange}
               onChange={(event) => setForm({ ...form, salaryRange: event.target.value })}
               placeholder="$180k – $230k"
@@ -247,8 +333,9 @@ export function NewApplicationDialog({
           </div>
 
           <div className="space-y-1.5 sm:col-span-2">
-            <Label>Job description</Label>
+            <Label htmlFor="app-description">Job description</Label>
             <Textarea
+              id="app-description"
               value={form.jobDescription}
               onChange={(event) => setForm({ ...form, jobDescription: event.target.value })}
               placeholder="Paste the whole posting here."
@@ -261,12 +348,51 @@ export function NewApplicationDialog({
           <Button variant="ghost" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button variant="default" onClick={submit} disabled={pending}>
+          {/* Nine controls and no asterisk anywhere: the button used to be live
+              from the moment the dialog opened and answered a press with a
+              toast in the far corner, away from the two fields it was about.
+              Disabled says the same thing where the person is looking. */}
+          <Button
+            variant="default"
+            onClick={submit}
+            disabled={pending || !form.company.trim() || !form.roleTitle.trim() || !form.stage}
+          >
             {pending && <LoaderCircleIcon className="animate-spin" />}
             Track it
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * One of the two plain answers. A button rather than a radio: it is the same
+ * hit target as the Select beside it, and there is nothing to read out of a
+ * group of two whose labels are already whole sentences.
+ */
+function StageChoice({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "rounded-control border px-3 py-1.5 text-[13px] font-medium transition-colors",
+        active
+          ? "border-primary bg-primary-tint text-foreground"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
   );
 }

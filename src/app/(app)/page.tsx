@@ -82,7 +82,7 @@ export default async function HomePage({
   return (
     <PageShell>
       <PageHeader
-        eyebrow={active === "today" ? greeting() : "Pipeline"}
+        eyebrow={active === "today" ? greeting() : "Your search"}
         title={
           active === "analytics"
             ? "How the search is going"
@@ -92,7 +92,7 @@ export default async function HomePage({
         }
         description={
           active === "analytics"
-            ? "The shape of it, not the to-do list: what is in flight, what is converting, and where applications are actually leaking out."
+            ? "The shape of it, not the to-do list: what is still open, how many come back to you, and where the rest stop."
             : "The things you wrote down, and the follow-ups that have come round. Your assistant can read and write this list too."
         }
         actions={
@@ -243,8 +243,13 @@ async function TodayTab({
       {setup.outstanding && <SetupStrip status={setup} />}
 
       {/* Above the list, because reporting what happened is the thing you came
-          here to do; the list is what you work down afterwards. */}
-      <QuickLog />
+          here to do; the list is what you work down afterwards — but only once
+          there is something to report against. It matches what you type to a
+          company on the board, so on an empty account it is the most inviting
+          control on the first screen and it cannot succeed. It appears on its
+          own the moment the first job lands, the way the setup strip clears
+          itself. */}
+      {applications.length > 0 && <QuickLog />}
 
       <FadeIn>
         <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -275,7 +280,7 @@ async function TodayTab({
                 )}
               </CardHeader>
               <CardContent>
-                <FollowUpList items={chase} />
+                <FollowUpList items={chase} started={applications.length + contacts.length > 0} />
               </CardContent>
             </Card>
 

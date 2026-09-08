@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { UserPlusIcon } from "lucide-react";
@@ -51,9 +53,15 @@ export function PingScheduler({ contacts }: { contacts: PingCandidate[] }) {
 
   if (contacts.length === 0) {
     return (
-      <p className="text-faint text-[12.5px] leading-snug">
-        Nobody on file yet. Add people under CRM and you can line up who to chase from here.
-      </p>
+      <div className="space-y-3">
+        <p className="text-faint text-[12.5px] leading-snug">
+          Nobody on file yet. A recruiter, a hiring manager, the friend who might put in a word —
+          once somebody is on file you can line up who to chase from here.
+        </p>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/crm/contacts">Add someone</Link>
+        </Button>
+      </div>
     );
   }
 

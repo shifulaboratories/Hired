@@ -62,7 +62,7 @@ export async function setupStatus(userId: string): Promise<SetupStatus> {
     {
       key: "connect",
       done: connection !== null,
-      detail: connection ? "An assistant has used this workspace." : "Nothing connected yet.",
+      detail: connection ? "An assistant has used this account." : "Nothing connected yet.",
     },
   ];
 

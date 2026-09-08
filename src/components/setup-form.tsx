@@ -5,7 +5,14 @@ import { motion } from "framer-motion";
 import { KeyRoundIcon, TriangleAlertIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AuthCard, AuthError, SubmitButton, authGroup, authRise } from "@/components/login-form";
+import {
+  AuthCard,
+  AuthError,
+  PasswordField,
+  SubmitButton,
+  authGroup,
+  authRise,
+} from "@/components/login-form";
 import { setupAction } from "@/server/actions";
 
 export function SetupForm({ requiresKey }: { requiresKey: boolean }) {
@@ -61,13 +68,12 @@ export function SetupForm({ requiresKey }: { requiresKey: boolean }) {
         </motion.div>
 
         <motion.div variants={authRise} className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <Input
+          <PasswordField
             id="password"
-            name="password"
-            type="password"
+            label="Password"
             autoComplete="new-password"
             placeholder="At least 10 characters"
+            minLength={10}
           />
         </motion.div>
 

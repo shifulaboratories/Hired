@@ -64,7 +64,7 @@ import { companyDomain } from "@/lib/company";
 import { useAutosave } from "@/hooks/use-autosave";
 import { ACTIVITY_LABEL, ACTIVITY_OPTIONS, STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
 import { cn, relativeDay } from "@/lib/utils";
-import { DateField } from "@/components/ui/date-field";
+import { DateField, parseISODate } from "@/components/ui/date-field";
 import {
   addActivityAction,
   createContactAction,
@@ -179,6 +179,7 @@ export function ApplicationDetail({
     salaryRange: application.salaryRange,
     tags: application.tags,
     notes: application.notes,
+    appliedAt: application.appliedAt ? application.appliedAt.slice(0, 10) : "",
     nextFollowUpAt: application.nextFollowUpAt ? application.nextFollowUpAt.slice(0, 10) : "",
     resumeId: application.resumeId ?? "",
   });
@@ -205,6 +206,7 @@ export function ApplicationDetail({
       // Categories are rows now, so what travels is ids — and it replaces the
       // whole set, which is what ticking one off in the picker means.
       tagIds: tags.map((tag) => tag.id),
+      appliedAt: next.appliedAt || null,
       nextFollowUpAt: next.nextFollowUpAt || null,
       resumeId: next.resumeId || null,
     });
@@ -216,9 +218,11 @@ export function ApplicationDetail({
     values.location,
     values.workMode,
     values.salaryRange,
-    application.appliedAt
-      ? `Applied ${new Date(application.appliedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-      : "",
+    // From `values`, like every other line here, so editing the date updates
+    // the header without a reload — and through parseISODate, because
+    // new Date("2026-03-14") is UTC midnight and prints as the 13th anywhere
+    // west of Greenwich.
+    appliedLabel(values.appliedAt),
     values.nextFollowUpAt ? `Chase ${relativeDay(new Date(values.nextFollowUpAt))}` : "",
   ].filter(Boolean);
 
@@ -431,6 +435,21 @@ export function ApplicationDetail({
               <CardTitle className="text-[15px]">Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Read-only text until now, and stamped with the day the card
+                  was made — so a first session spent entering ten jobs from
+                  the past month claimed all ten were sent today, and there was
+                  nowhere in the browser to say otherwise. The tools could
+                  already set it; only the person could not. */}
+              <div className="space-y-1.5">
+                <Label>Applied on</Label>
+                <DateField
+                  value={values.appliedAt}
+                  onChange={(appliedAt) => set({ appliedAt })}
+                  ariaLabel="Applied on"
+                  placeholder="Not applied yet"
+                />
+              </div>
+
               <div className="space-y-1.5">
                 <Label>Next follow-up</Label>
                 <DateField
@@ -1188,4 +1207,11 @@ function ContactsCard({
       </CardContent>
     </Card>
   );
+}
+
+/** "Applied Mar 14", by the date's own local parts. */
+function appliedLabel(iso: string) {
+  const date = parseISODate(iso);
+  if (!date) return "";
+  return `Applied ${date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 }

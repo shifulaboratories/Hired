@@ -119,7 +119,7 @@ export function QuickLog() {
         <div className="mt-2.5 border-t pt-2.5">
           {reading.matches.length === 0 ? (
             <p className="text-muted-foreground text-[12.5px]">
-              Nothing in your pipeline matches that. Name the company in the line — &ldquo;spoke
+              Nothing on your board matches that. Name the company in the line — &ldquo;spoke
               to Stripe today&rdquo; — or open the application and log it there.
             </p>
           ) : (

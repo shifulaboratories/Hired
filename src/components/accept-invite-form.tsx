@@ -8,6 +8,7 @@ import {
   AuthCard,
   AuthError,
   GoogleButton,
+  PasswordField,
   SubmitButton,
   authGroup,
   authRise,
@@ -38,6 +39,17 @@ export function AcceptInviteForm({
           : `${inviter} invited you. Pick a password and you're in.`
       }
     >
+      {/* What this actually is.
+          Somebody arriving here got a link in an email from a friend and has
+          never heard of the product. The card told them who invited them and
+          asked for a password, and nothing on the way in ever said what they
+          were signing up to — which is a strange thing to ask of a person, and
+          the sort of thing they close the tab over. One sentence, before the
+          fields, in the words the tour uses on the other side of the door. */}
+      <motion.p variants={authRise} className="text-muted-foreground -mt-2 mb-5 text-[13px] leading-relaxed">
+        It keeps a job search in one place: every job you go for, everything you have ever done,
+        and the resumes you build out of it.
+      </motion.p>
       {/* No token travels with this. The callback finds the outstanding
           invitation by the verified email Google hands back, so the button is
           the same one as on the sign-in page and cannot accept an invitation
@@ -45,6 +57,15 @@ export function AcceptInviteForm({
       {googleReady && (
         <motion.div variants={authRise}>
           <GoogleButton label="Continue with Google" />
+          {/* No token travels with the button, so the callback matches the
+              invitation by the address Google hands back — which means a
+              personal Gmail that is not the invited address quietly matches
+              nothing and lands them on a sign-in screen for an account that
+              does not exist. Naming the address prevents it instead of
+              diagnosing it afterwards. */}
+          <p className="text-faint mt-2 text-center text-[12px]">
+            Use the Google account for {email}. Another address will not match this invitation.
+          </p>
           <div className="my-5 flex items-center gap-3">
             <span className="auth-rule bg-border h-px flex-1" />
             <span className="text-faint text-[11px] tracking-wide uppercase">or</span>
@@ -63,17 +84,16 @@ export function AcceptInviteForm({
 
         <motion.div variants={authRise} className="space-y-2">
           <Label htmlFor="name">Your name</Label>
-          <Input id="name" name="name" autoFocus placeholder="Ada Lovelace" />
+          <Input id="name" name="name" required autoFocus placeholder="Ada Lovelace" />
         </motion.div>
 
         <motion.div variants={authRise} className="space-y-2">
-          <Label htmlFor="password">Choose a password</Label>
-          <Input
+          <PasswordField
             id="password"
-            name="password"
-            type="password"
+            label="Choose a password"
             autoComplete="new-password"
             placeholder="At least 10 characters"
+            minLength={10}
           />
         </motion.div>
 

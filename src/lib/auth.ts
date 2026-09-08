@@ -262,6 +262,13 @@ export async function claimInstance(input: {
     ? await db.user.update({ where: { id: placeholder.id }, data })
     : await db.user.create({ data });
 
+  // Same as acceptInvite: the name and address they just typed are the header
+  // of every resume, and without this they would have to type them again.
+  await db.profile.upsert({
+    where: { userId: user.id },
+    create: { userId: user.id, fullName: input.name.trim(), email },
+    update: {},
+  });
   await ensureDefaultConnection(user.id);
   return user;
 }

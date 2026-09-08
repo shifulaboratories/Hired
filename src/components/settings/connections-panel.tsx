@@ -403,14 +403,14 @@ function ConnectionSheet({
                 variant="ghost"
                 size="icon"
                 onClick={() => setRevealed((value) => !value)}
-                aria-label={revealed ? "Hide token" : "Reveal token"}
+                aria-label={revealed ? "Hide the URL" : "Show the URL"}
               >
                 {revealed ? <EyeOffIcon /> : <EyeIcon />}
               </Button>
               <CopyButton value={url} label="Copy" />
             </div>
             <p className="text-muted-foreground text-xs">
-              This URL is a password for your workspace. Anyone holding it can read and write
+              This URL is a password for your account. Anyone holding it can read and write
               your career history, resumes and pipeline.
             </p>
           </div>
@@ -445,11 +445,11 @@ function ConnectionSheet({
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-muted-foreground text-xs">
-              Rotating issues a new token for this client only. Everything else stays connected.
+              A new URL replaces this one for this assistant only. Everything else stays connected.
             </p>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={rotate} disabled={pending}>
-                <RefreshCwIcon className={cn("size-3.5", pending && "animate-spin")} /> Rotate
+                <RefreshCwIcon className={cn("size-3.5", pending && "animate-spin")} /> New URL
               </Button>
               <Button
                 variant="ghost"
@@ -598,9 +598,9 @@ function LibrarySheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto p-5 sm:max-w-xl sm:p-6">
-        <SheetTitle className="text-[17px] font-semibold tracking-tight">Add to this workspace</SheetTitle>
+        <SheetTitle className="text-[17px] font-semibold tracking-tight">Add a connection</SheetTitle>
         <SheetDescription className="mt-1 text-xs">
-          Assistants read and write your workspace over MCP. Accounts are what the workspace
+          Assistants read and write everything here on your behalf. Accounts are what it
           reads on your behalf.
         </SheetDescription>
 
@@ -628,7 +628,7 @@ function LibrarySheet({
 
           <TabsContent value="accounts" className="mt-4">
             <p className="text-muted-foreground mb-3 text-xs">
-              Live and read-only. Nothing is copied into this instance — every screen asks at
+              Live and read-only. Nothing is copied in here — every screen asks at
               the moment you open it, and disconnecting deletes the only thing held. Connect
               more than one if recruiters write to more than one.
             </p>
@@ -873,7 +873,7 @@ export function ConnectionsPanel({
 
       <p className="text-muted-foreground text-xs leading-relaxed">
         Every connection here is yours alone: nobody else&apos;s data is reachable through one.
-        The assistant URLs are passwords for your workspace, so treat them like passwords.
+        The assistant URLs are passwords for your account, so treat them like passwords.
       </p>
 
       {openConnection && (
