@@ -617,6 +617,11 @@ move it. Harvard's own convention puts Education first — that's right
 for students and recent graduates, and wrong for most people with real work history, so the
 default order leads with Experience.
 
+The preview is a way in, not just a picture: click any line on the paper — a bullet, a job,
+a heading, your name — and the card holding it opens in the rail with that exact field
+focused. It works because every block on the page already carries the place in the document
+it came from, which is how the page breaks know what to point at.
+
 Nothing you do in the editor is one-way. Undo and redo sit next to the save indicator and
 answer to ⌘Z and ⇧⌘Z — except inside a text field, where ⌘Z still takes back what you typed,
 which is what you meant. A sentence undoes as a sentence rather than a letter at a time.

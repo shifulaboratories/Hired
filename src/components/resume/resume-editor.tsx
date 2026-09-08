@@ -66,7 +66,7 @@ import { DragHandle, SortableList, SortableRow } from "@/components/resume/sorta
 import { moveWithin } from "@/lib/resume-reorder";
 import { PageBreaks } from "@/components/resume/page-breaks";
 import { FitPanel } from "@/components/resume/fit-panel";
-import { emptyLayout, pageBox, type PageLayout } from "@/lib/resume-pagination";
+import { emptyLayout, pageBox, parsePath, type PageLayout } from "@/lib/resume-pagination";
 import { ResumePaper, type PaperSettings } from "@/components/resume/resume-paper";
 import { EvidencePanel, type LinkedApplication } from "@/components/resume/evidence-panel";
 import type { CorrespondenceAccess } from "@/components/google/correspondence-card";
@@ -196,6 +196,60 @@ export function ResumeEditor({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [history]);
+
+  /**
+   * Clicking the preview opens the field that produced what you clicked.
+   *
+   * The paper already marks every block with the place in the document it came
+   * from — `data-rp`, put there so the pagination code could say which entry
+   * starts a page — so the picture is already an index into the form. Without
+   * this the preview is a read-only picture beside a long scrolling form, and
+   * finding the field for the line you are looking at is the editor's most
+   * tedious minute.
+   *
+   * The rail marks its inputs with the same addresses, flattened: the paper
+   * distinguishes an education entry from a job because pagination cares,
+   * whereas the rail only needs section, entry and bullet.
+   */
+  const [focus, setFocus] = useState<{ path: string; at: number } | null>(null);
+
+  useEffect(() => {
+    if (!focus) return;
+    const ref = parsePath(focus.path);
+    if (!ref) return;
+    const field =
+      ref.kind === "header"
+        ? "header"
+        : ref.kind === "section"
+          ? `s${ref.section}`
+          : ref.kind === "text"
+            ? `s${ref.section}/text`
+            : ref.kind === "entry"
+              ? `s${ref.section}/e${ref.entry}`
+              : `s${ref.section}/e${ref.entry}/b${ref.bullet}`;
+    // The card it lives in has to finish opening first, and that is animated.
+    // Poll frames rather than guess a delay, and give up rather than hunt
+    // forever for a field this document has no input for.
+    let frames = 0;
+    let raf = 0;
+    const find = () => {
+      const element = document.querySelector<HTMLElement>(`[data-field="${field}"]`);
+      if (element) {
+        element.scrollIntoView({ block: "center", behavior: "smooth" });
+        element.focus({ preventScroll: true });
+        return;
+      }
+      if (frames++ < 24) raf = requestAnimationFrame(find);
+    };
+    raf = requestAnimationFrame(find);
+    return () => cancelAnimationFrame(raf);
+  }, [focus]);
+
+  /** Which section a click in the preview was asking for, if any. */
+  const focusedSection = (() => {
+    const ref = focus ? parsePath(focus.path) : null;
+    return ref && ref.kind !== "header" ? ref.section : null;
+  })();
 
   /** Snapshot the state as it stands, for a toast that offers to put it back. */
   const undoable = (message: string) => {
@@ -406,7 +460,11 @@ export function ResumeEditor({
           <div className="space-y-5">
             <TargetCard meta={meta} onChange={setMetaValue} />
 
-            <HeaderCard doc={doc} onChange={(header) => commit({ ...doc, header })} />
+            <HeaderCard
+              doc={doc}
+              onChange={(header) => commit({ ...doc, header })}
+              openSignal={focus && parsePath(focus.path)?.kind === "header" ? focus.at : undefined}
+            />
 
             <SortableList
               className="space-y-3"
@@ -427,6 +485,7 @@ export function ResumeEditor({
                     section={section}
                     index={index}
                     total={doc.sections.length}
+                    focus={focusedSection === index ? focus : null}
                     onChange={(patch, options) => updateSection(index, patch, options)}
                     onMove={(direction) => moveSection(index, direction)}
                     onRemove={() => removeSection(index)}
@@ -458,8 +517,13 @@ export function ResumeEditor({
             animate={{ scale: 1 }}
           >
             <div
-              className="relative origin-top-left shadow-2xl"
+              className="rp-pick relative origin-top-left shadow-2xl"
               style={{ transform: `scale(${zoom})`, width: "8.5in" }}
+              onClick={(event) => {
+                const block = (event.target as HTMLElement).closest("[data-rp]");
+                const path = block?.getAttribute("data-rp");
+                if (path) setFocus({ path, at: Date.now() });
+              }}
             >
               <ResumePaper doc={doc} settings={{ ...meta, photo: meta.showPhoto ? photo : "" }} />
               {/* Inside the scaled box on purpose: the lines are positioned in
@@ -514,17 +578,20 @@ function TargetCard({
 function HeaderCard({
   doc,
   onChange,
+  openSignal,
 }: {
   doc: ResumeDoc;
   onChange: (header: ResumeDoc["header"]) => void;
+  openSignal?: number;
 }) {
   const { header } = doc;
   const set = (patch: Partial<ResumeDoc["header"]>) => onChange({ ...header, ...patch });
 
   return (
-    <Collapsible title="Header" defaultOpen>
+    <Collapsible title="Header" defaultOpen openSignal={openSignal}>
       <div className="space-y-2.5">
         <Input
+          data-field="header"
           value={header.name}
           onChange={(event) => set({ name: event.target.value })}
           placeholder="Full name"
@@ -605,6 +672,7 @@ function SectionCard({
   onMove,
   onRemove,
   onUndoable,
+  focus,
 }: {
   section: ResumeSection;
   index: number;
@@ -614,12 +682,22 @@ function SectionCard({
   onUndoable: (message: string) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
+  /** A click in the preview that landed inside this section, or null. */
+  focus: { path: string; at: number } | null;
 }) {
+  // The rail addresses its own inputs the way the paper addresses its blocks,
+  // flattened: every entry kind is "e" here, because a form field does not
+  // care whether it is a job or a degree.
+  const at = `s${index}`;
+  const ref = focus ? parsePath(focus.path) : null;
+  const openEntry = ref && (ref.kind === "entry" || ref.kind === "bullet") ? ref.entry : null;
+
   return (
     <Collapsible
       title={section.heading || section.kind}
       dimmed={!section.visible}
       badge={countLabel(section)}
+      openSignal={focus?.at}
       controls={
         <>
           <DragHandle className="mr-0.5 size-7" />
@@ -655,6 +733,7 @@ function SectionCard({
       <div className="space-y-3">
         <div className="flex gap-2">
           <Input
+            data-field={at}
             value={section.heading}
             onChange={(event) => onChange({ heading: event.target.value })}
             placeholder="Section heading"
@@ -672,6 +751,7 @@ function SectionCard({
 
         {section.kind === "summary" && (
           <Textarea
+            data-field={`${at}/text`}
             value={section.text}
             onChange={(event) => onChange({ text: event.target.value })}
             placeholder="Two or three lines that frame you for this specific job."
@@ -682,6 +762,9 @@ function SectionCard({
         {section.kind === "experience" && (
           <ItemList
             items={section.experience}
+            path={at}
+            openIndex={openEntry}
+            openSignal={focus?.at}
             onAdd={() =>
               onChange({ experience: [...section.experience, blankExperience()] }, { step: true })
             }
@@ -711,6 +794,7 @@ function SectionCard({
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-2">
                     <Input
+                      data-field={`${at}/e${i}`}
                       value={item.title}
                       onChange={(event) => set({ title: event.target.value })}
                       placeholder="Title"
@@ -754,6 +838,7 @@ function SectionCard({
                   />
                   <BulletEditor
                     bullets={item.bullets}
+                    path={`${at}/e${i}`}
                     onChange={(bullets, options) => set({ bullets }, options)}
                   />
                 </div>
@@ -765,6 +850,9 @@ function SectionCard({
         {section.kind === "education" && (
           <ItemList
             items={section.education}
+            path={at}
+            openIndex={openEntry}
+            openSignal={focus?.at}
             onAdd={() =>
               onChange({ education: [...section.education, blankEducation()] }, { step: true })
             }
@@ -793,6 +881,7 @@ function SectionCard({
               return (
                 <div className="grid grid-cols-2 gap-2">
                   <Input
+                    data-field={`${at}/e${i}`}
                     value={item.school}
                     onChange={(event) => set({ school: event.target.value })}
                     placeholder="School"
@@ -821,6 +910,7 @@ function SectionCard({
                   <div className="col-span-2">
                     <BulletEditor
                       bullets={item.details}
+                      path={`${at}/e${i}`}
                       onChange={(details, options) => set({ details }, options)}
                       placeholder="Honours, coursework…"
                     />
@@ -834,6 +924,9 @@ function SectionCard({
         {section.kind === "projects" && (
           <ItemList
             items={section.projects}
+            path={at}
+            openIndex={openEntry}
+            openSignal={focus?.at}
             onAdd={() =>
               onChange({ projects: [...section.projects, blankProject()] }, { step: true })
             }
@@ -863,6 +956,7 @@ function SectionCard({
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-2">
                     <Input
+                      data-field={`${at}/e${i}`}
                       value={item.name}
                       onChange={(event) => set({ name: event.target.value })}
                       placeholder="Name"
@@ -886,6 +980,7 @@ function SectionCard({
                   />
                   <BulletEditor
                     bullets={item.bullets}
+                    path={`${at}/e${i}`}
                     onChange={(bullets, options) => set({ bullets }, options)}
                   />
                 </div>
@@ -899,6 +994,7 @@ function SectionCard({
             {section.skills.map((group, i) => (
               <div key={i} className="flex gap-2">
                 <Input
+                  data-field={`${at}/e${i}`}
                   value={group.name}
                   onChange={(event) => {
                     const skills = [...section.skills];
@@ -952,6 +1048,7 @@ function SectionCard({
             {section.certifications.map((cert, i) => (
               <div key={i} className="flex gap-2">
                 <Input
+                  data-field={`${at}/e${i}`}
                   value={cert.name}
                   onChange={(event) => {
                     const certifications = [...section.certifications];
@@ -1017,6 +1114,9 @@ function SectionCard({
         {section.kind === "custom" && (
           <ItemList
             items={section.items}
+            path={at}
+            openIndex={openEntry}
+            openSignal={focus?.at}
             onAdd={() =>
               onChange(
                 {
@@ -1047,6 +1147,7 @@ function SectionCard({
               return (
                 <div className="space-y-2">
                   <Input
+                    data-field={`${at}/e${i}`}
                     value={item.title}
                     onChange={(event) => set({ title: event.target.value })}
                     placeholder="Title"
@@ -1065,6 +1166,7 @@ function SectionCard({
                   </div>
                   <BulletEditor
                     bullets={item.bullets}
+                    path={`${at}/e${i}`}
                     onChange={(bullets, options) => set({ bullets }, options)}
                   />
                 </div>
@@ -1080,11 +1182,14 @@ function SectionCard({
 function BulletEditor({
   bullets,
   onChange,
+  path,
   placeholder = "Strong verb, specific scope, measurable outcome",
 }: {
   bullets: string[];
   /** `step` marks an edit that is its own undo step rather than typing. */
   onChange: (bullets: string[], options?: { step?: boolean }) => void;
+  /** This list's address, e.g. "s1/e0" — each row extends it with /bN. */
+  path?: string;
   placeholder?: string;
 }) {
   return (
@@ -1102,6 +1207,7 @@ function BulletEditor({
         >
           <DragHandle className="mt-1.5 size-6" />
           <Textarea
+            data-field={path ? `${path}/b${index}` : undefined}
             value={bullet}
             onChange={(event) => {
               const next = [...bullets];
@@ -1156,6 +1262,9 @@ function ItemList<T>({
   onMove,
   onReorderTo,
   addLabel,
+  path,
+  openIndex,
+  openSignal,
 }: {
   items: T[];
   render: (item: T, index: number) => React.ReactNode;
@@ -1166,6 +1275,11 @@ function ItemList<T>({
   /** A drag landed: this entry moved to that position. */
   onReorderTo: (from: number, to: number) => void;
   addLabel: string;
+  /** This list's address in the document, e.g. "s2". Rows extend it. */
+  path: string;
+  /** Which row a click in the preview asked for, or null. */
+  openIndex: number | null;
+  openSignal?: number;
 }) {
   return (
     <div className="space-y-2">
@@ -1179,6 +1293,7 @@ function ItemList<T>({
         <Collapsible
           title={renderTitle(item)}
           nested
+          openSignal={openIndex === index ? openSignal : undefined}
           controls={
             <>
               <DragHandle className="mr-0.5 size-7" />
@@ -1232,6 +1347,7 @@ function Collapsible({
   defaultOpen = false,
   nested = false,
   dimmed = false,
+  openSignal,
 }: {
   title: string;
   children: React.ReactNode;
@@ -1240,8 +1356,17 @@ function Collapsible({
   defaultOpen?: boolean;
   nested?: boolean;
   dimmed?: boolean;
+  /**
+   * Bumped when something outside asks this card to open — clicking the thing
+   * it edits in the preview. A changing number rather than a boolean, so
+   * asking twice for the same card works after you close it by hand.
+   */
+  openSignal?: number;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => {
+    if (openSignal) setOpen(true);
+  }, [openSignal]);
 
   return (
     <div
