@@ -48,6 +48,7 @@
     "mailparser": "^3.9.20",
     "next": "^15.3.2",
     "next-themes": "^0.4.6",
+    "pdfjs-dist": "^4.10.38",
     "playwright-core": "^1.62.1",
     "postcss": "^8.5.4",
     "prisma": "^6.19.3",

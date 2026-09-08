@@ -613,8 +613,12 @@ with the company named once, so read straight it produces jobs called "Full-time
 promotions filed under no employer at all. That gets folded in first, and the review step says
 so, because the fields won't match what you pasted line for line.
 
-PDFs are deliberately not read directly: a two-column layout comes out interleaved, and a
-wrong parse you can't see is worse than a paste.
+**Read a PDF** takes the file itself, when the file can be read. A PDF has no paragraphs —
+just glyphs at coordinates — and a two-column resume's text comes out interleaved, a line of
+your jobs then a line of your sidebar. So the layout is checked first: one column is read and
+dropped into the box for you to look over, and two columns is refused *by name*, saying that's
+what it is and what to do instead. A blanket refusal of every PDF was the old answer, and most
+resumes are one column and read fine.
 
 ## The Harvard template
 

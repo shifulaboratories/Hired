@@ -5600,3 +5600,42 @@ arrive as one with the others' titles read as its bullets.
 **Applies to:** `src/lib/resume-parse-linkedin.ts` (new), `src/lib/resume-parse.ts`. No tool
 and no data change: `import_resume` already says it takes a LinkedIn export, and this is the
 browser's fallback parser for someone who has connected nothing.
+
+## 2026-09-08 — PDFs: read the readable ones, refuse the rest by name
+
+This app has always told people to open their PDF, select all and paste. The reason was
+sound — a two-column resume's text comes out interleaved, a line of your jobs then a line of
+your sidebar, and a wrong parse you cannot see is worse than a paste — but the conclusion was
+too broad. Most resumes are one column and read perfectly well, and text comes with positions,
+so a two-column layout is *detectable*. It is now read when it can be read and refused **by
+name** when it cannot: "this is a two-column layout, its text comes out interleaved", with
+what to do instead.
+
+**A gutter is asked of the runs, never of assembled lines.** Assembling lines means grouping by
+baseline, and in two columns the sidebar and the body share baselines — so the "line" spans the
+page and crosses every candidate x, which is exactly backwards. The first version did that and
+could not see a two-column page at all. Asked of the runs, a gutter is an x that almost nothing
+crosses with real text on both sides, which is also what distinguishes a real second column
+from a right-aligned date or a date rail down the left: those sit beside lines that reach
+across.
+
+**The paragraph threshold is measured, and it is 1.35.** A fixed gap put a blank line between
+every line at one font size and none at another. Measuring the page's own median line spacing
+fixes that, but 1.6× was still too conservative: a real document with a 10pt margin between
+jobs came through with no break, and the parser read the first job's bullets as the second
+job's company and title. Caught by running a rendered PDF all the way through to the review
+step rather than stopping at "the text came out".
+
+**pdfjs v4 has no no-worker mode.** Setting `workerSrc` to "" throws. The worker is loaded
+through `new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url)` so the bundler emits
+it as an asset and returns its real hashed URL. The library itself is a dynamic import inside
+the handler: it is a megabyte of parser and most people paste text, so only someone who
+actually has a PDF pays for it.
+
+**One two-column page refuses the document.** A resume whose second page is a sidebar is still
+a resume that comes out interleaved, and half an import is worse than none — you would have to
+work out what was missing yourself.
+
+**Applies to:** `src/lib/resume-pdf-layout.ts` (new, pure — positions in, verdict out),
+`src/components/me/import-dialog.tsx`, `package.json` (`pdfjs-dist`, the one new runtime
+dependency this whole run has added).
