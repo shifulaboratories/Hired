@@ -96,12 +96,19 @@ export function ImportDialog() {
       try {
         const report = await importResumeAction(draft, source);
         const created = report.roles.created.length;
-        const matched = report.roles.skipped.length;
-        toast.success(
-          matched > 0
-            ? `Brought in ${created} job${created === 1 ? "" : "s"}; ${matched} ${matched === 1 ? "was" : "were"} already here`
-            : `Brought in ${created} job${created === 1 ? "" : "s"}`,
-        );
+        const merged = report.roles.merged;
+        const addedBullets = merged.reduce((sum, role) => sum + role.bulletsAdded, 0);
+        const untouched = report.roles.skipped.length;
+        // A second import is the interesting case, and "3 were already here"
+        // is not what happened to them: say what they gained.
+        const parts = [
+          created > 0 ? `Brought in ${created} job${created === 1 ? "" : "s"}` : "",
+          addedBullets > 0
+            ? `added ${addedBullets} bullet${addedBullets === 1 ? "" : "s"} to ${merged.length} you already had`
+            : "",
+          untouched > 0 ? `${untouched} already here, unchanged` : "",
+        ].filter(Boolean);
+        toast.success(parts.length ? parts.join("; ") : "Nothing new in that one");
         setOpen(false);
         setText("");
         setDraft(null);

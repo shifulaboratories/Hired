@@ -90,7 +90,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  125 tools any MCP client can call (157 if you're an admin). Claude, Claude Code, ChatGPT,
+  126 tools any MCP client can call (158 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -273,7 +273,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Hit **Test** next to any connection and the app calls its own endpoint the way a client
-would, then tells you how many tools answered — 125, or 157 if you're an admin.
+would, then tells you how many tools answered — 126, or 158 if you're an admin.
 
 #### One connection per client
 
@@ -463,7 +463,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-125 tools. One hundred and seventeen of them are the data tools across the four areas, the
+126 tools. One hundred and eighteen of them are the data tools across the four areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other eight are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
@@ -586,6 +586,11 @@ The empty workspace is the reason people leave before they start. Ask Claude —
 resume, file it"* — and `import_resume` puts the whole thing in: jobs with their bullets,
 education, skills, contact details, without overwriting anything already there. That path
 reads the document properly, and it's the one to use.
+
+Import the same resume again a year later and it adds what changed rather than shrugging: a
+job already on file keeps everything it has and gains the bullets it doesn't, with a reworded
+line recognised as the one you already had. `preview_resume_import` says what a second import
+would do before it does it.
 
 If you haven't connected anything yet, **Import** on the Me page takes the text instead. It
 reads headings, so it's a draft rather than an answer, and it's built to be corrected: every

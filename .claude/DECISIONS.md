@@ -5124,3 +5124,39 @@ the print page and the public link are documents, not controls.
 **Applies to:** `src/components/resume/resume-editor.tsx`, `src/app/globals.css`. No tool and
 no data change — this is the direct-manipulation exception, and every field it focuses is one
 `update_resume` already writes.
+
+## 2026-09-08 — A second import used to be worth nothing
+
+`import_resume` skipped a role already on file. That is the right instinct — never overwrite
+somebody's history — but it made re-importing an updated resume pointless: the job you have
+had for three years is exactly the one that gained bullets, and those were the ones dropped.
+A matching role now keeps everything it has and gains what it does not: new bullets become
+highlights, the new wording is appended to its background under a dated heading, and nothing
+is edited or removed. `onExisting: "skip"` keeps the old behaviour for anyone who wants it.
+
+**"Already on file" is asked with `bulletSimilarity`, not string equality.** "Cut invoice
+errors by 22%" and "Cut invoice errors by 22 percent" are the same claim, and exact matching
+would file both. The measure was private to `data/resumes.ts`, where
+`trace_resume_evidence` uses it to say a claim traces back to something the person wrote;
+it now lives in `src/lib/resume-similarity.ts` so both callers ask the question the same way.
+The threshold leans toward "already have it": a duplicate bullet is clutter a person must
+delete, a missed one is a line they can paste back from the document still open in front of
+them.
+
+**The dry run runs the real import and rolls it back.** `preview_resume_import` starts the
+transaction, calls the same `runImport`, then throws to abort. A read-only reimplementation
+would have been a second set of rules about what counts as already on file, and the preview
+would have stopped describing the import the first time either was touched. Verified end to
+end: the preview said one bullet would be added, the real import then added exactly one — if
+the preview had committed, the import would have had nothing left to do.
+
+**Two tools, one payload reader.** The import schema is about a hundred lines, so
+`importPayloadFrom` walks it once for both tools. The preview takes it as one `payload`
+object rather than restating the schema — the same shape `preview_resume_text` already uses,
+and the alternative was duplicating a hundred lines into `tools/gen-tool-docs.mjs`, which
+keeps its own copy of every constant an `inputSchema` expression closes over.
+
+**Applies to:** `src/lib/resume-similarity.ts` (new), `src/lib/data/me.ts`
+(`mergeIntoRole`, `runImport`, `previewResumeImport`), `src/lib/data/resumes.ts`,
+`src/lib/mcp/tools.ts`, `src/components/me/import-dialog.tsx`, `tools/gen-tool-docs.mjs`
+(the Me section now ends at `preview_resume_import`).

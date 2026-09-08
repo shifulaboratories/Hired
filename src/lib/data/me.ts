@@ -1,4 +1,4 @@
-import type { NoteKind } from "@prisma/client";
+import type { NoteKind, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { PipelineView } from "@/lib/pipeline-fields";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@/lib/column-widths";
 import { pick } from "@/lib/data/patch";
 import { resolvePhoto } from "@/lib/photo";
+import { bulletSimilarity, SAME_BULLET } from "@/lib/resume-similarity";
 
 /**
  * Every function here takes the owning userId as its first argument, and every
@@ -787,9 +788,13 @@ const normalised = (value: string) => value.trim().toLowerCase();
  * does the filing, and its one promise is that nothing already here is lost:
  *
  *   - profile fields fill only where they are currently empty;
- *   - a role is skipped when one already exists at the same company+title
- *     whose start date matches — or when either side has no date to compare,
- *     which errs toward skipping. Within one payload the date IS part of the
+ *   - a role already on file — same company+title, matching start date, or
+ *     either side undated, which errs toward matching — is NOT created again.
+ *     By default the incoming bullets are merged into it: the ones it does not
+ *     already have become highlights, and the resume's own wording is appended
+ *     to its background. Nothing on the role is edited or removed. Pass
+ *     `onExisting: "skip"` for the older behaviour, where a match meant the
+ *     whole entry was dropped. Within one payload the date IS part of the
  *     identity, so a boomerang career (two stints, same employer, same
  *     title, different dates) imports as two roles rather than losing one;
  *   - an education entry is skipped on school+degree+field, a project or
@@ -800,205 +805,366 @@ const normalised = (value: string) => value.trim().toLowerCase();
  *
  * Each created role gets its bullets saved as highlights, and the raw
  * material lands in the role's background so search_me can mine it.
- * The summary says exactly what was created and what was skipped.
+ * The summary says exactly what was created, merged into and skipped.
+ *
+ * `dryRun` does all of the reading and none of the writing, so an assistant can
+ * say what an import would do before doing it. It runs inside the same
+ * transaction and then rolls it back, which is the only way the preview and the
+ * real thing cannot disagree.
  */
-export async function importResume(userId: string, input: ResumeImport) {
-  return db.$transaction(async (tx) => {
-    // Profile: fill the blanks, leave everything a person already wrote.
-    const profileFieldsFilled: string[] = [];
-    if (input.profile) {
-      const current =
-        (await tx.profile.findUnique({ where: { userId } })) ??
-        (await tx.profile.create({ data: { userId } }));
-      const patch: Record<string, string> = {};
-      for (const key of Object.keys(input.profile) as (keyof ProfilePatch)[]) {
-        const incoming = input.profile[key]?.trim();
-        if (!incoming) continue;
-        if ((current[key] ?? "").trim()) continue;
-        patch[key] = incoming;
-        profileFieldsFilled.push(key);
-      }
-      if (Object.keys(patch).length) {
-        await tx.profile.update({ where: { userId }, data: patch });
-      }
-    }
+/**
+ * Add to a role already on file whatever the incoming resume says that it does
+ * not already say. Never edits and never removes: this is the only way a
+ * second import of an updated document is worth running, and it has to be as
+ * safe to repeat as the first one was.
+ *
+ * A bullet counts as already on file when it reads the same as one of the
+ * role's highlights — `bulletSimilarity`, the same measure trace_resume_evidence
+ * uses to say a claim traces back to something the person wrote. Exact-match
+ * only would file "Cut invoice errors by 22%" beside "Cut invoice errors by 22
+ * percent" and call it new.
+ */
+async function mergeIntoRole(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  roleId: string,
+  incoming: ResumeImportRole,
+) {
+  const role = await tx.role.findFirstOrThrow({
+    where: { id: roleId, userId },
+    select: { background: true, highlights: { select: { text: true } } },
+  });
+  const known = role.highlights.map((highlight) => highlight.text);
+  const bullets = (incoming.bullets ?? []).filter((bullet) => {
+    const text = bullet.text?.trim();
+    if (!text) return false;
+    return !known.some((existing) => bulletSimilarity(existing, text) >= SAME_BULLET);
+  });
 
-    // Roles, and their bullets as highlights.
-    const rolesCreated: { id: string; company: string; title: string }[] = [];
-    const rolesSkipped: { company: string; title: string }[] = [];
-    let highlightsCreated = 0;
-    if (input.roles?.length) {
-      const existing = await tx.role.findMany({
-        where: { userId },
-        select: { company: true, title: true, startDate: true },
-      });
-      // company|title → the start dates already on file there. An incoming
-      // role clashes when a stint at that company+title has the same start
-      // date, or when either side has no date to compare against.
-      const datesOnFile = new Map<string, string[]>();
-      for (const role of existing) {
-        const key = `${normalised(role.company)}|${normalised(role.title)}`;
-        datesOnFile.set(key, [...(datesOnFile.get(key) ?? []), role.startDate.trim()]);
+  if (bullets.length) {
+    await tx.highlight.createMany({
+      data: bullets.map((bullet) => ({
+        userId,
+        roleId,
+        text: bullet.text,
+        impact: bullet.impact ?? "",
+        tags: bullet.tags ?? [],
+        strength: clamp(Math.round(bullet.strength ?? 3), 1, 5),
+      })),
+    });
+  }
+
+  // The background is raw material, so it grows rather than being replaced —
+  // the same promise append_role_background makes. Only the lines that were
+  // actually new go in, under a dated heading, so a person reading it later can
+  // tell when this arrived.
+  const addition = bullets
+    .map((bullet) => `- ${bullet.text}${bullet.impact ? ` (${bullet.impact})` : ""}`)
+    .join("\n");
+  let backgroundAppended = false;
+  if (addition && !role.background.includes(addition)) {
+    const heading = `## From a resume imported ${new Date().toISOString().slice(0, 10)}`;
+    await tx.role.update({
+      where: { id: roleId },
+      data: {
+        background: role.background.trim()
+          ? `${role.background.trim()}\n\n${heading}\n\n${addition}`
+          : `${heading}\n\n${addition}`,
+      },
+    });
+    backgroundAppended = true;
+  }
+
+  return { bulletsAdded: bullets.length, backgroundAppended };
+}
+
+export async function importResume(
+  userId: string,
+  input: ResumeImport,
+  options?: ImportOptions,
+) {
+  // A full career is dozens of round trips, and Prisma's default 5s
+  // interactive-transaction timeout is sized for none of them crossing a
+  // region. The one-shot adoption moment must not roll back over latency.
+  return db.$transaction((tx) => runImport(tx, userId, input, options), {
+    timeout: 60_000,
+    maxWait: 10_000,
+  });
+}
+
+export type ImportOptions = { onExisting?: "merge" | "skip" };
+export type ImportReport = Awaited<ReturnType<typeof runImport>>;
+
+async function runImport(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  input: ResumeImport,
+  options?: ImportOptions,
+) {
+  // Profile: fill the blanks, leave everything a person already wrote.
+  const profileFieldsFilled: string[] = [];
+  if (input.profile) {
+    const current =
+      (await tx.profile.findUnique({ where: { userId } })) ??
+      (await tx.profile.create({ data: { userId } }));
+    const patch: Record<string, string> = {};
+    for (const key of Object.keys(input.profile) as (keyof ProfilePatch)[]) {
+      const incoming = input.profile[key]?.trim();
+      if (!incoming) continue;
+      if ((current[key] ?? "").trim()) continue;
+      patch[key] = incoming;
+      profileFieldsFilled.push(key);
+    }
+    if (Object.keys(patch).length) {
+      await tx.profile.update({ where: { userId }, data: patch });
+    }
+  }
+
+  // Roles, and their bullets as highlights.
+  const rolesCreated: { id: string; company: string; title: string }[] = [];
+  const rolesSkipped: { company: string; title: string }[] = [];
+  // A role already on file that the incoming resume had something new to say
+  // about. This is the whole reason a second import is worth running.
+  const rolesMerged: {
+    id: string;
+    company: string;
+    title: string;
+    bulletsAdded: number;
+    backgroundAppended: boolean;
+  }[] = [];
+  let highlightsCreated = 0;
+  const merge = (options?.onExisting ?? "merge") === "merge";
+  if (input.roles?.length) {
+    const existing = await tx.role.findMany({
+      where: { userId },
+      select: { id: true, company: true, title: true, startDate: true },
+    });
+    // company|title → the start dates already on file there. An incoming
+    // role clashes when a stint at that company+title has the same start
+    // date, or when either side has no date to compare against.
+    const datesOnFile = new Map<string, string[]>();
+    for (const role of existing) {
+      const key = `${normalised(role.company)}|${normalised(role.title)}`;
+      datesOnFile.set(key, [...(datesOnFile.get(key) ?? []), role.startDate.trim()]);
+    }
+    const clashesWithExisting = (key: string, startDate: string) => {
+      const dates = datesOnFile.get(key);
+      if (!dates) return false;
+      return dates.some((date) => !date || !startDate || date === startDate);
+    };
+    // The row behind a clash, so the merge has something to merge into. Same
+    // rule as clashesWithExisting, and the first match wins: two stints that
+    // both match an undated incoming role are indistinguishable, and picking
+    // the earlier one is at least deterministic.
+    const roleBehind = (key: string, startDate: string) =>
+      existing.find(
+        (role) =>
+          `${normalised(role.company)}|${normalised(role.title)}` === key &&
+          (!role.startDate.trim() || !startDate || role.startDate.trim() === startDate),
+      );
+    // Within the payload, the date is part of a stint's identity — so a
+    // boomerang career imports whole instead of losing its second stint.
+    const seenInPayload = new Set<string>();
+    let sortOrder = await tx.role.count({ where: { userId } });
+    for (const role of input.roles) {
+      const key = `${normalised(role.company)}|${normalised(role.title)}`;
+      const startDate = (role.startDate ?? "").trim();
+      const payloadKey = `${key}|${normalised(startDate)}`;
+      // The same stint twice in one payload is a parse artefact, not news.
+      if (seenInPayload.has(payloadKey)) {
+        rolesSkipped.push({ company: role.company, title: role.title });
+        continue;
       }
-      const clashesWithExisting = (key: string, startDate: string) => {
-        const dates = datesOnFile.get(key);
-        if (!dates) return false;
-        return dates.some((date) => !date || !startDate || date === startDate);
-      };
-      // Within the payload, the date is part of a stint's identity — so a
-      // boomerang career imports whole instead of losing its second stint.
-      const seenInPayload = new Set<string>();
-      let sortOrder = await tx.role.count({ where: { userId } });
-      for (const role of input.roles) {
-        const key = `${normalised(role.company)}|${normalised(role.title)}`;
-        const startDate = (role.startDate ?? "").trim();
-        const payloadKey = `${key}|${normalised(startDate)}`;
-        if (seenInPayload.has(payloadKey) || clashesWithExisting(key, startDate)) {
+      if (clashesWithExisting(key, startDate)) {
+        const onFile = merge ? roleBehind(key, startDate) : undefined;
+        if (!onFile) {
           rolesSkipped.push({ company: role.company, title: role.title });
           continue;
         }
-        seenInPayload.add(payloadKey);
-        datesOnFile.set(key, [...(datesOnFile.get(key) ?? []), startDate]);
-        const bullets = (role.bullets ?? []).filter((bullet) => bullet.text?.trim());
-        // The background is what search_me mines; the resume's own lines are
-        // the person's claims, so they belong there even before richer material.
-        const background =
-          role.background?.trim() ||
-          (bullets.length
-            ? `## Imported from resume\n\n${bullets
-                .map((bullet) => `- ${bullet.text}${bullet.impact ? ` (${bullet.impact})` : ""}`)
-                .join("\n")}`
-            : "");
-        const created = await tx.role.create({
-          data: {
-            userId,
-            company: role.company,
-            title: role.title,
-            employmentType: role.employmentType ?? "Full-time",
-            location: role.location ?? "",
-            startDate: role.startDate ?? "",
-            endDate: role.endDate ?? "",
-            isCurrent: role.isCurrent ?? false,
-            summary: role.summary ?? "",
-            background,
-            tags: role.tags ?? [],
-            sortOrder: sortOrder++,
-          },
-        });
-        rolesCreated.push({ id: created.id, company: created.company, title: created.title });
-        if (bullets.length) {
-          // One round trip per role, not per bullet: a full career inside one
-          // interactive transaction is exactly where per-row awaits add up.
-          // Strength is rounded because the column is an Int and a well-meant
-          // 3.5 must not roll the whole import back.
-          await tx.highlight.createMany({
-            data: bullets.map((bullet) => ({
-              userId,
-              roleId: created.id,
-              text: bullet.text,
-              impact: bullet.impact ?? "",
-              tags: bullet.tags ?? [],
-              strength: clamp(Math.round(bullet.strength ?? 3), 1, 5),
-            })),
+        const added = await mergeIntoRole(tx, userId, onFile.id, role);
+        highlightsCreated += added.bulletsAdded;
+        if (added.bulletsAdded > 0 || added.backgroundAppended) {
+          rolesMerged.push({
+            id: onFile.id,
+            company: onFile.company,
+            title: onFile.title,
+            ...added,
           });
-          highlightsCreated += bullets.length;
+        } else {
+          rolesSkipped.push({ company: role.company, title: role.title });
         }
+        continue;
       }
-    }
-
-    // Education, projects, certifications: create what is new, skip the rest.
-    const education = { created: 0, skipped: 0 };
-    if (input.education?.length) {
-      const existing = await tx.education.findMany({
-        where: { userId },
-        select: { school: true, degree: true, field: true },
+      seenInPayload.add(payloadKey);
+      datesOnFile.set(key, [...(datesOnFile.get(key) ?? []), startDate]);
+      const bullets = (role.bullets ?? []).filter((bullet) => bullet.text?.trim());
+      // The background is what search_me mines; the resume's own lines are
+      // the person's claims, so they belong there even before richer material.
+      const background =
+        role.background?.trim() ||
+        (bullets.length
+          ? `## Imported from resume\n\n${bullets
+              .map((bullet) => `- ${bullet.text}${bullet.impact ? ` (${bullet.impact})` : ""}`)
+              .join("\n")}`
+          : "");
+      const created = await tx.role.create({
+        data: {
+          userId,
+          company: role.company,
+          title: role.title,
+          employmentType: role.employmentType ?? "Full-time",
+          location: role.location ?? "",
+          startDate: role.startDate ?? "",
+          endDate: role.endDate ?? "",
+          isCurrent: role.isCurrent ?? false,
+          summary: role.summary ?? "",
+          background,
+          tags: role.tags ?? [],
+          sortOrder: sortOrder++,
+        },
       });
-      // field is part of the key so two degree-less programs at one school —
-      // two certificates, say — both survive the import.
-      const seen = new Set(
-        existing.map((e) => `${normalised(e.school)}|${normalised(e.degree)}|${normalised(e.field)}`),
-      );
-      let sortOrder = await tx.education.count({ where: { userId } });
-      for (const entry of input.education) {
-        const key = `${normalised(entry.school)}|${normalised(entry.degree ?? "")}|${normalised(entry.field ?? "")}`;
-        if (seen.has(key)) {
-          education.skipped += 1;
-          continue;
-        }
-        seen.add(key);
-        await tx.education.create({ data: { ...entry, userId, sortOrder: sortOrder++ } });
-        education.created += 1;
-      }
-    }
-
-    const projects = { created: 0, skipped: 0 };
-    if (input.projects?.length) {
-      const existing = await tx.project.findMany({ where: { userId }, select: { name: true } });
-      const seen = new Set(existing.map((p) => normalised(p.name)));
-      let sortOrder = await tx.project.count({ where: { userId } });
-      for (const entry of input.projects) {
-        if (seen.has(normalised(entry.name))) {
-          projects.skipped += 1;
-          continue;
-        }
-        seen.add(normalised(entry.name));
-        await tx.project.create({
-          data: { ...entry, userId, tags: entry.tags ?? [], sortOrder: sortOrder++ },
+      rolesCreated.push({ id: created.id, company: created.company, title: created.title });
+      if (bullets.length) {
+        // One round trip per role, not per bullet: a full career inside one
+        // interactive transaction is exactly where per-row awaits add up.
+        // Strength is rounded because the column is an Int and a well-meant
+        // 3.5 must not roll the whole import back.
+        await tx.highlight.createMany({
+          data: bullets.map((bullet) => ({
+            userId,
+            roleId: created.id,
+            text: bullet.text,
+            impact: bullet.impact ?? "",
+            tags: bullet.tags ?? [],
+            strength: clamp(Math.round(bullet.strength ?? 3), 1, 5),
+          })),
         });
-        projects.created += 1;
+        highlightsCreated += bullets.length;
       }
     }
+  }
 
-    // Skill groups merge: skills are a set, and "Languages" existing already
-    // is not a reason to drop the three new ones the resume lists.
-    const skillGroups = { created: 0, merged: 0 };
-    if (input.skillGroups?.length) {
-      const existing = await tx.skillGroup.findMany({ where: { userId } });
-      let sortOrder = existing.length;
-      for (const group of input.skillGroups) {
-        const match = existing.find((g) => normalised(g.name) === normalised(group.name));
-        if (match) {
-          const merged = [...new Set([...match.skills, ...(group.skills ?? [])])];
-          if (merged.length > match.skills.length) {
-            await tx.skillGroup.update({ where: { id: match.id }, data: { skills: merged } });
-            skillGroups.merged += 1;
-          }
-          continue;
+  // Education, projects, certifications: create what is new, skip the rest.
+  const education = { created: 0, skipped: 0 };
+  if (input.education?.length) {
+    const existing = await tx.education.findMany({
+      where: { userId },
+      select: { school: true, degree: true, field: true },
+    });
+    // field is part of the key so two degree-less programs at one school —
+    // two certificates, say — both survive the import.
+    const seen = new Set(
+      existing.map((e) => `${normalised(e.school)}|${normalised(e.degree)}|${normalised(e.field)}`),
+    );
+    let sortOrder = await tx.education.count({ where: { userId } });
+    for (const entry of input.education) {
+      const key = `${normalised(entry.school)}|${normalised(entry.degree ?? "")}|${normalised(entry.field ?? "")}`;
+      if (seen.has(key)) {
+        education.skipped += 1;
+        continue;
+      }
+      seen.add(key);
+      await tx.education.create({ data: { ...entry, userId, sortOrder: sortOrder++ } });
+      education.created += 1;
+    }
+  }
+
+  const projects = { created: 0, skipped: 0 };
+  if (input.projects?.length) {
+    const existing = await tx.project.findMany({ where: { userId }, select: { name: true } });
+    const seen = new Set(existing.map((p) => normalised(p.name)));
+    let sortOrder = await tx.project.count({ where: { userId } });
+    for (const entry of input.projects) {
+      if (seen.has(normalised(entry.name))) {
+        projects.skipped += 1;
+        continue;
+      }
+      seen.add(normalised(entry.name));
+      await tx.project.create({
+        data: { ...entry, userId, tags: entry.tags ?? [], sortOrder: sortOrder++ },
+      });
+      projects.created += 1;
+    }
+  }
+
+  // Skill groups merge: skills are a set, and "Languages" existing already
+  // is not a reason to drop the three new ones the resume lists.
+  const skillGroups = { created: 0, merged: 0 };
+  if (input.skillGroups?.length) {
+    const existing = await tx.skillGroup.findMany({ where: { userId } });
+    let sortOrder = existing.length;
+    for (const group of input.skillGroups) {
+      const match = existing.find((g) => normalised(g.name) === normalised(group.name));
+      if (match) {
+        const merged = [...new Set([...match.skills, ...(group.skills ?? [])])];
+        if (merged.length > match.skills.length) {
+          await tx.skillGroup.update({ where: { id: match.id }, data: { skills: merged } });
+          skillGroups.merged += 1;
         }
-        await tx.skillGroup.create({
-          data: { userId, name: group.name, skills: group.skills ?? [], sortOrder: sortOrder++ },
-        });
-        skillGroups.created += 1;
+        continue;
       }
+      await tx.skillGroup.create({
+        data: { userId, name: group.name, skills: group.skills ?? [], sortOrder: sortOrder++ },
+      });
+      skillGroups.created += 1;
     }
+  }
 
-    const certifications = { created: 0, skipped: 0 };
-    if (input.certifications?.length) {
-      const existing = await tx.certification.findMany({ where: { userId }, select: { name: true } });
-      const seen = new Set(existing.map((c) => normalised(c.name)));
-      let sortOrder = await tx.certification.count({ where: { userId } });
-      for (const entry of input.certifications) {
-        if (seen.has(normalised(entry.name))) {
-          certifications.skipped += 1;
-          continue;
-        }
-        seen.add(normalised(entry.name));
-        await tx.certification.create({ data: { ...entry, userId, sortOrder: sortOrder++ } });
-        certifications.created += 1;
+  const certifications = { created: 0, skipped: 0 };
+  if (input.certifications?.length) {
+    const existing = await tx.certification.findMany({ where: { userId }, select: { name: true } });
+    const seen = new Set(existing.map((c) => normalised(c.name)));
+    let sortOrder = await tx.certification.count({ where: { userId } });
+    for (const entry of input.certifications) {
+      if (seen.has(normalised(entry.name))) {
+        certifications.skipped += 1;
+        continue;
       }
+      seen.add(normalised(entry.name));
+      await tx.certification.create({ data: { ...entry, userId, sortOrder: sortOrder++ } });
+      certifications.created += 1;
     }
+  }
 
-    return {
-      profileFieldsFilled,
-      roles: { created: rolesCreated, skipped: rolesSkipped },
-      highlightsCreated,
-      education,
-      projects,
-      skillGroups,
-      certifications,
-    };
-    // A full career is dozens of round trips, and Prisma's default 5s
-    // interactive-transaction timeout is sized for none of them crossing a
-    // region. The one-shot adoption moment must not roll back over latency.
-  }, { timeout: 60_000, maxWait: 10_000 });
+  return {
+    profileFieldsFilled,
+    roles: { created: rolesCreated, merged: rolesMerged, skipped: rolesSkipped },
+    highlightsCreated,
+    education,
+    projects,
+    skillGroups,
+    certifications,
+  };
+}
+
+/**
+ * What an import would do, without doing it.
+ *
+ * Runs the real thing inside a transaction and then throws, so Prisma rolls it
+ * back — a second implementation that only reads would be a second set of rules
+ * about what counts as already on file, and the two would drift the first time
+ * either was touched. The report is the same shape the real import returns.
+ */
+export async function previewResumeImport(
+  userId: string,
+  input: ResumeImport,
+  options?: ImportOptions,
+) {
+  const ROLLBACK = "resume-import-dry-run";
+  try {
+    await db.$transaction(
+      async (tx) => {
+        const report = await runImport(tx, userId, input, options);
+        // The only way out of a transaction without a commit.
+        throw Object.assign(new Error(ROLLBACK), { report });
+      },
+      { timeout: 60_000, maxWait: 10_000 },
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message === ROLLBACK) {
+      return (error as Error & { report: ImportReport }).report;
+    }
+    throw error;
+  }
+  throw new Error("The dry run committed, which it must never do.");
 }
