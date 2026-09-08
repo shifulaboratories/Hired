@@ -12,6 +12,9 @@ import {
 import { getMeSnapshot, listHighlights } from "@/lib/data/me";
 import { fitReport } from "@/lib/resume-fit";
 import { reorderDoc, type ReorderInput } from "@/lib/resume-reorder";
+// Moved out to a pure module so the import can ask the same question of a
+// re-imported resume: is this bullet one we already have?
+import { bulletSimilarity } from "@/lib/resume-similarity";
 import { LINES_PER_PAGE } from "@/lib/resume-text";
 
 // Rendering helpers live in resume-text.ts (client-safe); re-exported so server
@@ -260,35 +263,6 @@ export async function updateResume(
   const { count } = await db.resume.updateMany({ where: { id, userId }, data });
   if (count === 0) throw new Error(`No resume with id ${id}`);
   return db.resume.findFirstOrThrow({ where: { id, userId } });
-}
-
-/**
- * How much of one sentence survives in another, 0-1.
- *
- * Dice rather than shared-over-longest, because a bullet written from a note
- * usually says more than the note did: "Ran the Postgres migration" becoming
- * "Led the Postgres migration across six services" keeps everything that
- * mattered and scores 0.43 by the longest measure.
- *
- * Deliberately not in resume-diff.ts. That module compares bullets by exact
- * string and says why — the reader sees both wordings rather than a score's
- * opinion of whether they are the same bullet. This is a different question:
- * whether a claim traces back to something the person wrote down.
- */
-function bulletSimilarity(a: string, b: string): number {
-  const tokens = (value: string) =>
-    new Set(
-      value
-        .toLowerCase()
-        .split(/[^a-z0-9+#.]+/)
-        .filter((token) => token.length > 1),
-    );
-  const left = tokens(a);
-  const right = tokens(b);
-  if (left.size === 0 || right.size === 0) return 0;
-  let shared = 0;
-  for (const token of left) if (right.has(token)) shared += 1;
-  return (2 * shared) / (left.size + right.size);
 }
 
 /**

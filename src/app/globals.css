@@ -780,6 +780,22 @@ body:has(> .auth-field.theme-light) {
   page-break-inside: avoid;
 }
 
+/* The editor's preview is a way into the form: click a line and its field
+   opens. Scoped to .rp-pick, because the print page and the public link are
+   documents rather than controls.
+
+   Blocks nest — a bullet sits inside a job inside a section — so :has() picks
+   out the innermost one under the pointer. Outlining every ancestor as well
+   would light up half the page for one hovered line. */
+.rp-pick [data-rp] {
+  cursor: pointer;
+}
+.rp-pick [data-rp]:hover:not(:has([data-rp]:hover)) {
+  outline: 1.5px solid color-mix(in oklab, var(--primary) 40%, transparent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
 /* ---------------------------------------------------------------------------
    THE FRONT DOOR
 

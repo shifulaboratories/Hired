@@ -96,21 +96,30 @@ export function ImportDialog() {
       try {
         const report = await importResumeAction(draft, source);
         const created = report.roles.created.length;
-        const matched = report.roles.skipped.length;
-        if (created === 0 && matched === 0) {
-          // Not a success. The text is kept as a note, which is worth doing,
-          // but dressing it as an import sent people back to a Me page that
-          // still looked empty with no idea what had happened.
+        const merged = report.roles.merged;
+        const addedBullets = merged.reduce((sum, role) => sum + role.bulletsAdded, 0);
+        const untouched = report.roles.skipped.length;
+        // A second import is the interesting case, and "3 were already here"
+        // is not what happened to them: say what they gained.
+        const parts = [
+          created > 0 ? `Brought in ${created} job${created === 1 ? "" : "s"}` : "",
+          addedBullets > 0
+            ? `added ${addedBullets} bullet${addedBullets === 1 ? "" : "s"} to ${merged.length} you already had`
+            : "",
+          untouched > 0 ? `${untouched} already here, unchanged` : "",
+        ].filter(Boolean);
+        if (created === 0 && merged.length === 0 && untouched === 0) {
+          // Nothing in the text was recognised as a job at all — which is not
+          // the same as "nothing new", and is not a success. The raw text is
+          // still kept as a note, which is worth doing; dressing that as an
+          // import sent people back to a Me page that still looked empty with
+          // no idea what had happened.
           toast.message("Saved as a note", {
             description:
               "Nothing in it was read as a job. Check the headings, or paste it to Claude and ask it to bring it in.",
           });
         } else {
-          toast.success(
-            matched > 0
-              ? `Brought in ${created} job${created === 1 ? "" : "s"}; ${matched} ${matched === 1 ? "was" : "were"} already here`
-              : `Brought in ${created} job${created === 1 ? "" : "s"}`,
-          );
+          toast.success(parts.length ? parts.join("; ") : "Nothing new in that one");
         }
         setOpen(false);
         setText("");

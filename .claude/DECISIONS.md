@@ -4982,6 +4982,7 @@ marked and unmarked lines is how one wrapped bullet becomes two.
 **Applies to:** `src/lib/resume-parse.ts`, `src/components/me/import-dialog.tsx`. No tool
 changed — `import_resume` already takes bullets, and the heuristic parser is the browser's
 fallback for someone who has connected nothing, never a path an assistant takes.
+
 ---
 
 ## 2026-09-08 — A welcome tour, because most people arriving have never tracked a job search
@@ -5087,6 +5088,78 @@ the nudge correctly absent once something has connected.
 `src/components/settings/skills-panel.tsx`,
 `src/components/settings/connections-panel.tsx`, `docs/app.mdx`.
 
+## 2026-09-08 — The preview was a picture; now it is an index into the form
+
+Clicking a line on the paper opens the card that holds it and focuses the field that produced
+it. The editor's most tedious minute was scrolling a long form looking for the input behind
+the line you were staring at.
+
+**Nothing new had to be invented for this.** `data-rp` was put on every block so the
+pagination code could say which entry starts a page, and `parsePath` already decodes it. The
+preview was already an index into the document; it just was not wired to anything. Features
+that fall out of an existing structure this cheaply are a sign the structure was right.
+
+**The rail flattens the paper's addressing, deliberately.** The paper distinguishes an
+education entry (`d`) from a job (`e`) from a project (`p`) because pagination cares what
+kind of thing straddles a page. A form field does not: the rail marks everything
+`s{section}/e{entry}`, and a click on `s1/d0` focuses `s1/e0`. Two schemes, one translation,
+done once in the editor's effect rather than at each of the eight call sites.
+
+**Opening is a signal, not a controlled prop.** `Collapsible` takes an `openSignal` number
+that means "someone asked you to open", rather than becoming fully controlled. Full control
+would have meant lifting every card's open state into the editor for a feature that only ever
+pushes one way. A changing number rather than a boolean, so clicking the same line twice
+works after you have closed the card by hand.
+
+**Frames, not a delay.** The card animates open over 220ms, so the field does not exist when
+the click handler runs. The effect polls up to 24 frames for `[data-field]` and then gives
+up, rather than sleeping a guessed interval — and giving up matters, because some blocks on
+the paper have no input behind them at all.
+
+**The affordance is CSS with `:has()`.** Blocks nest — a bullet inside a job inside a section
+— so a plain `:hover` outline lit up three boxes at once. `[data-rp]:hover:not(:has([data-rp]:hover))`
+picks the innermost one under the pointer. Scoped to `.rp-pick`, which only the editor sets:
+the print page and the public link are documents, not controls.
+
+**Applies to:** `src/components/resume/resume-editor.tsx`, `src/app/globals.css`. No tool and
+no data change — this is the direct-manipulation exception, and every field it focuses is one
+`update_resume` already writes.
+
+## 2026-09-08 — A second import used to be worth nothing
+
+`import_resume` skipped a role already on file. That is the right instinct — never overwrite
+somebody's history — but it made re-importing an updated resume pointless: the job you have
+had for three years is exactly the one that gained bullets, and those were the ones dropped.
+A matching role now keeps everything it has and gains what it does not: new bullets become
+highlights, the new wording is appended to its background under a dated heading, and nothing
+is edited or removed. `onExisting: "skip"` keeps the old behaviour for anyone who wants it.
+
+**"Already on file" is asked with `bulletSimilarity`, not string equality.** "Cut invoice
+errors by 22%" and "Cut invoice errors by 22 percent" are the same claim, and exact matching
+would file both. The measure was private to `data/resumes.ts`, where
+`trace_resume_evidence` uses it to say a claim traces back to something the person wrote;
+it now lives in `src/lib/resume-similarity.ts` so both callers ask the question the same way.
+The threshold leans toward "already have it": a duplicate bullet is clutter a person must
+delete, a missed one is a line they can paste back from the document still open in front of
+them.
+
+**The dry run runs the real import and rolls it back.** `preview_resume_import` starts the
+transaction, calls the same `runImport`, then throws to abort. A read-only reimplementation
+would have been a second set of rules about what counts as already on file, and the preview
+would have stopped describing the import the first time either was touched. Verified end to
+end: the preview said one bullet would be added, the real import then added exactly one — if
+the preview had committed, the import would have had nothing left to do.
+
+**Two tools, one payload reader.** The import schema is about a hundred lines, so
+`importPayloadFrom` walks it once for both tools. The preview takes it as one `payload`
+object rather than restating the schema — the same shape `preview_resume_text` already uses,
+and the alternative was duplicating a hundred lines into `tools/gen-tool-docs.mjs`, which
+keeps its own copy of every constant an `inputSchema` expression closes over.
+
+**Applies to:** `src/lib/resume-similarity.ts` (new), `src/lib/data/me.ts`
+(`mergeIntoRole`, `runImport`, `previewResumeImport`), `src/lib/data/resumes.ts`,
+`src/lib/mcp/tools.ts`, `src/components/me/import-dialog.tsx`, `tools/gen-tool-docs.mjs`
+(the Me section now ends at `preview_resume_import`).
 ---
 
 ## 2026-09-08 — A six-lens audit of the first run, and what it turned up

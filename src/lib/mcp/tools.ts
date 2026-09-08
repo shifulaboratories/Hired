@@ -196,6 +196,98 @@ function required(args: Json, key: string): string {
 }
 
 /**
+ * One reading of an import payload, for the two tools that take one.
+ *
+ * import_resume and preview_resume_import share a schema of about a hundred
+ * lines. Two copies of the code that walks it would disagree the day either
+ * gained a field, and a preview of something other than what the import will do
+ * is worse than no preview.
+ */
+function importPayloadFrom(args: Json): Parameters<typeof me.importResume>[1] {
+  const roles = Array.isArray(args.roles) ? (args.roles as Json[]) : [];
+  const education = Array.isArray(args.education) ? (args.education as Json[]) : [];
+  const projects = Array.isArray(args.projects) ? (args.projects as Json[]) : [];
+  const skillGroups = Array.isArray(args.skillGroups) ? (args.skillGroups as Json[]) : [];
+  const certifications = Array.isArray(args.certifications) ? (args.certifications as Json[]) : [];
+  const profile = (args.profile ?? {}) as Json;
+
+  return {
+    profile: defined({
+      fullName: s(profile, "fullName"),
+      headline: s(profile, "headline"),
+      email: s(profile, "email"),
+      phone: s(profile, "phone"),
+      location: s(profile, "location"),
+      website: s(profile, "website"),
+      linkedin: s(profile, "linkedin"),
+      github: s(profile, "github"),
+      summary: s(profile, "summary"),
+    }),
+    roles: roles.map((role) => ({
+      company: required(role, "company"),
+      title: required(role, "title"),
+      ...defined({
+        employmentType: s(role, "employmentType"),
+        location: s(role, "location"),
+        startDate: s(role, "startDate"),
+        endDate: s(role, "endDate"),
+        isCurrent: b(role, "isCurrent"),
+        summary: s(role, "summary"),
+        background: s(role, "background"),
+      }),
+      bullets: (Array.isArray(role.bullets) ? (role.bullets as Json[]) : []).map((bullet) => ({
+        text: required(bullet, "text"),
+        ...defined({
+          impact: s(bullet, "impact"),
+          tags: a(bullet, "tags"),
+          strength: n(bullet, "strength"),
+        }),
+      })),
+    })),
+    education: education.map((entry) => ({
+      school: required(entry, "school"),
+      ...defined({
+        degree: s(entry, "degree"),
+        field: s(entry, "field"),
+        location: s(entry, "location"),
+        startDate: s(entry, "startDate"),
+        endDate: s(entry, "endDate"),
+        gpa: s(entry, "gpa"),
+        details: s(entry, "details"),
+      }),
+    })),
+    projects: projects.map((entry) => ({
+      name: required(entry, "name"),
+      ...defined({
+        role: s(entry, "role"),
+        url: s(entry, "url"),
+        description: s(entry, "description"),
+        startDate: s(entry, "startDate"),
+        endDate: s(entry, "endDate"),
+        tags: a(entry, "tags"),
+      }),
+    })),
+    skillGroups: skillGroups.map((group) => ({
+      name: required(group, "name"),
+      ...defined({ skills: a(group, "skills") }),
+    })),
+    certifications: certifications.map((entry) => ({
+      name: required(entry, "name"),
+      ...defined({
+        issuer: s(entry, "issuer"),
+        date: s(entry, "date"),
+        url: s(entry, "url"),
+      }),
+    })),
+  };
+}
+
+/** What to do about a role already on file. Shared by both import tools. */
+function onExistingFrom(args: Json): { onExisting?: "merge" | "skip" } {
+  return s(args, "on_existing") === "skip" ? { onExisting: "skip" } : {};
+}
+
+/**
  * A bare `YYYY-MM-DD` parses as midnight, so an inclusive end date would drop
  * everything that actually happened on it. Push it to the last millisecond.
  */
@@ -1082,7 +1174,7 @@ export const tools: McpTool[] = [
     name: "import_resume",
     title: "Import a resume into Me",
     description:
-      "Turn an existing resume, LinkedIn export or any pasted career history into a filled-in Me in ONE call. This is the first tool to reach for when the workspace is empty and the user has a document — it is the difference between starting from their real history and starting from nothing, so offer it before asking them to talk through their life. You do the reading: parse the pasted text yourself into the structured payload — profile facts, one entry per role with its bullets, education, projects, skills, certifications. Copy what the document actually says and NEVER invent, upgrade or round anything: no employers, titles, dates or metrics the text does not state, and a field the document is silent on stays absent. Include startDate on every role — it is part of a role's identity, and two stints at the same company import as two roles only when their dates differ. Everything is additive and re-import is safe: profile fields fill only where currently empty; a role already on file at the same company+title and start date, an education entry with the same school+degree+field, or a project/certification with the same name is SKIPPED, never overwritten; a skill group with an existing name has its skills unioned in. Each role's bullets are saved as highlights and land in its background for search_me to mine. Returns exactly what was created and what was skipped — report that to the user, and for skipped roles add new material with append_role_background instead. Pass create_base_resume: true to also build their first draft from what was imported; it reuses a resume already named 'Base resume' rather than minting another, so repeating the whole call is safe. Offer it — a resume is usually why they pasted one.",
+      "Turn an existing resume, LinkedIn export or any pasted career history into a filled-in Me in ONE call. This is the first tool to reach for when the workspace is empty and the user has a document — it is the difference between starting from their real history and starting from nothing, so offer it before asking them to talk through their life. You do the reading: parse the pasted text yourself into the structured payload — profile facts, one entry per role with its bullets, education, projects, skills, certifications. Copy what the document actually says and NEVER invent, upgrade or round anything: no employers, titles, dates or metrics the text does not state, and a field the document is silent on stays absent. Include startDate on every role — it is part of a role's identity, and two stints at the same company import as two roles only when their dates differ. Everything is additive and re-import is safe: nothing is ever overwritten or removed. Profile fields fill only where currently empty. A role already on file — same company+title, matching start date — is not created twice; instead the bullets it does not already have are added to it and the new wording is appended to its background, so re-importing an updated resume brings in what changed. An education entry with the same school+degree+field, or a project/certification with the same name, is skipped; a skill group with an existing name has its skills unioned in. Each role's bullets are saved as highlights and land in its background for search_me to mine. Returns exactly what was created, what was merged into with how many bullets each gained, and what was skipped — report that to the user. Call preview_resume_import first when the workspace is NOT empty: it returns this same report without writing, so you can tell them what a second import would change before it changes it. Pass create_base_resume: true to also build their first draft from what was imported; it reuses a resume already named 'Base resume' rather than minting another, so repeating the whole call is safe. Offer it — a resume is usually why they pasted one.",
     inputSchema: object(
       {
         profile: {
@@ -1192,6 +1284,9 @@ export const tools: McpTool[] = [
             ["name"],
           ),
         },
+        on_existing: str(
+          "What to do with a role already on file: 'merge' (default) adds the bullets it does not have and appends the new wording to its background; 'skip' leaves it completely untouched, which is what this tool used to do. Merging never edits or removes anything, so prefer it.",
+        ),
         create_base_resume: bool(
           "Also build a first draft resume from what was imported, named 'Base resume'. Offer this — it is usually why they pasted a resume.",
         ),
@@ -1205,82 +1300,11 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) => {
-      const roles = Array.isArray(args.roles) ? (args.roles as Json[]) : [];
-      const education = Array.isArray(args.education) ? (args.education as Json[]) : [];
-      const projects = Array.isArray(args.projects) ? (args.projects as Json[]) : [];
-      const skillGroups = Array.isArray(args.skillGroups) ? (args.skillGroups as Json[]) : [];
-      const certifications = Array.isArray(args.certifications) ? (args.certifications as Json[]) : [];
-      const profile = (args.profile ?? {}) as Json;
-
-      const result = await me.importResume(ctx.userId, {
-        profile: defined({
-          fullName: s(profile, "fullName"),
-          headline: s(profile, "headline"),
-          email: s(profile, "email"),
-          phone: s(profile, "phone"),
-          location: s(profile, "location"),
-          website: s(profile, "website"),
-          linkedin: s(profile, "linkedin"),
-          github: s(profile, "github"),
-          summary: s(profile, "summary"),
-        }),
-        roles: roles.map((role) => ({
-          company: required(role, "company"),
-          title: required(role, "title"),
-          ...defined({
-            employmentType: s(role, "employmentType"),
-            location: s(role, "location"),
-            startDate: s(role, "startDate"),
-            endDate: s(role, "endDate"),
-            isCurrent: b(role, "isCurrent"),
-            summary: s(role, "summary"),
-            background: s(role, "background"),
-          }),
-          bullets: (Array.isArray(role.bullets) ? (role.bullets as Json[]) : []).map((bullet) => ({
-            text: required(bullet, "text"),
-            ...defined({
-              impact: s(bullet, "impact"),
-              tags: a(bullet, "tags"),
-              strength: n(bullet, "strength"),
-            }),
-          })),
-        })),
-        education: education.map((entry) => ({
-          school: required(entry, "school"),
-          ...defined({
-            degree: s(entry, "degree"),
-            field: s(entry, "field"),
-            location: s(entry, "location"),
-            startDate: s(entry, "startDate"),
-            endDate: s(entry, "endDate"),
-            gpa: s(entry, "gpa"),
-            details: s(entry, "details"),
-          }),
-        })),
-        projects: projects.map((entry) => ({
-          name: required(entry, "name"),
-          ...defined({
-            role: s(entry, "role"),
-            url: s(entry, "url"),
-            description: s(entry, "description"),
-            startDate: s(entry, "startDate"),
-            endDate: s(entry, "endDate"),
-            tags: a(entry, "tags"),
-          }),
-        })),
-        skillGroups: skillGroups.map((group) => ({
-          name: required(group, "name"),
-          ...defined({ skills: a(group, "skills") }),
-        })),
-        certifications: certifications.map((entry) => ({
-          name: required(entry, "name"),
-          ...defined({
-            issuer: s(entry, "issuer"),
-            date: s(entry, "date"),
-            url: s(entry, "url"),
-          }),
-        })),
-      });
+      const result = await me.importResume(
+        ctx.userId,
+        importPayloadFrom(args),
+        onExistingFrom(args),
+      );
 
       if (b(args, "create_base_resume")) {
         // Reuse before create, so a retried or repeated call cannot mint
@@ -1299,6 +1323,39 @@ export const tools: McpTool[] = [
       }
       return result;
     },
+  },
+
+  {
+    name: "preview_resume_import",
+    title: "Preview what importing a resume would do",
+    description:
+      "Read an import payload and report exactly what it WOULD change, writing nothing. Build the payload exactly as you would for import_resume — same shape, same fields, call get_me_snapshot or import_resume's schema if you need it — and pass it as `payload`. Send it here first whenever the workspace is NOT already empty: a second resume from someone who has history is where 'what will this do to what I already have?' is a real question, and this answers it before anything happens rather than after. Returns the same report import_resume returns: the roles it would create, the roles already on file it would add bullets to and how many each would gain, what it would skip, and which profile fields would fill. It runs the real import and rolls it back, so its answer cannot drift from what the import actually does. Nothing is written; call import_resume with the same payload to go ahead.",
+    inputSchema: object(
+      {
+        payload: {
+          type: "object",
+          description:
+            "Exactly the arguments you would pass to import_resume — profile, roles with their bullets, education, projects, skillGroups, certifications.",
+          additionalProperties: true,
+        },
+        on_existing: str(
+          "'merge' (default) or 'skip', matching import_resume. Preview what you intend to do, not something else.",
+        ),
+      },
+      ["payload"],
+    ),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      me.previewResumeImport(
+        ctx.userId,
+        importPayloadFrom((args.payload ?? {}) as Json),
+        onExistingFrom(args),
+      ),
   },
 
   // -------------------------------------------------------------------------

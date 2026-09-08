@@ -42,7 +42,7 @@ const CHECK = process.argv.includes("--check");
  * the manual.
  */
 const SECTIONS = [
-  { file: "me.mdx", first: "search_me", last: "import_resume",
+  { file: "me.mdx", first: "search_me", last: "preview_resume_import",
     title: "Me", icon: "user",
     blurb: "roles, backgrounds, highlights, notes, standing rules, the four supporting collections, and importing an existing resume." },
   { file: "resumes.mdx", first: "get_resume_format", last: "preview_resume_text",
