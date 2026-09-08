@@ -44,7 +44,7 @@ export default async function SharedPipelinePage({ params }: Params) {
   const [shared, { companyLogos }] = await Promise.all([getSharedPipeline(slug), getSettings()]);
   if (!shared) notFound();
 
-  const { applications, ownerName } = shared;
+  const { applications, ownerName, ownerTimeZone } = shared;
   const live = applications.filter((a) => !TERMINAL_STAGES.includes(a.stage));
 
   return (
@@ -130,7 +130,7 @@ export default async function SharedPipelinePage({ params }: Params) {
                 </div>
 
                 <div className="nums text-muted-foreground hidden w-24 shrink-0 text-right text-[12px] md:block">
-                  {application.nextFollowUpAt ? relativeDay(application.nextFollowUpAt) : "—"}
+                  {application.nextFollowUpAt ? relativeDay(application.nextFollowUpAt, ownerTimeZone) : "—"}
                 </div>
               </li>
             ))}

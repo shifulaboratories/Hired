@@ -31,6 +31,8 @@ import { listResumeNames } from "@/lib/data/resumes";
 import { getProfile, listNotes, listRoles } from "@/lib/data/me";
 import { taskSubjectOf } from "@/lib/task-subject";
 import { relativeDay } from "@/lib/utils";
+import { clockIn } from "@/lib/time";
+import { timeZoneOf } from "@/lib/data/me";
 import type { Stage } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -53,8 +55,10 @@ const TABS = ["today", "analytics"] as const;
 type Tab = (typeof TABS)[number];
 
 /** Morning, afternoon or evening, on the server's clock. */
-function greeting() {
-  const hour = new Date().getHours();
+function greeting(timeZone: string) {
+  // Their morning, not the server's. On a UTC host this used to wish somebody
+  // in Los Angeles good evening over lunch.
+  const { hour } = clockIn(new Date(), timeZone);
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
@@ -78,11 +82,14 @@ export default async function HomePage({
       ? await Promise.all([getProfile(user.id), setupStatus(user.id)])
       : null;
   const firstName = today ? (today[0].fullName.trim().split(/\s+/)[0] ?? "") : "";
+  // Analytics does not read the profile, so it asks for the one field it needs
+  // rather than paying for the whole row to say "Your search".
+  const zone = today ? today[0].timeZone : await timeZoneOf(user.id);
 
   return (
     <PageShell>
       <PageHeader
-        eyebrow={active === "today" ? greeting() : "Your search"}
+        eyebrow={active === "today" ? greeting(zone) : "Your search"}
         title={
           active === "analytics"
             ? "How the search is going"
@@ -124,7 +131,7 @@ export default async function HomePage({
 
         <TabsContent value={active}>
           {today ? (
-            <TodayTab userId={user.id} setup={today[1]} />
+            <TodayTab userId={user.id} setup={today[1]} zone={zone} />
           ) : (
             <AnalyticsPanel userId={user.id} />
           )}
@@ -146,9 +153,12 @@ export default async function HomePage({
 async function TodayTab({
   userId,
   setup,
+  zone,
 }: {
   userId: string;
   setup: Awaited<ReturnType<typeof setupStatus>>;
+  /** The reader's calendar, so "Today" on this list means their today. */
+  zone: string;
 }) {
   const [tasks, applications, followUps, contactPings, contacts, companies, resumeNames, roles, notes] =
     await Promise.all([
@@ -229,7 +239,7 @@ async function TodayTab({
     .sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0))
     .map((item) => ({
       ...item,
-      due: relativeDay(item.dueAt),
+      due: relativeDay(item.dueAt, zone),
       overdue: item.dueAt !== null && item.dueAt < now,
     }));
 

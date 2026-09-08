@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
+import { SERVER_ZONE } from "@/lib/time";
 import { TERMINAL_STAGES } from "@/lib/data/pipeline";
 
 /**
@@ -86,7 +87,7 @@ export async function getSharedPipeline(slug: string) {
     select: {
       id: true,
       includeClosed: true,
-      user: { select: { name: true } },
+      user: { select: { name: true, profile: { select: { timeZone: true } } } },
     },
   });
   if (!share) return null;
@@ -130,6 +131,10 @@ export async function getSharedPipeline(slug: string) {
   const now = Date.now();
   return {
     ownerName: share.user.name,
+    // The owner's calendar, not the viewer's. "Chase tomorrow" is a fact about
+    // their week; a recruiter opening the link in Berlin should read the same
+    // date the person who shared it does.
+    ownerTimeZone: share.user.profile?.timeZone ?? SERVER_ZONE,
     applications: applications.map(({ activities, ...application }) => {
       const since = activities[0]?.occurredAt ?? application.createdAt;
       return {

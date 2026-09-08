@@ -93,6 +93,7 @@ export default async function ContactsPage({
     getProfile(user.id),
   ]);
   const widths = parseWidths(profile.columnWidths);
+  const zone = profile.timeZone;
 
   const passing = (except: keyof ContactFilters) =>
     everyContact.filter((row) =>
@@ -168,9 +169,9 @@ export default async function ContactsPage({
       name: company.name,
       website: company.website,
     })),
-    nextPing: contact.nextFollowUpAt ? relativeDay(contact.nextFollowUpAt) : "—",
+    nextPing: contact.nextFollowUpAt ? relativeDay(contact.nextFollowUpAt, zone) : "—",
     pingDue: contact.nextFollowUpAt !== null && contact.nextFollowUpAt <= today,
-    lastTouch: contact.activities[0] ? agoDay(contact.activities[0].occurredAt) : "never",
+    lastTouch: contact.activities[0] ? agoDay(contact.activities[0].occurredAt, zone) : "never",
     best: bestLink(contact),
   }));
 

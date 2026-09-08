@@ -411,6 +411,17 @@ model Profile {
   /// not want it again tomorrow, and "Show the tutorial again" in Settings is
   /// how it comes back.
   tourSeenAt     DateTime?
+  /// Which calendar this person is on, as an IANA zone ("America/Los_Angeles").
+  /// Every civil date in the product — today, overdue, the 9am nudge, the
+  /// greeting — is computed from it, because a hosted instance runs on UTC and
+  /// would otherwise turn a follow-up red at 5pm the day before it was due.
+  ///
+  /// Empty means the host's own clock, which is what every account had before
+  /// this column existed and is exactly right for a self-hoster running it on
+  /// the machine under their desk. The browser fills it in on first sight
+  /// (src/components/onboarding/time-zone-seed.tsx) and Settings can override
+  /// it. See src/lib/time.ts for the arithmetic.
+  timeZone       String   @default("")
   updatedAt      DateTime @updatedAt
 }
 

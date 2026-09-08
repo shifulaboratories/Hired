@@ -15,6 +15,7 @@ import { listResumeNames } from "@/lib/data/resumes";
 import { listTags } from "@/lib/data/tags";
 import { archiveCounts } from "@/lib/data/archive";
 import { getProfile } from "@/lib/data/me";
+import { civilDay } from "@/lib/time";
 import { parseWidths } from "@/lib/column-widths";
 import { FieldsMenu } from "@/components/pipeline/fields-menu";
 import { Button } from "@/components/ui/button";
@@ -100,6 +101,7 @@ export default async function ApplicationsPage({
   // Every view's field set on every load, so the Fields menu paints the change
   // immediately rather than after a round trip.
   const profile = await getProfile(user.id);
+  const zone = profile.timeZone;
   const share = await getPipelineShare(user.id);
   const fieldValues = await applicationFieldValues(user.id);
   const shareBase = `${headerProto}://${headerHost}`;
@@ -304,7 +306,7 @@ export default async function ApplicationsPage({
   );
 
   if (view === "calendar") {
-    const { year, month } = parseMonth(one("month"));
+    const { year, month } = parseMonth(one("month"), zone);
     const { from, to } = monthWindow(year, month);
     const schedule = await listSchedule(user.id, from, to);
     // A calendar entry belongs to an application, so a stage filter narrows it
@@ -325,7 +327,9 @@ export default async function ApplicationsPage({
     const entries: CalendarEntry[] = kept.map((entry) => ({
       kind: entry.kind,
       id: entry.id,
-      day: entry.date.toISOString().slice(0, 10),
+      // Which day an entry lands on is the reader's question, not UTC's: an
+      // evening in Los Angeles is already tomorrow in Greenwich.
+      day: civilDay(entry.date, zone),
       title: entry.title,
       detail: entry.detail,
       stage: entry.stage,
@@ -339,7 +343,7 @@ export default async function ApplicationsPage({
         year={year}
         month={month}
         entries={entries}
-        today={new Date().toISOString().slice(0, 10)}
+        today={civilDay(new Date(), zone)}
         fields={[...visibleFields("calendar", profile.calendarFields)]}
       />,
     );

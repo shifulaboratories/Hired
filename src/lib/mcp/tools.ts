@@ -476,7 +476,7 @@ export const tools: McpTool[] = [
     name: "get_profile",
     title: "Get profile",
     description:
-      "The user's identity block: name, headline, contact details, links, career summary and their personal background (values, what they want next, comp expectations, non-negotiables). `hasPhoto` says whether a profile photo is set; the picture itself is not returned because it is hundreds of kilobytes of base64 — use set_profile_photo to change it.",
+      "The user's identity block: name, headline, contact details, links, career summary and their personal background (values, what they want next, comp expectations, non-negotiables). `hasPhoto` says whether a profile photo is set; the picture itself is not returned because it is hundreds of kilobytes of base64 — use set_profile_photo to change it. `timeZone` is the calendar every date in this workspace is read against — an IANA name, or empty meaning the server's own clock.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: false,
@@ -505,6 +505,9 @@ export const tools: McpTool[] = [
       background: str(
         "Long-form personal background. REPLACES the existing text — read it first if you intend to add to it.",
       ),
+      timeZone: str(
+        "IANA time zone the user's dates are computed in, e.g. 'America/Chicago'. Everything dated follows it: what counts as today, when a follow-up is overdue, and the 9am a new follow-up is scheduled for. Pass an empty string to fall back to the server's own clock. Set this when they say where they are or that they have moved; an unrecognised name is refused rather than stored.",
+      ),
     }),
     annotations: {
       readOnlyHint: false,
@@ -512,22 +515,31 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (args, ctx) =>
-      withoutPhotoBytes(await me.updateProfile(ctx.userId,
-        defined({
-          fullName: s(args, "fullName"),
-          headline: s(args, "headline"),
-          email: s(args, "email"),
-          phone: s(args, "phone"),
-          location: s(args, "location"),
-          website: s(args, "website"),
-          linkedin: s(args, "linkedin"),
-          github: s(args, "github"),
-          twitter: s(args, "twitter"),
-          summary: s(args, "summary"),
-          background: s(args, "background"),
-        }),
-      )),
+    handler: async (args, ctx) => {
+      // The zone is not a ProfilePatch key: that type is also what
+      // import_resume accepts, and reading somebody's CV is no reason to move
+      // their clock. Written through its own validating setter instead.
+      const timeZone = s(args, "timeZone");
+      if (timeZone !== undefined) await me.setTimeZone(ctx.userId, timeZone);
+      return withoutPhotoBytes(
+        await me.updateProfile(
+          ctx.userId,
+          defined({
+            fullName: s(args, "fullName"),
+            headline: s(args, "headline"),
+            email: s(args, "email"),
+            phone: s(args, "phone"),
+            location: s(args, "location"),
+            website: s(args, "website"),
+            linkedin: s(args, "linkedin"),
+            github: s(args, "github"),
+            twitter: s(args, "twitter"),
+            summary: s(args, "summary"),
+            background: s(args, "background"),
+          }),
+        ),
+      );
+    },
   },
   {
     name: "set_profile_photo",

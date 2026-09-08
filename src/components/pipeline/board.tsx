@@ -34,6 +34,7 @@ import { CompanyAvatar } from "@/components/pipeline/company-avatar";
 import { TagChip } from "@/components/tags/tag-chip";
 import { useOpenApplication } from "@/components/pipeline/application-panel";
 import { cn, relativeDay } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
 import { moveStageAction } from "@/server/actions";
 
 /** Which columns you have folded away. A preference, not a filter. */
@@ -388,6 +389,7 @@ function DraggableCard({ card }: { card: Card }) {
 }
 
 function ApplicationCard({ card, overlay = false }: { card: Card; overlay?: boolean }) {
+  const zone = useViewerZone();
   const shows = useVisibleFields();
   const overdue = card.nextFollowUpAt ? new Date(card.nextFollowUpAt) < new Date() : false;
   const openPanel = useOpenApplication();
@@ -453,7 +455,7 @@ function ApplicationCard({ card, overlay = false }: { card: Card; overlay?: bool
             )}
           >
             <CalendarClockIcon className="size-2.5" />
-            {relativeDay(new Date(card.nextFollowUpAt))}
+            {relativeDay(new Date(card.nextFollowUpAt), zone)}
           </span>
         )}
         {/* How long since anything happened, which is the question the board

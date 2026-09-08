@@ -12,6 +12,8 @@ import {
   tagInclude,
 } from "@/lib/data/tags";
 import { archiveRecords } from "@/lib/data/archive";
+import { timeZoneOf } from "@/lib/data/me";
+import { atHourInDays, civilDay, endOfDay, startOfWeek } from "@/lib/time";
 import {
   type CompanyFilters,
   type CompanyMissing,
@@ -532,7 +534,7 @@ export async function mergeCompanies(userId: string, keepId: string, mergeId: st
   const notes = !keep.notes.trim()
     ? loserNotes
     : plan.notesAppended
-      ? `${keep.notes}\n\n— merged from "${plan.merge.name}" on ${new Date().toISOString().slice(0, 10)} —\n${loserNotes}`
+      ? `${keep.notes}\n\n— merged from "${plan.merge.name}" on ${civilDay(new Date(), await timeZoneOf(userId))} —\n${loserNotes}`
       : keep.notes;
 
   await db.$transaction(async (tx) => {
@@ -955,7 +957,7 @@ export async function createApplication(userId: string, input: ApplicationInput)
       },
       notes: input.notes ?? "",
       appliedAt,
-      nextFollowUpAt: toDate(input.nextFollowUpAt) ?? defaultFollowUp(stage),
+      nextFollowUpAt: toDate(input.nextFollowUpAt) ?? defaultFollowUp(await timeZoneOf(userId), stage),
       resumeId: input.resumeId ?? null,
     },
     include: applicationInclude,
@@ -1090,22 +1092,20 @@ const FOLLOW_UP_DAYS: Partial<Record<Stage, number>> = {
   OFFER: 2,
 };
 
-function defaultFollowUp(stage: Stage): Date | null {
+function defaultFollowUp(timeZone: string, stage: Stage): Date | null {
   const days = FOLLOW_UP_DAYS[stage];
   if (!days) return null;
-  return inDays(days);
+  return inDays(timeZone, days);
 }
 
 /**
  * A date N days out at 9am. The hour is the whole point: a follow-up dated
  * "now plus three days" lands mid-afternoon and reads as overdue the morning
- * you meant to do it.
+ * you meant to do it — and nine in the MORNING means nine where the person is,
+ * not nine on whatever machine the instance happens to run on.
  */
-function inDays(days: number): Date {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  date.setHours(9, 0, 0, 0);
-  return date;
+function inDays(timeZone: string, days: number): Date {
+  return atHourInDays(timeZone, days, 9);
 }
 
 /**
@@ -1113,12 +1113,12 @@ function inDays(days: number): Date {
  * nothing moves, which is why logFollowUp exists beside it.
  */
 export async function snoozeFollowUp(userId: string, id: string, days: number) {
-  return updateApplication(userId, id, { nextFollowUpAt: inDays(days) });
+  return updateApplication(userId, id, { nextFollowUpAt: inDays(await timeZoneOf(userId), days) });
 }
 
 /** The same for a person's ping. */
 export async function snoozeContactFollowUp(userId: string, id: string, days: number) {
-  return updateContact(userId, id, { nextFollowUpAt: inDays(days) });
+  return updateContact(userId, id, { nextFollowUpAt: inDays(await timeZoneOf(userId), days) });
 }
 
 /**
@@ -1151,7 +1151,7 @@ export async function logFollowUp(
     type: input.type ?? "FOLLOW_UP",
     body: input.body?.trim() || "Followed up.",
   });
-  const next = inDays(input.days ?? 7);
+  const next = inDays(await timeZoneOf(userId), input.days ?? 7);
   const subject = input.applicationId
     ? await updateApplication(userId, input.applicationId, { nextFollowUpAt: next })
     : await updateContact(userId, input.contactId as string, { nextFollowUpAt: next });
@@ -1177,7 +1177,7 @@ export async function moveApplicationStage(
     data.nextFollowUpAt = null;
   } else {
     data.closedAt = null;
-    data.nextFollowUpAt = defaultFollowUp(stage);
+    data.nextFollowUpAt = defaultFollowUp(await timeZoneOf(userId), stage);
   }
 
   const updated = flattenTags(
@@ -1892,9 +1892,9 @@ export async function deleteContact(userId: string, id: string) {
 
 /** Applications whose follow-up date has arrived (or passed). */
 export async function followUpsDue(userId: string, withinDays = 0) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() + withinDays);
-  cutoff.setHours(23, 59, 59, 999);
+  // The end of THEIR day. On a UTC host this is the difference between a chase
+  // list that empties at midnight where you live and one that empties at 5pm.
+  const cutoff = endOfDay(await timeZoneOf(userId), withinDays);
   return db.application.findMany({
     where: {
       userId,
@@ -1909,9 +1909,7 @@ export async function followUpsDue(userId: string, withinDays = 0) {
 
 /** People whose ping date has arrived (or passed). */
 export async function contactFollowUpsDue(userId: string, withinDays = 0) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() + withinDays);
-  cutoff.setHours(23, 59, 59, 999);
+  const cutoff = endOfDay(await timeZoneOf(userId), withinDays);
   const contacts = await db.contact.findMany({
     where: { userId, archivedAt: null, nextFollowUpAt: { lte: cutoff } },
     orderBy: { nextFollowUpAt: "asc" },
@@ -1956,9 +1954,7 @@ export async function dueNow(
   withinDays = 0,
 ): Promise<{ followUps: DueItem[]; pings: DueItem[]; tasks: DueItem[]; total: number }> {
   const now = new Date();
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() + withinDays);
-  cutoff.setHours(23, 59, 59, 999);
+  const cutoff = endOfDay(await timeZoneOf(userId), withinDays);
   const late = (date: Date | null) => date !== null && date < now;
 
   const [applications, contacts, tasks] = await Promise.all([
@@ -2420,17 +2416,20 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
   });
 
   // --- velocity: six weeks back, Monday-anchored ----------------------------
+  // Anchored to the reader's Monday, not the server's: a week boundary drawn in
+  // UTC puts Sunday evening in Los Angeles into the week that has not started.
   const now = new Date();
-  const monday = new Date(now);
-  monday.setUTCHours(0, 0, 0, 0);
-  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+  const zone = await timeZoneOf(userId);
+  const monday = startOfWeek(zone, now);
+  const weeks = Array.from({ length: 7 }, (_, i) =>
+    // Step in civil days so a week containing a clock change is still a week.
+    atHourInDays(zone, (i - 5) * 7, 0, monday),
+  );
   const velocity = Array.from({ length: 6 }, (_, i) => {
-    const start = new Date(monday);
-    start.setUTCDate(start.getUTCDate() - (5 - i) * 7);
-    const end = new Date(start);
-    end.setUTCDate(end.getUTCDate() + 7);
+    const start = weeks[i];
+    const end = weeks[i + 1];
     return {
-      weekStart: start.toISOString().slice(0, 10),
+      weekStart: civilDay(start, zone),
       count: applications.filter(
         (application) =>
           application.appliedAt !== null &&
@@ -2592,6 +2591,9 @@ function verdict(
 }
 
 export async function pipelineStats(userId: string) {
+  // "This week" is the reader's week. Read before the counts rather than inside
+  // them so all ten queries still go out together.
+  const weekStart = startOfWeek(await timeZoneOf(userId));
   const [byStage, total, active, thisWeek, interviews, screening, offers, tasksOpen, followUps, flow] =
     await Promise.all([
       // Archived applications leave the funnel with everything else. Half of
@@ -2613,7 +2615,7 @@ export async function pipelineStats(userId: string) {
         where: { userId, archivedAt: null, stage: { notIn: [...TERMINAL_STAGES, "WISHLIST"] } },
       }),
       db.application.count({
-        where: { userId, archivedAt: null, appliedAt: { gte: startOfWeek() } },
+        where: { userId, archivedAt: null, appliedAt: { gte: weekStart } },
       }),
       db.application.count({
         where: { userId, archivedAt: null, stage: { in: ["INTERVIEW", "FINAL"] } },
@@ -2661,14 +2663,6 @@ export async function pipelineStats(userId: string) {
      */
     responseRateBasis: applied,
   };
-}
-
-function startOfWeek() {
-  const d = new Date();
-  const day = (d.getDay() + 6) % 7; // Monday-first
-  d.setDate(d.getDate() - day);
-  d.setHours(0, 0, 0, 0);
-  return d;
 }
 
 function clamp(value: number, min: number, max: number) {

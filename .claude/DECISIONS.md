@@ -5353,3 +5353,67 @@ contrast read off the running page's own computed tokens.
 `src/components/me/import-dialog.tsx`, `src/components/pipeline/application-detail.tsx`,
 `src/components/resume/resume-editor.tsx`, `src/components/settings/connections-panel.tsx`,
 `src/components/{shell,login-form}.tsx`.
+
+---
+
+## 2026-09-08 — Dates belong to the reader, not to the server
+
+Every civil date in this app was computed from `new Date()` on whatever machine the
+instance runs on. On a hosted instance that is UTC, and the result was wrong every single
+day for anybody who is not: the greeting said good evening over lunch in Los Angeles, a
+follow-up turned red at 5pm the day before it was due, and the app's 9am nudge landed at
+1am. Nothing was broken enough to report, which is exactly why it survived this long.
+
+**`Profile.timeZone`, an IANA name, empty meaning the host's own clock.** Empty is what
+every existing row gets and it is the right answer for a self-hoster running this on the
+machine under their desk — so the migration needs no backfill and nobody's dates move
+until a browser tells the app where they are.
+
+**No date library.** `src/lib/time.ts` is built on `Intl`, which already ships the full
+IANA database in Node and in every browser. The two primitives everything else is derived
+from are *what the clock reads in a zone at this instant* (format and read the parts back)
+and *which instant a given local time is* (guess local-as-UTC, measure the offset at the
+guess, correct — twice, because the offset can differ at the corrected instant, which is
+what a DST boundary is). Two passes converge everywhere except inside the spring-forward
+gap, where the local time asked for does not exist and any answer is a choice; this one
+lands just after the jump. Proven against Kolkata's +5:30, Chatham's +13:45, Auckland over
+the date line, and Los Angeles on both sides of a spring-forward and a fall-back.
+
+**Step by civil days, never by 86,400,000ms.** The day a clock goes forward is 23 hours
+long, so `startOfDay + n * DAY` lands an hour into the wrong day twice a year. Every
+"n days from now" here re-reads the calendar parts after stepping.
+
+**Two callers, two ways of getting the zone, and that is deliberate.** Server components
+and data functions take it explicitly — `timeZoneOf(userId)` — because module-level state
+on the server is shared across requests and users, and a leaked zone is a tenant bug in
+waiting. Client components read it from `ViewerZoneProvider` in the app layout. The
+default for both is `""`, which in a browser IS the reader's clock, so a component
+rendered outside the provider still says something true.
+
+**The browser seeds it, once, and never overwrites a choice.** `ViewerZoneProvider` fires
+on mount only when nothing is stored, and `setTimeZoneAction(zone, { seeded: true })`
+re-checks server-side before writing, so a second tab cannot undo a zone somebody picked.
+That is why almost nobody will ever open the setting: it is already right.
+
+**It is not a `ProfilePatch` key.** That type is also what `import_resume` accepts, and
+reading somebody's CV is no reason to move their clock — the same argument
+`setPipelineFields` already makes for board columns. `me.setTimeZone` is its own
+validating writer; `update_profile` takes a `timeZone` argument and routes it there.
+Validation is in the data layer rather than at the edges because an unknown zone would
+otherwise throw inside `Intl` at render time, a long way from whoever typed it.
+
+**A shared pipeline reads in its owner's zone**, not the viewer's. "Chase tomorrow" is a
+fact about the owner's week; a recruiter opening the link in Berlin should see the date
+the person who shared it sees.
+
+**What deliberately stays on elapsed time:** `quietDays`, `daysInStage` and the archive's
+retention window. Those are durations, not calendars — "21 days quiet" means 21×24 hours
+and gains nothing from a zone. The month grid on the calendar view also stays UTC: a month
+has the same shape everywhere, and only the two zone-sensitive questions — which cell an
+entry lands in, and which cell is today — are answered from the reader's calendar.
+
+Verified against real Postgres (a follow-up created on Auckland time lands at 21:00Z and
+reads 9am there; the same row is on today's chase list at 10pm in Los Angeles and off it
+on UTC; Chatham's 45-minute offset holds) and in a browser (a context in Los Angeles seeds
+itself with no prompting; setting Auckland in Settings changes the greeting to Auckland's
+while the browser stays in Los Angeles).

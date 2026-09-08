@@ -748,7 +748,12 @@ resulting container, so it isn't the shipped default yet.
   when a change has landed.
 - **`⌘K` / `Ctrl+K`** opens a search palette that jumps to any role, resume, or application.
 - **Follow-up dates set themselves** when an application changes stage — 7 days after
-  applying, 4 after a screen, 3 after a final round. Override any of them by hand.
+  applying, 4 after a screen, 3 after a final round, each at 9am. Override any of them by
+  hand.
+- **Dates are yours, not the server's.** The browser tells the app what time zone you are
+  in the first time you open it, and everything dated follows it: what counts as today,
+  when a follow-up turns red, and which 9am it is set for. Change it under **Settings →
+  Account** if you are searching from somewhere your laptop isn't.
 - **Dark and light** both supported; toggle is top-right.
 - **Suspending someone** signs them out everywhere and kills their Claude connection
   immediately — their data is kept. Deleting them removes it all.

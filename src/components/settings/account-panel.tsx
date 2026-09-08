@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TimeZoneField } from "@/components/settings/time-zone-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +43,8 @@ export function AccountPanel({
     photo: string;
     googleLinked: boolean;
     hasPassword: boolean;
+    /** IANA zone, or "" meaning the server's own clock. */
+    timeZone: string;
   };
   /** Whether this instance has Google sign-in configured at all. */
   googleReady: boolean;
@@ -149,6 +152,10 @@ export function AccountPanel({
             <GoogleLink linked={user.googleLinked} hasPassword={user.hasPassword} />
           </>
         )}
+
+        <Separator />
+
+        <TimeZoneField zone={user.timeZone} />
 
         <Separator />
 

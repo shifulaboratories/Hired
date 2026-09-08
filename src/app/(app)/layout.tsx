@@ -4,6 +4,7 @@ import { Shell } from "@/components/shell";
 import { relativeDay } from "@/lib/utils";
 import { dueNow } from "@/lib/data/pipeline";
 import { WelcomeTour } from "@/components/onboarding/welcome-tour";
+import { ViewerZoneProvider } from "@/components/viewer-zone";
 
 export const dynamic = "force-dynamic";
 
@@ -22,24 +23,27 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     dueNow(user.id),
     db.profile.findUnique({
       where: { userId: user.id },
-      select: { photo: true, tourSeenAt: true },
+      select: { photo: true, tourSeenAt: true, timeZone: true },
     }),
   ]);
 
   // Flattened here rather than in the bell: the shell is a client component,
   // and a Date crossing that boundary is one more thing that can format
   // differently on the two sides of a hydration.
+  // Empty until the browser seeds it, and empty means the server's own clock —
+  // which is what every date in this app was computed against before this.
+  const zone = profile?.timeZone ?? "";
   const notices = [...due.followUps, ...due.pings, ...due.tasks].map((item) => ({
     kind: item.kind,
     id: item.id,
     title: item.title,
     detail: item.detail,
-    due: relativeDay(item.dueAt),
+    due: relativeDay(item.dueAt, zone),
     overdue: item.overdue,
   }));
 
   return (
-    <>
+    <ViewerZoneProvider zone={zone}>
       <Shell
         notices={notices}
         user={{
@@ -59,6 +63,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           column, which is the right answer for a feature whose job is to
           explain what the app is. */}
       <WelcomeTour open={profile?.tourSeenAt == null} />
-    </>
+    </ViewerZoneProvider>
   );
 }

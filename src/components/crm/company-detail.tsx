@@ -28,6 +28,7 @@ import {
   saveCompanyAction,
 } from "@/server/actions";
 import { relativeDay } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
 
 export type CompanyFields = {
   id: string;
@@ -441,6 +442,7 @@ function JobListing({
     nextFollowUpAt: string | null;
   };
 }) {
+  const zone = useViewerZone();
   const posting = linkHref(application.jobUrl);
   const where = [application.location, application.workMode].filter(Boolean).join(" · ");
 
@@ -466,7 +468,7 @@ function JobListing({
         {application.salaryRange && <span className="truncate">{application.salaryRange}</span>}
         {application.nextFollowUpAt && (
           <span className="nums">
-            Chase {relativeDay(new Date(application.nextFollowUpAt))}
+            Chase {relativeDay(new Date(application.nextFollowUpAt), zone)}
           </span>
         )}
         {!where && !application.salaryRange && !application.nextFollowUpAt && (

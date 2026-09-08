@@ -10,6 +10,7 @@ import {
 import { pick } from "@/lib/data/patch";
 import { resolvePhoto } from "@/lib/photo";
 import { bulletSimilarity, SAME_BULLET } from "@/lib/resume-similarity";
+import { isValidTimeZone, SERVER_ZONE } from "@/lib/time";
 
 /**
  * Every function here takes the owning userId as its first argument, and every
@@ -122,6 +123,40 @@ const PROFILE_COLUMNS = [
 export async function updateProfile(userId: string, patch: ProfilePatch) {
   await getProfile(userId);
   return db.profile.update({ where: { userId }, data: pick(patch, PROFILE_COLUMNS) });
+}
+
+/**
+ * Which calendar this person is on.
+ *
+ * A separate writer rather than a key on ProfilePatch, for the same reason
+ * setPipelineFields is one: that type is what `importResume` hands an
+ * assistant, and reading a CV is no reason to move somebody's clock. Empty
+ * clears it back to the host's own zone.
+ *
+ * Validated here rather than at the edges — a zone this runtime does not know
+ * would make every Intl call in src/lib/time.ts throw at render time, a long
+ * way from whoever typed it.
+ */
+export async function setTimeZone(userId: string, timeZone: string) {
+  const clean = timeZone.trim();
+  if (!isValidTimeZone(clean)) {
+    throw new Error(
+      `"${clean}" is not a time zone this server knows. Use an IANA name like "America/New_York", or "" for the server's own clock.`,
+    );
+  }
+  await getProfile(userId);
+  const saved = await db.profile.update({ where: { userId }, data: { timeZone: clean } });
+  return { timeZone: saved.timeZone };
+}
+
+/**
+ * The zone to compute this person's civil dates in, for callers that only have
+ * a userId. Deliberately does NOT create a profile row: it is called on read
+ * paths, several of them per render, and a read should not write.
+ */
+export async function timeZoneOf(userId: string): Promise<string> {
+  const row = await db.profile.findUnique({ where: { userId }, select: { timeZone: true } });
+  return row?.timeZone ?? SERVER_ZONE;
 }
 
 /**

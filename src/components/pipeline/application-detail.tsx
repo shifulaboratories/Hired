@@ -64,6 +64,7 @@ import { companyDomain } from "@/lib/company";
 import { useAutosave } from "@/hooks/use-autosave";
 import { ACTIVITY_LABEL, ACTIVITY_OPTIONS, STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
 import { cn, relativeDay } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
 import { DateField, parseISODate } from "@/components/ui/date-field";
 import {
   addActivityAction,
@@ -170,6 +171,7 @@ export function ApplicationDetail({
    */
   onServerChange?: () => void;
 }) {
+  const zone = useViewerZone();
   const [values, setValues] = useState({
     company: application.company,
     roleTitle: application.roleTitle,
@@ -224,7 +226,7 @@ export function ApplicationDetail({
     // new Date("2026-03-14") is UTC midnight and prints as the 13th anywhere
     // west of Greenwich.
     appliedLabel(values.appliedAt),
-    values.nextFollowUpAt ? `Chase ${relativeDay(new Date(values.nextFollowUpAt))}` : "",
+    values.nextFollowUpAt ? `Chase ${relativeDay(new Date(values.nextFollowUpAt), zone)}` : "",
   ].filter(Boolean);
 
   const set = (patch: Partial<typeof values>) => {
@@ -476,7 +478,7 @@ export function ApplicationDetail({
                 />
                 {values.nextFollowUpAt && (
                   <p className="text-muted-foreground text-xs">
-                    {relativeDay(new Date(values.nextFollowUpAt))}
+                    {relativeDay(new Date(values.nextFollowUpAt), zone)}
                   </p>
                 )}
               </div>
@@ -918,6 +920,7 @@ function Timeline({
 }
 
 function TasksCard({ applicationId, tasks }: { applicationId: string; tasks: Task[] }) {
+  const zone = useViewerZone();
   const [pending, startTransition] = useTransition();
   const [draft, setDraft] = useState("");
   const [done, setDone] = useState<Set<string>>(new Set());
@@ -982,7 +985,7 @@ function TasksCard({ applicationId, tasks }: { applicationId: string; tasks: Tas
                   </span>
                   {task.dueAt && (
                     <span className="text-muted-foreground ml-auto shrink-0 text-[11px]">
-                      {relativeDay(new Date(task.dueAt))}
+                      {relativeDay(new Date(task.dueAt), zone)}
                     </span>
                   )}
                 </li>
