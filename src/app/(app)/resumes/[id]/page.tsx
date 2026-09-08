@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { evidenceSources, getResume, listResumeNames } from "@/lib/data/resumes";
-import { getProfile } from "@/lib/data/me";
+import { getProfile, listRoles } from "@/lib/data/me";
 import { requireUser } from "@/lib/auth";
 import { accountAccess } from "@/lib/data/accounts";
 import { ResumeEditor } from "@/components/resume/resume-editor";
@@ -33,6 +33,15 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
   // rule trace_resume_evidence uses, so the inline mark and the panel agree.
   const evidence = await evidenceSources(user.id);
 
+  // Every job on file, so one can be pulled into this document without leaving
+  // the editor. Labels only — the entry itself is built server-side, by the
+  // same code add_role_to_resume runs.
+  const roles = (await listRoles(user.id)).map((role) => ({
+    id: role.id,
+    label: [role.title, role.company].filter(Boolean).join(" — ") || "Untitled role",
+    bullets: role._count.highlights,
+  }));
+
   const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
   const proto =
     headerList.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
@@ -44,6 +53,7 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
       base={base ? { id: base.id, name: base.name, doc: base.doc } : null}
       doc={resume.doc}
       evidence={evidence}
+      roles={roles}
       meta={{
         name: resume.name,
         targetRole: resume.targetRole,

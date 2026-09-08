@@ -91,7 +91,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  126 tools any MCP client can call (158 if you're an admin). Claude, Claude Code, ChatGPT,
+  127 tools any MCP client can call (159 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -274,7 +274,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Hit **Test** next to any connection and the app calls its own endpoint the way a client
-would, then tells you how many tools answered — 126, or 158 if you're an admin.
+would, then tells you how many tools answered — 127, or 159 if you're an admin.
 
 #### One connection per client
 
@@ -464,7 +464,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-126 tools. One hundred and eighteen of them are the data tools across the four areas, the
+127 tools. One hundred and nineteen of them are the data tools across the four areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other eight are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
@@ -524,7 +524,8 @@ draft and estimates page count *without* saving, so Claude can check length befo
 committing, and `check_resume_fit` ranks what to cut when it runs long — the longest
 bullets, and which sections are carrying the most weight. `reorder_resume` moves one
 section, job or bullet without rewriting the document, so "lead with the Stripe job" costs
-one call rather than a full rewrite. `publish_resume` turns one into a shareable link and hands back the URL;
+one call rather than a full rewrite, and `add_role_to_resume` brings a job in from Me — its
+dates and its strongest bullets — without touching anything else. `publish_resume` turns one into a shareable link and hands back the URL;
 `unpublish_resume` destroys it. `export_resume_pdf` renders a real PDF server-side and
 reports the page count it actually came out to. A duplicated resume remembers what it was
 tailored from, so `compare_resumes` can say exactly what a variant changed — bullets added,
@@ -633,6 +634,10 @@ The preview is a way in, not just a picture: click any line on the paper — a b
 a heading, your name — and the card holding it opens in the rail with that exact field
 focused. It works because every block on the page already carries the place in the document
 it came from, which is how the page breaks know what to point at.
+
+A job you left off doesn't need retyping: **From Me**, beside Add job, lists everything in
+your history and drops the one you pick in with its dates and its strongest bullets. The
+entry remembers which role it came from, which is what lets the next thing work.
 
 Every bullet under a job carries a small mark: filled when something you wrote in Me stands
 behind it, hollow when nothing does. Hollow doesn't mean the line is false — it means the
