@@ -13,8 +13,9 @@ import { getMeSnapshot, listHighlights } from "@/lib/data/me";
 import { fitReport } from "@/lib/resume-fit";
 import { reorderDoc, type ReorderInput } from "@/lib/resume-reorder";
 // Moved out to a pure module so the import can ask the same question of a
-// re-imported resume: is this bullet one we already have?
-import { bulletSimilarity } from "@/lib/resume-similarity";
+// re-imported resume, and so the editor can ask it in the browser about the
+// bullet being typed: is there anything of this person's behind this?
+import { backingFor, type EvidenceSource } from "@/lib/resume-evidence";
 import { LINES_PER_PAGE } from "@/lib/resume-text";
 
 // Rendering helpers live in resume-text.ts (client-safe); re-exported so server
@@ -372,31 +373,63 @@ export async function reorderResume(userId: string, id: string, input: ReorderIn
   };
 }
 
+/**
+ * The person's own material, in the shape the matcher takes.
+ *
+ * Highlights only, deliberately: they are the lines somebody chose to keep, and
+ * a role's raw background is a wall of text that would match almost anything
+ * once it is long enough. The editor's inline marks and this tool have to agree
+ * about what counts, so there is one answer to "what is evidence" and it is
+ * here.
+ */
+function evidenceSourcesFrom(
+  highlights: Awaited<ReturnType<typeof listHighlights>>,
+): EvidenceSource[] {
+  return highlights.map((highlight) => ({
+    id: highlight.id,
+    text: highlight.text,
+    role: [highlight.role?.title, highlight.role?.company].filter(Boolean).join(" — "),
+    roleId: highlight.roleId,
+  }));
+}
+
+/**
+ * What the editor needs to mark a bullet backed or not, as it is typed.
+ *
+ * Sent to the browser with the document, so it is capped: a career of five
+ * hundred highlights would be a payload nobody asked for on every editor load,
+ * and the strongest match for a given bullet is overwhelmingly in the most
+ * recent material anyway. The cap is generous enough that hitting it is rare
+ * and visible in the number rather than silent.
+ */
+export async function evidenceSources(userId: string, limit = 400) {
+  const highlights = await listHighlights(userId);
+  return evidenceSourcesFrom(highlights).slice(0, limit);
+}
+
 export async function traceResumeEvidence(userId: string, id: string) {
   const resume = await db.resume.findFirst({ where: { id, userId } });
   if (!resume) throw new Error(`No resume with id ${id}`);
   const highlights = await listHighlights(userId);
   const doc = parseResumeDoc(resume.data);
 
+  const sources = evidenceSourcesFrom(highlights);
   const rows: BulletEvidence[] = [];
   for (const section of doc.sections) {
     for (const item of section.experience) {
       const entry = [item.title, item.company].filter(Boolean).join(" — ") || "Role";
-      const candidates = item.roleId
-        ? highlights.filter((highlight) => highlight.roleId === item.roleId)
-        : highlights;
       for (const bullet of item.bullets) {
-        const evidence = candidates
-          .map((highlight) => ({
-            highlightId: highlight.id,
-            text: highlight.text,
-            role: [highlight.role?.title, highlight.role?.company].filter(Boolean).join(" — "),
-            similarity: Math.round(bulletSimilarity(highlight.text, bullet) * 100) / 100,
-          }))
-          .filter((row) => row.similarity >= 0.3)
-          .sort((a, b) => b.similarity - a.similarity)
-          .slice(0, 3);
-        rows.push({ entry, bullet, evidence });
+        const { sources: found } = backingFor(bullet, sources, item.roleId);
+        rows.push({
+          entry,
+          bullet,
+          evidence: found.map((source) => ({
+            highlightId: source.id,
+            text: source.text,
+            role: source.role,
+            similarity: source.similarity,
+          })),
+        });
       }
     }
   }

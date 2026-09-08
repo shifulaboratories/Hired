@@ -633,6 +633,12 @@ a heading, your name — and the card holding it opens in the rail with that exa
 focused. It works because every block on the page already carries the place in the document
 it came from, which is how the page breaks know what to point at.
 
+Every bullet under a job carries a small mark: filled when something you wrote in Me stands
+behind it, hollow when nothing does. Hollow doesn't mean the line is false — it means the
+material behind it is missing, which is the thing worth fixing before an interview asks about
+it. It's the same measure `trace_resume_evidence` uses, so the mark and the Evidence panel
+never disagree, and it recomputes as you type.
+
 Nothing you do in the editor is one-way. Undo and redo sit next to the save indicator and
 answer to ⌘Z and ⇧⌘Z — except inside a text field, where ⌘Z still takes back what you typed,
 which is what you meant. A sentence undoes as a sentence rather than a letter at a time.
