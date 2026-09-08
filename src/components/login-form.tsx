@@ -65,6 +65,7 @@ export function LoginForm({
   allowedDomains,
   notice,
   signedInHint,
+  owner,
 }: {
   instanceName: string;
   googleReady: boolean;
@@ -74,6 +75,8 @@ export function LoginForm({
   /** A refusal carried back from the Google callback, in Google's own words. */
   notice?: string;
   signedInHint: SignedInHint | null;
+  /** Who to ask when you are locked out. Null on an instance with no owner. */
+  owner: { name: string; email: string } | null;
 }) {
   const [state, formAction] = useActionState(loginAction, undefined);
 
@@ -165,11 +168,16 @@ export function LoginForm({
           they cannot get in, or inviting a stranger to press a button that
           will refuse them. */}
       <motion.p variants={authRise} className="text-muted-foreground mt-6 text-center text-xs">
-        {!openSignup
-          ? "Accounts here are invite-only. Ask an admin for an invitation, or to reset a password you’ve lost."
-          : allowedDomains
-            ? `Continue with Google to create an account, if your address is on ${allowedDomains}.`
-            : "Continue with Google to create an account, or ask an admin for an invitation."}
+        {!openSignup ? (
+          <>
+            Accounts here are invite-only. {askWho(owner)} for an invitation, or to reset a
+            password you&rsquo;ve lost.
+          </>
+        ) : allowedDomains ? (
+          `Continue with Google to create an account, if your address is on ${allowedDomains}.`
+        ) : (
+          <>Continue with Google to create an account, or {askWho(owner)} for an invitation.</>
+        )}
       </motion.p>
     </AuthCard>
   );
@@ -375,6 +383,26 @@ export function PasswordField({
         </button>
       </div>
       {hint && <p className="text-faint text-[12px]">{hint}</p>}
+    </>
+  );
+}
+
+/**
+ * "Ask Priya" with her address behind it, rather than "ask an admin".
+ *
+ * The only way back from a lost password on this instance is a person, and the
+ * page that says so is the one page somebody locked out can actually reach. It
+ * named a role instead of a name, which is no help at all to a friend who was
+ * invited by a friend.
+ */
+function askWho(owner: { name: string; email: string } | null) {
+  if (!owner) return "Ask whoever runs this";
+  return (
+    <>
+      Ask{" "}
+      <a className="hover:text-foreground underline underline-offset-2" href={`mailto:${owner.email}`}>
+        {owner.name || owner.email}
+      </a>
     </>
   );
 }

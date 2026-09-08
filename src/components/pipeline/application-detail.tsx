@@ -70,6 +70,7 @@ import {
   createContactAction,
   createTaskAction,
   deleteApplicationAction,
+  restoreRecordsAction,
   listContactsForAttachAction,
   moveStageAction,
   setContactApplicationAction,
@@ -338,8 +339,23 @@ export function ApplicationDetail({
                       `Delete the ${values.company} application? Its timeline and tasks go with it, and you can restore all of it from the archive.`,
                     )
                   ) {
+                    // The one record people delete most, and the only delete
+                    // in the app with no Undo — a company or a person offers
+                    // one, and this went straight to a hard reload with not so
+                    // much as a toast. It is an archive, so the way back
+                    // exists; it just was not offered where the mistake
+                    // happens.
                     void deleteApplicationAction(application.id).then(() => {
-                      window.location.href = "/applications";
+                      toast.success(`${values.company} moved to the archive`, {
+                        action: {
+                          label: "Undo",
+                          onClick: () =>
+                            void restoreRecordsAction("application", [application.id]).then(() => {
+                              router.push(`/applications/${application.id}`);
+                            }),
+                        },
+                      });
+                      router.push("/applications");
                     });
                   }
                 }}

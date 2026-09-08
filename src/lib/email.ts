@@ -315,8 +315,10 @@ function rule() {
 function areas() {
   const items: [string, string][] = [
     ["Me", "Everything you've done, kept in one place instead of six resumes."],
-    ["Resumes", "Documents assembled from that material, tailored per posting."],
-    ["Pipeline", "Where every application stands and who you owe a reply."],
+    ["Resumes", "Documents built out of that material, one per job you go for."],
+    // "Pipeline" was the word the app itself stopped saying: the rail reads
+    // Board, and this email is the very first thing a new person reads.
+    ["Board", "Every job you are going for, as a card you drag along as things happen."],
   ];
   return items
     .map(

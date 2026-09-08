@@ -5281,6 +5281,80 @@ the dot now carries it.
 `src/app/(app)/resumes/[id]/page.tsx`, `src/components/resume/resume-editor.tsx`. No new
 tool: `trace_resume_evidence` already answers this, and this is the same answer inline.
 
+---
+
+## 2026-09-08 — What the adversarial pass turned up after the first fixes
+
+The six-lens audit finished: 39 findings raised, 9 survived all three adversaries, 5 lost
+exactly one vote, and a completeness critic found 7 things every lens had missed. Most of
+what follows was invisible from a code read alone and only showed up when somebody counted.
+
+**Three numbers on the analytics tab were measuring something other than what they said.**
+
+- `responseRate` counted from where applications SIT, so one that got a phone screen and was
+  then rejected counted as never having replied. A seeded search where ten of eleven
+  employers answered and then said no reported **0%** — printed above a chart showing every
+  one of them reaching the screen. It is derived from `funnelFlows` now, which is where that
+  rule already lived; the same page reports 38% above a ladder that says 9 of 24. Costs two
+  more queries in `pipelineStats` and buys one definition of "responded".
+- `active` ("In flight") counted WISHLIST, on the screen that says a wishlist row never
+  entered the funnel.
+- `interviews` counted phone screens — the one distinction the whole funnel is built on,
+  flattened in the summary above it. It is two numbers now, and `pipeline_stats` says so.
+
+`responseRateBasis` is new on `pipelineStats` so an assistant can make the same call the UI
+makes rather than quoting a percentage at somebody who has applied to three things.
+
+**The audit was wrong about one thing and I checked rather than took it.** It said a
+closed-only filter "draws a completely blank screen"; it does not — the board renders a
+CLOSED grid below the columns. The real case is a filter matching *nothing*, which drew
+columns of "Empty" and said nothing. That is what the new branch covers.
+
+**And its contrast fix was measured wrong.** `--faint` does fail 4.5:1 in both themes — 2.87
+on the light page, 3.66 on the dark one — but the proposed dark value of 0.60 still fails on
+a **card** at 4.44, and a card is the harder ground. Measured by painting the token and
+reading the pixel: light 0.553 gives 4.54/4.81, dark 0.62 gives 5.29/4.82, and 0.62 stays
+below `--muted-foreground` at 0.68 so the three levels still read as three.
+
+**The import review promised a check it did not perform.** "Check it before it lands" over a
+screen that rendered roles and nothing else, while the parser also filled name, email, phone
+and links — and takes the name from the first non-empty line with no guard but "under sixty
+characters and not an email". A paste opening with CURRICULUM VITAE files that as the
+person's name, and that name is the h1 on every resume they build and publish. Reproduced
+exactly that, then put the header at the top of the review where the promise is.
+
+**Smaller, all confirmed, all real:** opening a link to something archived landed on a
+chrome-less 404 that never mentioned the archive; Rotate and Disconnect broke a working
+connection on one click, side by side, at the bottom of the panel a beginner opens to READ
+their URL; the PDF button replaced the editor with raw error text on a host with no
+Chromium, which the server already knows about; deleting an application was the only delete
+with no Undo; a lost password pointed at "an admin" the page would not name — and a naive
+owner lookup names the bootstrap placeholder, so it has to exclude unclaimed accounts;
+the setup strip could never clear, because its third step is one the strip itself calls
+optional; the Chase card's `started` flag meant "has any job", so a wishlist-only workspace
+still got "Every follow-up is scheduled for later"; and the invitation email — the first
+thing anyone reads — introduced the product as a "Pipeline", the word the app had just
+stopped saying.
+
+**Deliberately not done:** per-user time zones. Every date is the server's, which is a real
+correctness problem away from UTC — the greeting, the overdue red and the 9am follow-up are
+all computed server-side. It is a schema field, a migration, an MCP argument, a settings
+control and a browser-side seed, and it is a feature rather than an onboarding defect. It is
+written down here so the next session finds it rather than rediscovering it.
+
+**Verified** in a browser against a real Postgres throughout, and by seeding the exact shapes
+that produce the wrong answers rather than trusting the reports: the ten-of-eleven response
+rate, the CURRICULUM VITAE paste, the drawer closing before the server answers, and the
+contrast read off the running page's own computed tokens.
+
+**Applies to:** `src/lib/data/{pipeline,users,onboarding}.ts`, `src/lib/mcp/tools.ts`,
+`src/lib/email.ts`, `src/app/globals.css`, `src/app/(app)/not-found.tsx`,
+`src/app/(app)/applications/page.tsx`, `src/app/(app)/page.tsx`, `src/app/login/page.tsx`,
+`src/components/analytics/analytics-panel.tsx`, `src/components/dashboard/diagnosis.tsx`,
+`src/components/me/import-dialog.tsx`, `src/components/pipeline/application-detail.tsx`,
+`src/components/resume/resume-editor.tsx`, `src/components/settings/connections-panel.tsx`,
+`src/components/{shell,login-form}.tsx`.
+
 ## 2026-09-08 — Pulling a job in from Me, rather than typing it again
 
 Add job gave you an empty entry to fill in, for a job the app already knew everything about.

@@ -62,7 +62,12 @@ body:has(> .auth-field.theme-light) {
      you go looking — timestamps, row numbers, keyboard hints. Collapsing faint
      into muted is what makes a dense screen look like undifferentiated soup. */
   --muted-foreground: oklch(0.505 0.008 265);
-  --faint: oklch(0.665 0.008 265);
+  /* 0.665 measured 2.87:1 on the page and 3.04:1 on a card — under 4.5:1 in
+     both places, for the token that carries dates, counts, keyboard hints and
+     the role title on every board card. 0.553 measures 4.54 and 4.81, and stays
+     lighter than --muted-foreground at 0.505 so the three levels still read as
+     three levels. */
+  --faint: oklch(0.553 0.008 265);
 
   /* The one accent. Used for the primary button, links and selection. */
   --primary: oklch(0.55 0.17 254);
@@ -211,7 +216,11 @@ body:has(> .auth-field.theme-light) {
   --popover-foreground: oklch(0.968 0.002 265);
 
   --muted-foreground: oklch(0.68 0.008 265);
-  --faint: oklch(0.53 0.009 265);
+  /* 3.66:1 on the page and 3.34:1 on a card before this. 0.62 measures 5.29
+     and 4.82 — note the card is the harder ground here, and 0.60 passes the
+     page while still failing the card at 4.44, so the value has to be picked
+     against the card. Stays below --muted-foreground at 0.68. */
+  --faint: oklch(0.62 0.009 265);
 
   --primary: oklch(0.65 0.17 252);
   --primary-foreground: oklch(1 0 0);

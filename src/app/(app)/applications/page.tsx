@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { headers } from "next/headers";
 import type { Stage } from "@prisma/client";
 import { EmptyState, PageHeader, PageShell } from "@/components/page-header";
@@ -209,7 +210,7 @@ export default async function ApplicationsPage({
         <EmptyState
           icon={KanbanIcon}
           title="Nothing on the board yet"
-          description="Add the first job you are going for — paste the posting and the form fills itself in. One is enough for the board, the reminders and the chart to start working."
+          description="Add the first job you are going for — paste the posting and the form fills itself in. Once you have applied to one, the reminders and the chart start working too."
           action={
             <NewApplicationDialog
               fieldValues={fieldValues}
@@ -393,6 +394,36 @@ export default async function ApplicationsPage({
     : picked.length > 0
       ? BOARD_STAGES.filter((stage) => picked.includes(stage))
       : BOARD_STAGES;
+
+  // A filter that matches nothing drew seven columns of "Empty" — and picking
+  // only closed stages drew no columns at all, a blank space under a toolbar,
+  // which reads as the app having failed rather than as a filter having
+  // worked. The list says this; the board did not.
+  if (visible.length === 0) {
+    return chrome(
+      <EmptyState
+        icon={KanbanIcon}
+        title="Nothing matches that"
+        description={
+          onlyClosed
+            ? "Closed applications live under the board rather than on it. The list and the calendar will show them."
+            : "Nothing on the board fits the search and filters you have on."
+        }
+        action={
+          <div className="flex flex-wrap justify-center gap-2">
+            {onlyClosed && (
+              <Button asChild variant="outline">
+                <Link href={`/applications?view=list&${currentQuery}`}>Show them as a list</Link>
+              </Button>
+            )}
+            <Button asChild>
+              <Link href="/applications">Clear the filters</Link>
+            </Button>
+          </div>
+        }
+      />,
+    );
+  }
 
   return chrome(
     <PipelineBoard

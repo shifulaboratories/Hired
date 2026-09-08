@@ -429,6 +429,11 @@ export function Shell({
  * The phone's navigation. Everything the desktop rail holds, plus the account
  * links that live in the profile menu — because on a phone the profile menu is
  * a 28px avatar and "where is Settings" should not depend on finding it.
+ *
+ * Every link closes it on tap. The pathname effect above is still the backstop,
+ * but it only fires once the server has answered — so on a slow connection a
+ * tap looked like nothing had happened, with the menu sitting on top of the
+ * screen it was navigating to.
  */
 function MobileNav({
   open,
@@ -496,6 +501,7 @@ function MobileNav({
                 <div className="relative">
                   <Link
                     href={item.href}
+                    onClick={() => onOpenChange(false)}
                     className={cn(
                       "flex h-11 items-center gap-3 rounded-lg px-3 text-[14px] font-medium transition-colors",
                       active ? "bg-accent text-foreground" : "text-muted-foreground",
@@ -530,6 +536,7 @@ function MobileNav({
                       <Link
                         key={child.href}
                         href={child.href}
+                        onClick={() => onOpenChange(false)}
                         className="text-muted-foreground ml-10 flex h-9 items-center rounded-lg px-3 text-[13px] font-medium transition-colors"
                       >
                         {child.label}
@@ -564,7 +571,12 @@ function MobileNav({
                 {body}
               </a>
             ) : (
-              <Link key={item.href} href={item.href} className={className}>
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => onOpenChange(false)}
+                className={className}
+              >
                 {body}
               </Link>
             );

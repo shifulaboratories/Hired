@@ -29,7 +29,13 @@ export function DiagnosisCard({ diagnosis }: { diagnosis: SearchDiagnosis }) {
           </p>
         </div>
 
-        {steps.some((step) => step.reached > 0) && (
+        {/* Gated on the diagnosis's own rule, not on "anything reached at all".
+            At one application this drew "Applied → Screening · 0 of 1 · 0%" with
+            a full-width empty bar, directly under a headline saying it was too
+            early to tell them anything — and on a phone the "0 of 1" column is
+            hidden, so the only thing left was the 0%. Same threshold as the
+            stat tile above it, read from the same flag. */}
+        {diagnosis.confident && steps.some((step) => step.reached > 0) && (
           <div className="space-y-1">
             {steps.map((step) => {
               const isWeak = step.from === weakest;
@@ -106,7 +112,10 @@ export function DiagnosisCard({ diagnosis }: { diagnosis: SearchDiagnosis }) {
             <div className="text-faint mt-1 text-[11px]">Six weeks, this week on the right</div>
           </div>
 
-          {byResume.length > 0 && (
+          {/* A resume with one application behind it was being given a response
+              rate — 0% or 100%, either of them a verdict on nothing, next to
+              its name. */}
+          {diagnosis.confident && byResume.length > 0 && (
             <div>
               <div className="eyebrow mb-1.5">
                 By resume

@@ -95,6 +95,33 @@ export async function adminResetPassword(actor: User, userId: string) {
   return { email: target.email, password };
 }
 
+/**
+ * Who to ask when you are locked out.
+ *
+ * There is no self-serve password reset — an admin does it — and the sign-in
+ * page said "ask an admin" without naming one, to a person who by definition
+ * cannot get in to find out who that is. This is instance-level like everything
+ * else in this file's header comment explains: it returns the owner's name and
+ * address and nothing else, and it is read on a page nobody has signed in to,
+ * so it deliberately carries no other field.
+ */
+export async function instanceOwnerContact(): Promise<{ name: string; email: string } | null> {
+  const owner = await db.user.findFirst({
+    where: {
+      role: "SUPER_ADMIN",
+      isActive: true,
+      // Not merely the first super admin: bootstrap leaves a placeholder row
+      // with an empty password and a setup-pending address, and naming THAT as
+      // the person to email is worse than saying nothing. Same test as
+      // isClaimed — somebody has actually taken the account.
+      OR: [{ passwordHash: { not: "" } }, { googleId: { not: null } }],
+    },
+    select: { name: true, email: true },
+    orderBy: { createdAt: "asc" },
+  });
+  return owner ? { name: owner.name, email: owner.email } : null;
+}
+
 export async function countUsers() {
   return db.user.count({ where: CLAIMED });
 }

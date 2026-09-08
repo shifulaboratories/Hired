@@ -126,7 +126,7 @@ export async function AnalyticsPanel({ userId }: { userId: string }) {
             label="Response rate"
             value={stats.responseRate}
             suffix="%"
-            hint={`${stats.interviews} in interviews`}
+            hint={interviewHint(stats.interviews, stats.screening)}
           />
         ) : (
           <QuietStat
@@ -134,7 +134,7 @@ export async function AnalyticsPanel({ userId }: { userId: string }) {
             label="Response rate"
             hint={
               stats.interviews > 0
-                ? `${stats.interviews} in interviews. A rate needs about ten applications behind it.`
+                ? `${interviewHint(stats.interviews, stats.screening)}. A rate needs about ten applications behind it.`
                 : "Needs about ten applications behind it to mean anything."
             }
           />
@@ -146,7 +146,9 @@ export async function AnalyticsPanel({ userId }: { userId: string }) {
           hint={
             stats.offers > 0
               ? `${stats.offers} offer${stats.offers > 1 ? "s" : ""} on the table`
-              : "Keep the streak"
+              : stats.thisWeek > 0
+                ? "Keep the streak"
+                : "Nothing sent yet this week"
           }
         />
         <StatCard
@@ -300,4 +302,19 @@ function StatCard({
       </Card>
     </StaggerItem>
   );
+}
+
+/**
+ * "2 in interviews, 1 at a phone screen".
+ *
+ * These were one number under the word "interviews", which counted phone
+ * screens as interviews — the one distinction the whole funnel is built on,
+ * flattened in the summary above it.
+ */
+function interviewHint(interviews: number, screening: number) {
+  const parts = [
+    interviews > 0 ? `${interviews} in interviews` : "",
+    screening > 0 ? `${screening} at a phone screen` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(", ") : "Nothing in play yet";
 }
