@@ -580,6 +580,25 @@ and instance settings only — none of them can read another person's content.
 
 ---
 
+## Starting from a resume you already have
+
+The empty workspace is the reason people leave before they start. Ask Claude — *"here's my
+resume, file it"* — and `import_resume` puts the whole thing in: jobs with their bullets,
+education, skills, contact details, without overwriting anything already there. That path
+reads the document properly, and it's the one to use.
+
+If you haven't connected anything yet, **Import** on the Me page takes the text instead. It
+reads headings, so it's a draft rather than an answer, and it's built to be corrected: every
+job it found, and every bullet under it, is shown as an editable field before anything is
+saved. Where it had to guess — which half of "Northwind Trading — Head of Operations" is the
+employer, or which lines are bullets in a document that never used a bullet mark — it says so
+on the field it guessed about, rather than as a warning at the top you'd have to go hunting
+with. The whole document is filed as a note either way, so anything it missed stays
+searchable.
+
+PDFs are deliberately not read directly: a two-column layout comes out interleaved, and a
+wrong parse you can't see is worse than a paste.
+
 ## The Harvard template
 
 New resumes use the Harvard OCS format by default — the one Harvard's career office hands
