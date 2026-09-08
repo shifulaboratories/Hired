@@ -28,6 +28,7 @@ import { BOARD_STAGES, STAGE_LABEL } from "@/lib/data/pipeline";
 import type { Stage } from "@prisma/client";
 import { createApplicationAction, parsePostingAction } from "@/server/actions";
 import { TagPicker, type TagOption } from "@/components/tags/tag-picker";
+import { cn } from "@/lib/utils";
 import { ValuePicker } from "@/components/pipeline/value-picker";
 import type { TagValue } from "@/components/tags/tag-chip";
 
@@ -50,7 +51,7 @@ export function NewApplicationDialog({
   const [form, setForm] = useState({
     company: "",
     roleTitle: "",
-    stage: "WISHLIST" as Stage,
+    stage: "" as Stage | "",
     jobUrl: "",
     location: "",
     salaryRange: "",
@@ -106,15 +107,28 @@ export function NewApplicationDialog({
     });
   };
 
+  /** Everything past "applied" — the rare case, behind one more click. */
+  const further: Stage[] = BOARD_STAGES.filter(
+    (stage) => stage !== "WISHLIST" && stage !== "APPLIED",
+  );
+
   const submit = () => {
     if (!form.company.trim() || !form.roleTitle.trim()) {
       toast.error("Company and role are required.");
       return;
     }
+    if (!form.stage) {
+      toast.error("Say whether you have applied yet — it decides where the card goes.");
+      return;
+    }
+    // Narrowed above, but the guard does not survive the spread — so the
+    // stage is written explicitly rather than carried along in `rest`.
+    const stage = form.stage;
     startTransition(async () => {
       const { tags, ...rest } = form;
       const id = await createApplicationAction({
         ...rest,
+        stage,
         tagIds: tags.map((tag) => tag.id),
         resumeId: form.resumeId || null,
       });
@@ -177,23 +191,54 @@ export function NewApplicationDialog({
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Stage</Label>
-            <Select
-              value={form.stage}
-              onValueChange={(value) => setForm({ ...form, stage: value as Stage })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {BOARD_STAGES.map((stage) => (
-                  <SelectItem key={stage} value={stage}>
-                    {STAGE_LABEL[stage]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* A question, not a dropdown of seven board columns.
+              This defaulted to Wishlist, and both possible defaults were
+              wrong. Left alone by somebody who HAD applied, the card sat in
+              Wishlist, never entered the funnel, and their analytics said they
+              had applied to nothing. Defaulting the other way invents
+              applications nobody sent. So it is asked instead — two buttons,
+              plain words, no default and no submit until one is picked. It is
+              one click, and it is the click that makes every number downstream
+              true. "Further along" opens the full ladder for the rarer case of
+              somebody already interviewing when they start tracking. */}
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label>Have you applied yet?</Label>
+            <div className="flex flex-wrap gap-2">
+              <StageChoice
+                active={form.stage === "WISHLIST"}
+                onClick={() => setForm({ ...form, stage: "WISHLIST" })}
+              >
+                Not yet — just saving it
+              </StageChoice>
+              <StageChoice
+                active={form.stage === "APPLIED"}
+                onClick={() => setForm({ ...form, stage: "APPLIED" })}
+              >
+                Yes, I have applied
+              </StageChoice>
+              <Select
+                value={further.includes(form.stage as Stage) ? form.stage : ""}
+                onValueChange={(value) => setForm({ ...form, stage: value as Stage })}
+              >
+                <SelectTrigger
+                  className={cn(
+                    "h-auto w-auto min-w-0 gap-1.5 rounded-control px-3 py-1.5 text-[13px]",
+                    further.includes(form.stage as Stage)
+                      ? "border-primary bg-primary-tint text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  <SelectValue placeholder="Further along" />
+                </SelectTrigger>
+                <SelectContent>
+                  {further.map((stage) => (
+                    <SelectItem key={stage} value={stage}>
+                      {STAGE_LABEL[stage]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="space-y-1.5">
@@ -268,5 +313,36 @@ export function NewApplicationDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * One of the two plain answers. A button rather than a radio: it is the same
+ * hit target as the Select beside it, and there is nothing to read out of a
+ * group of two whose labels are already whole sentences.
+ */
+function StageChoice({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "rounded-control border px-3 py-1.5 text-[13px] font-medium transition-colors",
+        active
+          ? "border-primary bg-primary-tint text-foreground"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
   );
 }
