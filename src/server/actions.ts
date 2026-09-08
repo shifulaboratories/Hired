@@ -603,6 +603,24 @@ export async function saveProfileAction(patch: me.ProfilePatch) {
 }
 
 /**
+ * Set the calendar this person's dates are read against, or clear it back to
+ * the server's own with an empty string.
+ *
+ * `seeded` marks the browser filling it in for somebody who has never set one,
+ * which must not overwrite a zone a person actually chose — the effect that
+ * calls it runs on a machine that may be in a different place from the one
+ * they are searching for work in.
+ */
+export async function setTimeZoneAction(timeZone: string, options?: { seeded?: boolean }) {
+  const user = await requireUser();
+  if (options?.seeded && (await me.timeZoneOf(user.id))) return { timeZone: "", skipped: true };
+  const result = await me.setTimeZone(user.id, timeZone);
+  // Every screen shows a date, so every screen is stale.
+  revalidatePath("/", "layout");
+  return { ...result, skipped: false };
+}
+
+/**
  * Store a headshot, or clear it with an empty string.
  *
  * The browser has already cropped and downscaled by the time this runs, so what

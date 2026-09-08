@@ -13,6 +13,7 @@ import {
   type ArchiveKind,
 } from "@/lib/data/archive";
 import { agoDay, cn } from "@/lib/utils";
+import { timeZoneOf } from "@/lib/data/me";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,7 @@ export default async function ArchivePage({
   // already passed its window and vanishes on the next refresh is a screen
   // that lied; everywhere else the sweep can run in the background.
   await purgeExpiredFor(user.id);
+  const zone = await timeZoneOf(user.id);
   const { entries, counts, total, retentionDays, capped } = await listArchive(user.id, {
     kind,
     search: search || undefined,
@@ -58,7 +60,7 @@ export default async function ArchivePage({
       title: entry.title,
       subtitle: entry.subtitle,
       withIt: entry.withIt,
-      archivedAgo: agoDay(entry.archivedAt),
+      archivedAgo: agoDay(entry.archivedAt, zone),
       goesIn: label,
       daysLeft,
       nameTaken: entry.nameTaken,

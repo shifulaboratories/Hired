@@ -73,6 +73,7 @@ export default async function CompaniesPage({
     getProfile(user.id),
   ]);
   const widths = parseWidths(profile.columnWidths);
+  const zone = profile.timeZone;
 
   const passing = (except: keyof CompanyFilters) =>
     everyCompany.filter((row) =>
@@ -144,7 +145,7 @@ export default async function CompaniesPage({
     domain: companyLogos ? companyDomain({ name: company.name, website: company.website }) : null,
     industry: tagsOfKind(company.tags, "INDUSTRY"),
     location: tagsOfKind(company.tags, "LOCATION"),
-    lastApplied: company.lastAppliedAt ? agoDay(company.lastAppliedAt) : "never",
+    lastApplied: company.lastAppliedAt ? agoDay(company.lastAppliedAt, zone) : "never",
     applications: company._count.applications,
     openApplications: company.openApplications,
     contacts: company._count.contacts,

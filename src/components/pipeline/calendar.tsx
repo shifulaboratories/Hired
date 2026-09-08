@@ -3,6 +3,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type { Stage } from "@prisma/client";
 import { STAGE_LABEL, STAGE_TONE, type ScheduleKind } from "@/lib/data/pipeline";
 import { cn } from "@/lib/utils";
+import { clockIn, SERVER_ZONE } from "@/lib/time";
 
 export type CalendarEntry = {
   kind: ScheduleKind;
@@ -32,13 +33,25 @@ export type CalendarEntry = {
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-/** Parse `YYYY-MM`, falling back to the current month. */
-export function parseMonth(value: string | undefined): { year: number; month: number } {
+/**
+ * Parse `YYYY-MM`, falling back to the current month.
+ *
+ * `timeZone` decides which month "current" is — on the last day of a month the
+ * server and the reader can disagree about it. The grid itself is drawn in UTC
+ * and stays that way: a month has the same shape everywhere, and only the two
+ * zone-sensitive questions — which cell an entry lands in, and which cell is
+ * today — are answered from the reader's calendar.
+ */
+export function parseMonth(
+  value: string | undefined,
+  timeZone: string = SERVER_ZONE,
+): { year: number; month: number } {
   const match = /^(\d{4})-(\d{2})$/.exec(value ?? "");
-  const now = new Date();
-  if (!match) return { year: now.getUTCFullYear(), month: now.getUTCMonth() };
+  const here = clockIn(new Date(), timeZone);
+  const current = { year: here.year, month: here.month - 1 };
+  if (!match) return current;
   const month = Number(match[2]) - 1;
-  if (month < 0 || month > 11) return { year: now.getUTCFullYear(), month: now.getUTCMonth() };
+  if (month < 0 || month > 11) return current;
   return { year: Number(match[1]), month };
 }
 

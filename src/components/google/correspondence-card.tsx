@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { correspondenceAction, emailThreadAction } from "@/server/actions";
 import type { CorrespondenceSubject } from "@/lib/data/accounts";
 import { agoDay, cn } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
 
 /**
  * The threads and meetings in somebody's own mail and calendar accounts that
@@ -218,6 +219,7 @@ function Hint({ children }: { children: React.ReactNode }) {
 }
 
 function ThreadRow({ thread }: { thread: Thread }) {
+  const zone = useViewerZone();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<
     | { status: "idle" }
@@ -263,7 +265,7 @@ function ThreadRow({ thread }: { thread: Thread }) {
               <span className="text-faint nums shrink-0 text-[11px]">{thread.messageCount}</span>
             )}
             <span className="text-faint meta ml-auto shrink-0 text-[11.5px]">
-              {agoDay(thread.lastMessageAt)}
+              {agoDay(thread.lastMessageAt, zone)}
             </span>
           </div>
           <div className="text-muted-foreground truncate text-[12.5px]">

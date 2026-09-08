@@ -34,6 +34,7 @@ import {
 import { ACTIVITY_LABEL, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
 import { linkHref } from "@/lib/social";
 import { relativeDay } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
 import type { ActivityType, Stage } from "@prisma/client";
 
 /** The kinds of touch a person logs by hand. The rest are written by the system. */
@@ -398,6 +399,7 @@ export function ContactDetail({
  * what it pays, when you next chase it, and a way through to the listing.
  */
 function LinkedJob({ application }: { application: LinkedApplication }) {
+  const zone = useViewerZone();
   const posting = linkHref(application.jobUrl);
   const meta = [application.location, application.salaryRange].filter(Boolean).join(" · ");
 
@@ -422,7 +424,7 @@ function LinkedJob({ application }: { application: LinkedApplication }) {
         <div className="text-faint mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-5.5 text-[11.5px]">
           {meta && <span className="truncate">{meta}</span>}
           {application.nextFollowUpAt && (
-            <span>Chase {relativeDay(new Date(application.nextFollowUpAt))}</span>
+            <span>Chase {relativeDay(new Date(application.nextFollowUpAt), zone)}</span>
           )}
           {posting && (
             <a

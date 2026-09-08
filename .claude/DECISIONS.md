@@ -5355,6 +5355,9 @@ contrast read off the running page's own computed tokens.
 `src/components/resume/resume-editor.tsx`, `src/components/settings/connections-panel.tsx`,
 `src/components/{shell,login-form}.tsx`.
 
+
+---
+
 ## 2026-09-08 — Pulling a job in from Me, rather than typing it again
 
 Add job gave you an empty entry to fill in, for a job the app already knew everything about.
@@ -5407,3 +5410,152 @@ data belongs, and both callers get the same answer including whether it made one
 `src/server/actions.ts`, `src/components/me/import-dialog.tsx`,
 `src/app/(app)/me/page.tsx`. No tool count change — `create_base_resume` already existed and
 now shares its implementation.
+
+---
+
+## 2026-09-08 — Dates belong to the reader, not to the server
+
+Every civil date in this app was computed from `new Date()` on whatever machine the
+instance runs on. On a hosted instance that is UTC, and the result was wrong every single
+day for anybody who is not: the greeting said good evening over lunch in Los Angeles, a
+follow-up turned red at 5pm the day before it was due, and the app's 9am nudge landed at
+1am. Nothing was broken enough to report, which is exactly why it survived this long.
+
+**`Profile.timeZone`, an IANA name, empty meaning the host's own clock.** Empty is what
+every existing row gets and it is the right answer for a self-hoster running this on the
+machine under their desk — so the migration needs no backfill and nobody's dates move
+until a browser tells the app where they are.
+
+**No date library.** `src/lib/time.ts` is built on `Intl`, which already ships the full
+IANA database in Node and in every browser. The two primitives everything else is derived
+from are *what the clock reads in a zone at this instant* (format and read the parts back)
+and *which instant a given local time is* (guess local-as-UTC, measure the offset at the
+guess, correct — twice, because the offset can differ at the corrected instant, which is
+what a DST boundary is). Two passes converge everywhere except inside the spring-forward
+gap, where the local time asked for does not exist and any answer is a choice; this one
+lands just after the jump. Proven against Kolkata's +5:30, Chatham's +13:45, Auckland over
+the date line, and Los Angeles on both sides of a spring-forward and a fall-back.
+
+**Step by civil days, never by 86,400,000ms.** The day a clock goes forward is 23 hours
+long, so `startOfDay + n * DAY` lands an hour into the wrong day twice a year. Every
+"n days from now" here re-reads the calendar parts after stepping.
+
+**Two callers, two ways of getting the zone, and that is deliberate.** Server components
+and data functions take it explicitly — `timeZoneOf(userId)` — because module-level state
+on the server is shared across requests and users, and a leaked zone is a tenant bug in
+waiting. Client components read it from `ViewerZoneProvider` in the app layout. The
+default for both is `""`, which in a browser IS the reader's clock, so a component
+rendered outside the provider still says something true.
+
+**The browser seeds it, once, and never overwrites a choice.** `ViewerZoneProvider` fires
+on mount only when nothing is stored, and `setTimeZoneAction(zone, { seeded: true })`
+re-checks server-side before writing, so a second tab cannot undo a zone somebody picked.
+That is why almost nobody will ever open the setting: it is already right.
+
+**It is not a `ProfilePatch` key.** That type is also what `import_resume` accepts, and
+reading somebody's CV is no reason to move their clock — the same argument
+`setPipelineFields` already makes for board columns. `me.setTimeZone` is its own
+validating writer; `update_profile` takes a `timeZone` argument and routes it there.
+Validation is in the data layer rather than at the edges because an unknown zone would
+otherwise throw inside `Intl` at render time, a long way from whoever typed it.
+
+**A shared pipeline reads in its owner's zone**, not the viewer's. "Chase tomorrow" is a
+fact about the owner's week; a recruiter opening the link in Berlin should see the date
+the person who shared it sees.
+
+**What deliberately stays on elapsed time:** `quietDays`, `daysInStage` and the archive's
+retention window. Those are durations, not calendars — "21 days quiet" means 21×24 hours
+and gains nothing from a zone. The month grid on the calendar view also stays UTC: a month
+has the same shape everywhere, and only the two zone-sensitive questions — which cell an
+entry lands in, and which cell is today — are answered from the reader's calendar.
+
+Verified against real Postgres (a follow-up created on Auckland time lands at 21:00Z and
+reads 9am there; the same row is on today's chase list at 10pm in Los Angeles and off it
+on UTC; Chatham's 45-minute offset holds) and in a browser (a context in Los Angeles seeds
+itself with no prompting; setting Auckland in Settings changes the greeting to Auckland's
+while the browser stays in Los Angeles).
+
+## 2026-09-08 — A date you pick means that day where you are
+
+The zone work above made a second bug visible rather than causing it, and left
+uncorrected it would have been a regression: `toDate` turned a bare
+`"2026-03-14"` into `new Date("2026-03-14")`, which is UTC midnight, which is
+the 13th anywhere west of Greenwich. On a UTC host that read back as the 14th
+because the reader was also UTC; once dates are read in the reader's zone, the
+day a person picked off the calendar came back one earlier.
+
+`toDate(timeZone, value)` now lands a bare civil date at **9am in that zone** —
+the same hour `inDays` uses for every date the app sets itself, so a follow-up
+picked by hand and one worked out by the app behave identically, including when
+each turns red. Anything carrying a time is an instant and passes through
+untouched, which is how the calendar screen hands `listSchedule` the exact grid
+it drew.
+
+A **window** edge is different from a point, so it gets its own rule:
+`windowEdge` reads a bare date as that whole day, midnight to 23:59:59.999,
+where the reader is. "The 1st to the 7th" therefore covers both of those days
+end to end instead of half of each. That rule lives in `listSchedule` rather
+than in the `list_schedule` tool, so the tool and the calendar screen cannot
+disagree about what a date means — the tool now passes both edges through as
+written. `search_calendar` keeps its own pair of helpers in `tools.ts` because
+its window goes to a provider rather than to this database; they take the zone
+the same way.
+
+Proven against real Postgres: a person on `America/Los_Angeles` picking the
+14th of March gets `2026-03-14T16:00:00Z`, which is the 14th at 9am there,
+where `new Date("2026-03-14")` is the 13th at 5pm; the same holds for a task's
+due date, a contact's ping, a logged activity's date and a one-day
+`list_schedule` window, which finds everything dated that day.
+
+## 2026-09-08 — Never slice an ISO string to get somebody's day
+
+`date.toISOString().slice(0, 10)` was how five places turned a stored instant
+into a date to show or to put in a form field. It is UTC's day, and it was
+quietly wrong in the worst possible way on the editable ones: the application
+form and the pipeline list read a follow-up set for 9am in Auckland as the day
+before, put THAT in the date box, and wrote it back the moment you touched any
+other field on the form. Editing a salary walked the follow-up backwards a day,
+every time, silently. Proven both directions against real Postgres.
+
+Everything that turns an instant into a day for a person now goes through
+`civilDay(date, zone)`: the application form, the pipeline list's inline date,
+the task panel's due date, the ping scheduler's default, the CSV columns and
+the CSV filename. The calendar grid deliberately does not — it is a lattice of
+civil day *strings* with no instant in it, and its keys are compared against
+`civilDay` on the other side, which is exactly right.
+
+The list's overdue colour was the same bug wearing different clothes:
+`new Date("2026-03-14") < Date.now()` reads the civil date as UTC midnight, so
+in Los Angeles everything due today was red from 5pm the day before. It is now
+9am on that day where the reader is — the hour the app itself uses — so the
+list, the board card and the bell all go red at the same moment.
+
+Four copies of the same "is this a bare YYYY-MM-DD" regex had accumulated
+across `toDate`, `windowEdge` and the two window helpers in `tools.ts`.
+`civilInstant(zone, value, hour…)` in `src/lib/time.ts` is the one copy now;
+it returns null for anything carrying a time, so every caller falls through to
+reading it as an instant with no second parser.
+
+## 2026-09-08 — An empty zone must never cross into a client component
+
+Storing `""` for "this host's clock" is right in the database and in the data
+layer, where there is only one clock. It is wrong the moment it reaches a
+component that renders on both sides of a hydration: on the server `""` resolves
+to the machine's zone and in the browser to the reader's, so one render produces
+two different days and React discards the server's markup. The pipeline list
+threw a hydration error on every first load for exactly this reason.
+
+The layout resolves it now — `stored || hostZone()` — so what `ViewerZoneProvider`
+hands out is always an IANA name. It takes `stored` separately, because the
+browser-seeding decision is about what is on the profile, not about what the
+render resolved to.
+
+The same rule caught two more: `toLocaleDateString` with no `timeZone` uses the
+host's clock, and with no locale uses the host's locale — Node on one side, the
+reader's machine on the other. `shortDay(date, zone)` and `shortCivilDay(value)`
+in `src/lib/time.ts` pin both. **There are around fifteen more `toLocaleDate`/
+`toLocaleString` calls across the app** — admin panels, the activity timeline,
+the correspondence card, the resume list — all still reading the host's clock.
+They are not hydration errors today because they render on one side only, but
+they show the server's day rather than the reader's. That sweep is the next
+piece of this work and is deliberately not in this batch.

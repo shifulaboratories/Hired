@@ -17,6 +17,7 @@ import {
   updateTaskAction,
 } from "@/server/actions";
 import { cn, relativeDay } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
 import { DateField } from "@/components/ui/date-field";
 import {
   SubjectPicker,
@@ -283,6 +284,7 @@ function TaskItem({
   pending: boolean;
   act: (work: () => Promise<unknown>, message?: string) => void;
 }) {
+  const zone = useViewerZone();
   const [title, setTitle] = useState(task.title);
   const [editing, setEditing] = useState(false);
   const overdue = bucketOf(task.dueISO) === "overdue";
@@ -355,7 +357,7 @@ function TaskItem({
           overdue ? "text-destructive font-medium" : "text-faint",
         )}
       >
-        {task.dueISO ? relativeDay(new Date(task.dueISO)) : ""}
+        {task.dueISO ? relativeDay(new Date(task.dueISO), zone) : ""}
       </span>
 
       {/* The date and the role are edits, not decoration: a task that has

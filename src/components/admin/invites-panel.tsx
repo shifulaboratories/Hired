@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { SectionEmpty } from "@/components/page-header";
 import { relativeDay } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
 import { inviteUserAction, revokeInviteAction } from "@/server/actions";
 
 type Invite = {
@@ -51,6 +52,7 @@ export function InvitesPanel({
   emailReady: boolean;
   baseUrl: string;
 }) {
+  const zone = useViewerZone();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<UserRole>("MEMBER");
   const [pending, startTransition] = useTransition();
@@ -147,7 +149,7 @@ export function InvitesPanel({
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{item.email}</div>
                       <div className="text-muted-foreground truncate text-xs">
-                        invited by {item.invitedBy} · expires {relativeDay(new Date(item.expiresAt))}
+                        invited by {item.invitedBy} · expires {relativeDay(new Date(item.expiresAt), zone)}
                         {!item.emailSent && item.emailError && (
                           <span className="text-destructive"> · {item.emailError}</span>
                         )}

@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { daysBetween, SERVER_ZONE } from "@/lib/time";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -37,15 +38,21 @@ export function dateRange(start?: string | null, end?: string | null, current?: 
   return s || e || "";
 }
 
-export function relativeDay(date: Date | string | null | undefined) {
+/**
+ * "Today", "Tomorrow", "3d overdue" — a date read as a calendar, not a clock.
+ *
+ * `timeZone` is whose calendar. In the browser it can be left off, because the
+ * host clock IS the reader's; on the server it must be passed or "today" means
+ * today in whatever zone the instance runs in, which on a hosted one is UTC.
+ * See src/lib/time.ts.
+ */
+export function relativeDay(
+  date: Date | string | null | undefined,
+  timeZone: string = SERVER_ZONE,
+) {
   if (!date) return "";
   const d = typeof date === "string" ? new Date(date) : date;
-  const now = new Date();
-  const days = Math.round(
-    (new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() -
-      new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) /
-      86400000,
-  );
+  const days = daysBetween(new Date(), d, timeZone);
   if (days === 0) return "Today";
   if (days === 1) return "Tomorrow";
   if (days === -1) return "Yesterday";
@@ -54,15 +61,10 @@ export function relativeDay(date: Date | string | null | undefined) {
 }
 
 /** Past-tense counterpart to relativeDay: how long since something happened. */
-export function agoDay(date: Date | string | null | undefined) {
+export function agoDay(date: Date | string | null | undefined, timeZone: string = SERVER_ZONE) {
   if (!date) return "";
   const d = typeof date === "string" ? new Date(date) : date;
-  const now = new Date();
-  const days = Math.round(
-    (new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() -
-      new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) /
-      86400000,
-  );
+  const days = daysBetween(d, new Date(), timeZone);
   if (days <= 0) return "Today";
   if (days === 1) return "Yesterday";
   if (days < 14) return `${days}d ago`;

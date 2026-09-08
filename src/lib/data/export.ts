@@ -9,6 +9,8 @@ import {
 import { STAGE_LABEL, listApplications, listCompanies, listContacts } from "@/lib/data/pipeline";
 import { toListRow, sortRows, type ListSort } from "@/lib/pipeline-list";
 import { matchesFilters, type PipelineFilters } from "@/lib/pipeline-filters";
+import { timeZoneOf } from "@/lib/data/me";
+import { civilDay, SERVER_ZONE } from "@/lib/time";
 
 /**
  * Each list, as a file you can open in a spreadsheet.
@@ -40,8 +42,15 @@ function cell(value: unknown): string {
   return text;
 }
 
-const day = (date: Date | null | undefined) =>
-  date ? date.toISOString().slice(0, 10) : "";
+/**
+ * A stored instant as the day it fell on, where the person exporting is.
+ *
+ * Slicing the ISO string gives UTC's day, which is a day early for a follow-up
+ * set for 9am in Auckland — and a spreadsheet is exactly where somebody would
+ * notice and not know why.
+ */
+const day = (date: Date | null | undefined, timeZone: string) =>
+  date ? civilDay(date, timeZone) : "";
 
 /**
  * Rows to a file.
@@ -56,8 +65,8 @@ export function toCsv(header: string[], rows: unknown[][]): string {
 }
 
 /** A safe, dated filename: hired-companies-2026-09-03.csv */
-export function exportFilename(what: string, now = new Date()): string {
-  return `hired-${what}-${now.toISOString().slice(0, 10)}.csv`;
+export function exportFilename(what: string, timeZone = SERVER_ZONE, now = new Date()): string {
+  return `hired-${what}-${civilDay(now, timeZone)}.csv`;
 }
 
 const tagNames = (tags: { name: string }[]) => tags.map((tag) => tag.name).join("; ");
@@ -87,7 +96,10 @@ export type CompanyExportOptions = {
 };
 
 export async function exportCompaniesCsv(userId: string, options?: CompanyExportOptions) {
-  const rows = onlyIds(await listCompanies(userId, options), options?.ids);
+  const [rows, zone] = await Promise.all([
+    listCompanies(userId, options).then((all) => onlyIds(all, options?.ids)),
+    timeZoneOf(userId),
+  ]);
   return toCsv(
     [
       "Name",
@@ -113,7 +125,7 @@ export async function exportCompaniesCsv(userId: string, options?: CompanyExport
       company._count.applications,
       company.openApplications,
       company._count.contacts,
-      day(company.lastAppliedAt),
+      day(company.lastAppliedAt, zone),
       company.notes,
       `/crm/companies/${company.id}`,
     ]),
@@ -133,7 +145,10 @@ export type ContactExportOptions = {
 };
 
 export async function exportContactsCsv(userId: string, options?: ContactExportOptions) {
-  const rows = onlyIds(await listContacts(userId, options), options?.ids);
+  const [rows, zone] = await Promise.all([
+    listContacts(userId, options).then((all) => onlyIds(all, options?.ids)),
+    timeZoneOf(userId),
+  ]);
   return toCsv(
     [
       "Name",
@@ -168,8 +183,8 @@ export async function exportContactsCsv(userId: string, options?: ContactExportO
       contact.github,
       contact.website,
       contact.otherLinks.join("; "),
-      day(contact.nextFollowUpAt),
-      day(contact.activities[0]?.occurredAt ?? null),
+      day(contact.nextFollowUpAt, zone),
+      day(contact.activities[0]?.occurredAt ?? null, zone),
       contact.notes,
       `/crm/contacts/${contact.id}`,
     ]),
@@ -196,7 +211,10 @@ export type ApplicationExportOptions = {
  * a table cell needs and not the eleven other columns worth exporting.
  */
 export async function exportApplicationsCsv(userId: string, options?: ApplicationExportOptions) {
-  const applications = await listApplications(userId, { includeClosed: true });
+  const [applications, zone] = await Promise.all([
+    listApplications(userId, { includeClosed: true }),
+    timeZoneOf(userId),
+  ]);
   const kept = onlyIds(
     options?.filters
       ? applications.filter((application) => matchesFilters(application, options.filters!))
@@ -242,9 +260,9 @@ export async function exportApplicationsCsv(userId: string, options?: Applicatio
           application.location,
           application.workMode,
           application.salaryRange,
-          day(application.appliedAt),
-          day(application.nextFollowUpAt),
-          day(application.closedAt),
+          day(application.appliedAt, zone),
+          day(application.nextFollowUpAt, zone),
+          day(application.closedAt, zone),
           application.resume?.name ?? "",
           application.daysInStage,
           application.quietDays,

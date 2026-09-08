@@ -205,6 +205,7 @@ export default async function SettingsPage({
                 photo: profile.photo,
                 googleLinked: Boolean(user.googleId),
                 hasPassword: Boolean(user.passwordHash),
+                timeZone: profile.timeZone,
               }}
               googleReady={googleIsConfigured(settings)}
             />

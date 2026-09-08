@@ -20,6 +20,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { ClientTile } from "@/components/client-mark";
 import { cn } from "@/lib/utils";
 import { agoDay } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
 import {
   connectImapAccountAction,
   disconnectAccountAction,
@@ -82,6 +83,7 @@ export function AccountSheet({
   /** Reconnecting an IMAP account is the form again, prefilled. */
   onReconnectImap: (account: AccountView) => void;
 }) {
+  const zone = useViewerZone();
   const router = useRouter();
   const [label, setLabel] = useState(account.label);
   const [test, setTest] = useState<
@@ -134,9 +136,9 @@ export function AccountSheet({
             <SheetDescription className="mt-0.5 text-xs">
               {account.email}
               {" · "}
-              connected {agoDay(account.connectedAt).toLowerCase()}
+              connected {agoDay(account.connectedAt, zone).toLowerCase()}
               {account.lastUsedAt
-                ? ` · last read ${agoDay(account.lastUsedAt).toLowerCase()}`
+                ? ` · last read ${agoDay(account.lastUsedAt, zone).toLowerCase()}`
                 : " · nothing read yet"}
             </SheetDescription>
           </div>

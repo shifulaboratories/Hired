@@ -32,7 +32,9 @@ import {
 import { SortMenu } from "@/components/lists/sort-menu";
 import type { StoredWidths } from "@/lib/column-widths";
 import { moveApplicationsStageAction, moveStageAction, updateApplicationAction } from "@/server/actions";
-import { cn, relativeDay } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
+import { civilDay, civilInstant, shortCivilDay, shortDay } from "@/lib/time";
 
 /**
  * The table view, which is also the fastest way to edit.
@@ -317,6 +319,7 @@ function Row({
   // One lookup rather than a Set per cell: a row draws ten cells and there are
   // as many rows as the person has applications.
   const shows = (field: string) => columns.some((column) => column.field === field);
+  const zone = useViewerZone();
   const openPanel = useOpenApplication();
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -324,12 +327,16 @@ function Row({
   // server refuses, rather than the row sitting unchanged until a refresh.
   const [values, setValues] = useState({
     stage: row.stage,
-    nextFollowUpAt: row.nextFollowUpAt ? row.nextFollowUpAt.slice(0, 10) : "",
+    nextFollowUpAt: row.nextFollowUpAt ? civilDay(new Date(row.nextFollowUpAt), zone) : "",
     salaryRange: row.salaryRange,
     location: row.location,
   });
 
-  const due = values.nextFollowUpAt ? new Date(values.nextFollowUpAt) : null;
+  // 9am on that day where the reader is — the hour the app sets a follow-up
+  // for, so a row goes red at the same moment the board card and the bell do.
+  // Reading the bare date as `new Date` made it UTC midnight, which is 5pm the
+  // day before in Los Angeles: everything due today showed as overdue.
+  const due = values.nextFollowUpAt ? civilInstant(zone, values.nextFollowUpAt, 9) : null;
   const overdue = due ? due.getTime() < Date.now() : false;
   const closed = TERMINAL_STAGES.includes(values.stage);
   // Null where the quiet rule has no threshold — a wishlist entry has not gone
@@ -487,7 +494,7 @@ function Row({
 
       {shows("updated") && (
         <Body col="updated" className="nums text-faint hidden w-20 shrink-0 text-right text-[12px] sm:block">
-          {new Date(row.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+          {shortDay(new Date(row.updatedAt), zone)}
         </Body>
       )}
 
@@ -543,9 +550,7 @@ function DateCell({
             overdue && selected && "text-destructive font-medium",
           )}
         >
-          {selected
-            ? selected.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-            : "—"}
+          {value ? shortCivilDay(value) : "—"}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-2">
