@@ -13,7 +13,7 @@ import {
 } from "@/lib/data/tags";
 import { archiveRecords } from "@/lib/data/archive";
 import { timeZoneOf } from "@/lib/data/me";
-import { atHourInDays, civilDay, endOfDay, startOfWeek } from "@/lib/time";
+import { atHourInDays, civilDay, endOfDay, instantAt, startOfWeek } from "@/lib/time";
 import {
   type CompanyFilters,
   type CompanyMissing,
@@ -876,11 +876,52 @@ function cleanLinks(values: string[]): string[] {
 }
 
 
-function toDate(value: Date | string | null | undefined): Date | null | undefined {
+/**
+ * A date argument, as an instant.
+ *
+ * A bare "2026-03-14" is a CIVIL date — somebody picked a day off a calendar,
+ * or an assistant repeated one back — and `new Date` reads it as UTC midnight,
+ * which is the 13th for everyone west of Greenwich. It lands at 9am in their
+ * own zone instead: the same hour every date this app sets itself uses, so a
+ * follow-up picked by hand behaves exactly like one the app worked out. Values
+ * that already carry a time are instants and pass through untouched.
+ */
+function toDate(
+  timeZone: string,
+  value: Date | string | null | undefined,
+): Date | null | undefined {
   if (value === undefined) return undefined;
   if (value === null || value === "") return null;
+  if (typeof value === "string") {
+    const civil = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    if (civil) {
+      return instantAt(timeZone, Number(civil[1]), Number(civil[2]), Number(civil[3]), 9);
+    }
+  }
   const d = value instanceof Date ? value : new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * One end of a date window.
+ *
+ * A bare "2026-03-14" means that whole day where the reader is, so the day at
+ * either end of a window is included rather than half of it. Anything already
+ * carrying a time is an instant and is taken as given — which is how the
+ * calendar screen passes the exact grid it drew.
+ */
+function windowEdge(timeZone: string, value: Date | string, edge: "start" | "end"): Date {
+  if (typeof value === "string") {
+    const civil = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    if (civil) {
+      const [, year, month, day] = civil.map(Number) as unknown as [number, number, number, number];
+      return edge === "end"
+        ? instantAt(timeZone, year, month, day, 23, 59, 59, 999)
+        : instantAt(timeZone, year, month, day, 0, 0, 0, 0);
+    }
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
 /** A resume may only be attached if the same user owns it. */
@@ -936,7 +977,8 @@ export async function createApplication(userId: string, input: ApplicationInput)
     input.companyWebsite ? { website: input.companyWebsite } : undefined,
   );
   const stage = input.stage ?? "WISHLIST";
-  const appliedAt = toDate(input.appliedAt) ?? (stage !== "WISHLIST" ? new Date() : null);
+  const zone = await timeZoneOf(userId);
+  const appliedAt = toDate(zone, input.appliedAt) ?? (stage !== "WISHLIST" ? new Date() : null);
   if (input.resumeId) await assertOwnsResume(userId, input.resumeId);
 
   const application = await db.application.create({
@@ -957,7 +999,7 @@ export async function createApplication(userId: string, input: ApplicationInput)
       },
       notes: input.notes ?? "",
       appliedAt,
-      nextFollowUpAt: toDate(input.nextFollowUpAt) ?? defaultFollowUp(await timeZoneOf(userId), stage),
+      nextFollowUpAt: toDate(zone, input.nextFollowUpAt) ?? defaultFollowUp(zone, stage),
       resumeId: input.resumeId ?? null,
     },
     include: applicationInclude,
@@ -1035,6 +1077,7 @@ export async function updateApplication(
     throw new Error(`"${current.roleTitle}" is in the archive. Restore it before changing it.`);
   }
 
+  const zone = await timeZoneOf(userId);
   const data: Prisma.ApplicationUpdateInput = {};
   if (patch.roleTitle !== undefined) data.roleTitle = patch.roleTitle;
   if (patch.jobUrl !== undefined) data.jobUrl = patch.jobUrl;
@@ -1049,8 +1092,8 @@ export async function updateApplication(
   }
   if (patch.notes !== undefined) data.notes = patch.notes;
   if (patch.sortOrder !== undefined) data.sortOrder = patch.sortOrder;
-  if (patch.appliedAt !== undefined) data.appliedAt = toDate(patch.appliedAt);
-  if (patch.nextFollowUpAt !== undefined) data.nextFollowUpAt = toDate(patch.nextFollowUpAt);
+  if (patch.appliedAt !== undefined) data.appliedAt = toDate(zone, patch.appliedAt);
+  if (patch.nextFollowUpAt !== undefined) data.nextFollowUpAt = toDate(zone, patch.nextFollowUpAt);
   if (patch.resumeId !== undefined) {
     if (patch.resumeId) {
       await assertOwnsResume(userId, patch.resumeId);
@@ -1388,7 +1431,7 @@ export async function addActivity(
       contactId: input.contactId ?? null,
       type: input.type ?? "NOTE",
       body: input.body,
-      occurredAt: toDate(input.occurredAt) ?? new Date(),
+      occurredAt: toDate(await timeZoneOf(userId), input.occurredAt) ?? new Date(),
     },
   });
 }
@@ -1576,7 +1619,7 @@ export async function createTask(
       userId,
       title,
       detail: input.detail ?? "",
-      dueAt: toDate(input.dueAt) ?? null,
+      dueAt: toDate(await timeZoneOf(userId), input.dueAt) ?? null,
       ...subject,
     },
     include: taskSubjectInclude,
@@ -1625,7 +1668,7 @@ export async function updateTask(
     data.title = title;
   }
   if (patch.detail !== undefined) data.detail = patch.detail;
-  if (patch.dueAt !== undefined) data.dueAt = toDate(patch.dueAt);
+  if (patch.dueAt !== undefined) data.dueAt = toDate(await timeZoneOf(userId), patch.dueAt);
   const subject = await taskSubject(userId, patch);
   return db.task.update({
     where: { id },
@@ -1845,7 +1888,9 @@ export async function updateContact(
   }
 
   const data: Prisma.ContactUpdateInput = pick(patch, CONTACT_COLUMNS);
-  if (patch.nextFollowUpAt !== undefined) data.nextFollowUpAt = toDate(patch.nextFollowUpAt);
+  if (patch.nextFollowUpAt !== undefined) {
+    data.nextFollowUpAt = toDate(await timeZoneOf(userId), patch.nextFollowUpAt);
+  }
   // An array is not a column pick: it replaces wholesale, and blank rows from a
   // half-filled form should never reach the database.
   if (patch.otherLinks !== undefined) data.otherLinks = cleanLinks(patch.otherLinks);
@@ -2062,8 +2107,12 @@ export async function listSchedule(
   from: Date | string,
   to: Date | string,
 ): Promise<ScheduleEntry[]> {
-  const start = toDate(from) ?? new Date();
-  const end = toDate(to) ?? new Date();
+  // A window given as bare dates is the reader's own days: "the 1st to the 7th"
+  // covers both of those days end to end, where they are — not from 5pm on the
+  // 31st to 4pm on the 7th, which is what UTC midnight would mean in Chicago.
+  const zone = await timeZoneOf(userId);
+  const start = windowEdge(zone, from, "start");
+  const end = windowEdge(zone, to, "end");
   const range = { gte: start, lte: end };
 
   const [followUps, contactPings, tasks, activities] = await Promise.all([

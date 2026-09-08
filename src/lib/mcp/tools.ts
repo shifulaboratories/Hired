@@ -1,5 +1,6 @@
 import type { ActivityType, NoteKind, Stage, User, UserRole } from "@prisma/client";
 import * as me from "@/lib/data/me";
+import { instantAt } from "@/lib/time";
 import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
 import * as tags from "@/lib/data/tags";
@@ -289,17 +290,27 @@ function onExistingFrom(args: Json): { onExisting?: "merge" | "skip" } {
 
 /**
  * A bare `YYYY-MM-DD` parses as midnight, so an inclusive end date would drop
- * everything that actually happened on it. Push it to the last millisecond.
+ * everything that actually happened on it. Push it to the last millisecond of
+ * that day where the person is — a window given in days is a window of THEIR
+ * days, and on a UTC host "up to the 14th" would otherwise stop at 5pm on the
+ * 13th in Chicago.
  */
-function endOfDay(value: string) {
+function endOfDay(timeZone: string, value: string) {
+  const civil = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (civil) {
+    return instantAt(timeZone, Number(civil[1]), Number(civil[2]), Number(civil[3]), 23, 59, 59, 999);
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`"${value}" is not a date I can read`);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) date.setUTCHours(23, 59, 59, 999);
   return date;
 }
 
 /** The other end of endOfDay: a date that fails to parse is an error, not 1970. */
-function startOfDay(value: string) {
+function startOfDay(timeZone: string, value: string) {
+  const civil = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (civil) {
+    return instantAt(timeZone, Number(civil[1]), Number(civil[2]), Number(civil[3]), 0, 0, 0, 0);
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`"${value}" is not a date I can read`);
   return date;
@@ -2617,7 +2628,9 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) =>
-      schedule.listSchedule(ctx.userId, required(args, "from"), endOfDay(required(args, "to"))),
+      // Both edges go through as written: listSchedule owns what a bare date
+      // means, so the tool and the calendar screen cannot disagree about it.
+      schedule.listSchedule(ctx.userId, required(args, "from"), required(args, "to")),
   },
   {
     name: "list_tasks",
@@ -3887,16 +3900,18 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: true,
     },
-    handler: async (args, ctx) =>
-      accountsData.searchCalendar(ctx.userId, {
+    handler: async (args, ctx) => {
+      const zone = await me.timeZoneOf(ctx.userId);
+      return accountsData.searchCalendar(ctx.userId, {
         ...defined({
           query: s(args, "query"),
-          from: s(args, "from") ? startOfDay(required(args, "from")) : undefined,
-          to: s(args, "to") ? endOfDay(required(args, "to")) : undefined,
+          from: s(args, "from") ? startOfDay(zone, required(args, "from")) : undefined,
+          to: s(args, "to") ? endOfDay(zone, required(args, "to")) : undefined,
           limit: n(args, "limit"),
           accountId: s(args, "accountId"),
         }),
-      }),
+      });
+    },
   },
 
   // -------------------------------------------------------------------------

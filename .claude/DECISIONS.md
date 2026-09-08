@@ -5417,3 +5417,35 @@ reads 9am there; the same row is on today's chase list at 10pm in Los Angeles an
 on UTC; Chatham's 45-minute offset holds) and in a browser (a context in Los Angeles seeds
 itself with no prompting; setting Auckland in Settings changes the greeting to Auckland's
 while the browser stays in Los Angeles).
+
+## 2026-09-08 — A date you pick means that day where you are
+
+The zone work above made a second bug visible rather than causing it, and left
+uncorrected it would have been a regression: `toDate` turned a bare
+`"2026-03-14"` into `new Date("2026-03-14")`, which is UTC midnight, which is
+the 13th anywhere west of Greenwich. On a UTC host that read back as the 14th
+because the reader was also UTC; once dates are read in the reader's zone, the
+day a person picked off the calendar came back one earlier.
+
+`toDate(timeZone, value)` now lands a bare civil date at **9am in that zone** —
+the same hour `inDays` uses for every date the app sets itself, so a follow-up
+picked by hand and one worked out by the app behave identically, including when
+each turns red. Anything carrying a time is an instant and passes through
+untouched, which is how the calendar screen hands `listSchedule` the exact grid
+it drew.
+
+A **window** edge is different from a point, so it gets its own rule:
+`windowEdge` reads a bare date as that whole day, midnight to 23:59:59.999,
+where the reader is. "The 1st to the 7th" therefore covers both of those days
+end to end instead of half of each. That rule lives in `listSchedule` rather
+than in the `list_schedule` tool, so the tool and the calendar screen cannot
+disagree about what a date means — the tool now passes both edges through as
+written. `search_calendar` keeps its own pair of helpers in `tools.ts` because
+its window goes to a provider rather than to this database; they take the zone
+the same way.
+
+Proven against real Postgres: a person on `America/Los_Angeles` picking the
+14th of March gets `2026-03-14T16:00:00Z`, which is the 14th at 9am there,
+where `new Date("2026-03-14")` is the 13th at 5pm; the same holds for a task's
+due date, a contact's ping, a logged activity's date and a one-day
+`list_schedule` window, which finds everything dated that day.
