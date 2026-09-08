@@ -12,7 +12,8 @@ import {
   type GoogleRefusal,
 } from "@/lib/google";
 import { recordSystemEvent } from "@/lib/data/system";
-import { connectGoogleAccount } from "@/lib/data/google";
+import { connectOAuthAccount } from "@/lib/data/accounts";
+import { googleFeatures } from "@/lib/accounts/google";
 import { baseUrlFrom } from "@/lib/request-url";
 
 /**
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
     const target = stored?.data
       ? new URL("/settings?tab=connections", request.url)
       : new URL("/login", request.url);
-    target.searchParams.set(stored?.data ? "google" : "error", reason);
+    target.searchParams.set(stored?.data ? "account" : "error", reason);
     const response = NextResponse.redirect(target);
     response.cookies.delete(GOOGLE_STATE_COOKIE);
     return response;
@@ -94,20 +95,17 @@ export async function GET(request: NextRequest) {
       const user = await getCurrentUser();
       if (!user) return fail("expired_state");
       if (!identity.grant.refreshToken) return fail("no_refresh_token");
-      try {
-        await connectGoogleAccount(user.id, {
-          email: identity.email,
-          googleId: identity.sub,
-          scopes: identity.grant.scopes,
-          refreshToken: identity.grant.refreshToken,
-          accessToken: identity.grant.accessToken,
-          expiresAt: identity.grant.expiresAt,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (/Neither Gmail nor Calendar/.test(message)) return fail("no_scopes");
-        throw error;
-      }
+      const features = googleFeatures(identity.grant.scopes);
+      if (features.length === 0) return fail("no_scopes");
+      await connectOAuthAccount(user.id, {
+        provider: "GOOGLE",
+        email: identity.email,
+        externalId: identity.sub,
+        features,
+        refreshToken: identity.grant.refreshToken,
+        accessToken: identity.grant.accessToken,
+        expiresAt: identity.grant.expiresAt,
+      });
       await recordSystemEvent({
         level: "INFO",
         source: "google.data",
@@ -115,7 +113,7 @@ export async function GET(request: NextRequest) {
         userEmail: user.email,
       });
       const target = new URL("/settings?tab=connections", request.url);
-      target.searchParams.set("google", "connected");
+      target.searchParams.set("account", "connected");
       const response = NextResponse.redirect(target);
       response.cookies.delete(GOOGLE_STATE_COOKIE);
       return response;

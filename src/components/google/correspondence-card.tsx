@@ -15,12 +15,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { correspondenceAction, emailThreadAction } from "@/server/actions";
-import type { CorrespondenceSubject } from "@/lib/data/google";
+import type { CorrespondenceSubject } from "@/lib/data/accounts";
 import { agoDay, cn } from "@/lib/utils";
 
 /**
- * The threads and meetings in somebody's own Google account that touch one
- * record — a contact, a company, an application, a resume.
+ * The threads and meetings in somebody's own mail and calendar accounts that
+ * touch one record — a contact, a company, an application, a resume.
  *
  * Fetched after the page paints, never during it: this is a round trip to
  * Google, and a contact page should not wait on Gmail to show a phone
@@ -109,7 +109,7 @@ export function CorrespondenceCard({
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Refresh from Google"
+            aria-label="Refresh"
             onClick={load}
             disabled={pending}
           >
@@ -126,11 +126,12 @@ function NotConnected() {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="text-muted-foreground text-[13px]">
-        Connect your Google account and every thread and meeting with these people shows up
-        here, read live from Gmail and Calendar. Nothing is copied to this server.
+        Connect your mail and calendar — Google, Microsoft 365, or any IMAP and CalDAV
+        provider — and every thread and meeting with these people shows up here, read live.
+        Nothing is copied to this server.
       </p>
       <Button asChild variant="outline" size="sm">
-        <Link href="/settings?tab=connections">Connect Google</Link>
+        <Link href="/settings?tab=connections">Connect an account</Link>
       </Button>
     </div>
   );
@@ -167,14 +168,13 @@ function LoadedView({ data, access }: { data: Loaded; access: NonNullable<Corres
         <TabsContent value="mail">
           {!access.mail ? (
             <Hint>
-              Gmail was not allowed when Google was connected.{" "}
+              None of your connected accounts provides mail.{" "}
               <Link href="/settings?tab=connections" className="text-primary underline underline-offset-2">
-                Reconnect
-              </Link>{" "}
-              and tick it.
+                Connections
+              </Link>
             </Hint>
           ) : data.mail === null ? (
-            <Hint>{data.warnings.find((w) => w.startsWith("Mail:")) ?? "Gmail did not answer."}</Hint>
+            <Hint>{data.warnings.find((w) => w.startsWith("Mail:")) ?? "Mail did not answer."}</Hint>
           ) : data.mail.length === 0 ? (
             <Hint>No threads in the last year match.</Hint>
           ) : (
@@ -189,11 +189,10 @@ function LoadedView({ data, access }: { data: Loaded; access: NonNullable<Corres
         <TabsContent value="calendar">
           {!access.calendar ? (
             <Hint>
-              Calendar was not allowed when Google was connected.{" "}
+              None of your connected accounts provides a calendar.{" "}
               <Link href="/settings?tab=connections" className="text-primary underline underline-offset-2">
-                Reconnect
-              </Link>{" "}
-              and tick it.
+                Connections
+              </Link>
             </Hint>
           ) : data.calendar === null ? (
             <Hint>

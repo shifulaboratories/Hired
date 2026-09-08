@@ -34,7 +34,9 @@ changes either way, so it is a safe thing to try.
 
 The same OAuth client lets each person connect their own Gmail and Google Calendar under
 **Settings → Connections**, so the app can show the threads and meetings behind their contacts,
-companies and applications. Two more things in the Cloud console make that work:
+companies and applications. (Microsoft 365 has [its own page](/self-hosting/microsoft); IMAP
+and CalDAV accounts need nothing from an admin.) Two more things in the Cloud console make
+Google work:
 
 <Steps>
   <Step title="Enable the two APIs">
@@ -62,7 +64,7 @@ companies and applications. Two more things in the Cloud console make that work:
 
 Tokens are stored on your server as Google issues them, the same way MCP connection tokens
 are; the database is the trust boundary, and nothing read through a token is ever written
-to it. Disconnecting — from Settings, or `disconnect_google` by conversation — revokes the
+to it. Disconnecting — from Settings, or `disconnect_account` by conversation — revokes the
 token at Google and deletes the row.
 
 ## Who it lets in

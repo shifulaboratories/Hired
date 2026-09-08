@@ -8,7 +8,7 @@ import { ContactDetail } from "@/components/crm/contact-detail";
 import { getContact, listCompanies } from "@/lib/data/pipeline";
 import { requireUser } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
-import { getGoogleConnection } from "@/lib/data/google";
+import { accountAccess } from "@/lib/data/accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
     getContact(user.id, id),
     listCompanies(user.id),
     getSettings(),
-    getGoogleConnection(user.id),
+    accountAccess(user.id),
   ]);
   if (!contact) notFound();
 
@@ -83,9 +83,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
               : null
           }
           logos={companyLogos}
-          googleAccess={
-            googleConnection ? { mail: googleConnection.mail, calendar: googleConnection.calendar } : null
-          }
+          googleAccess={googleConnection}
         />
       </FadeIn>
     </PageShell>

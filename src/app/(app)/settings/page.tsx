@@ -23,8 +23,8 @@ import { listSkills } from "@/lib/skills";
 import { toolsFor, promptsFor } from "@/lib/mcp/tools";
 import { guessClient } from "@/lib/mcp/clients";
 import { MANUAL_URL } from "@/lib/links";
-import { getSettings, googleIsConfigured } from "@/lib/settings";
-import { getGoogleConnection } from "@/lib/data/google";
+import { getSettings, googleIsConfigured, microsoftIsConfigured } from "@/lib/settings";
+import { listLinkedAccounts } from "@/lib/data/accounts";
 import { isGoogleRefusal, refusalMessage } from "@/lib/google";
 
 export const dynamic = "force-dynamic";
@@ -49,11 +49,11 @@ const TABS = ["connections", "account", "appearance"] as const;
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; google?: string }>;
+  searchParams: Promise<{ tab?: string; account?: string }>;
 }) {
   const user = await requireUser();
   const headerList = await headers();
-  const { tab, google: googleOutcome } = await searchParams;
+  const { tab, account: accountOutcome } = await searchParams;
 
   const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
   const proto =
@@ -62,22 +62,24 @@ export default async function SettingsPage({
 
   // Nobody should ever land here with nothing to copy.
   await ensureDefaultConnection(user.id);
-  const [connections, profile, skills, settings, googleConnection] = await Promise.all([
+  const [connections, profile, skills, settings, linkedAccounts] = await Promise.all([
     listConnections(user.id),
     getProfile(user.id),
     listSkills(),
     getSettings(),
-    getGoogleConnection(user.id),
+    listLinkedAccounts(user.id),
   ]);
 
   // What the consent screen came back with, as a fixed code — never text from
   // the query string, for the same reason the sign-in page refuses it.
-  const googleNotice =
-    googleOutcome === "connected"
-      ? { ok: true, message: "Google connected. Every contact, company and application page now shows its email and calendar." }
-      : googleOutcome && isGoogleRefusal(googleOutcome)
-        ? { ok: false, message: refusalMessage(googleOutcome) }
-        : null;
+  const accountNotice =
+    accountOutcome === "connected"
+      ? { ok: true, message: "Account connected. Every contact, company and application page now shows its email and calendar." }
+      : accountOutcome === "not_set_up"
+        ? { ok: false, message: "That provider is not set up on this instance yet. An admin adds it under Admin → Configuration." }
+        : accountOutcome && isGoogleRefusal(accountOutcome)
+          ? { ok: false, message: refusalMessage(accountOutcome) }
+          : null;
 
   const visibleTools = toolsFor(user);
   const visiblePrompts = promptsFor(user);
@@ -86,11 +88,10 @@ export default async function SettingsPage({
   // ?tab= so other screens can send someone to the right one — the resume
   // editor points at the photo, which lives under Account. `google` was a tab
   // of its own for one release and is a tile on Connections now; the old
-  // address still lands on the right tile, opened.
+  // address falls through to Connections.
   const active = TABS.includes(tab as (typeof TABS)[number])
     ? (tab as (typeof TABS)[number])
     : "connections";
-  const focusGoogle = tab === "google" || Boolean(googleOutcome);
 
   return (
     <PageShell className="max-w-4xl">
@@ -143,20 +144,24 @@ export default async function SettingsPage({
                 adminToolCount={visibleTools.filter((tool) => tool.adminOnly).length}
                 isAdmin={admin}
                 promptCount={visiblePrompts.length}
-                google={{
-                  connection: googleConnection
-                    ? {
-                        email: googleConnection.email,
-                        mail: googleConnection.mail,
-                        calendar: googleConnection.calendar,
-                        connectedAt: googleConnection.connectedAt.toISOString(),
-                        lastUsedAt: googleConnection.lastUsedAt?.toISOString() ?? null,
-                        lastError: googleConnection.lastError,
-                      }
-                    : null,
-                  ready: googleIsConfigured(settings),
-                  notice: googleNotice,
-                  focus: focusGoogle,
+                accounts={{
+                  list: linkedAccounts.map((account) => ({
+                    id: account.id,
+                    provider: account.provider,
+                    providerLabel: account.providerLabel,
+                    email: account.email,
+                    label: account.label,
+                    mail: account.mail,
+                    calendar: account.calendar,
+                    imapHost: account.imapHost,
+                    caldavUrl: account.caldavUrl,
+                    connectedAt: account.connectedAt.toISOString(),
+                    lastUsedAt: account.lastUsedAt?.toISOString() ?? null,
+                    lastError: account.lastError,
+                  })),
+                  googleReady: googleIsConfigured(settings),
+                  microsoftReady: microsoftIsConfigured(settings),
+                  notice: accountNotice,
                 }}
               />
             </FadeIn>

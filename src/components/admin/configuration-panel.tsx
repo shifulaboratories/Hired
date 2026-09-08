@@ -67,11 +67,13 @@ type Variable = {
 export function ConfigurationPanel({
   variables,
   google,
+  microsoft,
   email,
   billing,
 }: {
   variables: Variable[];
   google: { configured: boolean; redirectUri: string };
+  microsoft: { configured: boolean; redirectUri: string };
   email: {
     configured: boolean;
     fromEmail: string;
@@ -302,6 +304,7 @@ export function ConfigurationPanel({
                 searching for a setting is looking for one row, and four
                 numbered steps between them and it is the opposite of help. */}
             {!filtering && group.name === "Sign-in" && <GoogleSetup redirectUri={google.redirectUri} />}
+            {!filtering && group.name === "Accounts" && <MicrosoftSetup redirectUri={microsoft.redirectUri} />}
             {!filtering && group.name === "Email" && !email.configured && <ResendSteps />}
             {!filtering && group.name === "Billing" && <WebhookUrl url={billing.webhookUrl} />}
 
@@ -433,6 +436,7 @@ export function ConfigurationPanel({
 const GROUP_BLURB: Record<string, string> = {
   Instance: "What this instance is called and where it lives. Every invitation link, published resume and webhook URL is built from the public URL.",
   "Sign-in": "Everyone can always sign in with an email and password. Adding a Google client turns on a Continue with Google button as well — existing members and anyone holding an invitation can use it straight away. The same client is what lets each person connect their own Gmail and Calendar under Settings → Connections.",
+  Accounts: "What members can connect for the app to read their mail and calendar. Google uses the sign-in client above. Microsoft 365 and Outlook.com need an app registration in Microsoft Entra, set here. Any other provider — Fastmail, iCloud, Yahoo, a self-hosted server — connects by IMAP and CalDAV with an app password and needs nothing from you.",
   Email: "Invitations go out through Resend. Everything works without it — creating an invite just gives you a link to send yourself.",
   Billing: "Optional, for hosting other people here for a fee. Someone who pays through your Stripe payment link is invited automatically; a lapsed subscription suspends them, data kept, and paying again turns them back on.",
   Custom: "Variables added by hand. Nothing in the app reads these unless something was written to look for them.",
@@ -466,6 +470,72 @@ function StatusBadge({
       {ok ? <CheckCircle2Icon className="size-3" /> : <TriangleAlertIcon className="size-3" />}
       {ok ? okLabel : notLabel}
     </Badge>
+  );
+}
+
+function MicrosoftSetup({ redirectUri }: { redirectUri: string }) {
+  return (
+    <div className="mb-5 space-y-3">
+      <ol className="space-y-2">
+        {[
+          <>
+            In the{" "}
+            <a
+              href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary inline-flex items-center gap-0.5 underline underline-offset-2"
+            >
+              Microsoft Entra admin center <ExternalLinkIcon className="size-3" />
+            </a>
+            , add an app registration. For supported account types pick{" "}
+            <strong>any organizational directory and personal Microsoft accounts</strong>, so
+            both work and personal mailboxes can connect.
+          </>,
+          <>
+            Under Authentication add a <strong>Web</strong> platform with the redirect URI below,
+            exactly as shown.
+          </>,
+          <>
+            Under API permissions add the Microsoft Graph delegated permissions{" "}
+            <code>Mail.Read</code>, <code>Calendars.Read</code>, <code>User.Read</code> and{" "}
+            <code>offline_access</code>. No admin consent is needed for these.
+          </>,
+          <>
+            Under Certificates &amp; secrets create a client secret, and paste its{" "}
+            <strong>value</strong> (shown once) and the Application (client) ID in below. Entra
+            secrets expire, two years at most; note the date.
+          </>,
+        ].map((step, index) => (
+          <li key={index} className="flex gap-3 text-sm">
+            <span className="bg-muted text-muted-foreground flex size-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums">
+              {index + 1}
+            </span>
+            <span className="text-muted-foreground pt-0.5">{step}</span>
+          </li>
+        ))}
+      </ol>
+
+      <div className="space-y-1.5">
+        <Label>Redirect URI</Label>
+        <div className="flex items-center gap-2">
+          <code className="bg-muted/70 min-w-0 flex-1 truncate rounded-lg border px-3 py-2 font-mono text-[12px]">
+            {redirectUri}
+          </code>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              navigator.clipboard.writeText(redirectUri);
+              toast.success("Copied.");
+            }}
+            aria-label="Copy the redirect URI"
+          >
+            <CopyIcon />
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -1,7 +1,7 @@
 ---
 title: "Admin tools"
 sidebarTitle: "Admin"
-description: "Twenty-nine tools for running an instance: accounts, invitations, the waitlist, sign-in, email, billing, health and every stored setting."
+description: "Thirty-one tools for running an instance: accounts, invitations, the waitlist, sign-in, email, billing, health and every stored setting."
 icon: "shield-halved"
 ---
 
@@ -278,6 +278,29 @@ Proves the Resend configuration actually delivers, and doubles as the way to loo
 | --- | --- | --- |
 | `to` | string | Where to send it. Defaults to your own address. |
 | `template` | string | Which email to send: test, invite or waitlist. Defaults to test. |
+
+### `admin_get_microsoft_config`
+
+_Check the Microsoft 365 app registration_
+
+Whether members can connect their Microsoft 365 or Outlook.com mail and calendar, and the exact redirect URI to register on the app registration in Microsoft Entra — the value behind AADSTS50011 when it does not match. The client secret comes back masked. This is separate from Google sign-in and from the Google client: it is never used to sign in, only for members who choose to connect an Outlook mailbox under Settings → Connections.
+
+**Admin only.**
+
+No arguments.
+
+### `admin_set_microsoft_config`
+
+_Configure the Microsoft 365 app registration_
+
+Set or clear the Microsoft Entra app registration members use to connect Outlook mail and calendar. Pass the Application (client) ID and a client secret VALUE. Clearing the client id takes the Microsoft option off the account picker; accounts already connected keep working until their token needs refreshing, then show as needing reconnecting. Recorded in the admin audit log; the secret is recorded as having changed, never as its value.
+
+**Admin only.** **Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `clientId` | string | The Application (client) ID. Empty string to turn the option off. |
+| `clientSecret` | string | A client secret value from Certificates & secrets. Omit to keep the current one. |
 
 ### `admin_get_google_config`
 

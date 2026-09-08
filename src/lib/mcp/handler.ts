@@ -82,13 +82,14 @@ async function instructionsFor(user: User) {
   mention talking to someone — a call, a coffee, a reply — log_activity with contactId is how it
   gets remembered, and update_contact's nextFollowUpAt is how "ping them in two weeks" actually
   happens. list_follow_ups returns due people alongside due applications.
-• GMAIL AND CALENDAR — if they have connected their own Google account (get_google_connection
-  says), list_correspondence returns the real threads and meetings behind any contact, company,
-  application or resume, read live and never stored here. Call it before saying where an
-  application stands: the pipeline's timeline only knows what was logged by hand. search_email
-  and search_calendar cover questions that are not about one record. Every one of these is
-  read-only — nothing can send, accept or delete. When they are not connected, say how
-  (Settings → Connections) rather than guessing at their mail.
+• MAIL AND CALENDAR — if they have connected an account (list_linked_accounts says: Google,
+  Microsoft 365, or any IMAP and CalDAV provider), list_correspondence returns the real threads
+  and meetings behind any contact, company, application or resume, read live across every
+  account and never stored here. Call it before saying where an application stands: the
+  pipeline's timeline only knows what was logged by hand. search_email and search_calendar
+  cover questions that are not about one record. Every one of these is read-only — nothing can
+  send, accept or delete. When nothing is connected, say how (Settings → Connections, or
+  connect_imap_account with an app password) rather than guessing at their mail.
 • TAGS cut across all of it. Where an application came from, a company's industry, size and
   location, how you know a person — every one of those is a tag rather than a free-text field,
   and they are multi-select. Call list_tags before writing any of them: passing a name that

@@ -33,6 +33,8 @@ export const SETTING_KEYS = {
   googleClientSecret: "google_client_secret",
   googleAllowSignup: "google_allow_signup",
   googleAllowedDomains: "google_allowed_domains",
+  microsoftClientId: "microsoft_client_id",
+  microsoftClientSecret: "microsoft_client_secret",
   stripeSecretKey: "stripe_secret_key",
   stripeWebhookSecret: "stripe_webhook_secret",
   stripePaymentLink: "stripe_payment_link",
@@ -60,6 +62,13 @@ export type InstanceSettings = {
   googleAllowSignup: boolean;
   /** Comma-separated domains a new Google account must be on. Empty is any. */
   googleAllowedDomains: string;
+  /**
+   * A Microsoft Entra app registration, for members who connect their
+   * Microsoft 365 mail and calendar. Empty client id means the option is
+   * not offered. Never used for sign-in.
+   */
+  microsoftClientId: string;
+  microsoftClientSecret: string;
   /** Stripe, for the instance owner who hosts other people for a fee. */
   stripeSecretKey: string;
   stripeWebhookSecret: string;
@@ -74,7 +83,7 @@ export type InstanceSettings = {
  */
 export type VariableKind = "text" | "url" | "secret" | "toggle";
 
-export type VariableGroup = "Instance" | "Sign-in" | "Email" | "Billing";
+export type VariableGroup = "Instance" | "Sign-in" | "Accounts" | "Email" | "Billing";
 
 export type VariableDef = {
   key: string;
@@ -190,6 +199,26 @@ export const VARIABLES: VariableDef[] = [
     fallback: "",
   },
   {
+    key: SETTING_KEYS.microsoftClientId,
+    field: "microsoftClientId",
+    label: "Microsoft client ID",
+    help: "The Application (client) ID of an app registration in Microsoft Entra. Setting it lets each person connect their Microsoft 365 or Outlook.com mail and calendar under Settings → Connections. It is never used for signing in.",
+    kind: "text",
+    group: "Accounts",
+    placeholder: "00000000-0000-0000-0000-000000000000",
+    fallback: "",
+  },
+  {
+    key: SETTING_KEYS.microsoftClientSecret,
+    field: "microsoftClientSecret",
+    label: "Microsoft client secret",
+    help: "A client secret from the same app registration. Stored on your server and never shown again. Entra secrets expire — two years at most — so put the date in your calendar.",
+    kind: "secret",
+    group: "Accounts",
+    placeholder: "",
+    fallback: "",
+  },
+  {
     key: SETTING_KEYS.resendApiKey,
     field: "resendApiKey",
     label: "Resend API key",
@@ -292,6 +321,8 @@ export async function getSettings(): Promise<InstanceSettings> {
     googleClientSecret: raw(SETTING_KEYS.googleClientSecret),
     googleAllowSignup: raw(SETTING_KEYS.googleAllowSignup) === "1",
     googleAllowedDomains: raw(SETTING_KEYS.googleAllowedDomains),
+    microsoftClientId: raw(SETTING_KEYS.microsoftClientId),
+    microsoftClientSecret: raw(SETTING_KEYS.microsoftClientSecret),
     stripeSecretKey: raw(SETTING_KEYS.stripeSecretKey),
     stripeWebhookSecret: raw(SETTING_KEYS.stripeWebhookSecret),
     stripePaymentLink: raw(SETTING_KEYS.stripePaymentLink),
@@ -515,6 +546,11 @@ export function emailIsConfigured(settings: InstanceSettings) {
  * Both halves or nothing. A client id with no secret would show the button and
  * fail at the callback, which is a worse failure than no button.
  */
+/** Whether members can connect a Microsoft 365 account at all. */
+export function microsoftIsConfigured(settings: InstanceSettings) {
+  return Boolean(settings.microsoftClientId && settings.microsoftClientSecret);
+}
+
 export function googleIsConfigured(settings: InstanceSettings) {
   return Boolean(settings.googleClientId && settings.googleClientSecret);
 }

@@ -14,6 +14,7 @@ import {
   emailIsConfigured,
   getSettings,
   googleIsConfigured,
+  microsoftIsConfigured,
   listVariables,
 } from "@/lib/settings";
 import { billedUserCount } from "@/lib/billing";
@@ -206,6 +207,10 @@ export default async function AdminPage() {
               google={{
                 configured: googleIsConfigured(settings),
                 redirectUri: `${settings.publicUrl || `${proto}://${host}`}/api/auth/google/callback`,
+              }}
+              microsoft={{
+                configured: microsoftIsConfigured(settings),
+                redirectUri: `${settings.publicUrl || `${proto}://${host}`}/api/auth/microsoft/callback`,
               }}
               email={{
                 configured: emailReady,
