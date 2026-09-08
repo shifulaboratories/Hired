@@ -90,8 +90,14 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  120 tools any MCP client can call (150 if you're an admin). Claude, Claude Code, ChatGPT,
+  121 tools any MCP client can call (151 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
+- **It explains itself** — a short tour opens the first time you sign in: what the board is,
+  what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
+  you have run a search before; it never asks twice. Settings → Account brings it back, and
+  so does asking a connected assistant. Under it, three cards track the only three things a
+  new workspace needs — a job on the board, your history on file, an assistant connected —
+  and tick themselves off from what is actually there.
 - **Multi-user** — invite whoever you like. Each person gets a completely private workspace;
   admins manage accounts but never see anyone's career history, resumes or applications. Admin lives
   under Settings → Admin: invitations, accounts, per-workspace usage, a password reset for
@@ -265,7 +271,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Hit **Test** next to any connection and the app calls its own endpoint the way a client
-would, then tells you how many tools answered — 120, or 150 if you're an admin.
+would, then tells you how many tools answered — 121, or 151 if you're an admin.
 
 #### One connection per client
 
@@ -443,7 +449,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-120 tools. One hundred and twelve of them are the data tools across the four areas, the
+121 tools. One hundred and thirteen of them are the data tools across the four areas, the
 archive that cuts through all of them, your Gmail and Calendar, and your account; the other
 eight are the workflows below, published as tools as well as prompts, because prompt support
 is optional in MCP clients and tool support isn't. Call one and it hands back a step-by-step

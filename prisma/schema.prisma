@@ -382,6 +382,12 @@ model Profile {
   /// with no second request to fetch it. The browser downscales before upload
   /// and the server refuses anything over PHOTO_MAX_BYTES.
   photo          String   @default("")
+  /// When this person last finished — or skipped — the welcome tour. Null means
+  /// they have never seen it, which is what makes the tour show itself once and
+  /// then stay out of the way. Skipping sets it too: somebody who closed it does
+  /// not want it again tomorrow, and "Show the tutorial again" in Settings is
+  /// how it comes back.
+  tourSeenAt     DateTime?
   updatedAt      DateTime @updatedAt
 }
 

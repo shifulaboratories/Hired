@@ -3747,7 +3747,7 @@ export const tools: McpTool[] = [
     name: "get_setup_status",
     title: "How far into setup this workspace is",
     description:
-      "Three things a workspace needs before it does anything: something connected over MCP, some career material in Me, and one job in the pipeline. Returns which are done and what each is waiting for. Worth calling when someone new asks what to do first, or when a read comes back empty and you are deciding whether that is an empty account or a wrong query — an empty Me with nothing tracked is a workspace nobody has filled yet, not a failure.",
+      "Three things a workspace needs before it does anything: one job on the board, some career material in Me, and something connected over MCP. Returns which are done and what each is waiting for, plus `tourSeenAt` — when the person last went through the welcome tour in the web app, or null if they never have. Worth calling when someone new asks what to do first, or when a read comes back empty and you are deciding whether that is an empty account or a wrong query — an empty Me with nothing tracked is a workspace nobody has filled yet, not a failure. A null tourSeenAt is a strong hint you are talking to somebody who has not been shown around: explain things rather than assuming they know what a pipeline stage is.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -3756,6 +3756,26 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) => onboarding.setupStatus(ctx.userId),
+  },
+  {
+    name: "restart_tour",
+    title: "Show the welcome tour again",
+    description:
+      "Queue the web app's welcome tour to run again the next time this person opens it — the short walk through what the board, Me and the assistant connection are for. Reach for it when somebody says they are lost, that they never saw an introduction, or that they want the tutorial back; also worth offering to someone whose `get_setup_status` shows tourSeenAt null who is clearly struggling. It does not open anything on its own — nothing here can reach into their browser — so say plainly that it will appear next time they load the app. Setting it back to seen is the tour\'s own job, not a tool: they put it away by finishing or closing it.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => {
+      await onboarding.setTourSeen(ctx.userId, false);
+      return {
+        queued: true,
+        message: "The welcome tour will run the next time they open the web app.",
+      };
+    },
   },
   {
     name: "list_connections",

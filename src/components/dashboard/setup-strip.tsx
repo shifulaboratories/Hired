@@ -14,26 +14,26 @@ import { cn } from "@/lib/utils";
  * finished and a step that is not is the only thing worth reading.
  */
 const COPY = {
-  connect: {
-    icon: PlugZapIcon,
-    title: "Connect Claude",
-    body: "Copy your private connection URL and add it as a custom connector. Everything here is then reachable from a conversation, which is how this is meant to be used.",
-    href: "/settings",
-    cta: "Get my URL",
+  track: {
+    icon: KanbanIcon,
+    title: "Add a job you are going for",
+    body: "Paste the posting and the form fills itself. One is enough for the board and the follow-up reminders to start working.",
+    href: "/applications?new=1",
+    cta: "Add a job",
   },
   history: {
     icon: BrainIcon,
-    title: "Bring your history in",
-    body: "Paste a resume and let it fill Me in, or tell Claude about your last job and let it file the detail. Either beats typing your career into a form.",
+    title: "Paste in your old resume",
+    body: "It reads it and fills in your history, so every resume you build from now on writes itself out of what you have already done.",
     href: "/me?import=1",
-    cta: "Import a resume",
+    cta: "Paste a resume",
   },
-  track: {
-    icon: KanbanIcon,
-    title: "Track one job",
-    body: "Paste a posting and it fills the form. One application is enough for the pipeline, the follow-ups and the diagnosis to start doing something.",
-    href: "/applications?new=1",
-    cta: "Track a job",
+  connect: {
+    icon: PlugZapIcon,
+    title: "Let Claude do the typing",
+    body: "Optional, and the best thing here. Once it is connected you can say “I applied to Figma yesterday” and it fills the card in for you.",
+    href: "/settings",
+    cta: "Show me how",
   },
 } as const;
 

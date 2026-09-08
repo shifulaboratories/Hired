@@ -4666,3 +4666,64 @@ reads, the documented set.
 `src/lib/funnel-sankey.ts`, `src/components/shell.tsx`,
 `src/components/command-palette.tsx`, `src/server/actions.ts`, `README.md`,
 `docs/app.mdx`, `docs/concepts/pipeline.mdx`.
+
+---
+
+## 2026-09-08 — A welcome tour, because most people arriving have never tracked a job search
+
+**The audience does not know the words.** Board, pipeline, stage, CRM — every screen in
+this app assumes a vocabulary that most people looking for a job have never used. The setup
+strip told them what to *do* and nothing about what any of it *was*, and its first step was
+"copy your private connection URL and add it as a custom connector", which is where a
+non-technical person closes the tab.
+
+So: a five-card tour that opens over whatever screen you land on. One picture and one
+sentence a card, teaching four words — board, Today, Me, assistant. No forms, no accounts to
+link, no decisions. If a card ever needs a paragraph, the app needs fixing, not the
+paragraph.
+
+**Skippable from the first frame, and closing counts.** Skip, the X, Escape and the overlay
+all write `tourSeenAt` — one write for finishing and for leaving, because somebody who
+closed it on card two has decided, and asking again tomorrow is the behaviour everyone
+hates. That is only safe because it is recoverable: Settings → Account → Show it again, and
+`restart_tour` over MCP for the person who says out loud that they are lost.
+
+**Only half of it is a tool, deliberately.** `restart_tour` exists because "show me that
+again" is a real request. Marking it seen has no tool and should not get one: it is a person
+closing a dialog in their own browser, which is the direct-manipulation exception rather
+than a parity gap. `get_setup_status` reports `tourSeenAt` instead, and a null there is a
+strong hint to an assistant that it is talking to somebody who has not been shown around.
+
+**The pictures are rectangles, not screenshots.** A screenshot is stale within a release,
+and a person who has never seen the app cannot tell a stale one from a current one. Each
+drawing is the *shape* of the screen it stands for — four columns and a card moving right,
+a list with a due chip, a pile of text becoming one page — recognisable from across the
+room and immune to the real screen moving.
+
+**`w-auto` on the art pushed the dialog off the side of a phone.** A 220×110 viewBox in a
+176px-tall box asks for 352px of width; plus padding that is wider than a 390px screen, and
+the buttons were clipped. Fitting to the box in both directions letterboxes instead. Found
+by driving a 390px viewport — nothing about the desktop render hinted at it.
+
+**The setup strip changed order and voice.** Easiest first: a job on the board (needs
+nothing), then the resume paste, then connecting an assistant — the most powerful step and
+the one most likely to stop somebody, so it is no longer standing between them and their
+first useful minute. Its copy lost "MCP", "custom connector" and "the pipeline".
+
+**Skipping is per person, and every existing account gets the tour once.** `tourSeenAt` is
+nullable on Profile with no backfill, which is the right default for a feature whose whole
+job is to explain what the app is.
+
+**Verified** against a real Postgres with the migration applied: the five cards walked end
+to end, gone after finishing, still gone after a reload, back from Settings, back from
+`restart_tour` over the real MCP transport, and Escape counted as seen. Separately on a
+brand-new account with no Profile row at all (the upsert's create branch) at 390px wide, and
+`get_setup_status` reporting `tourSeenAt` both ways. Typecheck, build, `gen-tool-docs
+--check` and `migrate diff --exit-code` clean; seven unfiltered archivable reads, the
+documented set.
+
+**Applies to:** `prisma/schema.prisma`,
+`prisma/migrations/20250131000000_welcome_tour/`, `src/lib/data/onboarding.ts`,
+`src/components/onboarding/welcome-tour.tsx`, `src/components/dashboard/setup-strip.tsx`,
+`src/components/settings/account-panel.tsx`, `src/app/(app)/layout.tsx`,
+`src/lib/mcp/tools.ts`, `src/server/actions.ts`, `README.md`, `docs/app.mdx`.

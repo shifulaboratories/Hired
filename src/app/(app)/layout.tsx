@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { Shell } from "@/components/shell";
 import { relativeDay } from "@/lib/utils";
 import { dueNow } from "@/lib/data/pipeline";
+import { WelcomeTour } from "@/components/onboarding/welcome-tour";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const [due, profile] = await Promise.all([
     dueNow(user.id),
-    db.profile.findUnique({ where: { userId: user.id }, select: { photo: true } }),
+    db.profile.findUnique({
+      where: { userId: user.id },
+      select: { photo: true, tourSeenAt: true },
+    }),
   ]);
 
   // Flattened here rather than in the bell: the shell is a client component,
@@ -47,6 +51,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       >
         {children}
       </Shell>
+
+      {/* In the layout rather than on a page: it is the first thing somebody
+          sees whichever screen they land on, and a first-run tour that only
+          fires on one route is a first-run tour that misses half the people.
+          Null means never seen — including for every account that predates the
+          column, which is the right answer for a feature whose job is to
+          explain what the app is. */}
+      <WelcomeTour open={profile?.tourSeenAt == null} />
     </>
   );
 }

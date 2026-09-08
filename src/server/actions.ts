@@ -15,6 +15,7 @@ import * as users from "@/lib/data/users";
 import * as waitlist from "@/lib/data/waitlist";
 import * as connections from "@/lib/data/connections";
 import * as google from "@/lib/data/google";
+import * as onboarding from "@/lib/data/onboarding";
 import {
   authenticate,
   claimInstance,
@@ -1619,4 +1620,31 @@ export async function reportRenderErrorAction(input: { digest?: string; path?: s
     detail: input.digest ? `digest ${input.digest}` : "",
     userEmail: user.email,
   });
+}
+
+// --- the welcome tour --------------------------------------------------------
+
+/**
+ * Put the tour away, or ask for it back.
+ *
+ * Two names for one write, because they are two different intentions and a
+ * boolean at the call site reads as neither. Finishing and skipping both count
+ * as seen — see setTourSeen for why.
+ *
+ * `setTourSeen(userId, true)` has no tool beside it, and that is the direct
+ * manipulation exception rather than a gap: it is a person closing a dialog in
+ * their own browser, and there is nothing for an assistant to do with it.
+ * Asking for the tour BACK is a real request somebody makes out loud, so that
+ * half is `restart_tour`.
+ */
+export async function completeTourAction() {
+  const user = await requireUser();
+  await onboarding.setTourSeen(user.id, true);
+}
+
+export async function restartTourAction() {
+  const user = await requireUser();
+  await onboarding.setTourSeen(user.id, false);
+  // The tour mounts from the layout, which every screen renders.
+  revalidatePath("/", "layout");
 }
