@@ -1,4 +1,5 @@
 import type { ResumeImport, ResumeImportRole } from "@/lib/data/me";
+import { flattenLinkedIn, looksLikeLinkedIn } from "@/lib/resume-parse-linkedin";
 
 /**
  * Reading a pasted resume well enough to correct.
@@ -164,10 +165,22 @@ function splitTitleAndCompany(
 }
 
 export function parseResumeText(text: string): ParsedResume {
-  const lines = normalise(text.slice(0, 200_000));
+  const source = text.slice(0, 200_000);
+  // LinkedIn is the document people actually keep current, so it is what they
+  // paste. What the clipboard gives is not a resume — see
+  // resume-parse-linkedin.ts — so it is rewritten into one first, and the
+  // review step is told, because the fields will not match the text they
+  // pasted line for line.
+  const linkedin = looksLikeLinkedIn(source);
+  const lines = normalise(linkedin ? flattenLinkedIn(source) : source);
   const warnings: string[] = [];
   const notes: ParseNote[] = [];
   const unparsed: string[] = [];
+  if (linkedin) {
+    warnings.push(
+      "Read as a LinkedIn profile: durations, employment types and repeated company names were folded in, and promotions grouped under one employer were split into separate jobs.",
+    );
+  }
 
   // --- the block above the first heading is the header --------------------
   const blocks: { section: Section; lines: string[] }[] = [{ section: "header", lines: [] }];
@@ -296,6 +309,9 @@ export function parseResumeText(text: string): ParsedResume {
     );
   }
 
+  // sourceText is what they pasted, never the rewrite: the note filed alongside
+  // the import is the original document, and anything the parser dropped is
+  // still findable in it.
   return { draft, sourceText: text, unparsed, warnings, notes };
 }
 
