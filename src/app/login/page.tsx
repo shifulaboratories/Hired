@@ -6,6 +6,7 @@ import {
   signedInHintDomain,
 } from "@/lib/auth";
 import { getSettings, googleIsConfigured } from "@/lib/settings";
+import { instanceOwnerContact } from "@/lib/data/users";
 import { isGoogleRefusal, refusalMessage } from "@/lib/google";
 import { LoginForm } from "@/components/login-form";
 import { AuthShell, authViewport } from "@/components/auth-shell";
@@ -25,10 +26,14 @@ export default async function LoginPage({
   // The hint domain is whatever the landing page reads to decide you are signed
   // in. There is no session here, so the form's job on arrival is to take it
   // back off.
-  const [settings, params, hintDomain] = await Promise.all([
+  const [settings, params, hintDomain, owner] = await Promise.all([
     getSettings(),
     searchParams,
     signedInHintDomain(),
+    // There is no self-serve reset here, so "ask an admin" is the whole
+    // recovery path — and it was said to somebody who cannot get in to find
+    // out who that is.
+    instanceOwnerContact(),
   ]);
 
   return (
@@ -40,6 +45,7 @@ export default async function LoginPage({
           allowedDomains={settings.googleAllowedDomains}
           notice={noticeFor(params.error, settings.googleAllowedDomains)}
           signedInHint={hintDomain ? { cookie: SIGNED_IN_COOKIE, domain: hintDomain } : null}
+          owner={owner}
         />
       </AuthShell>
   );

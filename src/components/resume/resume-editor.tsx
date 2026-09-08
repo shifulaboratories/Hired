@@ -98,6 +98,7 @@ export function ResumeEditor({
   doc: initialDoc,
   meta: initialMeta,
   shareUrl,
+  canRenderPdf,
   base,
   photo,
   siblings,
@@ -130,6 +131,8 @@ export function ResumeEditor({
    * URL must never be created or destroyed as a side effect of typing.
    */
   shareUrl: string | null;
+  /** Whether this host has a headless browser to render a PDF with. */
+  canRenderPdf: boolean;
 }) {
   const router = useRouter();
   const [doc, setDoc] = useState(initialDoc);
@@ -405,14 +408,25 @@ export function ResumeEditor({
 
           <ShareButton id={id} initialUrl={shareUrl} />
 
-          {/* Server-rendered: no print dialog, no margin settings to get wrong.
-              The print page stays one menu item away for hosts without a
-              headless browser, and the route says so if it can't render. */}
-          <Button asChild variant="default" size="sm">
-            <a href={`/api/resumes/${id}/pdf`}>
-              <DownloadIcon /> PDF
-            </a>
-          </Button>
+          {/* Server-rendered where the host can, the browser's own print
+              dialog where it cannot — decided here rather than by letting them
+              press it and find out. The route does answer with a sentence, but
+              it answers in the same tab: pressing PDF on a host with no
+              Chromium replaced the editor they were working in with a page of
+              raw text and no way back but the Back button. */}
+          {canRenderPdf ? (
+            <Button asChild variant="default" size="sm">
+              <a href={`/api/resumes/${id}/pdf`}>
+                <DownloadIcon /> PDF
+              </a>
+            </Button>
+          ) : (
+            <Button asChild variant="default" size="sm">
+              <a href={`/print/${id}`} target="_blank" rel="noreferrer">
+                <PrinterIcon /> Save as PDF
+              </a>
+            </Button>
+          )}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

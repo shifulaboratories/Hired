@@ -5,6 +5,7 @@ import { getProfile } from "@/lib/data/me";
 import { requireUser } from "@/lib/auth";
 import { accountAccess } from "@/lib/data/accounts";
 import { ResumeEditor } from "@/components/resume/resume-editor";
+import { pdfRenderingAvailable } from "@/lib/pdf";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
   return (
     <ResumeEditor
       id={resume.id}
+      canRenderPdf={pdfRenderingAvailable()}
       shareUrl={resume.slug ? `${proto}://${host}/r/${resume.slug}` : null}
       base={base ? { id: base.id, name: base.name, doc: base.doc } : null}
       doc={resume.doc}

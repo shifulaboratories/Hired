@@ -280,20 +280,40 @@ function ConnectionSheet({
       );
     });
 
-  const rotate = () =>
+  // Both of these break a working connection, both sit side by side at the
+  // bottom of the panel a beginner opened to READ their URL, and both used to
+  // fire on one click with no way back. The pipeline share already asks before
+  // it revokes a link; these are the same act.
+  const rotate = () => {
+    if (
+      !confirm(
+        `Issue a new URL for "${connection.name}"? The one you have stops working straight away, and you will have to paste the new one into that app.`,
+      )
+    ) {
+      return;
+    }
     startTransition(async () => {
       const next = await rotateConnectionAction(connection.id);
       setToken(next);
       setTest(null);
-      toast.success("New token issued — paste the new URL into that client");
+      toast.success("New URL issued — paste it into that assistant");
     });
+  };
 
-  const remove = () =>
+  const remove = () => {
+    if (
+      !confirm(
+        `Disconnect "${connection.name}"? It stops working straight away, and connecting again means pasting a new URL into that app.`,
+      )
+    ) {
+      return;
+    }
     startTransition(async () => {
       await deleteConnectionAction(connection.id);
       toast.success(`"${connection.name}" disconnected`);
       onOpenChange(false);
     });
+  };
 
   const commitRename = () =>
     startTransition(async () => {
