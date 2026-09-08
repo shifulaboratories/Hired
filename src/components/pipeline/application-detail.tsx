@@ -64,6 +64,8 @@ import { companyDomain } from "@/lib/company";
 import { useAutosave } from "@/hooks/use-autosave";
 import { ACTIVITY_LABEL, ACTIVITY_OPTIONS, STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
 import { cn, relativeDay } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
+import { civilDay } from "@/lib/time";
 import { DateField, parseISODate } from "@/components/ui/date-field";
 import {
   addActivityAction,
@@ -170,6 +172,7 @@ export function ApplicationDetail({
    */
   onServerChange?: () => void;
 }) {
+  const zone = useViewerZone();
   const [values, setValues] = useState({
     company: application.company,
     roleTitle: application.roleTitle,
@@ -180,8 +183,14 @@ export function ApplicationDetail({
     salaryRange: application.salaryRange,
     tags: application.tags,
     notes: application.notes,
-    appliedAt: application.appliedAt ? application.appliedAt.slice(0, 10) : "",
-    nextFollowUpAt: application.nextFollowUpAt ? application.nextFollowUpAt.slice(0, 10) : "",
+    // The day it fell on where the reader is, not the first ten characters of
+    // a UTC instant — 9am in Auckland is the day before in Greenwich, and this
+    // string is what gets written back when they touch anything else on the
+    // form.
+    appliedAt: application.appliedAt ? civilDay(new Date(application.appliedAt), zone) : "",
+    nextFollowUpAt: application.nextFollowUpAt
+      ? civilDay(new Date(application.nextFollowUpAt), zone)
+      : "",
     resumeId: application.resumeId ?? "",
   });
   const [stage, setStage] = useState(application.stage);
@@ -224,7 +233,7 @@ export function ApplicationDetail({
     // new Date("2026-03-14") is UTC midnight and prints as the 13th anywhere
     // west of Greenwich.
     appliedLabel(values.appliedAt),
-    values.nextFollowUpAt ? `Chase ${relativeDay(new Date(values.nextFollowUpAt))}` : "",
+    values.nextFollowUpAt ? `Chase ${relativeDay(new Date(values.nextFollowUpAt), zone)}` : "",
   ].filter(Boolean);
 
   const set = (patch: Partial<typeof values>) => {
@@ -476,7 +485,7 @@ export function ApplicationDetail({
                 />
                 {values.nextFollowUpAt && (
                   <p className="text-muted-foreground text-xs">
-                    {relativeDay(new Date(values.nextFollowUpAt))}
+                    {relativeDay(new Date(values.nextFollowUpAt), zone)}
                   </p>
                 )}
               </div>
@@ -918,6 +927,7 @@ function Timeline({
 }
 
 function TasksCard({ applicationId, tasks }: { applicationId: string; tasks: Task[] }) {
+  const zone = useViewerZone();
   const [pending, startTransition] = useTransition();
   const [draft, setDraft] = useState("");
   const [done, setDone] = useState<Set<string>>(new Set());
@@ -982,7 +992,7 @@ function TasksCard({ applicationId, tasks }: { applicationId: string; tasks: Tas
                   </span>
                   {task.dueAt && (
                     <span className="text-muted-foreground ml-auto shrink-0 text-[11px]">
-                      {relativeDay(new Date(task.dueAt))}
+                      {relativeDay(new Date(task.dueAt), zone)}
                     </span>
                   )}
                 </li>

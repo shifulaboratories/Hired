@@ -31,6 +31,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { FilterChip } from "@/components/filter-chip";
 import { cn, relativeDay } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
 import {
   deleteVariableAction,
   saveVariablesAction,
@@ -777,6 +778,7 @@ function Row({
   onChange: (value: string) => void;
   onReset: () => void;
 }) {
+  const zone = useViewerZone();
   const current = draft ?? (variable.kind === "secret" ? "" : variable.value);
 
   return (
@@ -800,7 +802,7 @@ function Row({
         )}
         {variable.updatedAt && (
           <p className="text-faint mt-1.5 text-[11px]">
-            changed {relativeDay(new Date(variable.updatedAt))}
+            changed {relativeDay(new Date(variable.updatedAt), zone)}
           </p>
         )}
       </div>

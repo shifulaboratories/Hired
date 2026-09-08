@@ -16,6 +16,7 @@ import {
 import { parsePipelineFilters } from "@/lib/pipeline-filters";
 import { parseSort } from "@/lib/pipeline-list";
 import { STAGES } from "@/lib/data/pipeline";
+import { timeZoneOf } from "@/lib/data/me";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -52,12 +53,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
   const one = (key: string) => url.searchParams.get(key) ?? undefined;
   const ids = one("ids")?.split(",").filter(Boolean);
 
-  const csv = await build(kind as Kind, user.id, one, ids);
+  const [csv, zone] = await Promise.all([
+    build(kind as Kind, user.id, one, ids),
+    timeZoneOf(user.id),
+  ]);
 
   return new Response(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${exportFilename(kind)}"`,
+      "Content-Disposition": `attachment; filename="${exportFilename(kind, zone)}"`,
       "Cache-Control": "no-store",
     },
   });

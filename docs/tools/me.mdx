@@ -54,7 +54,7 @@ Returns EVERYTHING in Me at once: profile, all roles with their full background 
 
 _Get profile_
 
-The user's identity block: name, headline, contact details, links, career summary and their personal background (values, what they want next, comp expectations, non-negotiables). `hasPhoto` says whether a profile photo is set; the picture itself is not returned because it is hundreds of kilobytes of base64 — use set_profile_photo to change it.
+The user's identity block: name, headline, contact details, links, career summary and their personal background (values, what they want next, comp expectations, non-negotiables). `hasPhoto` says whether a profile photo is set; the picture itself is not returned because it is hundreds of kilobytes of base64 — use set_profile_photo to change it. `timeZone` is the calendar every date in this workspace is read against — an IANA name, or empty meaning the server's own clock.
 
 No arguments.
 
@@ -79,6 +79,7 @@ Update any subset of the user's profile fields. Only pass the fields you want to
 | `twitter` | string | X/Twitter URL |
 | `summary` | string | Career summary used as the default resume summary |
 | `background` | string | Long-form personal background. REPLACES the existing text — read it first if you intend to add to it. |
+| `timeZone` | string | IANA time zone the user's dates are computed in, e.g. 'America/Chicago'. Everything dated follows it: what counts as today, when a follow-up is overdue, and the 9am a new follow-up is scheduled for. Pass an empty string to fall back to the server's own clock. Set this when they say where they are or that they have moved; an unrecognised name is refused rather than stored. |
 
 ### `set_profile_photo`
 

@@ -1,5 +1,6 @@
 import type { ActivityType, NoteKind, Stage, User, UserRole } from "@prisma/client";
 import * as me from "@/lib/data/me";
+import { civilInstant } from "@/lib/time";
 import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
 import * as tags from "@/lib/data/tags";
@@ -289,17 +290,23 @@ function onExistingFrom(args: Json): { onExisting?: "merge" | "skip" } {
 
 /**
  * A bare `YYYY-MM-DD` parses as midnight, so an inclusive end date would drop
- * everything that actually happened on it. Push it to the last millisecond.
+ * everything that actually happened on it. Push it to the last millisecond of
+ * that day where the person is — a window given in days is a window of THEIR
+ * days, and on a UTC host "up to the 14th" would otherwise stop at 5pm on the
+ * 13th in Chicago.
  */
-function endOfDay(value: string) {
+function endOfDay(timeZone: string, value: string) {
+  const civil = civilInstant(timeZone, value, 23, 59, 59, 999);
+  if (civil) return civil;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`"${value}" is not a date I can read`);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) date.setUTCHours(23, 59, 59, 999);
   return date;
 }
 
 /** The other end of endOfDay: a date that fails to parse is an error, not 1970. */
-function startOfDay(value: string) {
+function startOfDay(timeZone: string, value: string) {
+  const civil = civilInstant(timeZone, value, 0);
+  if (civil) return civil;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`"${value}" is not a date I can read`);
   return date;
@@ -476,7 +483,7 @@ export const tools: McpTool[] = [
     name: "get_profile",
     title: "Get profile",
     description:
-      "The user's identity block: name, headline, contact details, links, career summary and their personal background (values, what they want next, comp expectations, non-negotiables). `hasPhoto` says whether a profile photo is set; the picture itself is not returned because it is hundreds of kilobytes of base64 — use set_profile_photo to change it.",
+      "The user's identity block: name, headline, contact details, links, career summary and their personal background (values, what they want next, comp expectations, non-negotiables). `hasPhoto` says whether a profile photo is set; the picture itself is not returned because it is hundreds of kilobytes of base64 — use set_profile_photo to change it. `timeZone` is the calendar every date in this workspace is read against — an IANA name, or empty meaning the server's own clock.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: false,
@@ -505,6 +512,9 @@ export const tools: McpTool[] = [
       background: str(
         "Long-form personal background. REPLACES the existing text — read it first if you intend to add to it.",
       ),
+      timeZone: str(
+        "IANA time zone the user's dates are computed in, e.g. 'America/Chicago'. Everything dated follows it: what counts as today, when a follow-up is overdue, and the 9am a new follow-up is scheduled for. Pass an empty string to fall back to the server's own clock. Set this when they say where they are or that they have moved; an unrecognised name is refused rather than stored.",
+      ),
     }),
     annotations: {
       readOnlyHint: false,
@@ -512,22 +522,31 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (args, ctx) =>
-      withoutPhotoBytes(await me.updateProfile(ctx.userId,
-        defined({
-          fullName: s(args, "fullName"),
-          headline: s(args, "headline"),
-          email: s(args, "email"),
-          phone: s(args, "phone"),
-          location: s(args, "location"),
-          website: s(args, "website"),
-          linkedin: s(args, "linkedin"),
-          github: s(args, "github"),
-          twitter: s(args, "twitter"),
-          summary: s(args, "summary"),
-          background: s(args, "background"),
-        }),
-      )),
+    handler: async (args, ctx) => {
+      // The zone is not a ProfilePatch key: that type is also what
+      // import_resume accepts, and reading somebody's CV is no reason to move
+      // their clock. Written through its own validating setter instead.
+      const timeZone = s(args, "timeZone");
+      if (timeZone !== undefined) await me.setTimeZone(ctx.userId, timeZone);
+      return withoutPhotoBytes(
+        await me.updateProfile(
+          ctx.userId,
+          defined({
+            fullName: s(args, "fullName"),
+            headline: s(args, "headline"),
+            email: s(args, "email"),
+            phone: s(args, "phone"),
+            location: s(args, "location"),
+            website: s(args, "website"),
+            linkedin: s(args, "linkedin"),
+            github: s(args, "github"),
+            twitter: s(args, "twitter"),
+            summary: s(args, "summary"),
+            background: s(args, "background"),
+          }),
+        ),
+      );
+    },
   },
   {
     name: "set_profile_photo",
@@ -2628,7 +2647,9 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) =>
-      schedule.listSchedule(ctx.userId, required(args, "from"), endOfDay(required(args, "to"))),
+      // Both edges go through as written: listSchedule owns what a bare date
+      // means, so the tool and the calendar screen cannot disagree about it.
+      schedule.listSchedule(ctx.userId, required(args, "from"), required(args, "to")),
   },
   {
     name: "list_tasks",
@@ -2800,7 +2821,7 @@ export const tools: McpTool[] = [
       const dir = enumArg(args, "dir", SORT_DIRECTIONS);
       if (kind === "companies") {
         return {
-          filename: exportFilename("companies"),
+          filename: exportFilename("companies", await me.timeZoneOf(ctx.userId)),
           csv: await exportCompaniesCsv(
             ctx.userId,
             defined({
@@ -2820,7 +2841,7 @@ export const tools: McpTool[] = [
       }
       if (kind === "contacts") {
         return {
-          filename: exportFilename("contacts"),
+          filename: exportFilename("contacts", await me.timeZoneOf(ctx.userId)),
           csv: await exportContactsCsv(
             ctx.userId,
             defined({
@@ -2839,7 +2860,7 @@ export const tools: McpTool[] = [
       }
       const query = s(args, "query");
       return {
-        filename: exportFilename("applications"),
+        filename: exportFilename("applications", await me.timeZoneOf(ctx.userId)),
         csv: await exportApplicationsCsv(
           ctx.userId,
           defined({
@@ -3898,16 +3919,18 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: true,
     },
-    handler: async (args, ctx) =>
-      accountsData.searchCalendar(ctx.userId, {
+    handler: async (args, ctx) => {
+      const zone = await me.timeZoneOf(ctx.userId);
+      return accountsData.searchCalendar(ctx.userId, {
         ...defined({
           query: s(args, "query"),
-          from: s(args, "from") ? startOfDay(required(args, "from")) : undefined,
-          to: s(args, "to") ? endOfDay(required(args, "to")) : undefined,
+          from: s(args, "from") ? startOfDay(zone, required(args, "from")) : undefined,
+          to: s(args, "to") ? endOfDay(zone, required(args, "to")) : undefined,
           limit: n(args, "limit"),
           accountId: s(args, "accountId"),
         }),
-      }),
+      });
+    },
   },
 
   // -------------------------------------------------------------------------

@@ -12,6 +12,8 @@ import {
   tagInclude,
 } from "@/lib/data/tags";
 import { archiveRecords } from "@/lib/data/archive";
+import { timeZoneOf } from "@/lib/data/me";
+import { atHourInDays, civilDay, civilInstant, endOfDay, startOfWeek } from "@/lib/time";
 import {
   type CompanyFilters,
   type CompanyMissing,
@@ -532,7 +534,7 @@ export async function mergeCompanies(userId: string, keepId: string, mergeId: st
   const notes = !keep.notes.trim()
     ? loserNotes
     : plan.notesAppended
-      ? `${keep.notes}\n\n— merged from "${plan.merge.name}" on ${new Date().toISOString().slice(0, 10)} —\n${loserNotes}`
+      ? `${keep.notes}\n\n— merged from "${plan.merge.name}" on ${civilDay(new Date(), await timeZoneOf(userId))} —\n${loserNotes}`
       : keep.notes;
 
   await db.$transaction(async (tx) => {
@@ -874,11 +876,48 @@ function cleanLinks(values: string[]): string[] {
 }
 
 
-function toDate(value: Date | string | null | undefined): Date | null | undefined {
+/**
+ * A date argument, as an instant.
+ *
+ * A bare "2026-03-14" is a CIVIL date — somebody picked a day off a calendar,
+ * or an assistant repeated one back — and `new Date` reads it as UTC midnight,
+ * which is the 13th for everyone west of Greenwich. It lands at 9am in their
+ * own zone instead: the same hour every date this app sets itself uses, so a
+ * follow-up picked by hand behaves exactly like one the app worked out. Values
+ * that already carry a time are instants and pass through untouched.
+ */
+function toDate(
+  timeZone: string,
+  value: Date | string | null | undefined,
+): Date | null | undefined {
   if (value === undefined) return undefined;
   if (value === null || value === "") return null;
+  if (typeof value === "string") {
+    const civil = civilInstant(timeZone, value, 9);
+    if (civil) return civil;
+  }
   const d = value instanceof Date ? value : new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * One end of a date window.
+ *
+ * A bare "2026-03-14" means that whole day where the reader is, so the day at
+ * either end of a window is included rather than half of it. Anything already
+ * carrying a time is an instant and is taken as given — which is how the
+ * calendar screen passes the exact grid it drew.
+ */
+function windowEdge(timeZone: string, value: Date | string, edge: "start" | "end"): Date {
+  if (typeof value === "string") {
+    const civil =
+      edge === "end"
+        ? civilInstant(timeZone, value, 23, 59, 59, 999)
+        : civilInstant(timeZone, value, 0);
+    if (civil) return civil;
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
 /** A resume may only be attached if the same user owns it. */
@@ -934,7 +973,8 @@ export async function createApplication(userId: string, input: ApplicationInput)
     input.companyWebsite ? { website: input.companyWebsite } : undefined,
   );
   const stage = input.stage ?? "WISHLIST";
-  const appliedAt = toDate(input.appliedAt) ?? (stage !== "WISHLIST" ? new Date() : null);
+  const zone = await timeZoneOf(userId);
+  const appliedAt = toDate(zone, input.appliedAt) ?? (stage !== "WISHLIST" ? new Date() : null);
   if (input.resumeId) await assertOwnsResume(userId, input.resumeId);
 
   const application = await db.application.create({
@@ -955,7 +995,7 @@ export async function createApplication(userId: string, input: ApplicationInput)
       },
       notes: input.notes ?? "",
       appliedAt,
-      nextFollowUpAt: toDate(input.nextFollowUpAt) ?? defaultFollowUp(stage),
+      nextFollowUpAt: toDate(zone, input.nextFollowUpAt) ?? defaultFollowUp(zone, stage),
       resumeId: input.resumeId ?? null,
     },
     include: applicationInclude,
@@ -1033,6 +1073,7 @@ export async function updateApplication(
     throw new Error(`"${current.roleTitle}" is in the archive. Restore it before changing it.`);
   }
 
+  const zone = await timeZoneOf(userId);
   const data: Prisma.ApplicationUpdateInput = {};
   if (patch.roleTitle !== undefined) data.roleTitle = patch.roleTitle;
   if (patch.jobUrl !== undefined) data.jobUrl = patch.jobUrl;
@@ -1047,8 +1088,8 @@ export async function updateApplication(
   }
   if (patch.notes !== undefined) data.notes = patch.notes;
   if (patch.sortOrder !== undefined) data.sortOrder = patch.sortOrder;
-  if (patch.appliedAt !== undefined) data.appliedAt = toDate(patch.appliedAt);
-  if (patch.nextFollowUpAt !== undefined) data.nextFollowUpAt = toDate(patch.nextFollowUpAt);
+  if (patch.appliedAt !== undefined) data.appliedAt = toDate(zone, patch.appliedAt);
+  if (patch.nextFollowUpAt !== undefined) data.nextFollowUpAt = toDate(zone, patch.nextFollowUpAt);
   if (patch.resumeId !== undefined) {
     if (patch.resumeId) {
       await assertOwnsResume(userId, patch.resumeId);
@@ -1090,22 +1131,20 @@ const FOLLOW_UP_DAYS: Partial<Record<Stage, number>> = {
   OFFER: 2,
 };
 
-function defaultFollowUp(stage: Stage): Date | null {
+function defaultFollowUp(timeZone: string, stage: Stage): Date | null {
   const days = FOLLOW_UP_DAYS[stage];
   if (!days) return null;
-  return inDays(days);
+  return inDays(timeZone, days);
 }
 
 /**
  * A date N days out at 9am. The hour is the whole point: a follow-up dated
  * "now plus three days" lands mid-afternoon and reads as overdue the morning
- * you meant to do it.
+ * you meant to do it — and nine in the MORNING means nine where the person is,
+ * not nine on whatever machine the instance happens to run on.
  */
-function inDays(days: number): Date {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  date.setHours(9, 0, 0, 0);
-  return date;
+function inDays(timeZone: string, days: number): Date {
+  return atHourInDays(timeZone, days, 9);
 }
 
 /**
@@ -1113,12 +1152,12 @@ function inDays(days: number): Date {
  * nothing moves, which is why logFollowUp exists beside it.
  */
 export async function snoozeFollowUp(userId: string, id: string, days: number) {
-  return updateApplication(userId, id, { nextFollowUpAt: inDays(days) });
+  return updateApplication(userId, id, { nextFollowUpAt: inDays(await timeZoneOf(userId), days) });
 }
 
 /** The same for a person's ping. */
 export async function snoozeContactFollowUp(userId: string, id: string, days: number) {
-  return updateContact(userId, id, { nextFollowUpAt: inDays(days) });
+  return updateContact(userId, id, { nextFollowUpAt: inDays(await timeZoneOf(userId), days) });
 }
 
 /**
@@ -1151,7 +1190,7 @@ export async function logFollowUp(
     type: input.type ?? "FOLLOW_UP",
     body: input.body?.trim() || "Followed up.",
   });
-  const next = inDays(input.days ?? 7);
+  const next = inDays(await timeZoneOf(userId), input.days ?? 7);
   const subject = input.applicationId
     ? await updateApplication(userId, input.applicationId, { nextFollowUpAt: next })
     : await updateContact(userId, input.contactId as string, { nextFollowUpAt: next });
@@ -1177,7 +1216,7 @@ export async function moveApplicationStage(
     data.nextFollowUpAt = null;
   } else {
     data.closedAt = null;
-    data.nextFollowUpAt = defaultFollowUp(stage);
+    data.nextFollowUpAt = defaultFollowUp(await timeZoneOf(userId), stage);
   }
 
   const updated = flattenTags(
@@ -1388,7 +1427,7 @@ export async function addActivity(
       contactId: input.contactId ?? null,
       type: input.type ?? "NOTE",
       body: input.body,
-      occurredAt: toDate(input.occurredAt) ?? new Date(),
+      occurredAt: toDate(await timeZoneOf(userId), input.occurredAt) ?? new Date(),
     },
   });
 }
@@ -1576,7 +1615,7 @@ export async function createTask(
       userId,
       title,
       detail: input.detail ?? "",
-      dueAt: toDate(input.dueAt) ?? null,
+      dueAt: toDate(await timeZoneOf(userId), input.dueAt) ?? null,
       ...subject,
     },
     include: taskSubjectInclude,
@@ -1625,7 +1664,7 @@ export async function updateTask(
     data.title = title;
   }
   if (patch.detail !== undefined) data.detail = patch.detail;
-  if (patch.dueAt !== undefined) data.dueAt = toDate(patch.dueAt);
+  if (patch.dueAt !== undefined) data.dueAt = toDate(await timeZoneOf(userId), patch.dueAt);
   const subject = await taskSubject(userId, patch);
   return db.task.update({
     where: { id },
@@ -1845,7 +1884,9 @@ export async function updateContact(
   }
 
   const data: Prisma.ContactUpdateInput = pick(patch, CONTACT_COLUMNS);
-  if (patch.nextFollowUpAt !== undefined) data.nextFollowUpAt = toDate(patch.nextFollowUpAt);
+  if (patch.nextFollowUpAt !== undefined) {
+    data.nextFollowUpAt = toDate(await timeZoneOf(userId), patch.nextFollowUpAt);
+  }
   // An array is not a column pick: it replaces wholesale, and blank rows from a
   // half-filled form should never reach the database.
   if (patch.otherLinks !== undefined) data.otherLinks = cleanLinks(patch.otherLinks);
@@ -1892,9 +1933,9 @@ export async function deleteContact(userId: string, id: string) {
 
 /** Applications whose follow-up date has arrived (or passed). */
 export async function followUpsDue(userId: string, withinDays = 0) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() + withinDays);
-  cutoff.setHours(23, 59, 59, 999);
+  // The end of THEIR day. On a UTC host this is the difference between a chase
+  // list that empties at midnight where you live and one that empties at 5pm.
+  const cutoff = endOfDay(await timeZoneOf(userId), withinDays);
   return db.application.findMany({
     where: {
       userId,
@@ -1909,9 +1950,7 @@ export async function followUpsDue(userId: string, withinDays = 0) {
 
 /** People whose ping date has arrived (or passed). */
 export async function contactFollowUpsDue(userId: string, withinDays = 0) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() + withinDays);
-  cutoff.setHours(23, 59, 59, 999);
+  const cutoff = endOfDay(await timeZoneOf(userId), withinDays);
   const contacts = await db.contact.findMany({
     where: { userId, archivedAt: null, nextFollowUpAt: { lte: cutoff } },
     orderBy: { nextFollowUpAt: "asc" },
@@ -1956,9 +1995,7 @@ export async function dueNow(
   withinDays = 0,
 ): Promise<{ followUps: DueItem[]; pings: DueItem[]; tasks: DueItem[]; total: number }> {
   const now = new Date();
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() + withinDays);
-  cutoff.setHours(23, 59, 59, 999);
+  const cutoff = endOfDay(await timeZoneOf(userId), withinDays);
   const late = (date: Date | null) => date !== null && date < now;
 
   const [applications, contacts, tasks] = await Promise.all([
@@ -2066,8 +2103,12 @@ export async function listSchedule(
   from: Date | string,
   to: Date | string,
 ): Promise<ScheduleEntry[]> {
-  const start = toDate(from) ?? new Date();
-  const end = toDate(to) ?? new Date();
+  // A window given as bare dates is the reader's own days: "the 1st to the 7th"
+  // covers both of those days end to end, where they are — not from 5pm on the
+  // 31st to 4pm on the 7th, which is what UTC midnight would mean in Chicago.
+  const zone = await timeZoneOf(userId);
+  const start = windowEdge(zone, from, "start");
+  const end = windowEdge(zone, to, "end");
   const range = { gte: start, lte: end };
 
   const [followUps, contactPings, tasks, activities] = await Promise.all([
@@ -2420,17 +2461,20 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
   });
 
   // --- velocity: six weeks back, Monday-anchored ----------------------------
+  // Anchored to the reader's Monday, not the server's: a week boundary drawn in
+  // UTC puts Sunday evening in Los Angeles into the week that has not started.
   const now = new Date();
-  const monday = new Date(now);
-  monday.setUTCHours(0, 0, 0, 0);
-  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+  const zone = await timeZoneOf(userId);
+  const monday = startOfWeek(zone, now);
+  const weeks = Array.from({ length: 7 }, (_, i) =>
+    // Step in civil days so a week containing a clock change is still a week.
+    atHourInDays(zone, (i - 5) * 7, 0, monday),
+  );
   const velocity = Array.from({ length: 6 }, (_, i) => {
-    const start = new Date(monday);
-    start.setUTCDate(start.getUTCDate() - (5 - i) * 7);
-    const end = new Date(start);
-    end.setUTCDate(end.getUTCDate() + 7);
+    const start = weeks[i];
+    const end = weeks[i + 1];
     return {
-      weekStart: start.toISOString().slice(0, 10),
+      weekStart: civilDay(start, zone),
       count: applications.filter(
         (application) =>
           application.appliedAt !== null &&
@@ -2592,6 +2636,9 @@ function verdict(
 }
 
 export async function pipelineStats(userId: string) {
+  // "This week" is the reader's week. Read before the counts rather than inside
+  // them so all ten queries still go out together.
+  const weekStart = startOfWeek(await timeZoneOf(userId));
   const [byStage, total, active, thisWeek, interviews, screening, offers, tasksOpen, followUps, flow] =
     await Promise.all([
       // Archived applications leave the funnel with everything else. Half of
@@ -2613,7 +2660,7 @@ export async function pipelineStats(userId: string) {
         where: { userId, archivedAt: null, stage: { notIn: [...TERMINAL_STAGES, "WISHLIST"] } },
       }),
       db.application.count({
-        where: { userId, archivedAt: null, appliedAt: { gte: startOfWeek() } },
+        where: { userId, archivedAt: null, appliedAt: { gte: weekStart } },
       }),
       db.application.count({
         where: { userId, archivedAt: null, stage: { in: ["INTERVIEW", "FINAL"] } },
@@ -2661,14 +2708,6 @@ export async function pipelineStats(userId: string) {
      */
     responseRateBasis: applied,
   };
-}
-
-function startOfWeek() {
-  const d = new Date();
-  const day = (d.getDay() + 6) % 7; // Monday-first
-  d.setDate(d.getDate() - day);
-  d.setHours(0, 0, 0, 0);
-  return d;
 }
 
 function clamp(value: number, min: number, max: number) {

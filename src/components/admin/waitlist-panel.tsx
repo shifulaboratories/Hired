@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SectionEmpty } from "@/components/page-header";
 import { relativeDay } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
 import { inviteFromWaitlistAction, removeWaitlistSignupAction } from "@/server/actions";
 
 type Entry = {
@@ -32,6 +33,7 @@ type Entry = {
 };
 
 export function WaitlistPanel({ entries }: { entries: Entry[] }) {
+  const zone = useViewerZone();
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [invited, setInvited] = useState<Set<string>>(new Set());
   const [lastLink, setLastLink] = useState<string | null>(null);
@@ -85,8 +87,8 @@ export function WaitlistPanel({ entries }: { entries: Entry[] }) {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{item.email}</div>
                   <div className="text-muted-foreground truncate text-xs">
-                    asked {relativeDay(new Date(item.createdAt))}
-                    {item.invitedAt && ` · invited ${relativeDay(new Date(item.invitedAt))}`}
+                    asked {relativeDay(new Date(item.createdAt), zone)}
+                    {item.invitedAt && ` · invited ${relativeDay(new Date(item.invitedAt), zone)}`}
                   </div>
                 </div>
                 <Button
@@ -120,6 +122,7 @@ function Row({
   onInvited: (acceptUrl: string) => void;
   onRemoved: () => void;
 }) {
+  const zone = useViewerZone();
   const [pending, startTransition] = useTransition();
 
   const invite = () =>
@@ -154,7 +157,7 @@ function Row({
           </div>
           {entry.context && <p className="text-muted-foreground text-xs">{entry.context}</p>}
           <div className="text-muted-foreground truncate text-xs">
-            asked {relativeDay(new Date(entry.createdAt))}
+            asked {relativeDay(new Date(entry.createdAt), zone)}
             {entry.source && ` · from ${entry.source}`}
           </div>
         </div>
