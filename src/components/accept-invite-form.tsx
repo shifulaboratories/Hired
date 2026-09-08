@@ -38,6 +38,17 @@ export function AcceptInviteForm({
           : `${inviter} invited you. Pick a password and you're in.`
       }
     >
+      {/* What this actually is.
+          Somebody arriving here got a link in an email from a friend and has
+          never heard of the product. The card told them who invited them and
+          asked for a password, and nothing on the way in ever said what they
+          were signing up to — which is a strange thing to ask of a person, and
+          the sort of thing they close the tab over. One sentence, before the
+          fields, in the words the tour uses on the other side of the door. */}
+      <motion.p variants={authRise} className="text-muted-foreground -mt-2 mb-5 text-[13px] leading-relaxed">
+        It keeps a job search in one place: every job you go for, everything you have ever done,
+        and the resumes you build out of it.
+      </motion.p>
       {/* No token travels with this. The callback finds the outstanding
           invitation by the verified email Google hands back, so the button is
           the same one as on the sign-in page and cannot accept an invitation

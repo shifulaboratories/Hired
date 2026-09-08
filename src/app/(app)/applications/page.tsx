@@ -362,6 +362,7 @@ export default async function ApplicationsPage({
         desc={desc}
         fields={[...visibleFields("list", profile.listFields)]}
         widths={parseWidths(profile.columnWidths)}
+        narrowed={hasAnyFilter(filters)}
       />,
     );
   }

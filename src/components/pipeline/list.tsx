@@ -173,6 +173,7 @@ export function PipelineList({
   desc,
   fields,
   widths,
+  narrowed,
 }: {
   rows: ListRow[];
   sort: ListSort;
@@ -181,6 +182,9 @@ export function PipelineList({
   fields: string[];
   /** Stored column widths, already parsed and clamped by the server. */
   widths: StoredWidths;
+  /** Whether a filter or a search is narrowing this, which changes what an
+   * empty table means — and the page above is the only thing that knows. */
+  narrowed: boolean;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const params = useSearchParams();
@@ -210,9 +214,16 @@ export function PipelineList({
     );
 
   if (rows.length === 0) {
+    // "Nothing tracked yet" was hard-coded here, and on a filtered table it was
+    // simply untrue: twenty-five applications on file, a search that matched
+    // none of them, and a message saying the workspace was empty. The page
+    // short-circuits the genuinely-empty case before this ever renders, so the
+    // only question left is whether the person can see the way out.
     return (
       <div className="text-faint rounded-xl border border-dashed py-16 text-center text-[13px]">
-        Nothing tracked yet.
+        {narrowed
+          ? "Nothing matches. Clear the search or the filters to see everything again."
+          : "Nothing tracked yet."}
       </div>
     );
   }

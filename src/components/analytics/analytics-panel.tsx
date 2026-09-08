@@ -107,13 +107,32 @@ export async function AnalyticsPanel({ userId }: { userId: string }) {
           value={stats.active}
           hint={`${stats.total} tracked all-time`}
         />
-        <StatCard
-          icon={TrendingUpIcon}
-          label="Response rate"
-          value={stats.responseRate}
-          suffix="%"
-          hint={`${stats.interviews} in interviews`}
-        />
+        {/* A percentage is a verdict, and at three applications it is a verdict
+            on nothing. This used to read "Response rate 0%" in 26px directly
+            above a card saying "Too early to tell you anything useful" — the
+            two disagreeing, and the big one winning, on the screen where
+            somebody who has done exactly the right thing goes to see how they
+            are doing. `confident` is the diagnosis's own rule (ten applications
+            in), reused rather than re-decided: one threshold, one place. */}
+        {diagnosis.confident ? (
+          <StatCard
+            icon={TrendingUpIcon}
+            label="Response rate"
+            value={stats.responseRate}
+            suffix="%"
+            hint={`${stats.interviews} in interviews`}
+          />
+        ) : (
+          <QuietStat
+            icon={TrendingUpIcon}
+            label="Response rate"
+            hint={
+              stats.interviews > 0
+                ? `${stats.interviews} in interviews. A rate needs about ten applications behind it.`
+                : "Needs about ten applications behind it to mean anything."
+            }
+          />
+        )}
         <StatCard
           icon={FlameIcon}
           label="Applied this week"
@@ -207,6 +226,40 @@ export async function AnalyticsPanel({ userId }: { userId: string }) {
         </FadeIn>
       </div>
     </div>
+  );
+}
+
+/**
+ * A number that is not worth showing yet.
+ *
+ * Same box, same weight, an em dash where the figure goes. Hiding the card
+ * would be worse: the row would reflow as soon as the tenth application landed,
+ * and somebody would wonder what they had done to make a card appear.
+ */
+function QuietStat({
+  icon: Icon,
+  label,
+  hint,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <StaggerItem>
+      <Card className="relative overflow-hidden">
+        <CardContent className="relative px-4 pt-3.5 pb-3.5">
+          <div className="flex items-center gap-1.5">
+            <Icon className="text-faint size-3.5" />
+            <span className="text-muted-foreground meta text-[11px] font-medium">{label}</span>
+          </div>
+          <div className="text-faint nums mt-1.5 text-[26px] leading-none font-semibold tracking-tight">
+            &mdash;
+          </div>
+          <p className="text-faint mt-1.5 text-[11.5px]">{hint}</p>
+        </CardContent>
+      </Card>
+    </StaggerItem>
   );
 }
 
