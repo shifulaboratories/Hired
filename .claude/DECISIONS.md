@@ -4983,6 +4983,111 @@ marked and unmarked lines is how one wrapped bullet becomes two.
 changed — `import_resume` already takes bullets, and the heuristic parser is the browser's
 fallback for someone who has connected nothing, never a path an assistant takes.
 
+---
+
+## 2026-09-08 — A welcome tour, because most people arriving have never tracked a job search
+
+**The audience does not know the words.** Board, pipeline, stage, CRM — every screen in
+this app assumes a vocabulary that most people looking for a job have never used. The setup
+strip told them what to *do* and nothing about what any of it *was*, and its first step was
+"copy your private connection URL and add it as a custom connector", which is where a
+non-technical person closes the tab.
+
+So: a five-card tour that opens over whatever screen you land on. One picture and one
+sentence a card, teaching four words — board, Today, Me, assistant. No forms, no accounts to
+link, no decisions. If a card ever needs a paragraph, the app needs fixing, not the
+paragraph.
+
+**Skippable from the first frame, and closing counts.** Skip, the X, Escape and the overlay
+all write `tourSeenAt` — one write for finishing and for leaving, because somebody who
+closed it on card two has decided, and asking again tomorrow is the behaviour everyone
+hates. That is only safe because it is recoverable: Settings → Account → Show it again, and
+`restart_tour` over MCP for the person who says out loud that they are lost.
+
+**Only half of it is a tool, deliberately.** `restart_tour` exists because "show me that
+again" is a real request. Marking it seen has no tool and should not get one: it is a person
+closing a dialog in their own browser, which is the direct-manipulation exception rather
+than a parity gap. `get_setup_status` reports `tourSeenAt` instead, and a null there is a
+strong hint to an assistant that it is talking to somebody who has not been shown around.
+
+**The pictures are rectangles, not screenshots.** A screenshot is stale within a release,
+and a person who has never seen the app cannot tell a stale one from a current one. Each
+drawing is the *shape* of the screen it stands for — four columns and a card moving right,
+a list with a due chip, a pile of text becoming one page — recognisable from across the
+room and immune to the real screen moving.
+
+**`w-auto` on the art pushed the dialog off the side of a phone.** A 220×110 viewBox in a
+176px-tall box asks for 352px of width; plus padding that is wider than a 390px screen, and
+the buttons were clipped. Fitting to the box in both directions letterboxes instead. Found
+by driving a 390px viewport — nothing about the desktop render hinted at it.
+
+**The setup strip changed order and voice.** Easiest first: a job on the board (needs
+nothing), then the resume paste, then connecting an assistant — the most powerful step and
+the one most likely to stop somebody, so it is no longer standing between them and their
+first useful minute. Its copy lost "MCP", "custom connector" and "the pipeline".
+
+**Skipping is per person, and every existing account gets the tour once.** `tourSeenAt` is
+nullable on Profile with no backfill, which is the right default for a feature whose whole
+job is to explain what the app is.
+
+**Verified** against a real Postgres with the migration applied: the five cards walked end
+to end, gone after finishing, still gone after a reload, back from Settings, back from
+`restart_tour` over the real MCP transport, and Escape counted as seen. Separately on a
+brand-new account with no Profile row at all (the upsert's create branch) at 390px wide, and
+`get_setup_status` reporting `tourSeenAt` both ways. Typecheck, build, `gen-tool-docs
+--check` and `migrate diff --exit-code` clean; seven unfiltered archivable reads, the
+documented set.
+
+**Applies to:** `prisma/schema.prisma`,
+`prisma/migrations/20250131000000_welcome_tour/`, `src/lib/data/onboarding.ts`,
+`src/components/onboarding/welcome-tour.tsx`, `src/components/dashboard/setup-strip.tsx`,
+`src/components/settings/account-panel.tsx`, `src/app/(app)/layout.tsx`,
+`src/lib/mcp/tools.ts`, `src/server/actions.ts`, `README.md`, `docs/app.mdx`.
+
+---
+
+## 2026-09-08 — What a screen says when there is nothing on it, and what Settings shows first
+
+Walking the app as a genuinely empty account — a real user with a real login and no
+data — turned up three screens that told a beginner nothing, and one that told them far
+too much.
+
+**The empty pipeline drew seven columns saying "Empty" under eight controls that all did
+nothing**: a filter menu with nothing to filter, an export with nothing to export, a share
+link to an empty board. It is the screen the welcome tour has just promised, and it read as
+a broken one. A workspace with nothing tracked now gets one sentence and one button.
+
+**"Nothing tracked" and "the filter matched nothing" look identical and are not.** The
+second still needs the whole toolbar, because that is how you undo the filter — so the
+first-run state is gated on `everyApplication.length === 0 && !hasAnyFilter(filters)`, never
+on the visible rows. Archiving the last application lands in the same branch, so the archive
+note stays under it and there is still a way back.
+
+**Me's roles tab had the words and no button.** Getting in meant noticing a small Import in
+the top corner. It offers both paths now and leads with pasting a resume, which takes a
+minute rather than an afternoon. They are links to `?import=1` and `?new=role`, which the
+page's own dialogs already open — the same thing the setup strip links to, rather than a
+second copy of a dialog.
+
+**Settings → Connections is where "let Claude do the typing" sends somebody, and the
+skills panel dwarfed it.** Three files' worth of `~/.claude/skills/<name>/SKILL.md`, zip
+uploads and folder paths, open by default, above the fold — while the actual task was one
+quiet row that looked like a status line. The skills are folded into a `<details>` now (a
+server component, so no state, and the content stays in the page for ⌘F), and a workspace
+where nothing has ever called in gets one line saying what connecting buys and a button
+that opens the panel. The instructions inside that panel were always good; the problem was
+only ever reaching them.
+
+**Verified** in a browser against a real Postgres on a genuinely empty account: the three
+empty screens, both buttons opening their dialogs, the nudge opening the setup panel, the
+skills opening on click — plus the two cases that must NOT change, a filter matching nothing
+(toolbar kept, first-run state suppressed) and a workspace with data (board unchanged), and
+the nudge correctly absent once something has connected.
+
+**Applies to:** `src/app/(app)/applications/page.tsx`, `src/components/me/roles-panel.tsx`,
+`src/components/settings/skills-panel.tsx`,
+`src/components/settings/connections-panel.tsx`, `docs/app.mdx`.
+
 ## 2026-09-08 — The preview was a picture; now it is an index into the form
 
 Clicking a line on the paper opens the card that holds it and focuses the field that produced

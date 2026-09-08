@@ -1,4 +1,4 @@
-import { SparklesIcon } from "lucide-react";
+import { ChevronDownIcon, SparklesIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CopyBlock } from "@/components/settings/copy-block";
 import type { Skill } from "@/lib/skills";
@@ -15,18 +15,33 @@ import type { Skill } from "@/lib/skills";
  *
  * Connections is the right home for what is left. Installing a skill is part of
  * setting an assistant up, not part of reading about one.
+ *
+ * Folded away, though. This is the one block on the page that talks about file
+ * paths and zip uploads, and open by default it was three times the height of
+ * the connection row a new person actually came here to click — which made
+ * "connect an assistant" look like a job for somebody who knows what
+ * `~/.claude/skills/` means. A `<details>` rather than state: this is a server
+ * component, the browser already knows how to do this, and the whole panel
+ * stays in the page for anyone searching it with ⌘F.
  */
 export function SkillsPanel({ skills }: { skills: Skill[] }) {
   if (skills.length === 0) return null;
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-[15px]">
-          <SparklesIcon className="text-muted-foreground size-4" /> Skills
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4 text-[13.5px] leading-relaxed">
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center gap-3 px-6 py-5 [&::-webkit-details-marker]:hidden">
+          <SparklesIcon className="text-muted-foreground size-4 shrink-0" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-semibold tracking-tight">Skills</span>
+            <span className="text-muted-foreground block text-[13px]">
+              Optional. {skills.length} file{skills.length === 1 ? "" : "s"} that teach Claude how
+              to behave before you ask it anything — worth it once you are connected.
+            </span>
+          </span>
+          <ChevronDownIcon className="text-faint size-4 shrink-0 transition-transform duration-200 group-open:rotate-180" />
+        </summary>
+      <CardContent className="space-y-4 pt-1 text-[13.5px] leading-relaxed">
         <p className="text-muted-foreground">
           A skill is a file that teaches Claude how to behave before you ask it anything. The ones
           below ship with your instance. The first is the one to install if you install only one —
@@ -77,6 +92,7 @@ export function SkillsPanel({ skills }: { skills: Skill[] }) {
           ))}
         </div>
       </CardContent>
+      </details>
     </Card>
   );
 }

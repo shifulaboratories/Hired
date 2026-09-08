@@ -1,7 +1,14 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
-import { CheckIcon, LoaderCircleIcon, LogOutIcon, UserRoundIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  CheckIcon,
+  GraduationCapIcon,
+  LoaderCircleIcon,
+  LogOutIcon,
+  UserRoundIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +20,7 @@ import { PhotoField } from "@/components/settings/photo-field";
 import {
   changeOwnPasswordAction,
   logoutAction,
+  restartTourAction,
   unlinkGoogleAction,
   updateOwnAccountAction,
 } from "@/server/actions";
@@ -144,6 +152,10 @@ export function AccountPanel({
 
         <Separator />
 
+        <ShowTourAgain />
+
+        <Separator />
+
         <form action={logoutAction}>
           <Button type="submit" variant="ghost" size="sm" className="text-muted-foreground">
             <LogOutIcon /> Sign out
@@ -151,6 +163,44 @@ export function AccountPanel({
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Bring the welcome tour back.
+ *
+ * Here rather than under Appearance because it is about you, not about how the
+ * app looks — and because Settings → Account is where somebody who is lost
+ * actually goes looking. The tour mounts in the app layout, so `router.refresh`
+ * is enough to make it appear: no navigation, no reload, and it is on screen
+ * before the toast has faded.
+ */
+function ShowTourAgain() {
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-[13px] font-medium">The welcome tour</div>
+        <p className="text-muted-foreground text-[12.5px]">
+          A short walk through what the board, Me and the assistant are for.
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={pending}
+        onClick={() =>
+          startTransition(async () => {
+            await restartTourAction();
+            router.refresh();
+          })
+        }
+      >
+        {pending ? <LoaderCircleIcon className="animate-spin" /> : <GraduationCapIcon />}
+        Show it again
+      </Button>
+    </div>
   );
 }
 

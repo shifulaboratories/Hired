@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import type { Stage } from "@prisma/client";
-import { PageHeader, PageShell } from "@/components/page-header";
+import { EmptyState, PageHeader, PageShell } from "@/components/page-header";
 import {
   applicationFieldValues,
   BOARD_STAGES,
@@ -17,7 +17,7 @@ import { getProfile } from "@/lib/data/me";
 import { parseWidths } from "@/lib/column-widths";
 import { FieldsMenu } from "@/components/pipeline/fields-menu";
 import { Button } from "@/components/ui/button";
-import { DownloadIcon } from "lucide-react";
+import { DownloadIcon, KanbanIcon } from "lucide-react";
 import { visibleFields } from "@/lib/pipeline-fields";
 import { ArchiveNote } from "@/components/archive/archive-note";
 import { PipelineBoard } from "@/components/pipeline/board";
@@ -191,6 +191,43 @@ export default async function ApplicationsPage({
     ],
     stages: counts.byStage,
   };
+
+  // Nothing has ever been tracked here — which is not the same as "no results",
+  // and the difference decides what to draw. A filter that matched nothing needs
+  // the toolbar kept so you can undo it. A workspace with nothing in it needs
+  // the opposite: seven columns saying Empty under eight controls that all do
+  // nothing is what somebody's first visit used to look like, and it reads as a
+  // broken screen rather than an invitation.
+  if (everyApplication.length === 0 && !hasAnyFilter(filters)) {
+    return (
+      <PageShell>
+        <PageHeader
+          eyebrow="Pipeline"
+          title="Every conversation in flight"
+          description="One card per job you are going for. Move it along as things happen, and the follow-up dates set themselves."
+        />
+        <EmptyState
+          icon={KanbanIcon}
+          title="Nothing on the board yet"
+          description="Add the first job you are going for — paste the posting and the form fills itself in. One is enough for the board, the reminders and the chart to start working."
+          action={
+            <NewApplicationDialog
+              fieldValues={fieldValues}
+              resumes={resumes.map((resume) => ({ id: resume.id, name: resume.name }))}
+              tagOptions={tagOptions.map((tag) => ({
+                id: tag.id,
+                name: tag.name,
+                color: tag.color,
+                count: tag._count.applications + tag._count.companies + tag._count.contacts,
+              }))}
+            />
+          }
+        />
+        {/* Archiving the last one lands here too, so the way back has to stay. */}
+        <ArchiveNote kind="application" count={bin.application} />
+      </PageShell>
+    );
+  }
 
   const chrome = (content: React.ReactNode) => (
     <ApplicationPanelProvider>
