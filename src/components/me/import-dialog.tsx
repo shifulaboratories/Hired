@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { parseResumeText, type ParseNote } from "@/lib/resume-parse";
-import { importResumeAction } from "@/server/actions";
+import { buildBaseResumeAction, importResumeAction } from "@/server/actions";
 import type { ResumeImport } from "@/lib/data/me";
 
 /**
@@ -40,7 +40,7 @@ import type { ResumeImport } from "@/lib/data/me";
  * and calls import_resume — and the dialog says so, because a person who
  * connects Claude once never needs this screen again.
  */
-export function ImportDialog() {
+export function ImportDialog({ hasResumes = false }: { hasResumes?: boolean }) {
   const router = useRouter();
   const params = useSearchParams();
   const [open, setOpen] = useState(false);
@@ -126,6 +126,26 @@ export function ImportDialog() {
         setText("");
         setDraft(null);
         router.refresh();
+
+        // The point of pasting a resume is having a resume. Somebody with none
+        // is put in front of one built from what just landed; somebody who
+        // already has documents is topping up their material, and being thrown
+        // into a new one would be the app deciding what they came for.
+        if (created > 0 || merged.length > 0) {
+          if (!hasResumes) {
+            const base = await buildBaseResumeAction();
+            router.push(`/resumes/${base.id}`);
+          } else {
+            toast.message("Want a resume from this?", {
+              action: {
+                label: "Build one",
+                onClick: () => {
+                  void buildBaseResumeAction().then((base) => router.push(`/resumes/${base.id}`));
+                },
+              },
+            });
+          }
+        }
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Could not import that.");
       }

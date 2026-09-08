@@ -5384,3 +5384,26 @@ meant, and it is the sort of thing you notice in a PDF a week later.
 **Applies to:** `src/lib/data/resumes.ts` (`entryFromRole`, `addRoleToResume`),
 `src/lib/mcp/tools.ts` (`add_role_to_resume`), `src/server/actions.ts`,
 `src/app/(app)/resumes/[id]/page.tsx`, `src/components/resume/resume-editor.tsx`.
+
+## 2026-09-08 — The point of pasting a resume is having a resume
+
+Importing left you on the Me page with a toast. The reason someone pastes a resume is to end
+up with one they can send, and the app made them go and find that out for themselves. An
+import that found jobs now finishes somewhere useful.
+
+**Which "somewhere" depends on what they already have, and that is the whole design.** With no
+resumes on file, the import builds one from what just landed and opens it — that is what they
+came for. With documents already on file, it stays where it is and offers a button, because
+someone re-importing is topping up their material, and being thrown into a fresh draft would
+be the app deciding what they meant. The page already counted resumes for the tab strip, so
+knowing which case this is cost nothing.
+
+**Reuse-before-create moved down.** `import_resume`'s `create_base_resume` had that logic
+inline in `tools.ts`, and the dialog needed the same rule: never mint a second document called
+"Base resume". It is `ensureBaseResume` in the data layer now, which is where a rule about the
+data belongs, and both callers get the same answer including whether it made one or found one.
+
+**Applies to:** `src/lib/data/resumes.ts` (`ensureBaseResume`), `src/lib/mcp/tools.ts`,
+`src/server/actions.ts`, `src/components/me/import-dialog.tsx`,
+`src/app/(app)/me/page.tsx`. No tool count change — `create_base_resume` already existed and
+now shares its implementation.

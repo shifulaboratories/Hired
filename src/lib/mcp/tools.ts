@@ -1307,19 +1307,9 @@ export const tools: McpTool[] = [
       );
 
       if (b(args, "create_base_resume")) {
-        // Reuse before create, so a retried or repeated call cannot mint
-        // "Base resume" twice — the idempotent hint has to hold for the
-        // whole call, not just the Me half.
-        const existing = (await resumes.listResumes(ctx.userId)).find(
-          (resume) => resume.name === "Base resume",
-        );
-        const base =
-          existing ??
-          (await resumes.createResume(ctx.userId, { name: "Base resume", seedFromMe: true }));
-        return {
-          ...result,
-          baseResume: { id: base.id, name: base.name, created: !existing },
-        };
+        // Reuse before create lives in the data layer, because the import
+        // dialog does the same thing at the end of the same flow.
+        return { ...result, baseResume: await resumes.ensureBaseResume(ctx.userId) };
       }
       return result;
     },

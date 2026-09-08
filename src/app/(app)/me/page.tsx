@@ -83,7 +83,7 @@ export default async function MePage({
         // wanting one. The second button follows the tab.
         actions={
           <>
-            <ImportDialog />
+            <ImportDialog hasResumes={resumeCount > 0} />
             {active === "resumes" ? (
               <NewResumeDialog hasMaterial={roleCount > 0} />
             ) : (

@@ -603,6 +603,10 @@ on the field it guessed about, rather than as a warning at the top you'd have to
 with. The whole document is filed as a note either way, so anything it missed stays
 searchable.
 
+Importing ends where it should: if you had no resume, it builds one from what just landed and
+opens it. If you already have documents, it stays where it is and offers — topping up your
+material isn't the same as wanting a new draft, and the app shouldn't decide which you meant.
+
 PDFs are deliberately not read directly: a two-column layout comes out interleaved, and a
 wrong parse you can't see is worse than a paste.
 

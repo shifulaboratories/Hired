@@ -420,6 +420,21 @@ export async function evidenceSources(userId: string, limit = 400) {
  * already in the document is refused rather than doubled: two identical entries
  * is never what anyone meant, and the error says where the existing one is.
  */
+/**
+ * The draft somebody gets for free once their history is in.
+ *
+ * Reuse before create, so calling this twice — a retried tool call, a second
+ * import, a person pressing the button again — cannot mint two documents called
+ * "Base resume". Says whether it made one, because "here is your resume" and
+ * "here is the resume you already had" are different sentences.
+ */
+export async function ensureBaseResume(userId: string, name = "Base resume") {
+  const existing = (await listResumes(userId)).find((resume) => resume.name === name);
+  if (existing) return { id: existing.id, name: existing.name, created: false };
+  const made = await createResume(userId, { name, seedFromMe: true });
+  return { id: made.id, name: made.name, created: true };
+}
+
 export async function addRoleToResume(
   userId: string,
   resumeId: string,

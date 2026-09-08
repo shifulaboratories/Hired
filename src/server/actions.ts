@@ -925,6 +925,20 @@ export async function deleteResumeAction(id: string, redirectAfter = true) {
  * with what actually landed, and the two cannot drift apart. Everything else in
  * the editor goes through commit() the same way, undo included.
  */
+/**
+ * The draft you get once your history is in — made, or the one you already had.
+ *
+ * The same call `import_resume`'s create_base_resume makes, so the button at the
+ * end of the import dialog and the assistant doing it in one shot cannot end up
+ * with different documents.
+ */
+export async function buildBaseResumeAction() {
+  const user = await requireUser();
+  const base = await resumes.ensureBaseResume(user.id);
+  revalidatePath("/me");
+  return base;
+}
+
 export async function addRoleToResumeAction(
   resumeId: string,
   role: string,
