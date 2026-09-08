@@ -3,7 +3,13 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
-import { DownloadIcon, LoaderCircleIcon, TriangleAlertIcon } from "lucide-react";
+import {
+  DownloadIcon,
+  LoaderCircleIcon,
+  PlusIcon,
+  Trash2Icon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { parseResumeText } from "@/lib/resume-parse";
+import { parseResumeText, type ParseNote } from "@/lib/resume-parse";
 import { importResumeAction } from "@/server/actions";
 import type { ResumeImport } from "@/lib/data/me";
 
@@ -42,6 +48,7 @@ export function ImportDialog() {
   const [draft, setDraft] = useState<ResumeImport | null>(null);
   const [source, setSource] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [notes, setNotes] = useState<ParseNote[]>([]);
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -71,7 +78,17 @@ export function ImportDialog() {
     setDraft(result.draft);
     setSource(result.sourceText);
     setWarnings(result.warnings);
+    setNotes(result.notes);
   };
+
+  /**
+   * What the parser is unsure about at this exact field.
+   *
+   * The notes are keyed by where the doubt is, so they can sit under the input
+   * rather than in a list at the top: a warning that says "check the employer
+   * on one of these" is a warning you have to go hunting with.
+   */
+  const noteAt = (path: string) => notes.find((note) => note.path === path)?.message;
 
   const commit = () => {
     if (!draft) return;
@@ -102,6 +119,22 @@ export function ImportDialog() {
             ...current,
             roles: (current.roles ?? []).map((role, position) =>
               position === index ? { ...role, ...patch } : role,
+            ),
+          }
+        : current,
+    );
+  };
+
+  const editBullets = (
+    index: number,
+    change: (bullets: { text: string }[]) => { text: string }[],
+  ) => {
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            roles: (current.roles ?? []).map((role, position) =>
+              position === index ? { ...role, bullets: change(role.bullets ?? []) } : role,
             ),
           }
         : current,
@@ -175,6 +208,7 @@ export function ImportDialog() {
                         value={role.company}
                         onChange={(event) => editRole(index, { company: event.target.value })}
                       />
+                      <FieldNote message={noteAt(`roles.${index}.company`)} />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[11px]">Title</Label>
@@ -182,6 +216,7 @@ export function ImportDialog() {
                         value={role.title}
                         onChange={(event) => editRole(index, { title: event.target.value })}
                       />
+                      <FieldNote message={noteAt(`roles.${index}.title`)} />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[11px]">From</Label>
@@ -190,6 +225,7 @@ export function ImportDialog() {
                         placeholder="2021-03"
                         onChange={(event) => editRole(index, { startDate: event.target.value })}
                       />
+                      <FieldNote message={noteAt(`roles.${index}.startDate`)} />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[11px]">To</Label>
@@ -205,19 +241,65 @@ export function ImportDialog() {
                       />
                     </div>
                   </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className="text-faint text-[11.5px]">
-                      {role.bullets?.length ?? 0} bullet
-                      {(role.bullets?.length ?? 0) === 1 ? "" : "s"}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      className="text-muted-foreground hover:text-destructive ml-auto"
-                      onClick={() => dropRole(index)}
-                    >
-                      Leave this one out
-                    </Button>
+                  {/* The bullets are the point of the document, and a count of
+                      them tells you nothing about whether they were read
+                      right. They are the parser's shakiest output, so they are
+                      the thing most worth putting in front of someone. */}
+                  <div className="mt-2.5 space-y-1.5">
+                    <Label className="text-[11px]">
+                      What it read under this job
+                      {(role.bullets?.length ?? 0) === 0 && (
+                        <span className="text-faint font-normal"> — nothing</span>
+                      )}
+                    </Label>
+                    <FieldNote message={noteAt(`roles.${index}.bullets`)} />
+                    {(role.bullets ?? []).map((bullet, position) => (
+                      <div key={position} className="flex items-start gap-1.5">
+                        <span className="bg-muted-foreground/40 mt-3 size-1 shrink-0 rounded-full" />
+                        <Textarea
+                          value={bullet.text}
+                          rows={1}
+                          className="min-h-0 py-1.5 text-[12.5px]"
+                          onChange={(event) =>
+                            editBullets(index, (bullets) =>
+                              bullets.map((one, at) =>
+                                at === position ? { text: event.target.value } : one,
+                              ),
+                            )
+                          }
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-muted-foreground hover:text-destructive mt-0.5 shrink-0"
+                          aria-label="Leave this bullet out"
+                          onClick={() =>
+                            editBullets(index, (bullets) =>
+                              bullets.filter((_, at) => at !== position),
+                            )
+                          }
+                        >
+                          <Trash2Icon />
+                        </Button>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => editBullets(index, (bullets) => [...bullets, { text: "" }])}
+                      >
+                        <PlusIcon /> Bullet
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="text-muted-foreground hover:text-destructive ml-auto"
+                        onClick={() => dropRole(index)}
+                      >
+                        Leave this one out
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -249,5 +331,22 @@ export function ImportDialog() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * A parser doubt, under the field it doubts.
+ *
+ * Deliberately quiet: this is not an error, it is the parser saying which of
+ * its guesses is worth a second look. Nothing here is wrong until the person
+ * says it is.
+ */
+function FieldNote({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <p className="text-muted-foreground flex gap-1.5 text-[11.5px] leading-snug">
+      <TriangleAlertIcon className="mt-0.5 size-3 shrink-0 text-[var(--warning)]" />
+      {message}
+    </p>
   );
 }

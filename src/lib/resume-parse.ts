@@ -17,6 +17,18 @@ import type { ResumeImport, ResumeImportRole } from "@/lib/data/me";
  * text" and means it.
  */
 
+/**
+ * One thing the parser is unsure about, tied to the field it is unsure about.
+ *
+ * A list of warnings above the form tells you something is wrong somewhere; a
+ * note on the field tells you where to look. `path` addresses the draft the
+ * way a person would read it: "roles.2.company", "roles.2.bullets".
+ */
+export type ParseNote = {
+  path: string;
+  message: string;
+};
+
 export type ParsedResume = {
   /** Exactly the shape importResume takes. */
   draft: ResumeImport;
@@ -24,8 +36,10 @@ export type ParsedResume = {
   sourceText: string;
   /** Lines it could not place. Never dropped — sourceText still carries them. */
   unparsed: string[];
-  /** Plain sentences for the dialog: what it guessed, what it could not read. */
+  /** What it could not read at all, about the document as a whole. */
   warnings: string[];
+  /** Where it guessed, on the field it guessed about. */
+  notes: ParseNote[];
 };
 
 type Section =
@@ -114,19 +128,45 @@ function parseDates(line: string) {
   };
 }
 
+/** Words that make a line read as a job rather than an employer. */
+const TITLE_WORDS =
+  /\b(engineer|manager|director|designer|analyst|lead|head|intern|consultant|founder|vp|president|officer|scientist|developer|architect|principal|staff|senior|junior|associate|specialist|coordinator|administrator|editor|writer|researcher|partner|chief|cto|ceo|cfo|coo)\b/i;
+
+/**
+ * Which of two halves is the job and which is the employer.
+ *
+ * Both orders are common — "Staff Engineer, Stripe" and "Stripe — Staff
+ * Engineer" — and reading them positionally got the second backwards every
+ * time, which is the worst thing this parser can do quietly: it files your
+ * whole career under employers named after your job titles. When exactly one
+ * half reads like a job, that settles it. When neither does or both do, order
+ * decides and the field says it was a guess.
+ */
+function pickTitleAndCompany(first: string, second: string) {
+  const firstIsTitle = TITLE_WORDS.test(first);
+  const secondIsTitle = TITLE_WORDS.test(second);
+  if (firstIsTitle && !secondIsTitle) return { title: first, company: second, sure: true };
+  if (secondIsTitle && !firstIsTitle) return { title: second, company: first, sure: true };
+  return { title: second, company: first, sure: false };
+}
+
 /** Split "Staff Engineer at Stripe" / "Stripe — Staff Engineer" into its two halves. */
-function splitTitleAndCompany(line: string): { company: string; title: string } | null {
+function splitTitleAndCompany(
+  line: string,
+): { company: string; title: string; sure: boolean } | null {
   const stripped = line.replace(DATE_RANGE, "").replace(/[,–—|]+\s*$/, "").trim();
+  // "X at Y" says which is which in words; nothing to guess.
   const at = stripped.match(/^(.+?)\s+(?:at|@)\s+(.+)$/i);
-  if (at) return { title: at[1].trim(), company: at[2].trim() };
+  if (at) return { title: at[1].trim(), company: at[2].trim(), sure: true };
   const parts = stripped.split(/\s+[–—|]\s+|\s{2,}|,\s+/).map((part) => part.trim()).filter(Boolean);
-  if (parts.length >= 2) return { title: parts[0], company: parts[1] };
+  if (parts.length >= 2) return pickTitleAndCompany(parts[0], parts[1]);
   return null;
 }
 
 export function parseResumeText(text: string): ParsedResume {
   const lines = normalise(text.slice(0, 200_000));
   const warnings: string[] = [];
+  const notes: ParseNote[] = [];
   const unparsed: string[] = [];
 
   // --- the block above the first heading is the header --------------------
@@ -232,7 +272,10 @@ export function parseResumeText(text: string): ParsedResume {
         break;
       case "experience":
         for (const entry of groupEntries(body)) {
-          const role = parseRole(entry, warnings);
+          const at = draft.roles!.length;
+          const role = parseRole(entry, (field, message) =>
+            notes.push({ path: `roles.${at}.${field}`, message }),
+          );
           if (role) draft.roles!.push(role);
           else unparsed.push(...entry);
         }
@@ -253,7 +296,7 @@ export function parseResumeText(text: string): ParsedResume {
     );
   }
 
-  return { draft, sourceText: text, unparsed, warnings };
+  return { draft, sourceText: text, unparsed, warnings, notes };
 }
 
 /** Blank lines separate entries; so does a line that starts a new dated header. */
@@ -284,40 +327,67 @@ function groupEntries(lines: string[]): string[][] {
   return entries;
 }
 
-function parseRole(entry: string[], warnings: string[]): ResumeImportRole | null {
-  const headerLines = entry.filter((line) => !BULLET.test(line));
-  const bullets = entry
+/** Doubt a field, for the review step to show beside it. */
+type Doubt = (field: string, message: string) => void;
+
+function parseRole(entry: string[], doubt: Doubt): ResumeImportRole | null {
+  const plain = entry.filter((line) => !BULLET.test(line));
+  let bullets = entry
     .filter((line) => BULLET.test(line))
     .map((line) => line.replace(BULLET, "").trim());
-  if (headerLines.length === 0) return null;
+  if (plain.length === 0) return null;
 
-  const dates = parseDates(headerLines.join(" "));
-  const split = splitTitleAndCompany(headerLines[0]);
+  const dates = parseDates(plain.join(" "));
+  if (!dates) doubt("startDate", "No dates found in this entry.");
+  const split = splitTitleAndCompany(plain[0]);
+  // Which plain lines the header used up. Whatever is left is either noise or
+  // the bullets of a document that never used a bullet mark.
+  const used = new Set<number>([0]);
   let company = "";
   let title = "";
   if (split) {
     company = split.company;
     title = split.title;
-  } else if (headerLines.length >= 2) {
-    // Two plain lines: the one that reads like a job is the title.
-    const looksLikeTitle = /\b(engineer|manager|director|designer|analyst|lead|head|intern|consultant|founder|vp|president|officer|scientist|developer|architect|principal|staff)\b/i;
-    const [first, second] = headerLines;
-    if (looksLikeTitle.test(first) && !looksLikeTitle.test(second)) {
-      title = first;
-      company = second;
-    } else {
-      company = first;
-      title = second;
+    if (!split.sure) {
+      doubt("company", `Guessed which half of "${plain[0].trim()}" is the employer.`);
     }
-    warnings.push(`Guessed which of "${first.trim()}" and "${second.trim()}" is the employer — check it.`);
+  } else if (plain.length >= 2) {
+    // The header runs over two lines: same question, one line each.
+    const [first, second] = plain;
+    const picked = pickTitleAndCompany(first.trim(), second.trim());
+    company = picked.company;
+    title = picked.title;
+    used.add(1);
+    if (!picked.sure) {
+      doubt("company", `Guessed which of "${first.trim()}" and "${second.trim()}" is the employer.`);
+    }
   } else {
-    company = headerLines[0];
+    company = plain[0];
   }
 
   const clean = (value: string) => value.replace(DATE_RANGE, "").replace(/[,–—|]\s*$/, "").trim();
   company = clean(company);
   title = clean(title);
   if (!company && !title) return null;
+  if (!title) doubt("title", "No title read for this one.");
+
+  // A resume written without bullet marks — plenty are, and a PDF often loses
+  // them in the paste — otherwise lands here with a header and nothing else,
+  // and the person is shown a job with zero bullets under it. Sentences left
+  // over after the header become the bullets, and the field says they were
+  // guessed. Only when nothing was marked: mixing marked and unmarked lines
+  // is how a wrapped bullet becomes two.
+  if (bullets.length === 0) {
+    const leftover = plain
+      .filter((_, index) => !used.has(index))
+      .map((line) => line.trim())
+      // Not a date line, not a location: something with the length of a claim.
+      .filter((line) => !DATE_RANGE.test(line) && line.split(/\s+/).length >= 6);
+    if (leftover.length > 0) {
+      bullets = leftover;
+      doubt("bullets", "This document has no bullet marks — these lines were read as bullets.");
+    }
+  }
 
   const type = entry.join(" ").match(CONTRACT)?.[0];
 

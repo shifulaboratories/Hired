@@ -4900,3 +4900,37 @@ as a side effect of a keyboard shortcut.
 
 **Applies to:** `src/hooks/use-history.ts` (new), `src/components/resume/resume-editor.tsx`,
 `src/components/resume/fit-panel.tsx` (its `onChange` now names what it cut).
+
+## 2026-09-08 — The import review step showed a count where the content should have been
+
+The paste-and-correct dialog let you fix a job's company, title and dates, and then said
+"5 bullets" — a number, for the part of the document that is actually the document. The
+bullets are also the parser's shakiest output, so the one thing it most needed checked was
+the one thing it would not show. They are editable fields now, add and remove included, and
+what you leave is exactly what gets saved.
+
+**Doubts belong on the field, not in a list at the top.** The parser now emits
+`notes: { path, message }[]` alongside its document-level `warnings`, keyed by where the
+doubt is — `roles.2.company`, `roles.0.bullets`. "Check the employer on one of these" is a
+warning you go hunting with; the same sentence under the input is one you act on. The
+document-level list stays for things with no field to point at: no name, no jobs recognised,
+lines that could not be placed.
+
+**Two parser defects the review step existed to catch, and did not.**
+
+*Employer and title were decided by position.* `splitTitleAndCompany` read "A — B" as title
+then company, so every resume written "Stripe — Staff Engineer" filed the career under
+employers named after job titles. Now `pickTitleAndCompany` asks which half reads like a job:
+when exactly one does, that settles it and no doubt is raised; when neither or both do, order
+decides and the field says it guessed. "X at Y" was already unambiguous and stays untouched.
+
+*A resume with no bullet marks produced no bullets at all.* Every non-marked line became a
+"header line", of which only the first two were ever used, so the rest survived only in the
+role's background. Sentences left over after the header now become the bullets — filtered to
+lines with no date range and at least six words, so a location line does not become a claim —
+and the field says they were read that way. Only when nothing at all was marked: mixing
+marked and unmarked lines is how one wrapped bullet becomes two.
+
+**Applies to:** `src/lib/resume-parse.ts`, `src/components/me/import-dialog.tsx`. No tool
+changed — `import_resume` already takes bullets, and the heuristic parser is the browser's
+fallback for someone who has connected nothing, never a path an assistant takes.
