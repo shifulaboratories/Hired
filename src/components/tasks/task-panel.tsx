@@ -17,6 +17,7 @@ import {
   updateTaskAction,
 } from "@/server/actions";
 import { cn, relativeDay } from "@/lib/utils";
+import { daysBetween } from "@/lib/time";
 import { useViewerZone } from "@/components/viewer-zone";
 import { DateField } from "@/components/ui/date-field";
 import {
@@ -50,15 +51,15 @@ const BUCKETS = [
 
 type BucketKey = (typeof BUCKETS)[number]["key"];
 
-function bucketOf(dueISO: string): BucketKey {
+/**
+ * Which pile a task belongs in, counted in calendar days on the reader's
+ * calendar. Reading the host's parts instead put a task due tonight in
+ * Overdue for anyone west of the server — and, because this renders on both
+ * sides of a hydration, could put it in two different piles at once.
+ */
+function bucketOf(dueISO: string, timeZone: string): BucketKey {
   if (!dueISO) return "undated";
-  const due = new Date(dueISO);
-  const now = new Date();
-  const days = Math.round(
-    (new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime() -
-      new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) /
-      86400000,
-  );
+  const days = daysBetween(new Date(), new Date(dueISO), timeZone);
   if (days < 0) return "overdue";
   if (days === 0) return "today";
   if (days <= 7) return "week";
@@ -86,6 +87,7 @@ export function TaskPanel({
   /** Everything a task can be hung on, across all six kinds. */
   subjects: SubjectOption[];
 }) {
+  const zone = useViewerZone();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [draft, setDraft] = useState("");
@@ -102,7 +104,7 @@ export function TaskPanel({
   const grouped = useMemo(() => {
     const map = new Map<BucketKey, TaskRow[]>();
     for (const task of open) {
-      const key = bucketOf(task.dueISO);
+      const key = bucketOf(task.dueISO, zone);
       map.set(key, [...(map.get(key) ?? []), task]);
     }
     // Soonest first inside a bucket; undated keeps the order it arrived in,
@@ -111,7 +113,7 @@ export function TaskPanel({
       if (key !== "undated") rows.sort((a, b) => a.dueISO.localeCompare(b.dueISO));
     }
     return map;
-  }, [open]);
+  }, [open, zone]);
 
   const act = (work: () => Promise<unknown>, message?: string) => {
     startTransition(async () => {
@@ -287,7 +289,7 @@ function TaskItem({
   const zone = useViewerZone();
   const [title, setTitle] = useState(task.title);
   const [editing, setEditing] = useState(false);
-  const overdue = bucketOf(task.dueISO) === "overdue";
+  const overdue = bucketOf(task.dueISO, zone) === "overdue";
 
   const rename = () => {
     setEditing(false);

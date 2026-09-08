@@ -14,6 +14,8 @@ import {
 } from "@/lib/audit-groups";
 import { loadAuditAction } from "@/server/actions";
 import { cn } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
+import { formatIn } from "@/lib/time";
 
 export type AuditRow = {
   id: string;
@@ -166,6 +168,7 @@ function FilterableLog({ initial }: { initial: AuditRow[] }) {
 }
 
 function RowList({ rows, empty }: { rows: AuditRow[]; empty: string }) {
+  const zone = useViewerZone();
   if (rows.length === 0) {
     return <p className="text-muted-foreground py-8 text-center text-[13px]">{empty}</p>;
   }
@@ -185,7 +188,7 @@ function RowList({ rows, empty }: { rows: AuditRow[]; empty: string }) {
             <span className="text-muted-foreground truncate text-[13px]">{row.targetEmail}</span>
           )}
           <span className="text-faint meta ml-auto shrink-0 text-[11.5px]">
-            {new Date(row.createdAt).toLocaleString("en-US", {
+            {formatIn(new Date(row.createdAt), zone, {
               month: "short",
               day: "numeric",
               hour: "numeric",

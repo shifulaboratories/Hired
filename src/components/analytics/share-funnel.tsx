@@ -4,6 +4,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { CopyIcon, DownloadIcon, ImageIcon, Loader2Icon, ShareIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useViewerZone } from "@/components/viewer-zone";
+import { civilDay } from "@/lib/time";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +29,7 @@ import {
  * does nothing.
  */
 export function ShareFunnel({ disabled = false }: { disabled?: boolean }) {
+  const zone = useViewerZone();
   const [busy, setBusy] = useState<null | "download" | "copy">(null);
 
   async function fetchPng() {
@@ -51,7 +54,7 @@ export function ShareFunnel({ disabled = false }: { disabled?: boolean }) {
   async function downloadPng() {
     setBusy("download");
     try {
-      save(await fetchPng(), `hired-funnel-${new Date().toISOString().slice(0, 10)}.png`);
+      save(await fetchPng(), `hired-funnel-${civilDay(new Date(), zone)}.png`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not render that image.");
     } finally {

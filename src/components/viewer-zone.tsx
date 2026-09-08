@@ -59,13 +59,21 @@ export function ViewerZoneProvider({
     seeded.current = true;
     const guess = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (!guess) return;
+    // The refresh is what makes the server components on screen re-render with
+    // the zone that was just stored. It is dropped if this provider has gone —
+    // a refresh landing after the reader has already navigated away is a tree
+    // React has to reconcile against a page nobody is looking at.
+    let live = true;
     setTimeZoneAction(guess, { seeded: true })
       .then((result) => {
-        if (!result.skipped) router.refresh();
+        if (live && !result.skipped) router.refresh();
       })
       // Nothing to tell anyone: the app keeps using the server's clock, which
       // is what it did before this existed.
       .catch(() => {});
+    return () => {
+      live = false;
+    };
   }, [stored, router]);
 
   return <ViewerZone.Provider value={zone}>{children}</ViewerZone.Provider>;

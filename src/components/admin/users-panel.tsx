@@ -17,6 +17,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn, initials } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
+import { formatIn, shortDay } from "@/lib/time";
 import {
   adminResetPasswordAction,
   deleteUserAction,
@@ -59,6 +61,7 @@ export function UsersPanel({
   actor: { id: string; role: UserRole };
   users: Row[];
 }) {
+  const zone = useViewerZone();
   const [pending, startTransition] = useTransition();
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   // A generated password is shown once and never stored anywhere it could be
@@ -178,15 +181,15 @@ export function UsersPanel({
                   className="text-muted-foreground hidden w-24 text-right text-xs lg:block"
                   title={
                     user.mcpLastUsedAt
-                      ? `Assistant last called ${new Date(user.mcpLastUsedAt).toLocaleString()}`
+                      ? `Assistant last called ${formatIn(new Date(user.mcpLastUsedAt), zone, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}`
                       : "No assistant has ever connected"
                   }
                 >
                   {user.mcpLastUsedAt
-                    ? `AI ${new Date(user.mcpLastUsedAt).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}`
+                    ? `AI ${shortDay(new Date(user.mcpLastUsedAt), zone)}`
                     : user.counts.mcpConnections > 0
                       ? "AI unused"
                       : "no AI"}
@@ -194,10 +197,7 @@ export function UsersPanel({
 
                 <div className="text-muted-foreground hidden w-28 text-right text-xs lg:block">
                   {user.lastLoginAt
-                    ? `seen ${new Date(user.lastLoginAt).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}`
+                    ? `seen ${shortDay(new Date(user.lastLoginAt), zone)}`
                     : "never signed in"}
                 </div>
 

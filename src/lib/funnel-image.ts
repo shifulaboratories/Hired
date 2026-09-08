@@ -3,6 +3,7 @@ import { FUNNEL_TITLE, funnelOptions } from "@/components/analytics/funnel-sanke
 import { sankeyDocument, sankeyLayout } from "@/lib/funnel-sankey";
 import { chromiumPath } from "@/lib/pdf";
 import type { FunnelRung } from "@/lib/data/pipeline";
+import { civilDay, SERVER_ZONE } from "@/lib/time";
 
 /**
  * The funnel as a file you can post.
@@ -66,6 +67,6 @@ export async function funnelPng(rungs: FunnelRung[]): Promise<Buffer> {
 }
 
 /** `hired-funnel-2026-09-04.png`, so a downloads folder stays legible. */
-export function funnelFilename(extension: "png" | "svg", now = new Date()) {
-  return `hired-funnel-${now.toISOString().slice(0, 10)}.${extension}`;
+export function funnelFilename(extension: "png" | "svg", timeZone = SERVER_ZONE, now = new Date()) {
+  return `hired-funnel-${civilDay(now, timeZone)}.${extension}`;
 }

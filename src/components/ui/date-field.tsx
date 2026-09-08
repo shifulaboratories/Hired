@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { formatCivilDay } from "@/lib/time";
 
 /**
  * One date, picked from a calendar rather than typed into a native control.
@@ -78,12 +79,8 @@ export function DateField({
           >
             <CalendarIcon className="size-3.5 shrink-0 opacity-70" />
             <span className="truncate">
-              {selected
-                ? selected.toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })
+              {value
+                ? formatCivilDay(value, { month: "short", day: "numeric", year: "numeric" })
                 : placeholder}
             </span>
           </Button>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { funnelFlows } from "@/lib/data/pipeline";
 import { funnelFilename, funnelPng, funnelSvg } from "@/lib/funnel-image";
+import { timeZoneOf } from "@/lib/data/me";
 
 /**
  * The funnel as a downloadable image.
@@ -26,7 +27,7 @@ export async function GET(
     return NextResponse.json({ error: "Ask for png or svg." }, { status: 404 });
   }
 
-  const { rungs, applied } = await funnelFlows(user.id);
+  const [{ rungs, applied }, zone] = await Promise.all([funnelFlows(user.id), timeZoneOf(user.id)]);
   if (applied === 0) {
     return NextResponse.json(
       { error: "Nothing to chart yet — apply to something first." },
@@ -38,7 +39,7 @@ export async function GET(
     return new NextResponse(funnelSvg(rungs), {
       headers: {
         "Content-Type": "image/svg+xml; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${funnelFilename("svg")}"`,
+        "Content-Disposition": `attachment; filename="${funnelFilename("svg", zone)}"`,
         // Somebody's live pipeline. Never a shared cache, never a stale copy.
         "Cache-Control": "private, no-store",
       },
@@ -50,7 +51,7 @@ export async function GET(
     return new NextResponse(new Uint8Array(png), {
       headers: {
         "Content-Type": "image/png",
-        "Content-Disposition": `attachment; filename="${funnelFilename("png")}"`,
+        "Content-Disposition": `attachment; filename="${funnelFilename("png", zone)}"`,
         "Cache-Control": "private, no-store",
       },
     });

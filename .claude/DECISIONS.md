@@ -5559,3 +5559,45 @@ the correspondence card, the resume list — all still reading the host's clock.
 They are not hydration errors today because they render on one side only, but
 they show the server's day rather than the reader's. That sweep is the next
 piece of this work and is deliberately not in this batch.
+
+## 2026-09-08 — The rest of the sweep: nothing reads the host's clock any more
+
+The entry above left about fifteen `toLocaleDateString`/`toLocaleString` calls
+still formatting against the host. They are done. Everything that writes a date
+or a time for a person now goes through `formatIn(date, zone, options)` in
+`src/lib/time.ts`, which pins the locale to en-US and takes an explicit zone:
+the audit log, the health log, the people list and the person page in Admin;
+the activity timeline on an application and on a contact; the resume grid's
+"updated"; the analytics activity list; and the correspondence card, where a
+meeting now reads in the hours of whoever is looking at it rather than the
+container's — on a UTC host it told somebody in Chicago their 2pm call was at
+8pm.
+
+**Three are deliberately exempt, and each for the same reason:** the month
+dropdown in `ui/calendar.tsx`, the month heading in `pipeline/calendar.tsx` and
+`formatMonth` in `utils.ts` all format a date built from the parts they are
+about to print. There is no instant in them to move, so a zone would be noise —
+but the two that took the host's *locale* are pinned now, because Node and a
+browser can disagree about a month's short name.
+
+**A civil date is formatted with no zone at all**, through `formatCivilDay`:
+the shared `DateField`, the list's inline date cell and "Applied Mar 14" on an
+application. Reading a calendar square through a zone is how it drifts a day,
+which is the bug in the entry above.
+
+**Task buckets were the last hidden one.** `bucketOf` compared the host's
+`getFullYear/getMonth/getDate`, so a task due tonight sat under Overdue for
+anyone west of the server — and, because that panel renders on both sides of a
+hydration, could land in two different piles in one render. It counts calendar
+days with `daysBetween` now.
+
+**Both download filenames** — the CSV and the funnel image — are dated on the
+reader's calendar rather than UTC's. Verified from a browser in Auckland:
+`hired-applications-2026-09-09.csv` while the server is still on the 8th.
+
+**One loose end honestly reported.** A single React #418 appeared once on the
+analytics tab during a sweep and did not reproduce in nine later attempts,
+including the identical sequence. The only mechanism that fits is the seeding
+effect's `router.refresh()` landing after the reader has navigated away, so
+that refresh is now dropped on unmount. Six consecutive full sweeps — every
+screen, two zones, from an unseeded profile — are clean.

@@ -15,6 +15,7 @@ import { ResumeCard } from "@/components/resume/resume-card";
 import { ResumePaper } from "@/components/resume/resume-paper";
 import { PaperThumb } from "@/components/resume/paper-thumb";
 import { db } from "@/lib/db";
+import { shortDay } from "@/lib/time";
 
 /**
  * The resume grid, as it appears under Me → Resumes.
@@ -43,10 +44,11 @@ export async function ResumesPanel({
   const [resumes, profile, headerList] = await Promise.all([
     listResumes(userId, { search, sort }),
     // One read for the whole grid: the thumbnails all draw the same face.
-    db.profile.findUnique({ where: { userId }, select: { photo: true } }),
+    db.profile.findUnique({ where: { userId }, select: { photo: true, timeZone: true } }),
     headers(),
   ]);
   const photo = profile?.photo ?? "";
+  const zone = profile?.timeZone ?? "";
 
   // For the copy-link action on published cards, built the same way the editor
   // builds its share URL.
@@ -157,10 +159,7 @@ export async function ResumesPanel({
                     }
                     variants={variantCounts.get(resume.id) ?? 0}
                     isFavorite={resume.isFavorite}
-                    updatedLabel={resume.updatedAt.toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                    })}
+                    updatedLabel={shortDay(resume.updatedAt, zone)}
                   >
                     <PaperThumb>
                       <ResumePaper
