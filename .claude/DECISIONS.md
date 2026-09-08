@@ -5280,6 +5280,7 @@ the dot now carries it.
 (`evidenceSources`, `traceResumeEvidence` now calls the shared matcher),
 `src/app/(app)/resumes/[id]/page.tsx`, `src/components/resume/resume-editor.tsx`. No new
 tool: `trace_resume_evidence` already answers this, and this is the same answer inline.
+
 ---
 
 ## 2026-09-08 — What the adversarial pass turned up after the first fixes
@@ -5353,6 +5354,39 @@ contrast read off the running page's own computed tokens.
 `src/components/me/import-dialog.tsx`, `src/components/pipeline/application-detail.tsx`,
 `src/components/resume/resume-editor.tsx`, `src/components/settings/connections-panel.tsx`,
 `src/components/{shell,login-form}.tsx`.
+
+
+---
+
+## 2026-09-08 — Pulling a job in from Me, rather than typing it again
+
+Add job gave you an empty entry to fill in, for a job the app already knew everything about.
+**From Me** now lists your history beside it and drops the one you pick in — company, title,
+dates, and its strongest bullets. `add_role_to_resume` is the same move over MCP.
+
+**The tool exists for the reason `reorder_resume` does.** `update_resume` replaces the whole
+document, so adding one job that way means reproducing every other word of it, and a bullet
+lost on the way is a loss nobody notices. This reads, inserts one entry and writes.
+
+**The entry carries `roleId`, and that is the point.** It is what lets the editor's inline
+marks and `trace_resume_evidence` narrow a bullet's evidence to this job's own material
+instead of the whole career. `entryFromRole` is now shared with `buildDocFromMe`, so a job
+added later is identical in shape to the ones a seeded draft came with — including that link,
+which a hand-built entry would have quietly lacked.
+
+**The UI does not build the entry.** The picker calls the server action, which calls the same
+data function the tool does, and takes back the document that was actually written. Building
+the entry client-side would have been a second answer to "what does adding a job mean". What
+comes back then goes through the editor's ordinary `commit`, so it is one undo step and saves
+like anything else — verified: undo takes the job back out.
+
+**Refusing beats doubling.** A job already in the document is refused with where the existing
+one is, and the picker does not offer it at all. Two identical entries is never what anyone
+meant, and it is the sort of thing you notice in a PDF a week later.
+
+**Applies to:** `src/lib/data/resumes.ts` (`entryFromRole`, `addRoleToResume`),
+`src/lib/mcp/tools.ts` (`add_role_to_resume`), `src/server/actions.ts`,
+`src/app/(app)/resumes/[id]/page.tsx`, `src/components/resume/resume-editor.tsx`.
 
 ---
 

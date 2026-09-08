@@ -407,6 +407,108 @@ export async function evidenceSources(userId: string, limit = 400) {
   return evidenceSourcesFrom(highlights).slice(0, limit);
 }
 
+/**
+ * Put one job from Me into a resume that already exists.
+ *
+ * The alternative was update_resume, which replaces the whole document: adding
+ * a job you left off meant sending every word of the resume back, and losing a
+ * bullet on the way is a silent kind of loss. This reads, inserts and writes,
+ * so nothing else in the document can change.
+ *
+ * The role is named by id or by what it is called — "the Stripe job" is what a
+ * person says, and an assistant that just called list_roles has the id. A job
+ * already in the document is refused rather than doubled: two identical entries
+ * is never what anyone meant, and the error says where the existing one is.
+ */
+export async function addRoleToResume(
+  userId: string,
+  resumeId: string,
+  input: { role: string; section?: string; position?: number; bullets?: number },
+) {
+  const resume = await db.resume.findFirst({ where: { id: resumeId, userId } });
+  if (!resume) throw new Error(`No resume with id ${resumeId}`);
+
+  const roles = await db.role.findMany({
+    where: { userId },
+    orderBy: [{ isCurrent: "desc" }, { startDate: "desc" }],
+    include: { highlights: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } },
+  });
+  if (roles.length === 0) {
+    throw new Error("There are no roles in Me yet — create_role first, or import a resume.");
+  }
+  const needle = input.role.trim().toLowerCase();
+  const role =
+    roles.find((row) => row.id === input.role.trim()) ??
+    roles.find((row) => row.company.toLowerCase() === needle || row.title.toLowerCase() === needle) ??
+    roles.find(
+      (row) =>
+        row.company.toLowerCase().includes(needle) || row.title.toLowerCase().includes(needle),
+    );
+  if (!role) {
+    const options = roles.map((row) => `${row.title} — ${row.company}`).join("; ");
+    throw new Error(`No role matching "${input.role}". Me has: ${options}.`);
+  }
+
+  const doc = parseResumeDoc(resume.data);
+  const sectionAt = input.section
+    ? doc.sections.findIndex(
+        (section) =>
+          section.kind === "experience" &&
+          (section.id === input.section ||
+            section.heading.toLowerCase() === input.section!.trim().toLowerCase()),
+      )
+    : doc.sections.findIndex((section) => section.kind === "experience");
+  if (sectionAt === -1) {
+    throw new Error(
+      input.section
+        ? `No experience section called "${input.section}" in this resume.`
+        : "This resume has no experience section to put a job in.",
+    );
+  }
+  const section = doc.sections[sectionAt];
+
+  const already = section.experience.findIndex(
+    (entry) =>
+      entry.roleId === role.id ||
+      (entry.company.toLowerCase() === role.company.toLowerCase() &&
+        entry.title.toLowerCase() === role.title.toLowerCase()),
+  );
+  if (already !== -1) {
+    throw new Error(
+      `"${role.title} — ${role.company}" is already in this resume, at position ${already + 1}.`,
+    );
+  }
+
+  const entry = entryFromRole(role, role.highlights, input.bullets ?? 6);
+  const at =
+    input.position === undefined
+      ? section.experience.length
+      : Math.min(Math.max(input.position, 1), section.experience.length + 1) - 1;
+  const experience = [...section.experience];
+  experience.splice(at, 0, entry);
+  const next: ResumeDoc = {
+    ...doc,
+    sections: doc.sections.map((each, index) =>
+      index === sectionAt ? { ...each, experience } : each,
+    ),
+  };
+  await db.resume.update({
+    where: { id: resume.id },
+    data: { data: next as unknown as object },
+  });
+
+  return {
+    resume: { id: resume.id, name: resume.name },
+    added: {
+      role: `${role.title} — ${role.company}`,
+      section: section.heading || "Experience",
+      position: at + 1,
+      bullets: entry.bullets.length,
+      available: role.highlights.length,
+    },
+  };
+}
+
 export async function traceResumeEvidence(userId: string, id: string) {
   const resume = await db.resume.findFirst({ where: { id, userId } });
   if (!resume) throw new Error(`No resume with id ${id}`);
@@ -567,6 +669,46 @@ function bulletFor(text: string, impact: string) {
   return flatten(text).includes(flatten(trimmed)) ? text : `${text} — ${trimmed}`;
 }
 
+/**
+ * One job, as a resume entry.
+ *
+ * Shared by the whole-document seed and by pulling a single role into a
+ * document that already exists, so a job you add later is the same shape as the
+ * ones that came with the draft — down to `roleId`, which is what lets the
+ * editor narrow a bullet's evidence to this job's own material rather than the
+ * whole career.
+ *
+ * Six bullets, because that is what fits under one job before the page runs
+ * out, and the strongest are first in the list already.
+ */
+export function entryFromRole(
+  role: {
+    id: string;
+    company: string;
+    title: string;
+    location: string;
+    startDate: string;
+    endDate: string;
+    isCurrent: boolean;
+    summary: string;
+  },
+  highlights: { text: string; impact: string }[],
+  limit = 6,
+) {
+  return {
+    id: rid("exp"),
+    roleId: role.id,
+    company: role.company,
+    title: role.title,
+    location: role.location,
+    startDate: role.startDate,
+    endDate: role.endDate,
+    isCurrent: role.isCurrent,
+    summary: role.summary,
+    bullets: highlights.slice(0, limit).map((highlight) => bulletFor(highlight.text, highlight.impact)),
+  };
+}
+
 export async function buildDocFromMe(userId: string): Promise<ResumeDoc> {
   const { profile, roles, highlights, education, projects, skillGroups, certifications } =
     await getMeSnapshot(userId);
@@ -594,21 +736,12 @@ export async function buildDocFromMe(userId: string): Promise<ResumeDoc> {
   doc.sections.push(summary);
 
   const experience = blankSection("experience");
-  experience.experience = roles.map((role) => ({
-    id: rid("exp"),
-    roleId: role.id,
-    company: role.company,
-    title: role.title,
-    location: role.location,
-    startDate: role.startDate,
-    endDate: role.endDate,
-    isCurrent: role.isCurrent,
-    summary: role.summary,
-    bullets: highlights
-      .filter((h) => h.roleId === role.id)
-      .slice(0, 6)
-      .map((h) => bulletFor(h.text, h.impact)),
-  }));
+  experience.experience = roles.map((role) =>
+    entryFromRole(
+      role,
+      highlights.filter((highlight) => highlight.roleId === role.id),
+    ),
+  );
   doc.sections.push(experience);
 
   if (projects.length) {

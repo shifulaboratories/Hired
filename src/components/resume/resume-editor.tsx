@@ -72,6 +72,7 @@ import { ResumePaper, type PaperSettings } from "@/components/resume/resume-pape
 import { EvidencePanel, type LinkedApplication } from "@/components/resume/evidence-panel";
 import type { CorrespondenceAccess } from "@/components/google/correspondence-card";
 import {
+  addRoleToResumeAction,
   deleteResumeAction,
   duplicateResumeAction,
   updateResumeAction,
@@ -106,6 +107,7 @@ export function ResumeEditor({
   applications,
   googleAccess,
   evidence,
+  roles,
 }: {
   id: string;
   doc: ResumeDoc;
@@ -116,6 +118,8 @@ export function ResumeEditor({
    * to keep up with typing, and a round trip per character would not.
    */
   evidence: EvidenceSource[];
+  /** Every job in Me, for pulling one into this document. */
+  roles: { id: string; label: string; bullets: number }[];
   /** Every other resume, for saying which one it came from. */
   siblings: { id: string; name: string }[];
   /** The jobs this document was actually sent to. */
@@ -261,6 +265,33 @@ export function ResumeEditor({
     const ref = focus ? parsePath(focus.path) : null;
     return ref && ref.kind !== "header" ? ref.section : null;
   })();
+
+  /**
+   * Pull a job in from Me.
+   *
+   * The server builds and writes the entry — the same code add_role_to_resume
+   * runs — and hands back the document it wrote, which then goes through the
+   * ordinary commit path so it is one undo step and saves like anything else.
+   * Assembling the entry here instead would have been a second answer to "what
+   * does adding a job mean", and the two would have drifted.
+   */
+  const addRoleFromMe = (roleId: string) => {
+    startTransition(async () => {
+      try {
+        const { added, doc: next } = await addRoleToResumeAction(id, roleId);
+        undoable(`${added.role} added`);
+        commit(next, meta, { step: true });
+        const rest = added.available - added.bullets;
+        toast.success(
+          rest > 0
+            ? `${added.role} — ${added.bullets} bullets, ${rest} more in Me`
+            : `${added.role} — ${added.bullets} bullet${added.bullets === 1 ? "" : "s"}`,
+        );
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not add that job.");
+      }
+    });
+  };
 
   /** Snapshot the state as it stands, for a toast that offers to put it back. */
   const undoable = (message: string) => {
@@ -509,6 +540,9 @@ export function ResumeEditor({
                     total={doc.sections.length}
                     focus={focusedSection === index ? focus : null}
                     evidence={evidence}
+                    roles={roles}
+                    onAddRole={addRoleFromMe}
+                    addingRole={pending}
                     onChange={(patch, options) => updateSection(index, patch, options)}
                     onMove={(direction) => moveSection(index, direction)}
                     onRemove={() => removeSection(index)}
@@ -697,6 +731,9 @@ function SectionCard({
   onUndoable,
   focus,
   evidence,
+  roles,
+  onAddRole,
+  addingRole,
 }: {
   section: ResumeSection;
   index: number;
@@ -710,6 +747,10 @@ function SectionCard({
   focus: { path: string; at: number } | null;
   /** The person's own material, for marking this section's bullets. */
   evidence: EvidenceSource[];
+  /** Every job in Me, and the way to pull one in. */
+  roles: { id: string; label: string; bullets: number }[];
+  onAddRole: (roleId: string) => void;
+  addingRole: boolean;
 }) {
   // The rail addresses its own inputs the way the paper addresses its blocks,
   // flattened: every entry kind is "e" here, because a form field does not
@@ -795,6 +836,18 @@ function SectionCard({
               onChange({ experience: [...section.experience, blankExperience()] }, { step: true })
             }
             addLabel="Add job"
+            addExtra={
+              <AddRoleFromMe
+                roles={roles}
+                used={
+                  new Set(
+                    section.experience.map((item) => item.roleId).filter(Boolean) as string[],
+                  )
+                }
+                onAdd={onAddRole}
+                pending={addingRole}
+              />
+            }
             onRemove={(i) => {
               const item = section.experience[i];
               onUndoable(`${item.title || item.company || "That role"} removed`);
@@ -1346,6 +1399,7 @@ function ItemList<T>({
   onMove,
   onReorderTo,
   addLabel,
+  addExtra,
   path,
   openIndex,
   openSignal,
@@ -1359,6 +1413,8 @@ function ItemList<T>({
   /** A drag landed: this entry moved to that position. */
   onReorderTo: (from: number, to: number) => void;
   addLabel: string;
+  /** Rendered beside the add button — where a job comes in from Me. */
+  addExtra?: React.ReactNode;
   /** This list's address in the document, e.g. "s2". Rows extend it. */
   path: string;
   /** Which row a click in the preview asked for, or null. */
@@ -1416,10 +1472,74 @@ function ItemList<T>({
         </SortableRow>
       ))}
       </SortableList>
-      <Button variant="outline" size="sm" onClick={onAdd}>
-        <PlusIcon /> {addLabel}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" onClick={onAdd}>
+          <PlusIcon /> {addLabel}
+        </Button>
+        {addExtra}
+      </div>
     </div>
+  );
+}
+
+/**
+ * Bring a job in from Me.
+ *
+ * The material is already on file; typing it again into a blank entry is the
+ * kind of work this product exists to remove. The entry it produces keeps a
+ * link back to the role, which is what lets each bullet say whose material
+ * stands behind it.
+ *
+ * The write goes through the server rather than being assembled here, because
+ * add_role_to_resume is the same operation over MCP and there is one
+ * implementation of what "add this job" means. What comes back is the document
+ * the server actually wrote, which then goes through commit() like every other
+ * change — so it saves once, and undo takes it back.
+ */
+function AddRoleFromMe({
+  roles,
+  used,
+  onAdd,
+  pending,
+}: {
+  roles: { id: string; label: string; bullets: number }[];
+  /** Role ids already in this document — offering them again is a dead end. */
+  used: Set<string>;
+  onAdd: (roleId: string) => void;
+  pending: boolean;
+}) {
+  const available = roles.filter((role) => !used.has(role.id));
+  if (roles.length === 0) return null;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="sm" disabled={pending}>
+          <UserRoundIcon /> From Me
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 p-1.5">
+        {available.length === 0 ? (
+          <p className="text-muted-foreground px-2 py-3 text-[13px]">
+            Every job in Me is already in this resume.
+          </p>
+        ) : (
+          <div className="max-h-72 space-y-0.5 overflow-y-auto">
+            {available.map((role) => (
+              <button
+                key={role.id}
+                onClick={() => onAdd(role.id)}
+                className="hover:bg-accent flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px]"
+              >
+                <span className="min-w-0 flex-1 truncate">{role.label}</span>
+                <span className="text-faint shrink-0 text-[11px] tabular-nums">
+                  {role.bullets} bullet{role.bullets === 1 ? "" : "s"}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 

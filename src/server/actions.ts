@@ -935,6 +935,25 @@ export async function deleteResumeAction(id: string, redirectAfter = true) {
   if (redirectAfter) redirect("/me?tab=resumes");
 }
 
+/**
+ * Pull one job from Me into an open resume.
+ *
+ * The editor holds the document in state and autosaves it, so this returns the
+ * document it wrote rather than only a receipt: the caller replaces its state
+ * with what actually landed, and the two cannot drift apart. Everything else in
+ * the editor goes through commit() the same way, undo included.
+ */
+export async function addRoleToResumeAction(
+  resumeId: string,
+  role: string,
+  options?: { position?: number; bullets?: number },
+) {
+  const user = await requireUser();
+  const result = await resumes.addRoleToResume(user.id, resumeId, { role, ...options });
+  const resume = await resumes.getResume(user.id, resumeId);
+  return { added: result.added, doc: resume!.doc };
+}
+
 export async function duplicateResumeAction(id: string, name?: string) {
   const user = await requireUser();
   const copy = await resumes.duplicateResume(user.id, id, name);

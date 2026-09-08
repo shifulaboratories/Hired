@@ -1839,6 +1839,39 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => resumes.deleteResume(ctx.userId, required(args, "id")),
   },
   {
+    name: "add_role_to_resume",
+    title: "Put a job from Me into a resume",
+    description:
+      "Add one job you already have in Me to a resume that already exists — its company, title, dates and its strongest bullets, in one call. Reach for this when a resume is missing a job, or when tailoring and the right move is to bring back a role the draft left out. Use it INSTEAD of update_resume for this: update_resume replaces the whole document, so adding one job that way means reproducing every other word of it, and a bullet dropped on the way is a loss nobody notices. Name the role by its id (list_roles gives you them) or by what it is called — the company or the title, however the user said it. It goes into the resume's experience section at the end unless you give `position`, 1-based. `bullets` caps how many of the role's highlights come with it; six by default, which is about what fits under one job. The entry keeps a link back to the role it came from, which is what lets the editor and trace_resume_evidence tell which of the person's own material stands behind each line. A job already in that resume is refused rather than added twice, and the error says where the existing one is. Returns what was added, where, and how many of the role's bullets were used out of how many it has — say so, because the rest are there to draw on.",
+    inputSchema: object(
+      {
+        id: str("Resume id"),
+        role: str("The role: its id, or the company or title it goes by"),
+        section: str(
+          "Which experience section, by id or heading. Defaults to the first one — most resumes have exactly one.",
+        ),
+        position: num("Where among the jobs it lands, 1-based. Defaults to last."),
+        bullets: num("How many of the role's highlights to bring. Default 6."),
+      },
+      ["id", "role"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      resumes.addRoleToResume(ctx.userId, required(args, "id"), {
+        role: required(args, "role"),
+        ...defined({
+          section: s(args, "section"),
+          position: n(args, "position"),
+          bullets: n(args, "bullets"),
+        }),
+      }),
+  },
+  {
     name: "reorder_resume",
     title: "Move a section, entry or bullet",
     description:
