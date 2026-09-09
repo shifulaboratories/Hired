@@ -319,6 +319,28 @@ export async function inviteUserAction(input: {
   }
 }
 
+/**
+ * Add or remove a password on an invitation that is already out there, keeping
+ * its link alive. Separate from `inviteUserAction` because re-inviting mints a
+ * new token and invalidates the link the person may already be holding.
+ */
+export async function setInvitePasswordAction(
+  id: string,
+  options: { password?: string; mustChange?: boolean } = {},
+) {
+  const actor = await requireAdmin();
+  try {
+    const result = await users.setInvitePassword(actor, id, options);
+    revalidatePath("/settings/admin");
+    return { ok: true as const, ...result };
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : "Could not update that invitation.",
+    };
+  }
+}
+
 export async function revokeInviteAction(id: string) {
   const actor = await requireAdmin();
   await users.revokeInvite(actor, id);

@@ -1,7 +1,7 @@
 ---
 title: "Admin tools"
 sidebarTitle: "Admin"
-description: "Thirty-one tools for running an instance: accounts, invitations, the waitlist, sign-in, email, billing, health and every stored setting."
+description: "Thirty-two tools for running an instance: accounts, invitations, the waitlist, sign-in, email, billing, health and every stored setting."
 icon: "shield-halved"
 ---
 
@@ -98,11 +98,25 @@ Create an invitation and email it through Resend. If email is not configured yet
 
 _List outstanding invites_
 
-Invitations that have not been accepted yet, with their links and expiry.
+Invitations that have not been accepted yet, with their links, expiry, and whether a password was set on each. Never returns the password itself — `passwordSet` is a boolean, and the stored hash does not leave the server.
 
 **Admin only.**
 
 No arguments.
+
+### `admin_set_invite_password`
+
+_Set the password on an invitation_
+
+Put a password on an invitation that has already gone out, or take one off, without changing its link. Reach for this when you invited somebody the normal way and then decided to hand them a password — re-inviting the same address would work too, but it mints a fresh token and the link you already sent stops working, which is the opposite of what you want here. Pass `password` to set one, at which point the accept page asks only for their name; pass an empty string to clear it and put them back to choosing their own. `must_change_password` makes them replace your password before the app opens to them, and is off unless you ask for it. The password never reaches the invitation email that already went out, so tell them yourself. Only works while the invitation is outstanding: once it has been accepted, use admin_reset_user_password on their account instead, which also ends their sessions. Takes an invite id from admin_list_invites.
+
+**Admin only.** **Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Invite id, from admin_list_invites |
+| `password` | string | The password to set, at least 10 characters. An empty string removes the one that is there and lets them pick their own again. |
+| `must_change_password` | boolean | Whether they must replace your password with their own before the app opens to them. Off unless you ask for it, and ignored when clearing. |
 
 ### `admin_revoke_invite`
 

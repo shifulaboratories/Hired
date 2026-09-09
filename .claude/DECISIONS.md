@@ -5717,3 +5717,57 @@ sign-in" and never the password.
 `src/app/(app)/settings/admin/people/[id]/page.tsx`, `src/components/forced-password-form.tsx`,
 `src/components/accept-invite-form.tsx`, `src/components/admin/{invites-panel,users-panel,person-actions,reset-password-dialog}.tsx`,
 `docs/tools/admin.mdx`, `README.md`.
+
+---
+
+## 2026-09-09 — An invitation's password is editable after it has gone out
+
+The previous entry let an admin set a password when creating an invitation. The gap it left
+is the ordinary case: you invite somebody the normal way, send them the link, and only then
+decide to hand them a password too.
+
+**Re-inviting already did this, and that is precisely why the tool exists.** `createInvite`
+deletes the outstanding invite for an address and creates a new one, so re-inviting with a
+password would set one — and mint a fresh token, killing the link you already sent. Which is
+exactly wrong when the reason you are here is that you already sent it. `setInvitePassword`
+edits the row in place and leaves the token alone; the browser test asserts the token is
+byte-identical afterwards.
+
+**An empty password is an instruction, not a missing argument.** It clears the one on the
+invitation and puts the invitee back to choosing their own. That is why the handler passes
+`{ password: s(args, "password") }` straight through rather than through `defined()` — the
+helper strips undefined keys, and `""` has to survive as `""` to mean "remove it".
+
+**`admin_list_invites` was leaking the password hash**, introduced by the previous entry and
+found while adding this. `listInvites` was a bare `findMany` whose result went straight out of
+the tool, and the row had just grown `passwordHash`. A scrypt hash is not a password, but it
+is also not something an admin tool has any business emitting. The select is explicit now and
+what leaves is `passwordSet: boolean`. Worth generalising: any data function whose return
+value is handed whole to a tool has to name its columns, because adding a column to the
+schema otherwise publishes it.
+
+**An ADMIN invitation is the super admin's alone to put a password on**, mirroring
+`createInvite`. Note `revokeInvite` has no such guard and does not need one — destroying an
+invitation is safe for anyone who can see it, whereas putting a known credential on a pending
+admin invitation whose link is sitting on the same screen is a way to become an admin.
+
+**Accepted invitations are refused with the alternative named.** Once accepted the invite is
+spent and the thing you actually want is `adminResetPassword` on the account, which also ends
+their sessions — so the error says that rather than just "no".
+
+**The invitation email that already went out is not re-sent and not corrected.** It says "pick
+a password" and the accept page now asks only for a name. The page is the source of truth, the
+mismatch is harmless, and re-sending on an edit would mail people repeatedly for a change they
+cannot see. The dialog and the toast both say the password is not in that email.
+
+**Verified against a real Postgres.** Over MCP: invite plainly, confirm `admin_list_invites`
+returns no hash, set a password, assert the token is unchanged, refuse a short one, clear it
+and confirm the columns are back to empty/false. In a browser: the key button on the row, the
+dialog reopening in the invitation's own state with a Remove password button, the badge on the
+row, then the original link accepting with no password field and landing on `/change-password`.
+Audit rows name the address and the effect, never the password or the token.
+
+**Applies to:** `src/lib/data/users.ts`, `src/lib/data/audit.ts`, `src/lib/audit-groups.ts`,
+`src/lib/mcp/tools.ts`, `src/server/actions.ts`,
+`src/components/admin/{invite-password-dialog,invites-panel}.tsx`,
+`src/app/(app)/settings/admin/page.tsx`, `docs/tools/admin.mdx`, `README.md`.
