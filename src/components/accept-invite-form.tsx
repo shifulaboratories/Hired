@@ -21,12 +21,18 @@ export function AcceptInviteForm({
   inviter,
   instanceName,
   googleReady,
+  passwordSet,
+  mustChangePassword,
 }: {
   token: string;
   email: string;
   inviter: string;
   instanceName: string;
   googleReady: boolean;
+  /** The inviter chose the password, so this page asks only for a name. */
+  passwordSet: boolean;
+  /** ...and asked that it be replaced immediately, which is worth warning about. */
+  mustChangePassword: boolean;
 }) {
   const [state, formAction] = useActionState(acceptInviteAction, undefined);
 
@@ -34,9 +40,11 @@ export function AcceptInviteForm({
     <AuthCard
       title={`Join ${instanceName}`}
       subtitle={
-        googleReady
-          ? `${inviter} invited you. Continue with Google, or pick a password.`
-          : `${inviter} invited you. Pick a password and you're in.`
+        passwordSet
+          ? `${inviter} invited you and set your password. Put your name in and it's yours.`
+          : googleReady
+            ? `${inviter} invited you. Continue with Google, or pick a password.`
+            : `${inviter} invited you. Pick a password and you're in.`
       }
     >
       {/* What this actually is.
@@ -87,15 +95,29 @@ export function AcceptInviteForm({
           <Input id="name" name="name" required autoFocus placeholder="Ada Lovelace" />
         </motion.div>
 
-        <motion.div variants={authRise} className="space-y-2">
-          <PasswordField
-            id="password"
-            label="Choose a password"
-            autoComplete="new-password"
-            placeholder="At least 10 characters"
-            minLength={10}
-          />
-        </motion.div>
+        {/* Nothing to ask for when the invitation already carries one. The
+            field is absent rather than disabled-and-prefilled: a real input
+            holding a real password would put it in the page source, and this
+            page is served to anyone holding the link. */}
+        {passwordSet ? (
+          <motion.p variants={authRise} className="text-muted-foreground text-[13px] leading-relaxed">
+            {inviter} already set your password — you'll have been sent it separately, not in the
+            invitation email.{" "}
+            {mustChangePassword
+              ? "The next screen asks you to replace it with one only you know."
+              : "It's yours from here, and you can change it any time from Settings."}
+          </motion.p>
+        ) : (
+          <motion.div variants={authRise} className="space-y-2">
+            <PasswordField
+              id="password"
+              label="Choose a password"
+              autoComplete="new-password"
+              placeholder="At least 10 characters"
+              minLength={10}
+            />
+          </motion.div>
+        )}
 
         <AuthError message={state?.error} />
 

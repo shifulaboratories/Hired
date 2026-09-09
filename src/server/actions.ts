@@ -23,6 +23,7 @@ import {
   instanceNeedsSetup,
   requireAdmin,
   requireUser,
+  requireUserPendingPasswordChange,
   setupKeyMatches,
   startSession,
 } from "@/lib/auth";
@@ -120,8 +121,10 @@ export async function acceptInviteAction(
 ) {
   const token = String(formData.get("token") ?? "");
   const name = String(formData.get("name") ?? "").trim();
+  // Blank when the invitation carries a password the inviter set — that form
+  // has no password field at all. acceptInvite decides which it is by reading
+  // the invite, so an empty string here is a question for it, not an error.
   const password = String(formData.get("password") ?? "");
-  if (password.length < 10) return { error: "Use a password of at least 10 characters." };
 
   try {
     const user = await users.acceptInvite({ token, name, password });
@@ -129,6 +132,36 @@ export async function acceptInviteAction(
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Could not accept that invitation." };
   }
+  redirect("/");
+}
+
+/**
+ * Set a password for an account that was handed one by an admin.
+ *
+ * The difference from `changeOwnPasswordAction` is the missing current-password
+ * check, and it is missing on purpose: the password this person holds is one
+ * somebody else chose, so proving they have it proves nothing about them. What
+ * authorises this is the session cookie plus the flag on the account — hence
+ * `requireUserPendingPasswordChange`, and hence the refusal when the flag is
+ * not set, which stops this being a no-questions-asked password change for
+ * anyone who is simply signed in.
+ */
+export async function setNewPasswordAction(
+  _prev: { error?: string } | undefined,
+  formData: FormData,
+) {
+  const user = await requireUserPendingPasswordChange();
+  if (!user.mustChangePassword) redirect("/settings");
+  const next = String(formData.get("newPassword") ?? "");
+
+  try {
+    await users.changePassword(user.id, next);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Could not set that password." };
+  }
+  // changePassword ends every session, this one included; start a fresh one so
+  // they land in the app rather than back at sign-in having just proved it.
+  await startSession(user.id);
   redirect("/");
 }
 
@@ -252,7 +285,12 @@ export async function testConnectionAction(id: string) {
 // Admin
 // ---------------------------------------------------------------------------
 
-export async function inviteUserAction(input: { email: string; role: UserRole }) {
+export async function inviteUserAction(input: {
+  email: string;
+  role: UserRole;
+  password?: string;
+  mustChangePassword?: boolean;
+}) {
   const actor = await requireAdmin();
   const headerList = await headers();
   const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
@@ -264,6 +302,8 @@ export async function inviteUserAction(input: { email: string; role: UserRole })
       email: input.email,
       role: input.role,
       baseUrl: `${proto}://${host}`,
+      password: input.password,
+      mustChangePassword: input.mustChangePassword,
     });
     revalidatePath("/settings/admin");
     return {
@@ -271,6 +311,8 @@ export async function inviteUserAction(input: { email: string; role: UserRole })
       acceptUrl: result.acceptUrl,
       emailSent: result.emailSent,
       emailError: result.emailError,
+      passwordSet: result.passwordSet,
+      mustChangePassword: result.mustChangePassword,
     };
   } catch (error) {
     return { ok: false as const, error: error instanceof Error ? error.message : "Could not invite." };
@@ -342,17 +384,21 @@ export async function setUserActiveAction(userId: string, isActive: boolean) {
 }
 
 /**
- * Reset a member's password to a generated one and hand it back once.
+ * Reset a member's password — to one the admin typed, or to a generated one —
+ * and hand it back once.
  *
  * The password is returned to the admin who asked rather than emailed, because
  * on a self-hosted instance email may not be configured at all — and an admin
  * reading it off the screen to a customer they are already on a call with is
  * the actual support flow.
  */
-export async function adminResetPasswordAction(userId: string) {
+export async function adminResetPasswordAction(
+  userId: string,
+  options: { password?: string; mustChange?: boolean } = {},
+) {
   const actor = await requireAdmin();
   try {
-    const result = await users.adminResetPassword(actor, userId);
+    const result = await users.adminResetPassword(actor, userId, options);
     revalidatePath("/settings/admin");
     return { ok: true as const, ...result };
   } catch (error) {

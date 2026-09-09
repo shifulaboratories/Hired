@@ -299,6 +299,30 @@ land in their own empty workspace.
 Email is optional. Until you set up Resend, creating an invite gives you a link to send
 however you like — it stays valid for 14 days. Nothing is blocked on email being configured.
 
+### Setting the password yourself
+
+Leave the password field empty and it works as above: they choose their own and nobody else
+ever sees it. Type one, and the accept page asks only for their name — useful when you're
+setting somebody up over a call, or when the person you're inviting would rather be handed a
+login than invent one.
+
+The password is deliberately never in the invitation email. A message carrying both the link
+and the password it opens is the whole account, sent to an address nobody has proven yet, so
+you have to pass it on some other way. The app says so when you create the invite.
+
+Tick **make them replace it when they first sign in** and the app stays shut to them until
+they set one of their own — which is the thing that takes the password back out of your
+hands. Leave it unticked and the password you chose is simply theirs.
+
+**Resetting a member's password** works the same way. **Admin → People**, open the person or
+use the row menu, then **Reset password**. Empty generates a passphrase, which is easier to
+read down a phone line and harder to guess; type one if they asked for something specific.
+The same checkbox is there, and it defaults off either way — you decide each time whether
+they keep what you gave them.
+
+By conversation: `admin_invite_user` and `admin_reset_user_password` both take `password` and
+`must_change_password`.
+
 ### Letting people ask for access
 
 If you run a landing page in front of your instance, point its sign-up form at

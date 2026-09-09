@@ -342,18 +342,33 @@ export function inviteEmail(input: {
   inviterName: string;
   acceptUrl: string;
   expiresInDays: number;
+  /**
+   * Whether the inviter set the password. The password itself is deliberately
+   * not a parameter: sending a link and the credential it opens in one message
+   * makes the message the whole account, and this one is going to an address
+   * nobody has proven yet. All the email does is stop the invitee expecting
+   * the accept page to ask them for a password when it will not.
+   */
+  passwordSet?: boolean;
 }) {
   const subject = `${input.inviterName} invited you to ${input.instanceName}`;
   const html = shell({
     instanceName: input.instanceName,
     title: "You've been invited",
-    preview: `Pick a password and ${input.instanceName} is yours. The link is good for ${input.expiresInDays} days.`,
+    preview: input.passwordSet
+      ? `${input.instanceName} is yours — you'll need the password ${input.inviterName} gave you. The link is good for ${input.expiresInDays} days.`
+      : `Pick a password and ${input.instanceName} is yours. The link is good for ${input.expiresInDays} days.`,
     body: `${p(
       `<strong style="font-weight:600;">${escapeHtml(input.inviterName)}</strong> has invited you to join
        <strong style="font-weight:600;">${escapeHtml(input.instanceName)}</strong> — a place to keep everything
        about your career in one spot, build resumes out of it, and track where you've applied.`,
     )}
-    ${p("Pick a password and you're in. It takes about a minute.", { muted: true, last: true })}
+    ${p(
+      input.passwordSet
+        ? `${escapeHtml(input.inviterName)} has already set your password — they'll have sent it to you separately, not in this email. Follow the link, put your name in, and sign in with it.`
+        : "Pick a password and you're in. It takes about a minute.",
+      { muted: true, last: true },
+    )}
     ${button(input.acceptUrl, "Accept invitation")}
     ${fallbackLink(input.acceptUrl)}
     ${rule()}
@@ -367,7 +382,14 @@ everything about your career in one spot, build resumes out of it, and track
 where you've applied.
 
 Accept your invitation: ${input.acceptUrl}
-
+${
+  input.passwordSet
+    ? `
+${input.inviterName} has already set your password. It is not in this email — they
+will have sent it to you separately.
+`
+    : ""
+}
 The link expires in ${input.expiresInDays} days. If you weren't expecting it, ignore this email.`;
 
   return { subject, html, text };
