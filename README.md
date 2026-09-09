@@ -97,7 +97,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  127 tools any MCP client can call (159 if you're an admin). Claude, Claude Code, ChatGPT,
+  127 tools any MCP client can call (160 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -280,7 +280,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Hit **Test** next to any connection and the app calls its own endpoint the way a client
-would, then tells you how many tools answered — 127, or 159 if you're an admin.
+would, then tells you how many tools answered — 127, or 160 if you're an admin.
 
 #### One connection per client
 
@@ -304,6 +304,36 @@ land in their own empty workspace.
 
 Email is optional. Until you set up Resend, creating an invite gives you a link to send
 however you like — it stays valid for 14 days. Nothing is blocked on email being configured.
+
+### Setting the password yourself
+
+Leave the password field empty and it works as above: they choose their own and nobody else
+ever sees it. Type one, and the accept page asks only for their name — useful when you're
+setting somebody up over a call, or when the person you're inviting would rather be handed a
+login than invent one.
+
+The password is deliberately never in the invitation email. A message carrying both the link
+and the password it opens is the whole account, sent to an address nobody has proven yet, so
+you have to pass it on some other way. The app says so when you create the invite.
+
+Tick **make them replace it when they first sign in** and the app stays shut to them until
+they set one of their own — which is the thing that takes the password back out of your
+hands. Leave it unticked and the password you chose is simply theirs.
+
+You can change your mind afterwards. Every outstanding invitation has a key button beside
+its link: add a password to one you already sent, replace the password on it, or take it off
+so they pick their own again. The link is untouched, which is the whole reason this is a
+separate thing from re-inviting them — re-inviting mints a fresh token and kills the link
+they may already be holding.
+
+**Resetting a member's password** works the same way. **Admin → People**, open the person or
+use the row menu, then **Reset password**. Empty generates a passphrase, which is easier to
+read down a phone line and harder to guess; type one if they asked for something specific.
+The same checkbox is there, and it defaults off either way — you decide each time whether
+they keep what you gave them.
+
+By conversation: `admin_invite_user` and `admin_reset_user_password` both take `password` and
+`must_change_password`, and `admin_set_invite_password` changes one that is already out there.
 
 ### Letting people ask for access
 
@@ -619,8 +649,12 @@ with the company named once, so read straight it produces jobs called "Full-time
 promotions filed under no employer at all. That gets folded in first, and the review step says
 so, because the fields won't match what you pasted line for line.
 
-PDFs are deliberately not read directly: a two-column layout comes out interleaved, and a
-wrong parse you can't see is worse than a paste.
+**Read a PDF** takes the file itself, when the file can be read. A PDF has no paragraphs —
+just glyphs at coordinates — and a two-column resume's text comes out interleaved, a line of
+your jobs then a line of your sidebar. So the layout is checked first: one column is read and
+dropped into the box for you to look over, and two columns is refused *by name*, saying that's
+what it is and what to do instead. A blanket refusal of every PDF was the old answer, and most
+resumes are one column and read fine.
 
 ## The Harvard template
 

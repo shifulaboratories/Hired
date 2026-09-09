@@ -4237,7 +4237,7 @@ export const tools: McpTool[] = [
     name: "admin_invite_user",
     title: "Invite someone",
     description:
-      "Create an invitation and email it through Resend. If email is not configured yet, the invite is still created and the reply includes a link you can send by hand — so this works before Resend is set up.",
+      "Create an invitation and email it through Resend. If email is not configured yet, the invite is still created and the reply includes a link you can send by hand — so this works before Resend is set up. Normally the invitee picks their own password on the accept page and you never see it. Pass `password` instead to choose it for them: the accept page then asks only for their name, and you have to tell them the password some other way, because it is deliberately never put in the invitation email — a message carrying both the link and the password it opens IS the account, sent to an address nobody has proven yet. Pass `must_change_password` alongside it when you would rather not keep a way in: they replace your password the moment they are through the door. The password is hashed immediately and never comes back out of any tool.",
     inputSchema: object(
       {
         email: str("Who to invite"),
@@ -4246,6 +4246,12 @@ export const tools: McpTool[] = [
           enum: ["MEMBER", "ADMIN"],
           description: "MEMBER by default. Only the super admin may create ADMINs.",
         },
+        password: str(
+          "Set their password yourself instead of letting them pick one. At least 10 characters. Omit for the normal flow, where the accept page asks them for one.",
+        ),
+        must_change_password: bool(
+          "Whether they must replace your password with their own before the app opens to them. Off unless you ask for it, and ignored without a password.",
+        ),
       },
       ["email"],
     ),
@@ -4262,6 +4268,11 @@ export const tools: McpTool[] = [
         email: required(args, "email"),
         role: (s(args, "role") as UserRole | undefined) ?? "MEMBER",
         baseUrl: ctx.baseUrl,
+        // Not run through defined(): createInvite reads undefined as "not
+        // asked for" already, and defined() would make every key optional and
+        // take `actor` with it.
+        password: s(args, "password"),
+        mustChangePassword: b(args, "must_change_password"),
       });
       return {
         email: result.invite.email,
@@ -4269,16 +4280,26 @@ export const tools: McpTool[] = [
         emailSent: result.emailSent,
         emailError: result.emailError,
         acceptUrl: result.acceptUrl,
-        note: result.emailSent
-          ? "Invitation emailed."
-          : "Invitation created but NOT emailed — send them the acceptUrl yourself, or configure Resend with admin_set_email_config.",
+        passwordSet: result.passwordSet,
+        mustChangePassword: result.mustChangePassword,
+        note: [
+          result.emailSent
+            ? "Invitation emailed."
+            : "Invitation created but NOT emailed — send them the acceptUrl yourself, or configure Resend with admin_set_email_config.",
+          result.passwordSet
+            ? "The password is not in that email. Tell them separately, or they cannot sign in."
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
       };
     },
   },
   {
     name: "admin_list_invites",
     title: "List outstanding invites",
-    description: "Invitations that have not been accepted yet, with their links and expiry.",
+    description:
+      "Invitations that have not been accepted yet, with their links, expiry, and whether a password was set on each. Never returns the password itself — `passwordSet` is a boolean, and the stored hash does not leave the server.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -4288,6 +4309,39 @@ export const tools: McpTool[] = [
     },
     adminOnly: true,
     handler: async () => users.listInvites(),
+  },
+  {
+    name: "admin_set_invite_password",
+    title: "Set the password on an invitation",
+    description:
+      "Put a password on an invitation that has already gone out, or take one off, without changing its link. Reach for this when you invited somebody the normal way and then decided to hand them a password — re-inviting the same address would work too, but it mints a fresh token and the link you already sent stops working, which is the opposite of what you want here. Pass `password` to set one, at which point the accept page asks only for their name; pass an empty string to clear it and put them back to choosing their own. `must_change_password` makes them replace your password before the app opens to them, and is off unless you ask for it. The password never reaches the invitation email that already went out, so tell them yourself. Only works while the invitation is outstanding: once it has been accepted, use admin_reset_user_password on their account instead, which also ends their sessions. Takes an invite id from admin_list_invites.",
+    inputSchema: object(
+      {
+        id: str("Invite id, from admin_list_invites"),
+        password: str(
+          "The password to set, at least 10 characters. An empty string removes the one that is there and lets them pick their own again.",
+        ),
+        must_change_password: bool(
+          "Whether they must replace your password with their own before the app opens to them. Off unless you ask for it, and ignored when clearing.",
+        ),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    adminOnly: true,
+    handler: async (args, ctx) =>
+      users.setInvitePassword(
+        ctx.user,
+        required(args, "id"),
+        // Not defined(): an empty password is a real instruction here — it
+        // clears the one on the invitation — so it must survive as "".
+        { password: s(args, "password"), mustChange: b(args, "must_change_password") },
+      ),
   },
   {
     name: "admin_revoke_invite",
@@ -4307,8 +4361,19 @@ export const tools: McpTool[] = [
     name: "admin_reset_user_password",
     title: "Reset a member's password",
     description:
-      "Generate a new password for a member who is locked out, and return it once so it can be passed on. Every session they had is ended, so an old browser stays logged out. Cannot be used on the instance owner, and an admin cannot reset another admin's password — that restriction is what stops this being a way to take over an instance. The reset is written to the audit log; the password itself never is.",
-    inputSchema: object({ user_id: str("The user's id, from admin_list_users") }, ["user_id"]),
+      "Give a locked-out member a working password again, and return it once so it can be passed on. With no `password` it generates a passphrase, which is the safe default; pass one to set a password you chose. Either way every session they had is ended, so an old browser stays logged out. Either way you now know a password that opens their workspace, so `must_change_password` is there to close the app to them until they set their own. It is off unless you ask for it. Cannot be used on the instance owner, and an admin cannot reset another admin's password: that restriction is what stops this being a way to take over an instance. The reset is written to the audit log; the password itself never is.",
+    inputSchema: object(
+      {
+        user_id: str("The user's id, from admin_list_users"),
+        password: str(
+          "Set this exact password instead of generating one. At least 10 characters. Omit to generate a passphrase.",
+        ),
+        must_change_password: bool(
+          "Whether they must set their own password before the app opens to them again. Off unless you ask for it.",
+        ),
+      },
+      ["user_id"],
+    ),
     annotations: {
       readOnlyHint: false,
       destructiveHint: true,
@@ -4316,7 +4381,12 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     adminOnly: true,
-    handler: async (args, ctx) => users.adminResetPassword(ctx.user, required(args, "user_id")),
+    handler: async (args, ctx) =>
+      users.adminResetPassword(
+        ctx.user,
+        required(args, "user_id"),
+        defined({ password: s(args, "password"), mustChange: b(args, "must_change_password") }),
+      ),
   },
   {
     name: "admin_audit_log",

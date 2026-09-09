@@ -26,34 +26,39 @@ enum UserRole {
 }
 
 model User {
-  id               String    @id @default(cuid())
-  email            String    @unique
-  name             String    @default("")
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  name               String    @default("")
   /// scrypt, stored as "scrypt:N:r:p:salt:hash". Empty for someone who has
   /// only ever signed in with Google, so it is no longer on its own the test
   /// for whether an account is real — see isClaimed() in src/lib/auth.ts.
-  passwordHash     String
+  passwordHash       String
   /// Google's stable subject id for this person, set the first time they sign
   /// in with Google. Nullable rather than "" so the database itself refuses to
   /// let two accounts claim one Google identity; a default of "" would collide
   /// across every password-only user.
-  googleId         String?   @unique
+  googleId           String?   @unique
   /// When this instance last had a REASON to believe this address belongs to
   /// this person: an admin addressed an invitation to it, they claimed the
   /// instance with it, or Google handed it over verified. Null means the
   /// account simply typed it into Settings, which proves nothing — and is why
   /// a Google sign-in will not silently adopt such an account. See
   /// resolveGoogleAccount in src/lib/google.ts.
-  emailProvenAt    DateTime?
-  role             UserRole  @default(MEMBER)
-  isActive         Boolean   @default(true)
+  emailProvenAt      DateTime?
+  role               UserRole  @default(MEMBER)
+  /// Set when an admin handed this account a password they know — an invitation
+  /// with a password on it, or a reset. While true the app is closed to them
+  /// until they set a new one, which is the only thing that takes the password
+  /// back out of the admin's hands. Cleared by changePassword, whoever calls it.
+  mustChangePassword Boolean   @default(false)
+  isActive           Boolean   @default(true)
   /// Set when this person pays for the hosted instance through Stripe. Empty
   /// for the owner and anyone invited for free. When set, billing drives
   /// isActive: a lapsed subscription suspends, a recovered one reactivates.
-  stripeCustomerId String    @default("")
-  lastLoginAt      DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  stripeCustomerId   String    @default("")
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   invitedById String?
   invitedBy   User?   @relation("UserInvites", fields: [invitedById], references: [id], onDelete: SetNull)
@@ -178,23 +183,31 @@ model McpConnection {
 }
 
 model Invite {
-  id               String    @id @default(cuid())
-  email            String
-  token            String    @unique
-  role             UserRole  @default(MEMBER)
-  invitedById      String
-  invitedBy        User      @relation("InviteSender", fields: [invitedById], references: [id], onDelete: Cascade)
-  expiresAt        DateTime
-  acceptedAt       DateTime?
+  id                 String    @id @default(cuid())
+  email              String
+  token              String    @unique
+  role               UserRole  @default(MEMBER)
+  invitedById        String
+  invitedBy          User      @relation("InviteSender", fields: [invitedById], references: [id], onDelete: Cascade)
+  expiresAt          DateTime
+  acceptedAt         DateTime?
   /// Whether the invite email actually went out, so the UI can offer the raw link.
-  emailSent        Boolean   @default(false)
-  emailError       String    @default("")
+  emailSent          Boolean   @default(false)
+  emailError         String    @default("")
+  /// A password the inviter chose, hashed the same way a User's is. Empty is
+  /// the original behaviour: the invitee picks their own on the accept page.
+  /// Set, the accept page asks only for a name — they were told the password
+  /// out of band, by whoever invited them.
+  passwordHash       String    @default("")
+  /// Carried onto the User at acceptance. Only meaningful alongside a
+  /// passwordHash: it is what stops the inviter keeping a way in.
+  mustChangePassword Boolean   @default(false)
   /// Set when this invite was created by a Stripe checkout, so the customer
   /// link survives the gap between paying and accepting: acceptInvite copies
   /// it onto the new User, and billing can suspend a lapsed subscription even
   /// if no webhook fires between those two moments.
-  stripeCustomerId String    @default("")
-  createdAt        DateTime  @default(now())
+  stripeCustomerId   String    @default("")
+  createdAt          DateTime  @default(now())
 
   @@index([email])
   @@index([acceptedAt])

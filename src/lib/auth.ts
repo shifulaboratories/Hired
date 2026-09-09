@@ -389,7 +389,28 @@ export async function authenticate(email: string, password: string): Promise<Use
 // Guards
 // ---------------------------------------------------------------------------
 
+/**
+ * The signed-in person, or the sign-in page.
+ *
+ * It also enforces the one gate that is not about identity: an account whose
+ * password was handed to it by an admin — an invitation with a password on it,
+ * or a reset marked "must change" — gets nothing but `/change-password` until
+ * it sets its own. The check lives here rather than in the app layout because
+ * every server action goes through this function too, and a gate that only the
+ * chrome enforces is a gate you can walk around by posting a form.
+ *
+ * `/change-password` itself uses `requireUserPendingPasswordChange`, which is
+ * the same function without the redirect — otherwise the one screen that can
+ * clear the flag would bounce off it.
+ */
 export async function requireUser(): Promise<User> {
+  const user = await requireUserPendingPasswordChange();
+  if (user.mustChangePassword) redirect("/change-password");
+  return user;
+}
+
+/** `requireUser` minus the password gate. Only the screen behind it may call this. */
+export async function requireUserPendingPasswordChange(): Promise<User> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   return user;

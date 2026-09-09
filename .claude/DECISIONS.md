@@ -5643,6 +5643,174 @@ effect's `router.refresh()` landing after the reader has navigated away, so
 that refresh is now dropped on unmount. Six consecutive full sweeps — every
 screen, two zones, from an unseeded profile — are clean.
 
+---
+
+## 2026-09-09 — An admin can choose the password, and decide whether it stays
+
+Two halves of one request, and they turned out to be one mechanism. An invitation can carry a
+password the inviter typed instead of asking the invitee to invent one, and a reset can set a
+chosen password instead of a generated passphrase. Either way the admin now knows a password
+that opens somebody else's workspace, so both can be marked "must change".
+
+**`User.mustChangePassword` is the whole feature.** `Invite.passwordHash` and
+`Invite.mustChangePassword` only exist because an invitation is written before the User row
+does; acceptance copies the flag across and the invite fields never matter again. One flag,
+one gate, two entry points — rather than a forced-reset flow for invitations and a different
+one for resets.
+
+**The gate is in `requireUser`, not in the app layout.** Every server action calls
+`requireUser` too, so a gate the chrome enforces is a gate you walk around by posting a form.
+`/change-password` and its action call `requireUserPendingPasswordChange`, which is the same
+function without the redirect, and those two are the only callers it is allowed to have. The
+page lives outside `(app)` with `/login` and `/invite/[token]`: this person is signed in but
+not yet in, and rendering the sidebar over their empty workspace would be a lie.
+
+**`changePassword` clears the flag, so every route out of it works.** Putting the clear in the
+forced screen's action would have left the flag standing for somebody who changed their
+password from Settings instead. The rule is "setting your own password lifts it", and the one
+function that sets your own password is where that belongs.
+
+**`setNewPasswordAction` deliberately has no current-password check**, unlike
+`changeOwnPasswordAction`. The premise of the screen is that the password you hold was chosen
+by someone else, so proving you have it proves nothing about you; the session cookie is the
+proof. It refuses when the flag is not set, which is what stops it being a no-questions-asked
+password change for anyone who happens to be signed in.
+
+**The password is never in the invitation email, and that is not an oversight to fix later.**
+A message carrying both the link and the credential it opens *is* the account, sent to an
+address nobody has proven yet. `inviteEmail` takes `passwordSet: boolean` and not the
+password — the type is the enforcement. The email and the admin UI both say the password has
+to travel another way, because the failure mode otherwise is silent: they get a link, no
+password, and no idea one exists.
+
+**`must change` defaults OFF everywhere, including for a password you typed.** An earlier pass
+defaulted it on for a chosen password, on the reasoning that you know it. That is true, and
+still the wrong default: the caller is usually an admin unlocking somebody who is on the phone
+to them, and forcing a second password step on a person you just helped is help nobody asked
+for. Both the UI and the tools put the switch in front of you instead of guessing. Note this
+means a generated passphrase behaves exactly as it always did.
+
+**`defined()` cannot wrap an object with required keys.** `createInvite` takes `actor`, and
+running the whole argument bag through `defined()` made every key optional, so `actor: User`
+stopped satisfying `actor: User`. It is only for option bags that are optional all the way
+down; `createInvite` reads `undefined` as "not asked for" already.
+
+**The reset UI became a shared dialog.** Two screens do this — the people table's row menu and
+the person page — and both were a `confirm()`, which was fine while the only choice was "yes".
+With two choices to make they would have grown into two slightly different dialogs, so
+`src/components/admin/reset-password-dialog.tsx` is the one implementation. It stays open on
+the result rather than closing over it: the password is shown once, and closing an unread
+password is losing it.
+
+**Verified against a real Postgres, the whole path.** Migration applied, then driven in a
+browser: invite with a chosen password and the box ticked → the accept page has no password
+field at all → accepting lands on `/change-password` → `/me` redirects back to it → setting a
+password lands in the app → admin resets with a chosen password and the box ticked → signing
+in with it lands on `/change-password` again. Both tools called over MCP, including the
+short-password refusal. The audit rows say "Password set by admin, must be changed at next
+sign-in" and never the password.
+
+**Applies to:** `prisma/schema.prisma`,
+`prisma/migrations/20260909000000_admin_set_password/`, `src/lib/data/users.ts`,
+`src/lib/auth.ts`, `src/lib/email.ts`, `src/lib/mcp/tools.ts`, `src/server/actions.ts`,
+`src/app/change-password/`, `src/app/invite/[token]/page.tsx`,
+`src/app/(app)/settings/admin/people/[id]/page.tsx`, `src/components/forced-password-form.tsx`,
+`src/components/accept-invite-form.tsx`, `src/components/admin/{invites-panel,users-panel,person-actions,reset-password-dialog}.tsx`,
+`docs/tools/admin.mdx`, `README.md`.
+
+---
+
+## 2026-09-09 — An invitation's password is editable after it has gone out
+
+The previous entry let an admin set a password when creating an invitation. The gap it left
+is the ordinary case: you invite somebody the normal way, send them the link, and only then
+decide to hand them a password too.
+
+**Re-inviting already did this, and that is precisely why the tool exists.** `createInvite`
+deletes the outstanding invite for an address and creates a new one, so re-inviting with a
+password would set one — and mint a fresh token, killing the link you already sent. Which is
+exactly wrong when the reason you are here is that you already sent it. `setInvitePassword`
+edits the row in place and leaves the token alone; the browser test asserts the token is
+byte-identical afterwards.
+
+**An empty password is an instruction, not a missing argument.** It clears the one on the
+invitation and puts the invitee back to choosing their own. That is why the handler passes
+`{ password: s(args, "password") }` straight through rather than through `defined()` — the
+helper strips undefined keys, and `""` has to survive as `""` to mean "remove it".
+
+**`admin_list_invites` was leaking the password hash**, introduced by the previous entry and
+found while adding this. `listInvites` was a bare `findMany` whose result went straight out of
+the tool, and the row had just grown `passwordHash`. A scrypt hash is not a password, but it
+is also not something an admin tool has any business emitting. The select is explicit now and
+what leaves is `passwordSet: boolean`. Worth generalising: any data function whose return
+value is handed whole to a tool has to name its columns, because adding a column to the
+schema otherwise publishes it.
+
+**An ADMIN invitation is the super admin's alone to put a password on**, mirroring
+`createInvite`. Note `revokeInvite` has no such guard and does not need one — destroying an
+invitation is safe for anyone who can see it, whereas putting a known credential on a pending
+admin invitation whose link is sitting on the same screen is a way to become an admin.
+
+**Accepted invitations are refused with the alternative named.** Once accepted the invite is
+spent and the thing you actually want is `adminResetPassword` on the account, which also ends
+their sessions — so the error says that rather than just "no".
+
+**The invitation email that already went out is not re-sent and not corrected.** It says "pick
+a password" and the accept page now asks only for a name. The page is the source of truth, the
+mismatch is harmless, and re-sending on an edit would mail people repeatedly for a change they
+cannot see. The dialog and the toast both say the password is not in that email.
+
+**Verified against a real Postgres.** Over MCP: invite plainly, confirm `admin_list_invites`
+returns no hash, set a password, assert the token is unchanged, refuse a short one, clear it
+and confirm the columns are back to empty/false. In a browser: the key button on the row, the
+dialog reopening in the invitation's own state with a Remove password button, the badge on the
+row, then the original link accepting with no password field and landing on `/change-password`.
+Audit rows name the address and the effect, never the password or the token.
+
+**Applies to:** `src/lib/data/users.ts`, `src/lib/data/audit.ts`, `src/lib/audit-groups.ts`,
+`src/lib/mcp/tools.ts`, `src/server/actions.ts`,
+`src/components/admin/{invite-password-dialog,invites-panel}.tsx`,
+`src/app/(app)/settings/admin/page.tsx`, `docs/tools/admin.mdx`, `README.md`.
+
+## 2026-09-08 — PDFs: read the readable ones, refuse the rest by name
+
+This app has always told people to open their PDF, select all and paste. The reason was
+sound — a two-column resume's text comes out interleaved, a line of your jobs then a line of
+your sidebar, and a wrong parse you cannot see is worse than a paste — but the conclusion was
+too broad. Most resumes are one column and read perfectly well, and text comes with positions,
+so a two-column layout is *detectable*. It is now read when it can be read and refused **by
+name** when it cannot: "this is a two-column layout, its text comes out interleaved", with
+what to do instead.
+
+**A gutter is asked of the runs, never of assembled lines.** Assembling lines means grouping by
+baseline, and in two columns the sidebar and the body share baselines — so the "line" spans the
+page and crosses every candidate x, which is exactly backwards. The first version did that and
+could not see a two-column page at all. Asked of the runs, a gutter is an x that almost nothing
+crosses with real text on both sides, which is also what distinguishes a real second column
+from a right-aligned date or a date rail down the left: those sit beside lines that reach
+across.
+
+**The paragraph threshold is measured, and it is 1.35.** A fixed gap put a blank line between
+every line at one font size and none at another. Measuring the page's own median line spacing
+fixes that, but 1.6× was still too conservative: a real document with a 10pt margin between
+jobs came through with no break, and the parser read the first job's bullets as the second
+job's company and title. Caught by running a rendered PDF all the way through to the review
+step rather than stopping at "the text came out".
+
+**pdfjs v4 has no no-worker mode.** Setting `workerSrc` to "" throws. The worker is loaded
+through `new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url)` so the bundler emits
+it as an asset and returns its real hashed URL. The library itself is a dynamic import inside
+the handler: it is a megabyte of parser and most people paste text, so only someone who
+actually has a PDF pays for it.
+
+**One two-column page refuses the document.** A resume whose second page is a sidebar is still
+a resume that comes out interleaved, and half an import is worse than none — you would have to
+work out what was missing yourself.
+
+**Applies to:** `src/lib/resume-pdf-layout.ts` (new, pure — positions in, verdict out),
+`src/components/me/import-dialog.tsx`, `package.json` (`pdfjs-dist`, the one new runtime
+dependency this whole run has added).
+
 ## 2026-09-09 — Ten stages become six, and the detail moves off the board
 
 Screening, interviewing and a final round were three board columns for one thing —

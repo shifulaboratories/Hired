@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckIcon,
   CopyIcon,
+  KeyRoundIcon,
   LoaderCircleIcon,
   MailIcon,
   MailWarningIcon,
@@ -16,6 +18,7 @@ import type { UserRole } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -25,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { InvitePasswordDialog } from "@/components/admin/invite-password-dialog";
 import { SectionEmpty } from "@/components/page-header";
 import { relativeDay } from "@/lib/utils";
 import { useViewerZone } from "@/components/viewer-zone";
@@ -39,6 +43,9 @@ type Invite = {
   emailSent: boolean;
   emailError: string;
   invitedBy: string;
+  /** Whether the inviter set the password. Never the password, never the hash. */
+  passwordSet: boolean;
+  mustChangePassword: boolean;
 };
 
 export function InvitesPanel({
@@ -52,24 +59,45 @@ export function InvitesPanel({
   emailReady: boolean;
   baseUrl: string;
 }) {
+  const router = useRouter();
   const zone = useViewerZone();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<UserRole>("MEMBER");
+  // Empty is the normal invitation: they pick their own password on the accept
+  // page and nobody here ever sees it. Typing one swaps that page for a
+  // name-only form and puts the telling-them part on you.
+  const [password, setPassword] = useState("");
+  const [mustChange, setMustChange] = useState(false);
   const [pending, startTransition] = useTransition();
   const [lastLink, setLastLink] = useState<string | null>(null);
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  // Which outstanding invitation the password dialog is open on, null when shut.
+  const [editing, setEditing] = useState<Invite | null>(null);
 
   const invite = () => {
     if (!email.trim()) return;
     startTransition(async () => {
-      const result = await inviteUserAction({ email: email.trim(), role });
+      const result = await inviteUserAction({
+        email: email.trim(),
+        role,
+        password: password.trim() || undefined,
+        mustChangePassword: mustChange,
+      });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
       setEmail("");
+      setPassword("");
+      setMustChange(false);
       setLastLink(result.acceptUrl);
-      if (result.emailSent) toast.success(`Invitation emailed`);
+      if (result.passwordSet) {
+        // The one thing that can go wrong silently: they get a link, no
+        // password, and no idea one exists. Said loudly and left up.
+        toast.warning("Invite created — send them the password yourself, it isn't in the email", {
+          duration: 10000,
+        });
+      } else if (result.emailSent) toast.success(`Invitation emailed`);
       else toast.warning("Invite created — send the link yourself", { duration: 6000 });
     });
   };
@@ -119,9 +147,60 @@ export function InvitesPanel({
             </div>
           </div>
 
+          <div className="space-y-2">
+            <div className="max-w-sm space-y-1.5">
+              <Label htmlFor="invite-password">Password (optional)</Label>
+              <Input
+                id="invite-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && invite()}
+                placeholder="Leave empty and they pick their own"
+                type="text"
+                autoComplete="off"
+                minLength={10}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {password.trim()
+                ? "The accept page will only ask for their name. The password is deliberately not in the invitation email — send it to them another way, or they can't sign in."
+                : "The usual way: the accept page asks them to choose one, and nobody here ever sees it."}
+            </p>
+            {password.trim() && (
+              <label className="flex cursor-pointer items-start gap-2.5 pt-1 text-[13px]">
+                <Checkbox
+                  checked={mustChange}
+                  onCheckedChange={(value) => setMustChange(value === true)}
+                  className="mt-0.5"
+                />
+                <span>
+                  Make them replace it when they first sign in
+                  <span className="text-muted-foreground block text-xs">
+                    Otherwise the password you chose stays theirs, and you know it.
+                  </span>
+                </span>
+              </label>
+            )}
+          </div>
+
           {lastLink && <CopyableLink url={lastLink} />}
         </CardContent>
       </Card>
+
+      <InvitePasswordDialog
+        invite={
+          editing
+            ? {
+                id: editing.id,
+                email: editing.email,
+                passwordSet: editing.passwordSet,
+                mustChangePassword: editing.mustChangePassword,
+              }
+            : null
+        }
+        onOpenChange={(open) => !open && setEditing(null)}
+        onDone={() => router.refresh()}
+      />
 
       {visible.length === 0 ? (
         <SectionEmpty>Nothing outstanding — everyone invited has already joined.</SectionEmpty>
@@ -156,9 +235,27 @@ export function InvitesPanel({
                       </div>
                     </div>
 
+                    {item.passwordSet && (
+                      <Badge variant="outline" className="gap-1">
+                        <KeyRoundIcon className="size-3" />
+                        {item.mustChangePassword ? "Password, must change" : "Password set"}
+                      </Badge>
+                    )}
+
                     <Badge variant={item.role === "MEMBER" ? "outline" : "default"}>
                       {item.role === "MEMBER" ? "Member" : "Admin"}
                     </Badge>
+
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={() => setEditing(item)}
+                      aria-label={`Set the password on the invitation for ${item.email}`}
+                      title="Set a password"
+                    >
+                      <KeyRoundIcon />
+                    </Button>
 
                     <CopyButton url={`${baseUrl.replace(/\/$/, "")}/invite/${item.token}`} />
 

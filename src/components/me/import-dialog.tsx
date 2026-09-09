@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import {
   DownloadIcon,
+  FileTextIcon,
   LoaderCircleIcon,
   PlusIcon,
   Trash2Icon,
@@ -25,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { parseResumeText, type ParseNote } from "@/lib/resume-parse";
+import { readPdf, type PageBoxes } from "@/lib/resume-pdf-layout";
 import { buildBaseResumeAction, importResumeAction } from "@/server/actions";
 import type { ResumeImport } from "@/lib/data/me";
 
@@ -49,6 +51,10 @@ export function ImportDialog({ hasResumes = false }: { hasResumes?: boolean }) {
   const [source, setSource] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [notes, setNotes] = useState<ParseNote[]>([]);
+  /** What happened to a dropped PDF, if one was dropped. */
+  const [pdfState, setPdfState] = useState<"idle" | "reading" | "columns" | "empty" | "failed">(
+    "idle",
+  );
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -71,6 +77,68 @@ export function ImportDialog({ hasResumes = false }: { hasResumes?: boolean }) {
       .map(([n, word]) => (word === "name" ? `a name` : `${n} ${word}${n > 1 ? "s" : ""}`))
       .join(", ");
   }, [draft, roleCount]);
+
+  /**
+   * Read a dropped PDF, or say why it cannot be read.
+   *
+   * pdfjs is imported here rather than at the top of the file so it is fetched
+   * only by someone who actually has a PDF — it is a megabyte of parser, and
+   * most people paste text.
+   *
+   * The worker is not optional. Setting workerSrc to "" to keep everything on
+   * the main thread throws 'No "GlobalWorkerOptions.workerSrc" specified' —
+   * pdfjs v4 has no no-worker mode. `new URL(..., import.meta.url)` is what
+   * makes the bundler emit the worker as an asset and hand back its real URL,
+   * so this keeps working under a hashed build rather than depending on a path
+   * that happens to be right in development.
+   */
+  const readPdfFile = (file: File) => {
+    setPdfState("reading");
+    startTransition(async () => {
+      try {
+        const pdfjs = await import("pdfjs-dist");
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+          "pdfjs-dist/build/pdf.worker.min.mjs",
+          import.meta.url,
+        ).toString();
+        const doc = await pdfjs.getDocument({
+          data: new Uint8Array(await file.arrayBuffer()),
+          isEvalSupported: false,
+          disableFontFace: true,
+        }).promise;
+        const pages: PageBoxes[] = [];
+        for (let number = 1; number <= doc.numPages; number++) {
+          const page = await doc.getPage(number);
+          const viewport = page.getViewport({ scale: 1 });
+          const content = await page.getTextContent();
+          pages.push({
+            width: viewport.width,
+            height: viewport.height,
+            boxes: content.items.flatMap((item) =>
+              "str" in item
+                ? [{ text: item.str, x: item.transform[4], y: item.transform[5], width: item.width }]
+                : [],
+            ),
+          });
+        }
+        const reading = readPdf(pages);
+        if (reading.kind === "read") {
+          setText(reading.text);
+          setPdfState("idle");
+          toast.success(`Read ${reading.pages} page${reading.pages === 1 ? "" : "s"} of ${file.name}`);
+        } else if (reading.kind === "columns") {
+          // Named, not hidden. A two-column PDF's text comes out interleaved —
+          // a line of your jobs, a line of your sidebar — and handing that to
+          // the parser produces a mess whose cause is invisible.
+          setPdfState("columns");
+        } else {
+          setPdfState("empty");
+        }
+      } catch {
+        setPdfState("failed");
+      }
+    });
+  };
 
   const read = () => {
     const body = text.trim();
@@ -212,18 +280,65 @@ export function ImportDialog({ hasResumes = false }: { hasResumes?: boolean }) {
 
         {!draft ? (
           <div className="space-y-2">
-            <Label htmlFor="import-text">The document, as text</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="import-text">The document, as text</Label>
+              <Button variant="ghost" size="xs" asChild disabled={pdfState === "reading"}>
+                <label className="cursor-pointer">
+                  {pdfState === "reading" ? (
+                    <LoaderCircleIcon className="animate-spin" />
+                  ) : (
+                    <FileTextIcon />
+                  )}
+                  {pdfState === "reading" ? "Reading…" : "Read a PDF"}
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="sr-only"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      if (file) readPdfFile(file);
+                    }}
+                  />
+                </label>
+              </Button>
+            </div>
             <Textarea
               id="import-text"
               value={text}
               onChange={(event) => setText(event.target.value)}
-              placeholder="Open the PDF, select all, paste it here."
+              placeholder="Paste it here, or read a PDF above."
               className="min-h-64 font-mono text-[12px]"
             />
-            <p className="text-faint text-xs">
-              PDFs are not read directly on purpose: a two-column layout comes out interleaved and
-              a wrong parse you cannot see is worse than a paste.
-            </p>
+            {/* Every one of these says what happened and what to do about it.
+                "It didn't work" is what this dialog used to say about PDFs, by
+                not accepting them at all. */}
+            {pdfState === "columns" ? (
+              <p className="text-muted-foreground flex gap-1.5 text-xs">
+                <TriangleAlertIcon className="mt-0.5 size-3 shrink-0 text-[var(--warning)]" />
+                That PDF is laid out in two columns. Its text comes out interleaved — a line of
+                your jobs, then a line of your sidebar — so reading it would produce a mess you
+                could not see the cause of. Open it, select all, and paste instead; or give the
+                file to Claude, which reads the page rather than the text layer.
+              </p>
+            ) : pdfState === "empty" ? (
+              <p className="text-muted-foreground flex gap-1.5 text-xs">
+                <TriangleAlertIcon className="mt-0.5 size-3 shrink-0 text-[var(--warning)]" />
+                That PDF has no text in it — it is probably a scan or an export of images. Paste
+                the text instead, or give the file to Claude.
+              </p>
+            ) : pdfState === "failed" ? (
+              <p className="text-muted-foreground flex gap-1.5 text-xs">
+                <TriangleAlertIcon className="mt-0.5 size-3 shrink-0 text-[var(--warning)]" />
+                That file could not be opened as a PDF. Paste the text instead.
+              </p>
+            ) : (
+              <p className="text-faint text-xs">
+                A single-column PDF is read here. A two-column one is refused rather than
+                guessed at: its text comes out interleaved, and a wrong parse you cannot see is
+                worse than a paste.
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-4">

@@ -28,6 +28,9 @@ export async function listUsers() {
       name: true,
       role: true,
       isActive: true,
+      // Answers the support question this page exists for: "they say the app
+      // won't let them in" — a standing must-change is the reason, not a bug.
+      mustChangePassword: true,
       lastLoginAt: true,
       createdAt: true,
       stripeCustomerId: true,
@@ -63,7 +66,21 @@ export async function listUsers() {
 }
 
 /**
- * Reset somebody else's password to a fresh generated one, returned once.
+ * The one rule about what a password may be, so the accept page, the reset
+ * dialog, the settings form and every MCP tool all refuse the same things.
+ * Ten characters, which is what the sign-up field has always asked for.
+ */
+export const MIN_PASSWORD_LENGTH = 10;
+
+export function assertUsablePassword(password: string) {
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(`Use a password of at least ${MIN_PASSWORD_LENGTH} characters.`);
+  }
+}
+
+/**
+ * Reset somebody else's password, to one you chose or to a fresh generated
+ * passphrase, returned once.
  *
  * The reason this exists: on a hosted instance a locked-out customer has no
  * other way back in, and neither did you. It goes through `canManage`, so an
@@ -73,14 +90,37 @@ export async function listUsers() {
  *
  * Every session that user had is destroyed, because a password reset whose
  * old sessions keep working has not actually locked anyone out.
+ *
+ * `password` is the one you typed; leave it out and a passphrase is generated,
+ * which is what this always did. `mustChange` closes the app to them until they
+ * set their own — the point being that after either kind of reset you know a
+ * password that opens somebody else's workspace, and the flag is the only thing
+ * that takes it back out of your hands.
+ *
+ * It defaults OFF, and that is a deliberate choice rather than an oversight:
+ * the caller is an admin doing this for a person who is usually on the phone to
+ * them, and forcing a second password step on somebody you just unlocked is the
+ * kind of help nobody asked for. The UI and the tool both put the switch in
+ * front of you instead of guessing.
  */
-export async function adminResetPassword(actor: User, userId: string) {
+export async function adminResetPassword(
+  actor: User,
+  userId: string,
+  options: { password?: string; mustChange?: boolean } = {},
+) {
   const target = await db.user.findUnique({ where: { id: userId } });
   if (!target) throw new Error("No such user.");
   if (!canManage(actor, target)) throw new Error("You can't reset that user's password.");
 
-  const password = generatePassphrase();
-  await db.user.update({ where: { id: userId }, data: { passwordHash: hashPassword(password) } });
+  const chosen = (options.password ?? "").trim();
+  if (chosen) assertUsablePassword(chosen);
+  const password = chosen || generatePassphrase();
+  const mustChange = options.mustChange ?? false;
+
+  await db.user.update({
+    where: { id: userId },
+    data: { passwordHash: hashPassword(password), mustChangePassword: mustChange },
+  });
   await db.session.deleteMany({ where: { userId } });
 
   await recordAudit({
@@ -88,11 +128,14 @@ export async function adminResetPassword(actor: User, userId: string) {
     action: "user.password_reset",
     target: { id: target.id, email: target.email },
     // Deliberately not the password. This row is read by every admin and
-    // outlives the account.
-    detail: "Password reset and all sessions ended",
+    // outlives the account. Whether it was chosen or generated is safe to say
+    // and is the thing you want to know reading this back six months later.
+    detail: `${chosen ? "Password set by admin" : "Password reset to a generated one"}${
+      mustChange ? ", must be changed at next sign-in" : ""
+    }, and all sessions ended`,
   });
 
-  return { email: target.email, password };
+  return { email: target.email, password, mustChange };
 }
 
 /**
@@ -152,6 +195,7 @@ export async function getUserDetail(actor: User, userId: string) {
       name: true,
       role: true,
       isActive: true,
+      mustChangePassword: true,
       lastLoginAt: true,
       createdAt: true,
       stripeCustomerId: true,
@@ -262,7 +306,14 @@ export async function deleteUser(actor: User, userId: string) {
 }
 
 export async function changePassword(userId: string, password: string) {
-  await db.user.update({ where: { id: userId }, data: { passwordHash: hashPassword(password) } });
+  assertUsablePassword(password);
+  await db.user.update({
+    where: { id: userId },
+    // Setting your own password is the only thing that lifts the gate, and it
+    // lifts it here rather than in the one screen that happens to be behind it
+    // — otherwise changing it from Settings would leave the flag standing.
+    data: { passwordHash: hashPassword(password), mustChangePassword: false },
+  });
   // Every other device gets signed out; the caller re-establishes its own session.
   await db.session.deleteMany({ where: { userId } });
 }
@@ -287,12 +338,97 @@ export async function updateOwnAccount(userId: string, patch: { name?: string; e
 // Invites
 // ---------------------------------------------------------------------------
 
+/**
+ * Outstanding invitations.
+ *
+ * The select is explicit rather than a bare findMany because the row now
+ * carries `passwordHash`, and `admin_list_invites` hands whatever this returns
+ * straight to a connected assistant. A scrypt hash is not a password, but it is
+ * also not something an admin tool has any reason to emit — so what leaves here
+ * is the boolean the callers actually want.
+ */
 export async function listInvites() {
-  return db.invite.findMany({
+  const rows = await db.invite.findMany({
     where: { acceptedAt: null },
     orderBy: { createdAt: "desc" },
-    include: { invitedBy: { select: { name: true, email: true } } },
+    select: {
+      id: true,
+      email: true,
+      token: true,
+      role: true,
+      expiresAt: true,
+      createdAt: true,
+      emailSent: true,
+      emailError: true,
+      mustChangePassword: true,
+      passwordHash: true,
+      invitedBy: { select: { name: true, email: true } },
+    },
   });
+  return rows.map(({ passwordHash, ...invite }) => ({
+    ...invite,
+    /** Whether the inviter set the password rather than leaving it to the invitee. */
+    passwordSet: Boolean(passwordHash),
+  }));
+}
+
+/**
+ * Put a password on an invitation that has already gone out — or take one off.
+ *
+ * Re-inviting the same address would also do this: `createInvite` replaces the
+ * outstanding invite. But it mints a fresh token, so the link you already sent
+ * stops working, which is exactly wrong when the reason you are here is that
+ * you sent the link and then decided to hand them the password too. This edits
+ * the invitation in place and the link keeps working.
+ *
+ * An empty `password` clears it, putting the invitation back to the normal
+ * flow where the accept page asks them to choose one. `mustChange` is only
+ * meaningful with a password, and is cleared alongside it.
+ *
+ * Accepted invitations are not editable here: once somebody has accepted, the
+ * invite is spent and the thing you want is `adminResetPassword` on their
+ * account, which ends their sessions as well.
+ */
+export async function setInvitePassword(
+  actor: User,
+  id: string,
+  options: { password?: string; mustChange?: boolean } = {},
+) {
+  const invite = await db.invite.findUnique({ where: { id } });
+  if (!invite) throw new Error("No such invitation.");
+  if (invite.acceptedAt) {
+    throw new Error("That invitation has been accepted. Reset the password on their account instead.");
+  }
+  // Same rule as creating one: an ADMIN invitation is the super admin's to
+  // issue, so it is also theirs to put a credential on. Without this an admin
+  // could set a known password on a pending admin invitation whose link is
+  // sitting on the same screen.
+  if (invite.role === "ADMIN" && actor.role !== "SUPER_ADMIN") {
+    throw new Error("Only the super admin can change an admin invitation.");
+  }
+
+  const chosen = (options.password ?? "").trim();
+  if (chosen) assertUsablePassword(chosen);
+  const mustChange = chosen ? (options.mustChange ?? false) : false;
+
+  await db.invite.update({
+    where: { id },
+    data: { passwordHash: chosen ? hashPassword(chosen) : "", mustChangePassword: mustChange },
+  });
+
+  await recordAudit({
+    actor,
+    action: "user.invite_password",
+    target: { email: invite.email },
+    // Never the password, and never the token: this row is read by every admin.
+    detail: chosen
+      ? `Password set on the invitation to ${invite.email}${
+          mustChange ? ", must be changed at first sign-in" : ""
+        }`
+      : `Password removed from the invitation to ${invite.email} — they choose their own again`,
+  });
+
+  return { email: invite.email, passwordSet: Boolean(chosen), mustChangePassword: mustChange };
 }
 
 export type InviteResult = {
@@ -300,18 +436,34 @@ export type InviteResult = {
   acceptUrl: string;
   emailSent: boolean;
   emailError: string;
+  /** Whether the inviter set the password rather than leaving it to the invitee. */
+  passwordSet: boolean;
+  mustChangePassword: boolean;
 };
 
 /**
  * Create an invite and try to email it. If email isn't configured or Resend
  * rejects it, the invite is still valid — the caller shows the link to copy by
  * hand, so the platform is usable before Resend is set up.
+ *
+ * `password` is optional and changes what the accept page asks for: without
+ * one it asks for a name and a password, the way it always has; with one it
+ * asks only for a name, because you already told them the password some other
+ * way. It is hashed here and never stored or returned in the clear — the copy
+ * you typed is the only copy, which is the same deal as `adminResetPassword`.
+ *
+ * `mustChangePassword` is off unless you ask for it, matching
+ * `adminResetPassword`. On, they replace the password you chose the moment they
+ * are through the door, which is what stops you keeping a way into their
+ * workspace; off, the password you handed them is simply theirs now.
  */
 export async function createInvite(input: {
   actor: User;
   email: string;
   role: UserRole;
   baseUrl: string;
+  password?: string;
+  mustChangePassword?: boolean;
 }): Promise<InviteResult> {
   const email = input.email.trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("That doesn't look like an email address.");
@@ -326,10 +478,24 @@ export async function createInvite(input: {
   // Re-inviting the same address replaces the outstanding invite.
   await db.invite.deleteMany({ where: { email, acceptedAt: null } });
 
+  const chosen = (input.password ?? "").trim();
+  if (chosen) assertUsablePassword(chosen);
+  const mustChangePassword = input.mustChangePassword ?? false;
+
   const token = generateInviteToken();
   const expiresAt = new Date(Date.now() + INVITE_DAYS * 86400_000);
   const invite = await db.invite.create({
-    data: { email, token, role: input.role, invitedById: input.actor.id, expiresAt },
+    data: {
+      email,
+      token,
+      role: input.role,
+      invitedById: input.actor.id,
+      expiresAt,
+      passwordHash: chosen ? hashPassword(chosen) : "",
+      // Only meaningful with a password on the invite: with none, the invitee
+      // picks their own on the accept page and there is nothing to change.
+      mustChangePassword: chosen ? mustChangePassword : false,
+    },
   });
 
   const settings = await getSettings();
@@ -341,6 +507,11 @@ export async function createInvite(input: {
     inviterName: input.actor.name || input.actor.email,
     acceptUrl,
     expiresInDays: INVITE_DAYS,
+    // The email never carries the password — it is the one thing about this
+    // invitation that must travel by a different route than the link does.
+    // It only says a password is waiting, so the invitee knows to go looking
+    // for it rather than assuming the accept page will ask.
+    passwordSet: Boolean(chosen),
   });
   const sent = await sendEmail({ to: email, ...message, settings });
 
@@ -355,7 +526,11 @@ export async function createInvite(input: {
     target: { email },
     // Never the token: the audit log is readable by every admin, and the token
     // is the credential that accepts the invitation.
-    detail: `Invited as ${input.role ?? "MEMBER"}${sent.ok ? "" : " (email failed)"}`,
+    detail: `Invited as ${input.role ?? "MEMBER"}${
+      chosen
+        ? `, password set by admin${mustChangePassword ? " and must be changed at first sign-in" : ""}`
+        : ""
+    }${sent.ok ? "" : " (email failed)"}`,
   });
 
   return {
@@ -363,6 +538,8 @@ export async function createInvite(input: {
     acceptUrl,
     emailSent: sent.ok,
     emailError: sent.ok ? "" : sent.error,
+    passwordSet: Boolean(chosen),
+    mustChangePassword: Boolean(chosen) && mustChangePassword,
   };
 }
 
@@ -407,6 +584,18 @@ export async function acceptInvite(input: { token: string; name: string; passwor
   }
   const invite = result.invite;
 
+  // Two ways to arrive here. Either the invitation carries a password the
+  // inviter chose and typed the invitee's name is all this page collects, or it
+  // does not and they pick one now. Falling back to the invite's hash rather
+  // than trusting a blank field is what stops an empty password creating an
+  // account nobody can sign in to but everybody can see.
+  const passwordHash = input.password
+    ? (assertUsablePassword(input.password), hashPassword(input.password))
+    : invite.passwordHash;
+  if (!passwordHash) throw new Error("Choose a password of at least 10 characters.");
+  // A password they chose here is theirs; only one handed to them has to go.
+  const mustChangePassword = input.password ? false : invite.mustChangePassword;
+
   const clash = await db.user.findUnique({ where: { email: invite.email } });
   if (clash && isClaimed(clash)) throw new Error("An account with that email already exists.");
 
@@ -416,7 +605,8 @@ export async function acceptInvite(input: { token: string; name: string; passwor
           where: { id: clash.id },
           data: {
             name: input.name.trim(),
-            passwordHash: hashPassword(input.password),
+            passwordHash,
+            mustChangePassword,
             role: invite.role,
             isActive: true,
             emailProvenAt: new Date(),
@@ -430,7 +620,8 @@ export async function acceptInvite(input: { token: string; name: string; passwor
           data: {
             email: invite.email,
             name: input.name.trim(),
-            passwordHash: hashPassword(input.password),
+            passwordHash,
+            mustChangePassword,
             role: invite.role,
             emailProvenAt: new Date(),
             invitedById: invite.invitedById,

@@ -60,6 +60,11 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
           inviter={inviter}
           instanceName={settings.instanceName}
           googleReady={googleIsConfigured(settings)}
+          /* A boolean, never invite.passwordHash. Everything passed to a client
+             component is serialised into the page a stranger is looking at, and
+             this row is reachable by anyone holding the link. */
+          passwordSet={Boolean(invite.passwordHash)}
+          mustChangePassword={invite.mustChangePassword}
         />
       </AuthShell>
   );
