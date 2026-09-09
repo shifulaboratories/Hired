@@ -2,13 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckIcon, CopyIcon, KeyRoundIcon, ShieldIcon, Trash2Icon, UserIcon } from "lucide-react";
+import { KeyRoundIcon, ShieldIcon, Trash2Icon, UserIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { UserRole } from "@prisma/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { ResetPasswordDialog } from "@/components/admin/reset-password-dialog";
 import {
-  adminResetPasswordAction,
   deleteUserAction,
   setUserActiveAction,
   setUserRoleAction,
@@ -40,7 +39,7 @@ export function PersonActions({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [reset, setReset] = useState<{ password: string } | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   if (!manageable) {
     return (
@@ -95,28 +94,7 @@ export function PersonActions({
           {isActive ? "Suspend access" : "Reactivate"}
         </Button>
 
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={pending}
-          onClick={() => {
-            if (
-              !confirm(
-                `Reset ${email}'s password? They will be signed out everywhere, and you will get a new password to pass on.`,
-              )
-            )
-              return;
-            startTransition(async () => {
-              const result = await adminResetPasswordAction(userId);
-              if (!result.ok) {
-                toast.error(result.error);
-                return;
-              }
-              setReset({ password: result.password });
-              router.refresh();
-            });
-          }}
-        >
+        <Button variant="outline" size="sm" disabled={pending} onClick={() => setResetting(true)}>
           <KeyRoundIcon /> Reset password
         </Button>
 
@@ -147,42 +125,13 @@ export function PersonActions({
         </Button>
       </div>
 
-      {reset && (
-        <Card>
-          <CardContent className="space-y-2 py-3.5">
-            <p className="text-[13px] font-medium">
-              New password for {email}. This is the only time it is shown.
-            </p>
-            <div className="bg-muted/50 flex items-center gap-2 rounded-lg border px-3 py-2">
-              <code className="min-w-0 flex-1 truncate font-mono text-[13px]">{reset.password}</code>
-              <CopyPassword password={reset.password} />
-            </div>
-            <p className="text-faint text-[12px]">
-              Send it through something other than email if you can — an invite that bounced is
-              often why you are on this page.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      <ResetPasswordDialog
+        open={resetting}
+        onOpenChange={setResetting}
+        userId={userId}
+        email={email}
+        onDone={() => router.refresh()}
+      />
     </div>
-  );
-}
-
-function CopyPassword({ password }: { password: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={async () => {
-        await navigator.clipboard.writeText(password);
-        setCopied(true);
-        toast.success("Password copied");
-        setTimeout(() => setCopied(false), 2000);
-      }}
-    >
-      {copied ? <CheckIcon /> : <CopyIcon />}
-      {copied ? "Copied" : "Copy"}
-    </Button>
   );
 }

@@ -5601,6 +5601,177 @@ arrive as one with the others' titles read as its bullets.
 and no data change: `import_resume` already says it takes a LinkedIn export, and this is the
 browser's fallback parser for someone who has connected nothing.
 
+## 2026-09-08 — The rest of the sweep: nothing reads the host's clock any more
+
+"Never slice an ISO string to get somebody's day", above, left about fifteen
+`toLocaleDateString`/`toLocaleString` calls still formatting against the host. They are done. Everything that writes a date
+or a time for a person now goes through `formatIn(date, zone, options)` in
+`src/lib/time.ts`, which pins the locale to en-US and takes an explicit zone:
+the audit log, the health log, the people list and the person page in Admin;
+the activity timeline on an application and on a contact; the resume grid's
+"updated"; the analytics activity list; and the correspondence card, where a
+meeting now reads in the hours of whoever is looking at it rather than the
+container's — on a UTC host it told somebody in Chicago their 2pm call was at
+8pm.
+
+**Three are deliberately exempt, and each for the same reason:** the month
+dropdown in `ui/calendar.tsx`, the month heading in `pipeline/calendar.tsx` and
+`formatMonth` in `utils.ts` all format a date built from the parts they are
+about to print. There is no instant in them to move, so a zone would be noise —
+but the two that took the host's *locale* are pinned now, because Node and a
+browser can disagree about a month's short name.
+
+**A civil date is formatted with no zone at all**, through `formatCivilDay`:
+the shared `DateField`, the list's inline date cell and "Applied Mar 14" on an
+application. Reading a calendar square through a zone is how it drifts a day,
+which is the bug that entry was about.
+
+**Task buckets were the last hidden one.** `bucketOf` compared the host's
+`getFullYear/getMonth/getDate`, so a task due tonight sat under Overdue for
+anyone west of the server — and, because that panel renders on both sides of a
+hydration, could land in two different piles in one render. It counts calendar
+days with `daysBetween` now.
+
+**Both download filenames** — the CSV and the funnel image — are dated on the
+reader's calendar rather than UTC's. Verified from a browser in Auckland:
+`hired-applications-2026-09-09.csv` while the server is still on the 8th.
+
+**One loose end honestly reported.** A single React #418 appeared once on the
+analytics tab during a sweep and did not reproduce in nine later attempts,
+including the identical sequence. The only mechanism that fits is the seeding
+effect's `router.refresh()` landing after the reader has navigated away, so
+that refresh is now dropped on unmount. Six consecutive full sweeps — every
+screen, two zones, from an unseeded profile — are clean.
+
+---
+
+## 2026-09-09 — An admin can choose the password, and decide whether it stays
+
+Two halves of one request, and they turned out to be one mechanism. An invitation can carry a
+password the inviter typed instead of asking the invitee to invent one, and a reset can set a
+chosen password instead of a generated passphrase. Either way the admin now knows a password
+that opens somebody else's workspace, so both can be marked "must change".
+
+**`User.mustChangePassword` is the whole feature.** `Invite.passwordHash` and
+`Invite.mustChangePassword` only exist because an invitation is written before the User row
+does; acceptance copies the flag across and the invite fields never matter again. One flag,
+one gate, two entry points — rather than a forced-reset flow for invitations and a different
+one for resets.
+
+**The gate is in `requireUser`, not in the app layout.** Every server action calls
+`requireUser` too, so a gate the chrome enforces is a gate you walk around by posting a form.
+`/change-password` and its action call `requireUserPendingPasswordChange`, which is the same
+function without the redirect, and those two are the only callers it is allowed to have. The
+page lives outside `(app)` with `/login` and `/invite/[token]`: this person is signed in but
+not yet in, and rendering the sidebar over their empty workspace would be a lie.
+
+**`changePassword` clears the flag, so every route out of it works.** Putting the clear in the
+forced screen's action would have left the flag standing for somebody who changed their
+password from Settings instead. The rule is "setting your own password lifts it", and the one
+function that sets your own password is where that belongs.
+
+**`setNewPasswordAction` deliberately has no current-password check**, unlike
+`changeOwnPasswordAction`. The premise of the screen is that the password you hold was chosen
+by someone else, so proving you have it proves nothing about you; the session cookie is the
+proof. It refuses when the flag is not set, which is what stops it being a no-questions-asked
+password change for anyone who happens to be signed in.
+
+**The password is never in the invitation email, and that is not an oversight to fix later.**
+A message carrying both the link and the credential it opens *is* the account, sent to an
+address nobody has proven yet. `inviteEmail` takes `passwordSet: boolean` and not the
+password — the type is the enforcement. The email and the admin UI both say the password has
+to travel another way, because the failure mode otherwise is silent: they get a link, no
+password, and no idea one exists.
+
+**`must change` defaults OFF everywhere, including for a password you typed.** An earlier pass
+defaulted it on for a chosen password, on the reasoning that you know it. That is true, and
+still the wrong default: the caller is usually an admin unlocking somebody who is on the phone
+to them, and forcing a second password step on a person you just helped is help nobody asked
+for. Both the UI and the tools put the switch in front of you instead of guessing. Note this
+means a generated passphrase behaves exactly as it always did.
+
+**`defined()` cannot wrap an object with required keys.** `createInvite` takes `actor`, and
+running the whole argument bag through `defined()` made every key optional, so `actor: User`
+stopped satisfying `actor: User`. It is only for option bags that are optional all the way
+down; `createInvite` reads `undefined` as "not asked for" already.
+
+**The reset UI became a shared dialog.** Two screens do this — the people table's row menu and
+the person page — and both were a `confirm()`, which was fine while the only choice was "yes".
+With two choices to make they would have grown into two slightly different dialogs, so
+`src/components/admin/reset-password-dialog.tsx` is the one implementation. It stays open on
+the result rather than closing over it: the password is shown once, and closing an unread
+password is losing it.
+
+**Verified against a real Postgres, the whole path.** Migration applied, then driven in a
+browser: invite with a chosen password and the box ticked → the accept page has no password
+field at all → accepting lands on `/change-password` → `/me` redirects back to it → setting a
+password lands in the app → admin resets with a chosen password and the box ticked → signing
+in with it lands on `/change-password` again. Both tools called over MCP, including the
+short-password refusal. The audit rows say "Password set by admin, must be changed at next
+sign-in" and never the password.
+
+**Applies to:** `prisma/schema.prisma`,
+`prisma/migrations/20260909000000_admin_set_password/`, `src/lib/data/users.ts`,
+`src/lib/auth.ts`, `src/lib/email.ts`, `src/lib/mcp/tools.ts`, `src/server/actions.ts`,
+`src/app/change-password/`, `src/app/invite/[token]/page.tsx`,
+`src/app/(app)/settings/admin/people/[id]/page.tsx`, `src/components/forced-password-form.tsx`,
+`src/components/accept-invite-form.tsx`, `src/components/admin/{invites-panel,users-panel,person-actions,reset-password-dialog}.tsx`,
+`docs/tools/admin.mdx`, `README.md`.
+
+---
+
+## 2026-09-09 — An invitation's password is editable after it has gone out
+
+The previous entry let an admin set a password when creating an invitation. The gap it left
+is the ordinary case: you invite somebody the normal way, send them the link, and only then
+decide to hand them a password too.
+
+**Re-inviting already did this, and that is precisely why the tool exists.** `createInvite`
+deletes the outstanding invite for an address and creates a new one, so re-inviting with a
+password would set one — and mint a fresh token, killing the link you already sent. Which is
+exactly wrong when the reason you are here is that you already sent it. `setInvitePassword`
+edits the row in place and leaves the token alone; the browser test asserts the token is
+byte-identical afterwards.
+
+**An empty password is an instruction, not a missing argument.** It clears the one on the
+invitation and puts the invitee back to choosing their own. That is why the handler passes
+`{ password: s(args, "password") }` straight through rather than through `defined()` — the
+helper strips undefined keys, and `""` has to survive as `""` to mean "remove it".
+
+**`admin_list_invites` was leaking the password hash**, introduced by the previous entry and
+found while adding this. `listInvites` was a bare `findMany` whose result went straight out of
+the tool, and the row had just grown `passwordHash`. A scrypt hash is not a password, but it
+is also not something an admin tool has any business emitting. The select is explicit now and
+what leaves is `passwordSet: boolean`. Worth generalising: any data function whose return
+value is handed whole to a tool has to name its columns, because adding a column to the
+schema otherwise publishes it.
+
+**An ADMIN invitation is the super admin's alone to put a password on**, mirroring
+`createInvite`. Note `revokeInvite` has no such guard and does not need one — destroying an
+invitation is safe for anyone who can see it, whereas putting a known credential on a pending
+admin invitation whose link is sitting on the same screen is a way to become an admin.
+
+**Accepted invitations are refused with the alternative named.** Once accepted the invite is
+spent and the thing you actually want is `adminResetPassword` on the account, which also ends
+their sessions — so the error says that rather than just "no".
+
+**The invitation email that already went out is not re-sent and not corrected.** It says "pick
+a password" and the accept page now asks only for a name. The page is the source of truth, the
+mismatch is harmless, and re-sending on an edit would mail people repeatedly for a change they
+cannot see. The dialog and the toast both say the password is not in that email.
+
+**Verified against a real Postgres.** Over MCP: invite plainly, confirm `admin_list_invites`
+returns no hash, set a password, assert the token is unchanged, refuse a short one, clear it
+and confirm the columns are back to empty/false. In a browser: the key button on the row, the
+dialog reopening in the invitation's own state with a Remove password button, the badge on the
+row, then the original link accepting with no password field and landing on `/change-password`.
+Audit rows name the address and the effect, never the password or the token.
+
+**Applies to:** `src/lib/data/users.ts`, `src/lib/data/audit.ts`, `src/lib/audit-groups.ts`,
+`src/lib/mcp/tools.ts`, `src/server/actions.ts`,
+`src/components/admin/{invite-password-dialog,invites-panel}.tsx`,
+`src/app/(app)/settings/admin/page.tsx`, `docs/tools/admin.mdx`, `README.md`.
+
 ## 2026-09-08 — PDFs: read the readable ones, refuse the rest by name
 
 This app has always told people to open their PDF, select all and paste. The reason was

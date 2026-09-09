@@ -2,6 +2,7 @@ import { CheckCircle2Icon, CircleAlertIcon, CircleXIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { HealthCheck, HealthStatus } from "@/lib/data/system";
 import { cn } from "@/lib/utils";
+import { formatIn } from "@/lib/time";
 
 /**
  * Is this instance working.
@@ -47,7 +48,17 @@ export const SOURCE_LABEL: Record<string, string> = {
   app: "App",
 };
 
-export function HealthPanel({ checks, events }: { checks: HealthCheck[]; events: EventRow[] }) {
+export function HealthPanel({
+  checks,
+  events,
+  zone,
+}: {
+  checks: HealthCheck[];
+  events: EventRow[];
+  /** The admin's own calendar. This screen is the one place a timestamp needs
+      to be read against a person rather than against the machine. */
+  zone: string;
+}) {
   const worst: HealthStatus = checks.some((c) => c.status === "down")
     ? "down"
     : checks.some((c) => c.status === "warn")
@@ -123,7 +134,7 @@ export function HealthPanel({ checks, events }: { checks: HealthCheck[]; events:
                     {event.message}
                   </span>
                   <span className="text-faint meta shrink-0 text-[11.5px]">
-                    {new Date(event.createdAt).toLocaleString("en-US", {
+                    {formatIn(new Date(event.createdAt), zone, {
                       month: "short",
                       day: "numeric",
                       hour: "numeric",

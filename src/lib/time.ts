@@ -186,37 +186,51 @@ export function daysBetween(from: Date, to: Date, timeZone: string): number {
 }
 
 /**
- * "Sep 8" — a stored instant, on the reader's calendar.
+ * An instant, written out on the reader's calendar and clock.
  *
- * Pinned to en-US and given an explicit zone for one reason: `toLocaleDateString`
- * with neither takes the HOST's locale and the HOST's clock, which is Node on
- * the server and the reader's machine in the browser. A component that renders
- * on both then produces two different strings for one render, and React throws
- * the server's markup away rather than hydrating it.
+ * Every date a person reads goes through here rather than through
+ * `toLocaleDateString`. That method with no locale and no zone takes the HOST's
+ * — which is Node on the server and the reader's machine in the browser — so a
+ * component that renders on both produces two different strings for one render
+ * and React throws the server's markup away. Even with a locale it still uses
+ * the host's clock, which is how a hosted instance shows everyone UTC's day.
+ *
+ * The locale is pinned to en-US deliberately: the rest of this product's copy
+ * is written in one language, and a date that changes shape depending on the
+ * machine is a date two screens can disagree about.
  */
-export function shortDay(date: Date, timeZone: string): string {
+export function formatIn(
+  date: Date,
+  timeZone: string,
+  options: Intl.DateTimeFormatOptions,
+): string {
   return new Intl.DateTimeFormat("en-US", {
     ...(timeZone ? { timeZone } : {}),
-    month: "short",
-    day: "numeric",
+    ...options,
   }).format(date);
 }
 
+/** "Sep 8" — a stored instant, on the reader's calendar. */
+export function shortDay(date: Date, timeZone: string): string {
+  return formatIn(date, timeZone, { month: "short", day: "numeric" });
+}
+
 /**
- * "Sep 8" — a bare "2026-09-08", with no zone in the question at all.
+ * A bare "2026-09-08", written out with no zone in the question at all.
  *
  * A civil date is already somebody's calendar square; it does not need one, and
  * reading it through a zone is how it drifts by a day. Formatted as UTC because
  * that is the only way to render a date built as UTC without moving it.
  */
-export function shortCivilDay(value: string): string {
+export function formatCivilDay(value: string, options: Intl.DateTimeFormatOptions): string {
   const civil = parseCivilDay(value);
   if (!civil) return "";
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-  }).format(new Date(Date.UTC(civil.year, civil.month - 1, civil.day)));
+  return formatIn(new Date(Date.UTC(civil.year, civil.month - 1, civil.day)), "UTC", options);
+}
+
+/** "Sep 8", from a bare "2026-09-08". */
+export function shortCivilDay(value: string): string {
+  return formatCivilDay(value, { month: "short", day: "numeric" });
 }
 
 /**

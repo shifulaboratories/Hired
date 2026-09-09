@@ -7,6 +7,8 @@ import { FadeIn } from "@/components/motion";
 import { ContactDetail } from "@/components/crm/contact-detail";
 import { getContact, listCompanies } from "@/lib/data/pipeline";
 import { requireUser } from "@/lib/auth";
+import { formatIn } from "@/lib/time";
+import { timeZoneOf } from "@/lib/data/me";
 import { getSettings } from "@/lib/settings";
 import { accountAccess } from "@/lib/data/accounts";
 
@@ -14,6 +16,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
+  const zone = await timeZoneOf(user.id);
   const { id } = await params;
   const [contact, companies, { companyLogos }, googleConnection] = await Promise.all([
     getContact(user.id, id),
@@ -53,7 +56,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
             id: activity.id,
             type: activity.type,
             body: activity.body,
-            occurredAt: activity.occurredAt.toLocaleDateString("en-US", {
+            occurredAt: formatIn(activity.occurredAt, zone, {
               month: "short",
               day: "numeric",
               year: "numeric",

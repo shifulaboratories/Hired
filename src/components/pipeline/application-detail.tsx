@@ -65,7 +65,7 @@ import { useAutosave } from "@/hooks/use-autosave";
 import { ACTIVITY_LABEL, ACTIVITY_OPTIONS, STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
 import { cn, relativeDay } from "@/lib/utils";
 import { useViewerZone } from "@/components/viewer-zone";
-import { civilDay } from "@/lib/time";
+import { civilDay, formatIn, shortCivilDay } from "@/lib/time";
 import { DateField, parseISODate } from "@/components/ui/date-field";
 import {
   addActivityAction,
@@ -838,6 +838,7 @@ function Timeline({
   applicationId: string;
   activities: Activity[];
 }) {
+  const zone = useViewerZone();
   const [pending, startTransition] = useTransition();
   const [body, setBody] = useState("");
   const [type, setType] = useState<ActivityType>("NOTE");
@@ -908,7 +909,7 @@ function Timeline({
                       {ACTIVITY_LABEL[activity.type]}
                     </Badge>
                     <span className="text-muted-foreground ml-auto text-xs">
-                      {new Date(activity.occurredAt).toLocaleDateString("en-US", {
+                      {formatIn(new Date(activity.occurredAt), zone, {
                         month: "short",
                         day: "numeric",
                         year: "numeric",
@@ -1235,9 +1236,8 @@ function ContactsCard({
   );
 }
 
-/** "Applied Mar 14", by the date's own local parts. */
+/** "Applied Mar 14". A civil date, so no zone comes into it. */
 function appliedLabel(iso: string) {
-  const date = parseISODate(iso);
-  if (!date) return "";
-  return `Applied ${date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+  const day = shortCivilDay(iso);
+  return day ? `Applied ${day}` : "";
 }

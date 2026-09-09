@@ -3,12 +3,13 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckIcon, CopyIcon, KeyRoundIcon, MoreVerticalIcon, ShieldIcon, Trash2Icon, UserIcon } from "lucide-react";
+import { KeyRoundIcon, MoreVerticalIcon, ShieldIcon, Trash2Icon, UserIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { UserRole } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ResetPasswordDialog } from "@/components/admin/reset-password-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,8 +18,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn, initials } from "@/lib/utils";
+import { useViewerZone } from "@/components/viewer-zone";
+import { formatIn, shortDay } from "@/lib/time";
 import {
-  adminResetPasswordAction,
   deleteUserAction,
   setUserActiveAction,
   setUserRoleAction,
@@ -59,12 +61,14 @@ export function UsersPanel({
   actor: { id: string; role: UserRole };
   users: Row[];
 }) {
+  const zone = useViewerZone();
   const [pending, startTransition] = useTransition();
   const [removed, setRemoved] = useState<Set<string>>(new Set());
-  // A generated password is shown once and never stored anywhere it could be
-  // read again — the same contract as the owner password printed at boot.
-  const [reset, setReset] = useState<{ email: string; password: string } | null>(null);
-  const [copied, setCopied] = useState(false);
+  // Which account the reset dialog is open on, null when it is shut. The
+  // dialog owns the password it hands back — shown once and never stored
+  // anywhere it could be read again, the same contract as the owner password
+  // printed at boot — so this panel never sees it.
+  const [resetting, setResetting] = useState<{ id: string; email: string } | null>(null);
 
   // Mirrors canManage() on the server; the server still enforces it.
   const canManage = (target: Row) =>
@@ -83,44 +87,12 @@ export function UsersPanel({
 
   return (
     <div className="space-y-2">
-      {reset && (
-        <Card className="border-warning/40">
-          <CardContent className="space-y-2 py-3.5">
-            <div className="text-[13px] font-medium">
-              New password for {reset.email}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <code className="bg-inset shadow-field rounded-control px-2.5 py-1.5 font-mono text-[13px]">
-                {reset.password}
-              </code>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(reset.password);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1600);
-                }}
-              >
-                {copied ? <CheckIcon /> : <CopyIcon />}
-                {copied ? "Copied" : "Copy"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground ml-auto"
-                onClick={() => setReset(null)}
-              >
-                Done
-              </Button>
-            </div>
-            <p className="text-muted-foreground text-xs">
-              Shown once. Pass it on and have them change it — every session they had is
-              already signed out.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      <ResetPasswordDialog
+        open={Boolean(resetting)}
+        onOpenChange={(open: boolean) => !open && setResetting(null)}
+        userId={resetting?.id ?? ""}
+        email={resetting?.email ?? ""}
+      />
 
       <AnimatePresence initial={false}>
         {visible.map((user) => (
@@ -178,15 +150,15 @@ export function UsersPanel({
                   className="text-muted-foreground hidden w-24 text-right text-xs lg:block"
                   title={
                     user.mcpLastUsedAt
-                      ? `Assistant last called ${new Date(user.mcpLastUsedAt).toLocaleString()}`
+                      ? `Assistant last called ${formatIn(new Date(user.mcpLastUsedAt), zone, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}`
                       : "No assistant has ever connected"
                   }
                 >
                   {user.mcpLastUsedAt
-                    ? `AI ${new Date(user.mcpLastUsedAt).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}`
+                    ? `AI ${shortDay(new Date(user.mcpLastUsedAt), zone)}`
                     : user.counts.mcpConnections > 0
                       ? "AI unused"
                       : "no AI"}
@@ -194,10 +166,7 @@ export function UsersPanel({
 
                 <div className="text-muted-foreground hidden w-28 text-right text-xs lg:block">
                   {user.lastLoginAt
-                    ? `seen ${new Date(user.lastLoginAt).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}`
+                    ? `seen ${shortDay(new Date(user.lastLoginAt), zone)}`
                     : "never signed in"}
                 </div>
 
@@ -249,22 +218,7 @@ export function UsersPanel({
                       {user.isActive ? "Suspend access" : "Reactivate"}
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onSelect={() => {
-                        if (
-                          !confirm(
-                            `Reset ${user.email}'s password? They will be signed out everywhere, and you will get a new password to pass on.`,
-                          )
-                        )
-                          return;
-                        startTransition(async () => {
-                          const result = await adminResetPasswordAction(user.id);
-                          if (!result.ok) {
-                            toast.error(result.error);
-                            return;
-                          }
-                          setReset({ email: result.email, password: result.password });
-                        });
-                      }}
+                      onSelect={() => setResetting({ id: user.id, email: user.email })}
                     >
                       <KeyRoundIcon /> Reset password
                     </DropdownMenuItem>

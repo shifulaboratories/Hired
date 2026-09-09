@@ -18,6 +18,7 @@ import { correspondenceAction, emailThreadAction } from "@/server/actions";
 import type { CorrespondenceSubject } from "@/lib/data/accounts";
 import { agoDay, cn } from "@/lib/utils";
 import { useViewerZone } from "@/components/viewer-zone";
+import { formatIn } from "@/lib/time";
 
 /**
  * The threads and meetings in somebody's own mail and calendar accounts that
@@ -297,7 +298,7 @@ function ThreadRow({ thread }: { thread: Thread }) {
                     to {message.to.map((p) => p.name || p.email).join(", ") || "—"}
                   </span>
                   <span className="text-faint meta ml-auto shrink-0 text-[11px]">
-                    {new Date(message.date).toLocaleString("en-US", {
+                    {formatIn(new Date(message.date), zone, {
                       month: "short",
                       day: "numeric",
                       hour: "numeric",
@@ -325,12 +326,17 @@ function ThreadRow({ thread }: { thread: Thread }) {
 }
 
 function EventRow({ event }: { event: Event }) {
+  const zone = useViewerZone();
   const start = new Date(event.start);
   const end = new Date(event.end);
   const past = end.getTime() < Date.now();
+  // A meeting reads in the hours of whoever is looking at it. On a UTC host
+  // this used to tell somebody in Chicago their 2pm call was at 8pm.
+  const day = { weekday: "short", month: "short", day: "numeric" } as const;
+  const time = { hour: "numeric", minute: "2-digit" } as const;
   const when = event.allDay
-    ? start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
-    : `${start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · ${start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}–${end.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+    ? formatIn(start, zone, day)
+    : `${formatIn(start, zone, day)} · ${formatIn(start, zone, time)}–${formatIn(end, zone, time)}`;
   const others = event.attendees.filter((attendee) => !attendee.self);
 
   return (

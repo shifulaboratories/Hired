@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { formatIn } from "@/lib/time";
+import { timeZoneOf } from "@/lib/data/me";
 import { notFound } from "next/navigation";
 import { ArrowLeftIcon, ShieldIcon } from "lucide-react";
 import { PageHeader, PageShell } from "@/components/page-header";
@@ -40,14 +42,18 @@ const ROLE_LABEL: Record<string, string> = {
 
 const CLIENT_NAME = new Map(MCP_CLIENTS.map((client) => [client.id, client.name]));
 
-function when(date: Date | null | undefined, fallback = "never") {
+/**
+ * Both take the admin's own zone. These are instance facts, but an admin
+ * reading "seen Sep 8, 2:15 PM" wants their own clock, not the container's.
+ */
+function when(zone: string, date: Date | null | undefined, fallback = "never") {
   if (!date) return fallback;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatIn(date, zone, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function whenExact(date: Date | null | undefined, fallback = "never") {
+function whenExact(zone: string, date: Date | null | undefined, fallback = "never") {
   if (!date) return fallback;
-  return date.toLocaleString("en-US", {
+  return formatIn(date, zone, {
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -57,6 +63,7 @@ function whenExact(date: Date | null | undefined, fallback = "never") {
 
 export default async function PersonPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await requireAdmin();
+  const zone = await timeZoneOf(actor.id);
   const { id } = await params;
   const person = await getUserDetail(actor, id);
   if (!person) notFound();
@@ -67,8 +74,8 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   ]);
 
   const facts: { label: string; value: string; tone?: "warn" }[] = [
-    { label: "Joined", value: when(person.createdAt) },
-    { label: "Last signed in", value: whenExact(person.lastLoginAt, "never") },
+    { label: "Joined", value: when(zone, person.createdAt) },
+    { label: "Last signed in", value: whenExact(zone, person.lastLoginAt, "never") },
     {
       label: "Invited by",
       value: person.invitedBy
@@ -77,10 +84,10 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     },
     person.invite
       ? person.invite.emailSent
-        ? { label: "Invitation", value: `Emailed, accepted ${when(person.invite.acceptedAt)}` }
+        ? { label: "Invitation", value: `Emailed, accepted ${when(zone, person.invite.acceptedAt)}` }
         : {
             label: "Invitation",
-            value: `Email never sent${person.invite.emailError ? ` — ${person.invite.emailError}` : ""}. Accepted ${when(person.invite.acceptedAt)}.`,
+            value: `Email never sent${person.invite.emailError ? ` — ${person.invite.emailError}` : ""}. Accepted ${when(zone, person.invite.acceptedAt)}.`,
             tone: "warn" as const,
           }
       : { label: "Invitation", value: "No invitation on record" },
@@ -126,6 +133,9 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         actions={
           <div className="flex items-center gap-2">
             {!person.isActive && <Badge variant="outline">Suspended</Badge>}
+            {/* The answer to "they say it won't let them in" when the account
+                looks perfectly healthy otherwise. */}
+            {person.mustChangePassword && <Badge variant="outline">Must set a password</Badge>}
             <Badge variant={person.role === "MEMBER" ? "outline" : "default"}>
               {person.role !== "MEMBER" && <ShieldIcon className="size-2.5" />}
               {ROLE_LABEL[person.role]}
@@ -222,7 +232,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
                     </span>
                     <span className="text-faint meta ml-auto shrink-0 text-[11.5px]">
                       {connection.lastUsedAt
-                        ? `last used ${whenExact(connection.lastUsedAt)}`
+                        ? `last used ${whenExact(zone, connection.lastUsedAt)}`
                         : "never used"}
                     </span>
                   </li>
@@ -274,7 +284,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
                       {event.message}
                     </span>
                     <span className="text-faint meta shrink-0 text-[11.5px]">
-                      {whenExact(event.createdAt)}
+                      {whenExact(zone, event.createdAt)}
                     </span>
                     {event.detail && (
                       <div className="text-faint w-full text-[12px]">{event.detail}</div>

@@ -5,6 +5,7 @@ import { FadeIn, Stagger, StaggerItem } from "@/components/motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { AnimatedNumber } from "@/components/animated-number";
 import { requireAdmin } from "@/lib/auth";
+import { timeZoneOf } from "@/lib/data/me";
 import { instanceStats, listInvites, listUsers } from "@/lib/data/users";
 import { listWaitlist, waitlistStats } from "@/lib/data/waitlist";
 import { listAudit } from "@/lib/data/audit";
@@ -31,6 +32,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
   const actor = await requireAdmin();
+  const zone = await timeZoneOf(actor.id);
   const headerList = await headers();
   const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
   const proto =
@@ -173,6 +175,8 @@ export default async function AdminPage() {
                     emailSent: invite.emailSent,
                     emailError: invite.emailError,
                     invitedBy: invite.invitedBy.name || invite.invitedBy.email,
+                    passwordSet: invite.passwordSet,
+                    mustChangePassword: invite.mustChangePassword,
                   }))}
                 />
               </Section>
@@ -229,6 +233,7 @@ export default async function AdminPage() {
         <TabsContent value="health">
           <FadeIn>
             <HealthPanel
+              zone={zone}
               checks={health.checks}
               events={systemEvents.map((event) => ({
                 id: event.id,

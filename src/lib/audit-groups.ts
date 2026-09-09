@@ -15,7 +15,7 @@ import type { AuditAction } from "@/lib/data/audit";
  */
 export const AUDIT_GROUPS = {
   accounts: ["user.role", "user.suspend", "user.reactivate", "user.delete"],
-  invites: ["user.invite", "user.invite_revoke"],
+  invites: ["user.invite", "user.invite_revoke", "user.invite_password"],
   passwords: ["user.password_reset"],
   billing: ["billing.link", "billing.unlink"],
   settings: ["settings.change"],
@@ -35,6 +35,7 @@ export const AUDIT_GROUP_LABEL: Record<AuditGroup, string> = {
 export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "user.invite": "Invited",
   "user.invite_revoke": "Invitation revoked",
+  "user.invite_password": "Invitation password",
   "user.role": "Role changed",
   "user.suspend": "Suspended",
   "user.reactivate": "Reactivated",

@@ -28,6 +28,8 @@ import { truncate } from "@/lib/utils";
 import { DiagnosisCard } from "@/components/dashboard/diagnosis";
 import { FunnelSankey } from "@/components/analytics/funnel-sankey";
 import { ShareFunnel } from "@/components/analytics/share-funnel";
+import { shortDay } from "@/lib/time";
+import { timeZoneOf } from "@/lib/data/me";
 
 /**
  * The search as numbers, one tab over from the search as a to-do list.
@@ -42,7 +44,7 @@ import { ShareFunnel } from "@/components/analytics/share-funnel";
  * competing with the one you clear daily.
  */
 export async function AnalyticsPanel({ userId }: { userId: string }) {
-  const [stats, diagnosis, funnel, activities, counts] = await Promise.all([
+  const [stats, diagnosis, funnel, activities, counts, zone] = await Promise.all([
     pipelineStats(userId),
     diagnoseSearch(userId),
     funnelFlows(userId),
@@ -52,6 +54,7 @@ export async function AnalyticsPanel({ userId }: { userId: string }) {
       db.resume.count({ where: { userId } }),
       db.highlight.count({ where: { userId } }),
     ]),
+    timeZoneOf(userId),
   ]);
 
   const [roleCount, resumeCount, highlightCount] = counts;
@@ -216,10 +219,7 @@ export async function AnalyticsPanel({ userId }: { userId: string }) {
                           {ACTIVITY_LABEL[activity.type]}
                         </Badge>
                         <span className="text-faint meta ml-auto text-[11.5px]">
-                          {activity.occurredAt.toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                          })}
+                          {shortDay(activity.occurredAt, zone)}
                         </span>
                       </div>
                       <p className="text-muted-foreground mt-0.5 text-[13px]">
