@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckIcon,
   CopyIcon,
+  KeyRoundIcon,
   LoaderCircleIcon,
   MailIcon,
   MailWarningIcon,
@@ -26,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { InvitePasswordDialog } from "@/components/admin/invite-password-dialog";
 import { SectionEmpty } from "@/components/page-header";
 import { relativeDay } from "@/lib/utils";
 import { useViewerZone } from "@/components/viewer-zone";
@@ -40,6 +43,9 @@ type Invite = {
   emailSent: boolean;
   emailError: string;
   invitedBy: string;
+  /** Whether the inviter set the password. Never the password, never the hash. */
+  passwordSet: boolean;
+  mustChangePassword: boolean;
 };
 
 export function InvitesPanel({
@@ -53,6 +59,7 @@ export function InvitesPanel({
   emailReady: boolean;
   baseUrl: string;
 }) {
+  const router = useRouter();
   const zone = useViewerZone();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<UserRole>("MEMBER");
@@ -64,6 +71,8 @@ export function InvitesPanel({
   const [pending, startTransition] = useTransition();
   const [lastLink, setLastLink] = useState<string | null>(null);
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  // Which outstanding invitation the password dialog is open on, null when shut.
+  const [editing, setEditing] = useState<Invite | null>(null);
 
   const invite = () => {
     if (!email.trim()) return;
@@ -178,6 +187,21 @@ export function InvitesPanel({
         </CardContent>
       </Card>
 
+      <InvitePasswordDialog
+        invite={
+          editing
+            ? {
+                id: editing.id,
+                email: editing.email,
+                passwordSet: editing.passwordSet,
+                mustChangePassword: editing.mustChangePassword,
+              }
+            : null
+        }
+        onOpenChange={(open) => !open && setEditing(null)}
+        onDone={() => router.refresh()}
+      />
+
       {visible.length === 0 ? (
         <SectionEmpty>Nothing outstanding — everyone invited has already joined.</SectionEmpty>
       ) : (
@@ -211,9 +235,27 @@ export function InvitesPanel({
                       </div>
                     </div>
 
+                    {item.passwordSet && (
+                      <Badge variant="outline" className="gap-1">
+                        <KeyRoundIcon className="size-3" />
+                        {item.mustChangePassword ? "Password, must change" : "Password set"}
+                      </Badge>
+                    )}
+
                     <Badge variant={item.role === "MEMBER" ? "outline" : "default"}>
                       {item.role === "MEMBER" ? "Member" : "Admin"}
                     </Badge>
+
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={() => setEditing(item)}
+                      aria-label={`Set the password on the invitation for ${item.email}`}
+                      title="Set a password"
+                    >
+                      <KeyRoundIcon />
+                    </Button>
 
                     <CopyButton url={`${baseUrl.replace(/\/$/, "")}/invite/${item.token}`} />
 

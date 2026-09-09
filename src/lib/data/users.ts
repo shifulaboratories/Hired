@@ -338,12 +338,97 @@ export async function updateOwnAccount(userId: string, patch: { name?: string; e
 // Invites
 // ---------------------------------------------------------------------------
 
+/**
+ * Outstanding invitations.
+ *
+ * The select is explicit rather than a bare findMany because the row now
+ * carries `passwordHash`, and `admin_list_invites` hands whatever this returns
+ * straight to a connected assistant. A scrypt hash is not a password, but it is
+ * also not something an admin tool has any reason to emit — so what leaves here
+ * is the boolean the callers actually want.
+ */
 export async function listInvites() {
-  return db.invite.findMany({
+  const rows = await db.invite.findMany({
     where: { acceptedAt: null },
     orderBy: { createdAt: "desc" },
-    include: { invitedBy: { select: { name: true, email: true } } },
+    select: {
+      id: true,
+      email: true,
+      token: true,
+      role: true,
+      expiresAt: true,
+      createdAt: true,
+      emailSent: true,
+      emailError: true,
+      mustChangePassword: true,
+      passwordHash: true,
+      invitedBy: { select: { name: true, email: true } },
+    },
   });
+  return rows.map(({ passwordHash, ...invite }) => ({
+    ...invite,
+    /** Whether the inviter set the password rather than leaving it to the invitee. */
+    passwordSet: Boolean(passwordHash),
+  }));
+}
+
+/**
+ * Put a password on an invitation that has already gone out — or take one off.
+ *
+ * Re-inviting the same address would also do this: `createInvite` replaces the
+ * outstanding invite. But it mints a fresh token, so the link you already sent
+ * stops working, which is exactly wrong when the reason you are here is that
+ * you sent the link and then decided to hand them the password too. This edits
+ * the invitation in place and the link keeps working.
+ *
+ * An empty `password` clears it, putting the invitation back to the normal
+ * flow where the accept page asks them to choose one. `mustChange` is only
+ * meaningful with a password, and is cleared alongside it.
+ *
+ * Accepted invitations are not editable here: once somebody has accepted, the
+ * invite is spent and the thing you want is `adminResetPassword` on their
+ * account, which ends their sessions as well.
+ */
+export async function setInvitePassword(
+  actor: User,
+  id: string,
+  options: { password?: string; mustChange?: boolean } = {},
+) {
+  const invite = await db.invite.findUnique({ where: { id } });
+  if (!invite) throw new Error("No such invitation.");
+  if (invite.acceptedAt) {
+    throw new Error("That invitation has been accepted. Reset the password on their account instead.");
+  }
+  // Same rule as creating one: an ADMIN invitation is the super admin's to
+  // issue, so it is also theirs to put a credential on. Without this an admin
+  // could set a known password on a pending admin invitation whose link is
+  // sitting on the same screen.
+  if (invite.role === "ADMIN" && actor.role !== "SUPER_ADMIN") {
+    throw new Error("Only the super admin can change an admin invitation.");
+  }
+
+  const chosen = (options.password ?? "").trim();
+  if (chosen) assertUsablePassword(chosen);
+  const mustChange = chosen ? (options.mustChange ?? false) : false;
+
+  await db.invite.update({
+    where: { id },
+    data: { passwordHash: chosen ? hashPassword(chosen) : "", mustChangePassword: mustChange },
+  });
+
+  await recordAudit({
+    actor,
+    action: "user.invite_password",
+    target: { email: invite.email },
+    // Never the password, and never the token: this row is read by every admin.
+    detail: chosen
+      ? `Password set on the invitation to ${invite.email}${
+          mustChange ? ", must be changed at first sign-in" : ""
+        }`
+      : `Password removed from the invitation to ${invite.email} — they choose their own again`,
+  });
+
+  return { email: invite.email, passwordSet: Boolean(chosen), mustChangePassword: mustChange };
 }
 
 export type InviteResult = {

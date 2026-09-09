@@ -175,6 +175,8 @@ export default async function AdminPage() {
                     emailSent: invite.emailSent,
                     emailError: invite.emailError,
                     invitedBy: invite.invitedBy.name || invite.invitedBy.email,
+                    passwordSet: invite.passwordSet,
+                    mustChangePassword: invite.mustChangePassword,
                   }))}
                 />
               </Section>

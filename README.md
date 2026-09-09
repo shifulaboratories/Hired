@@ -91,7 +91,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  127 tools any MCP client can call (159 if you're an admin). Claude, Claude Code, ChatGPT,
+  127 tools any MCP client can call (160 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -274,7 +274,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Hit **Test** next to any connection and the app calls its own endpoint the way a client
-would, then tells you how many tools answered — 127, or 159 if you're an admin.
+would, then tells you how many tools answered — 127, or 160 if you're an admin.
 
 #### One connection per client
 
@@ -314,6 +314,12 @@ Tick **make them replace it when they first sign in** and the app stays shut to 
 they set one of their own — which is the thing that takes the password back out of your
 hands. Leave it unticked and the password you chose is simply theirs.
 
+You can change your mind afterwards. Every outstanding invitation has a key button beside
+its link: add a password to one you already sent, replace the password on it, or take it off
+so they pick their own again. The link is untouched, which is the whole reason this is a
+separate thing from re-inviting them — re-inviting mints a fresh token and kills the link
+they may already be holding.
+
 **Resetting a member's password** works the same way. **Admin → People**, open the person or
 use the row menu, then **Reset password**. Empty generates a passphrase, which is easier to
 read down a phone line and harder to guess; type one if they asked for something specific.
@@ -321,7 +327,7 @@ The same checkbox is there, and it defaults off either way — you decide each t
 they keep what you gave them.
 
 By conversation: `admin_invite_user` and `admin_reset_user_password` both take `password` and
-`must_change_password`.
+`must_change_password`, and `admin_set_invite_password` changes one that is already out there.
 
 ### Letting people ask for access
 

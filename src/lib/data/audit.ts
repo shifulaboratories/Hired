@@ -19,6 +19,7 @@ import { AUDIT_GROUPS, type AuditGroup } from "@/lib/audit-groups";
 export type AuditAction =
   | "user.invite"
   | "user.invite_revoke"
+  | "user.invite_password"
   | "user.role"
   | "user.suspend"
   | "user.reactivate"

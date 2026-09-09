@@ -4262,7 +4262,8 @@ export const tools: McpTool[] = [
   {
     name: "admin_list_invites",
     title: "List outstanding invites",
-    description: "Invitations that have not been accepted yet, with their links and expiry.",
+    description:
+      "Invitations that have not been accepted yet, with their links, expiry, and whether a password was set on each. Never returns the password itself — `passwordSet` is a boolean, and the stored hash does not leave the server.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -4272,6 +4273,39 @@ export const tools: McpTool[] = [
     },
     adminOnly: true,
     handler: async () => users.listInvites(),
+  },
+  {
+    name: "admin_set_invite_password",
+    title: "Set the password on an invitation",
+    description:
+      "Put a password on an invitation that has already gone out, or take one off, without changing its link. Reach for this when you invited somebody the normal way and then decided to hand them a password — re-inviting the same address would work too, but it mints a fresh token and the link you already sent stops working, which is the opposite of what you want here. Pass `password` to set one, at which point the accept page asks only for their name; pass an empty string to clear it and put them back to choosing their own. `must_change_password` makes them replace your password before the app opens to them, and is off unless you ask for it. The password never reaches the invitation email that already went out, so tell them yourself. Only works while the invitation is outstanding: once it has been accepted, use admin_reset_user_password on their account instead, which also ends their sessions. Takes an invite id from admin_list_invites.",
+    inputSchema: object(
+      {
+        id: str("Invite id, from admin_list_invites"),
+        password: str(
+          "The password to set, at least 10 characters. An empty string removes the one that is there and lets them pick their own again.",
+        ),
+        must_change_password: bool(
+          "Whether they must replace your password with their own before the app opens to them. Off unless you ask for it, and ignored when clearing.",
+        ),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    adminOnly: true,
+    handler: async (args, ctx) =>
+      users.setInvitePassword(
+        ctx.user,
+        required(args, "id"),
+        // Not defined(): an empty password is a real instruction here — it
+        // clears the one on the invitation — so it must survive as "".
+        { password: s(args, "password"), mustChange: b(args, "must_change_password") },
+      ),
   },
   {
     name: "admin_revoke_invite",
