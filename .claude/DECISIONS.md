@@ -5642,3 +5642,78 @@ including the identical sequence. The only mechanism that fits is the seeding
 effect's `router.refresh()` landing after the reader has navigated away, so
 that refresh is now dropped on unmount. Six consecutive full sweeps — every
 screen, two zones, from an unseeded profile — are clean.
+
+---
+
+## 2026-09-09 — An admin can choose the password, and decide whether it stays
+
+Two halves of one request, and they turned out to be one mechanism. An invitation can carry a
+password the inviter typed instead of asking the invitee to invent one, and a reset can set a
+chosen password instead of a generated passphrase. Either way the admin now knows a password
+that opens somebody else's workspace, so both can be marked "must change".
+
+**`User.mustChangePassword` is the whole feature.** `Invite.passwordHash` and
+`Invite.mustChangePassword` only exist because an invitation is written before the User row
+does; acceptance copies the flag across and the invite fields never matter again. One flag,
+one gate, two entry points — rather than a forced-reset flow for invitations and a different
+one for resets.
+
+**The gate is in `requireUser`, not in the app layout.** Every server action calls
+`requireUser` too, so a gate the chrome enforces is a gate you walk around by posting a form.
+`/change-password` and its action call `requireUserPendingPasswordChange`, which is the same
+function without the redirect, and those two are the only callers it is allowed to have. The
+page lives outside `(app)` with `/login` and `/invite/[token]`: this person is signed in but
+not yet in, and rendering the sidebar over their empty workspace would be a lie.
+
+**`changePassword` clears the flag, so every route out of it works.** Putting the clear in the
+forced screen's action would have left the flag standing for somebody who changed their
+password from Settings instead. The rule is "setting your own password lifts it", and the one
+function that sets your own password is where that belongs.
+
+**`setNewPasswordAction` deliberately has no current-password check**, unlike
+`changeOwnPasswordAction`. The premise of the screen is that the password you hold was chosen
+by someone else, so proving you have it proves nothing about you; the session cookie is the
+proof. It refuses when the flag is not set, which is what stops it being a no-questions-asked
+password change for anyone who happens to be signed in.
+
+**The password is never in the invitation email, and that is not an oversight to fix later.**
+A message carrying both the link and the credential it opens *is* the account, sent to an
+address nobody has proven yet. `inviteEmail` takes `passwordSet: boolean` and not the
+password — the type is the enforcement. The email and the admin UI both say the password has
+to travel another way, because the failure mode otherwise is silent: they get a link, no
+password, and no idea one exists.
+
+**`must change` defaults OFF everywhere, including for a password you typed.** An earlier pass
+defaulted it on for a chosen password, on the reasoning that you know it. That is true, and
+still the wrong default: the caller is usually an admin unlocking somebody who is on the phone
+to them, and forcing a second password step on a person you just helped is help nobody asked
+for. Both the UI and the tools put the switch in front of you instead of guessing. Note this
+means a generated passphrase behaves exactly as it always did.
+
+**`defined()` cannot wrap an object with required keys.** `createInvite` takes `actor`, and
+running the whole argument bag through `defined()` made every key optional, so `actor: User`
+stopped satisfying `actor: User`. It is only for option bags that are optional all the way
+down; `createInvite` reads `undefined` as "not asked for" already.
+
+**The reset UI became a shared dialog.** Two screens do this — the people table's row menu and
+the person page — and both were a `confirm()`, which was fine while the only choice was "yes".
+With two choices to make they would have grown into two slightly different dialogs, so
+`src/components/admin/reset-password-dialog.tsx` is the one implementation. It stays open on
+the result rather than closing over it: the password is shown once, and closing an unread
+password is losing it.
+
+**Verified against a real Postgres, the whole path.** Migration applied, then driven in a
+browser: invite with a chosen password and the box ticked → the accept page has no password
+field at all → accepting lands on `/change-password` → `/me` redirects back to it → setting a
+password lands in the app → admin resets with a chosen password and the box ticked → signing
+in with it lands on `/change-password` again. Both tools called over MCP, including the
+short-password refusal. The audit rows say "Password set by admin, must be changed at next
+sign-in" and never the password.
+
+**Applies to:** `prisma/schema.prisma`,
+`prisma/migrations/20260909000000_admin_set_password/`, `src/lib/data/users.ts`,
+`src/lib/auth.ts`, `src/lib/email.ts`, `src/lib/mcp/tools.ts`, `src/server/actions.ts`,
+`src/app/change-password/`, `src/app/invite/[token]/page.tsx`,
+`src/app/(app)/settings/admin/people/[id]/page.tsx`, `src/components/forced-password-form.tsx`,
+`src/components/accept-invite-form.tsx`, `src/components/admin/{invites-panel,users-panel,person-actions,reset-password-dialog}.tsx`,
+`docs/tools/admin.mdx`, `README.md`.

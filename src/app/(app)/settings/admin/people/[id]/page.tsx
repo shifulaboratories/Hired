@@ -133,6 +133,9 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         actions={
           <div className="flex items-center gap-2">
             {!person.isActive && <Badge variant="outline">Suspended</Badge>}
+            {/* The answer to "they say it won't let them in" when the account
+                looks perfectly healthy otherwise. */}
+            {person.mustChangePassword && <Badge variant="outline">Must set a password</Badge>}
             <Badge variant={person.role === "MEMBER" ? "outline" : "default"}>
               {person.role !== "MEMBER" && <ShieldIcon className="size-2.5" />}
               {ROLE_LABEL[person.role]}

@@ -16,6 +16,7 @@ import type { UserRole } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -55,6 +56,11 @@ export function InvitesPanel({
   const zone = useViewerZone();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<UserRole>("MEMBER");
+  // Empty is the normal invitation: they pick their own password on the accept
+  // page and nobody here ever sees it. Typing one swaps that page for a
+  // name-only form and puts the telling-them part on you.
+  const [password, setPassword] = useState("");
+  const [mustChange, setMustChange] = useState(false);
   const [pending, startTransition] = useTransition();
   const [lastLink, setLastLink] = useState<string | null>(null);
   const [removed, setRemoved] = useState<Set<string>>(new Set());
@@ -62,14 +68,27 @@ export function InvitesPanel({
   const invite = () => {
     if (!email.trim()) return;
     startTransition(async () => {
-      const result = await inviteUserAction({ email: email.trim(), role });
+      const result = await inviteUserAction({
+        email: email.trim(),
+        role,
+        password: password.trim() || undefined,
+        mustChangePassword: mustChange,
+      });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
       setEmail("");
+      setPassword("");
+      setMustChange(false);
       setLastLink(result.acceptUrl);
-      if (result.emailSent) toast.success(`Invitation emailed`);
+      if (result.passwordSet) {
+        // The one thing that can go wrong silently: they get a link, no
+        // password, and no idea one exists. Said loudly and left up.
+        toast.warning("Invite created — send them the password yourself, it isn't in the email", {
+          duration: 10000,
+        });
+      } else if (result.emailSent) toast.success(`Invitation emailed`);
       else toast.warning("Invite created — send the link yourself", { duration: 6000 });
     });
   };
@@ -117,6 +136,42 @@ export function InvitesPanel({
                 Send invite
               </Button>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="max-w-sm space-y-1.5">
+              <Label htmlFor="invite-password">Password (optional)</Label>
+              <Input
+                id="invite-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && invite()}
+                placeholder="Leave empty and they pick their own"
+                type="text"
+                autoComplete="off"
+                minLength={10}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {password.trim()
+                ? "The accept page will only ask for their name. The password is deliberately not in the invitation email — send it to them another way, or they can't sign in."
+                : "The usual way: the accept page asks them to choose one, and nobody here ever sees it."}
+            </p>
+            {password.trim() && (
+              <label className="flex cursor-pointer items-start gap-2.5 pt-1 text-[13px]">
+                <Checkbox
+                  checked={mustChange}
+                  onCheckedChange={(value) => setMustChange(value === true)}
+                  className="mt-0.5"
+                />
+                <span>
+                  Make them replace it when they first sign in
+                  <span className="text-muted-foreground block text-xs">
+                    Otherwise the password you chose stays theirs, and you know it.
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
 
           {lastLink && <CopyableLink url={lastLink} />}

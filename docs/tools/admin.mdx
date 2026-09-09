@@ -83,7 +83,7 @@ Everything known about a single account, for when someone asks for help: when th
 
 _Invite someone_
 
-Create an invitation and email it through Resend. If email is not configured yet, the invite is still created and the reply includes a link you can send by hand — so this works before Resend is set up.
+Create an invitation and email it through Resend. If email is not configured yet, the invite is still created and the reply includes a link you can send by hand — so this works before Resend is set up. Normally the invitee picks their own password on the accept page and you never see it. Pass `password` instead to choose it for them: the accept page then asks only for their name, and you have to tell them the password some other way, because it is deliberately never put in the invitation email — a message carrying both the link and the password it opens IS the account, sent to an address nobody has proven yet. Pass `must_change_password` alongside it when you would rather not keep a way in: they replace your password the moment they are through the door. The password is hashed immediately and never comes back out of any tool.
 
 **Admin only.** **Overwrites or deletes.** **Reaches outside this instance.**
 
@@ -91,6 +91,8 @@ Create an invitation and email it through Resend. If email is not configured yet
 | --- | --- | --- |
 | `email` | string | **required** — Who to invite |
 | `role` | enum | MEMBER by default. Only the super admin may create ADMINs.  `MEMBER` · `ADMIN` |
+| `password` | string | Set their password yourself instead of letting them pick one. At least 10 characters. Omit for the normal flow, where the accept page asks them for one. |
+| `must_change_password` | boolean | Whether they must replace your password with their own before the app opens to them. Off unless you ask for it, and ignored without a password. |
 
 ### `admin_list_invites`
 
@@ -118,13 +120,15 @@ Cancel an outstanding invitation so its link stops working.
 
 _Reset a member's password_
 
-Generate a new password for a member who is locked out, and return it once so it can be passed on. Every session they had is ended, so an old browser stays logged out. Cannot be used on the instance owner, and an admin cannot reset another admin's password — that restriction is what stops this being a way to take over an instance. The reset is written to the audit log; the password itself never is.
+Give a locked-out member a working password again, and return it once so it can be passed on. With no `password` it generates a passphrase, which is the safe default; pass one to set a password you chose. Either way every session they had is ended, so an old browser stays logged out. Either way you now know a password that opens their workspace, so `must_change_password` is there to close the app to them until they set their own. It is off unless you ask for it. Cannot be used on the instance owner, and an admin cannot reset another admin's password: that restriction is what stops this being a way to take over an instance. The reset is written to the audit log; the password itself never is.
 
 **Admin only.** **Overwrites or deletes.**
 
 | Argument | Type | |
 | --- | --- | --- |
 | `user_id` | string | **required** — The user's id, from admin_list_users |
+| `password` | string | Set this exact password instead of generating one. At least 10 characters. Omit to generate a passphrase. |
+| `must_change_password` | boolean | Whether they must set their own password before the app opens to them again. Off unless you ask for it. |
 
 ### `admin_audit_log`
 
