@@ -1,4 +1,3 @@
-import { STAGE_LABEL } from "@/lib/data/pipeline";
 import type { FunnelRung } from "@/lib/data/pipeline";
 import { sankeyBody, sankeyLayout } from "@/lib/funnel-sankey";
 
@@ -16,44 +15,73 @@ import { sankeyBody, sankeyLayout } from "@/lib/funnel-sankey";
  * of ours and `var(--stage-tone)` would come out black.
  */
 
-/** Resolved hex, not `var(--…)`: a screenshot has no theme to read from. */
-const TONES: Record<string, string> = {
+/**
+ * Resolved hex, not `var(--…)`: a screenshot has no theme to read from.
+ *
+ * Two vocabularies land here. A RUNG is "APPLIED", "ROUND_n" or "OFFER" — the
+ * ladder's own keys, and the rounds reuse the hues the three interview stages
+ * wore before they were merged, so a chart still reads left to right as
+ * further along. An ENDING carries a palette token instead, because the reason
+ * it ended is a tag the person owns and its colour is theirs to pick.
+ */
+const RUNG_TONE: Record<string, string> = {
   APPLIED: "#64748b",
-  SCREEN: "#3b82f6",
-  INTERVIEW: "#8b5cf6",
-  FINAL: "#ec4899",
+  ROUND_1: "#3b82f6",
+  ROUND_2: "#8b5cf6",
+  ROUND_3: "#ec4899",
+  ROUND_4: "#d946ef",
+  ROUND_5: "#a855f7",
+  ROUND_6: "#7c3aed",
+  INTERVIEWING: "#8b5cf6",
   OFFER: "#f59e0b",
-  ACCEPTED: "#10b981",
-  REJECTED: "#ef4444",
-  GHOSTED: "#94a3b8",
-  WITHDRAWN: "#a1a1aa",
-  OPEN: "#0ea5e9",
 };
 
-const EXIT_TONE = "#94a3b8";
-
-const LABEL: Record<string, string> = {
-  ...STAGE_LABEL,
-  // The endings read as outcomes here rather than as board columns: "Ghosted"
-  // is a stage name, "No response" is what happened.
-  GHOSTED: "No response",
-  REJECTED: "Rejected",
-  WITHDRAWN: "Withdrew",
-  ACCEPTED: "Offer accepted",
-  OPEN: "Still going",
+/** The eight tag swatches, plus the two endings that are not tags. */
+const ENDING_TONE: Record<string, string> = {
+  slate: "#94a3b8",
+  blue: "#3b82f6",
+  teal: "#14b8a6",
+  green: "#10b981",
+  amber: "#f59e0b",
+  red: "#ef4444",
+  violet: "#8b5cf6",
+  pink: "#ec4899",
+  accepted: "#10b981",
+  lost: "#94a3b8",
 };
+
+const FALLBACK_TONE = "#94a3b8";
+const OPEN_TONE = "#0ea5e9";
 
 export const FUNNEL_TITLE = "Where each application ended up";
 
 /** The one place the layout's colours and words are chosen. */
 export function funnelOptions(width?: number, height?: number) {
-  return {
-    width,
-    height,
-    tones: TONES,
-    exitTone: EXIT_TONE,
-    labelFor: (stage: string) => LABEL[stage] ?? stage,
-  };
+  return { width, height, openLabel: "Still going", openTone: OPEN_TONE };
+}
+
+/**
+ * A rung as the layout wants it: words and colours already chosen.
+ *
+ * Exported because the downloadable image builds the same picture from the
+ * same rungs, and two of these would be two charts the day somebody edited one.
+ */
+export function toSankeyInput(rungs: FunnelRung[]) {
+  return rungs.map((rung) => ({
+    key: rung.key,
+    label: rung.label,
+    tone: RUNG_TONE[rung.key] ?? FALLBACK_TONE,
+    reached: rung.reached,
+    visited: rung.visited,
+    advanced: rung.advanced,
+    open: rung.open,
+    ended: rung.ended.map((ending) => ({
+      key: ending.reason,
+      label: ending.reason,
+      tone: ENDING_TONE[ending.tone] ?? FALLBACK_TONE,
+      count: ending.count,
+    })),
+  }));
 }
 
 export function FunnelSankey({
@@ -71,7 +99,7 @@ export function FunnelSankey({
   width?: number;
   height?: number;
 }) {
-  const layout = sankeyLayout(rungs, funnelOptions(width, height));
+  const layout = sankeyLayout(toSankeyInput(rungs), funnelOptions(width, height));
 
   if (layout.empty) {
     return (
@@ -104,5 +132,3 @@ export function FunnelSankey({
     />
   );
 }
-
-export { LABEL as FUNNEL_LABEL, TONES as FUNNEL_TONES };

@@ -58,12 +58,15 @@ const TYPE_CUES: [RegExp, string][] = [
 /** Words that name a stage. Only used to PROPOSE a move, never to make one. */
 const STAGE_CUES: [RegExp, string][] = [
   [/\b(accepted|signed|taking\s+the\s+offer)\b/i, "ACCEPTED"],
-  [/\b(reject(ed|ion)?|turned\s+me\s+down|passed\s+on|not\s+moving\s+forward|no\s+thanks)\b/i, "REJECTED"],
-  [/\b(withdrew|withdrawn|pulled\s+out|dropped\s+out)\b/i, "WITHDRAWN"],
+  // The three endings are one stage now, so all three sets of words point at
+  // it. WHY it ended is a tag, and guessing a tag from a sentence is a step
+  // too far for something that only ever proposes.
+  [/\b(reject(ed|ion)?|turned\s+me\s+down|passed\s+on|not\s+moving\s+forward|no\s+thanks)\b/i, "LOST"],
+  [/\b(withdrew|withdrawn|pulled\s+out|dropped\s+out|ghosted|never\s+heard\s+back)\b/i, "LOST"],
   [/\b(offer(ed)?)\b/i, "OFFER"],
-  [/\b(final\s+round|onsite|on-site|loop|panel)\b/i, "FINAL"],
-  [/\b(interview|system\s+design|technical\s+round)\b/i, "INTERVIEW"],
-  [/\b(phone\s+screen|screening|screen(er)?|recruiter\s+call)\b/i, "SCREEN"],
+  [/\b(final\s+round|onsite|on-site|loop|panel)\b/i, "INTERVIEWING"],
+  [/\b(interview|system\s+design|technical\s+round)\b/i, "INTERVIEWING"],
+  [/\b(phone\s+screen|screening|screen(er)?|recruiter\s+call)\b/i, "INTERVIEWING"],
   [/\b(applied|submitted)\b/i, "APPLIED"],
 ];
 

@@ -87,15 +87,11 @@ export function toListRow(application: ListSource, domain: string | null): ListR
 
 const STAGE_ORDER: Stage[] = [
   "OFFER",
-  "FINAL",
-  "INTERVIEW",
-  "SCREEN",
+  "INTERVIEWING",
   "APPLIED",
   "WISHLIST",
   "ACCEPTED",
-  "REJECTED",
-  "WITHDRAWN",
-  "GHOSTED",
+  "LOST",
 ];
 
 /**

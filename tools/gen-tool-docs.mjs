@@ -131,10 +131,7 @@ const object = (properties, required = []) => ({
 // The constants those expressions close over. Duplicated, then verified against
 // the source below — a value added there and not here is an error, not a
 // quietly shorter table.
-const STAGE_VALUES = [
-  "WISHLIST", "APPLIED", "SCREEN", "INTERVIEW", "FINAL",
-  "OFFER", "ACCEPTED", "REJECTED", "WITHDRAWN", "GHOSTED",
-];
+const STAGE_VALUES = ["WISHLIST", "APPLIED", "INTERVIEWING", "OFFER", "ACCEPTED", "LOST"];
 const ACTIVITY_VALUES = [
   "NOTE", "STAGE_CHANGE", "EMAIL_SENT", "EMAIL_RECEIVED", "CALL", "INTERVIEW",
   "FOLLOW_UP", "APPLIED", "OFFER", "REJECTION", "REFERRAL", "OUTREACH",
@@ -142,7 +139,7 @@ const ACTIVITY_VALUES = [
 const COMPANY_FILTERS = ["active", "applied", "never-applied", "with-contacts"];
 const CONTACT_FILTERS = ["ping-due", "with-application", "no-company"];
 const TAG_COLORS = ["slate", "blue", "teal", "green", "amber", "red", "violet", "pink"];
-const TAG_KINDS = ["APPLICATION", "COMPANY", "CONTACT", "INDUSTRY", "SIZE", "LOCATION"];
+const TAG_KINDS = ["APPLICATION", "COMPANY", "CONTACT", "INDUSTRY", "SIZE", "LOCATION", "LOSS"];
 const ARCHIVE_KIND_VALUES = ["company", "contact", "application"];
 const EXPORT_KINDS = ["companies", "contacts", "applications"];
 const COMPANY_SORTS = ["name", "applied", "apps", "people"];

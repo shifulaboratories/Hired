@@ -66,13 +66,15 @@ Twelve activity types are available; the ones that come up are `CALL`, `INTERVIE
 it is one call. Do not also log the change by hand.
 
 Closing several at once is one call too: *"close out everything I never heard back from"*
-moves a batch to `GHOSTED`, each with its own timeline entry and its own follow-up reset,
+moves a batch to `LOST` with the reason "Ghosted", each with its own timeline entry and
+its own follow-up reset,
 so the funnel history stays intact.
 
 <Warning>
-  Silence is `GHOSTED`, not `REJECTED`. A rejection is a decision against you; a ghosting
-  is a non-response. Filing one as the other makes `diagnose_search` give you the wrong
-  advice about what to fix.
+  Say why it ended, and file silence as "Ghosted" rather than "Rejected". A rejection is a
+  decision against you; a ghosting is a non-response. Filing one as the other — or leaving
+  the reason off entirely — makes `diagnose_search` give you the wrong advice about what to
+  fix.
 </Warning>
 
 ### People

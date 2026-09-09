@@ -57,18 +57,46 @@ const positive = (value: string | undefined) => {
 
 /**
  * `f` still carries the stages, and still understands the two words it always
- * did. `closed` expands to the four terminal stages instead of being a mode of
- * its own, which is what makes "closed, but only the ghostings" expressible;
- * `overdue` becomes a flag, which is what makes "screening and overdue" work.
- * Both spellings survive so saved views and pasted links keep meaning what
- * they meant.
+ * did. `closed` expands to the terminal stages instead of being a mode of its
+ * own, which is what makes "closed, and only the ones I withdrew from"
+ * expressible through a tag; `overdue` becomes a flag, which is what makes
+ * "interviewing and overdue" work. Both spellings survive so saved views and
+ * pasted links keep meaning what they meant — including the four stage names
+ * that no longer exist, which map to the ones that replaced them.
  */
+/**
+ * What the four stages that were merged away used to be spelled.
+ *
+ * Every saved view is a stored query string, and every link anyone has ever
+ * pasted is one too. Ten stages became six; without this, a view called
+ * "Interviews this month" quietly matches nothing and looks like lost data.
+ * The same argument as `src` still being the tag parameter: renaming a thing
+ * in the URL breaks what people already saved, so the URL keeps both spellings
+ * and the reader maps them.
+ */
+const RETIRED_STAGES: Record<string, Stage> = {
+  SCREEN: "INTERVIEWING",
+  INTERVIEW: "INTERVIEWING",
+  FINAL: "INTERVIEWING",
+  REJECTED: "LOST",
+  WITHDRAWN: "LOST",
+  GHOSTED: "LOST",
+};
+
 export function parsePipelineFilters(
   one: (key: string) => string | undefined,
   stages: readonly Stage[],
 ): PipelineFilters {
   const parts = list(one("f"));
-  const picked = parts.filter((part) => (stages as readonly string[]).includes(part)) as Stage[];
+  const picked = [
+    ...new Set(
+      parts
+        .map((part) =>
+          (stages as readonly string[]).includes(part) ? (part as Stage) : RETIRED_STAGES[part],
+        )
+        .filter(Boolean) as Stage[],
+    ),
+  ];
   const closed = parts.includes("closed");
   return {
     stages: closed ? [...new Set([...picked, ...TERMINAL_STAGES])] : picked,

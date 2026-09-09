@@ -88,6 +88,11 @@ type Application = {
   companyId: string | null;
   roleTitle: string;
   stage: Stage;
+  /** 0 when nobody has said which round. Only meaningful while INTERVIEWING. */
+  interviewRound: number;
+  roundLabel: string;
+  /** Why it ended, as LOSS tags. Only shown when LOST. */
+  lossTags: TagValue[];
   jobUrl: string;
   jobDescription: string;
   location: string;
@@ -133,6 +138,7 @@ export function ApplicationDetail({
   tasks,
   resumes,
   tagOptions,
+  lossOptions,
   fieldValues,
   company,
   companies,
@@ -148,6 +154,8 @@ export function ApplicationDetail({
   resumes: { id: string; name: string }[];
   /** Every source category on file, with usage counts. */
   tagOptions: TagOption[];
+  /** The reasons this person keeps, for the picker shown on a lost job. */
+  lossOptions: TagOption[];
   /** Locations and work modes already in use, so the fields can offer them. */
   fieldValues: {
     location: { value: string; count: number }[];
@@ -182,6 +190,9 @@ export function ApplicationDetail({
     workMode: application.workMode,
     salaryRange: application.salaryRange,
     tags: application.tags,
+    lossTags: application.lossTags,
+    interviewRound: application.interviewRound,
+    roundLabel: application.roundLabel,
     notes: application.notes,
     // The day it fell on where the reader is, not the first ten characters of
     // a UTC instant — 9am in Auckland is the day before in Greenwich, and this
@@ -210,12 +221,15 @@ export function ApplicationDetail({
   // manufactures the duplicate employers you then have to merge. It is
   // committed on blur instead, when the name is a name.
   const { state, push } = useAutosave<typeof values>((next) => {
-    const { company: _company, tags, ...rest } = next;
+    const { company: _company, tags, lossTags, ...rest } = next;
     return updateApplicationAction(application.id, {
       ...rest,
       // Categories are rows now, so what travels is ids — and it replaces the
-      // whole set, which is what ticking one off in the picker means.
+      // whole set, which is what ticking one off in the picker means. The two
+      // sets are sent separately because they replace separately: saying why a
+      // job ended must not clear where it came from.
       tagIds: tags.map((tag) => tag.id),
+      lossTagIds: lossTags.map((tag) => tag.id),
       appliedAt: next.appliedAt || null,
       nextFollowUpAt: next.nextFollowUpAt || null,
       resumeId: next.resumeId || null,
@@ -567,6 +581,63 @@ export function ApplicationDetail({
                   onCatalogChange={refresh}
                 />
               </div>
+
+              {/* Both of these are stage-specific on purpose. Screening,
+                  interviewing and final round were three board columns; they
+                  are one, and how deep you are lives here instead — out of the
+                  way on the board, where a card should say as little as
+                  possible, and in front of you the moment you open the job.
+                  The same for why something ended: it is the one question
+                  worth asking at the moment it ends, and noise every other
+                  time. */}
+              {stage === "INTERVIEWING" && (
+                <div className="space-y-1.5">
+                  <Label>Round</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={99}
+                      inputMode="numeric"
+                      aria-label="Which round of interviews"
+                      className="w-20"
+                      value={values.interviewRound || ""}
+                      placeholder="1"
+                      onChange={(event) =>
+                        set({ interviewRound: Number(event.target.value) || 0 })
+                      }
+                    />
+                    <Input
+                      value={values.roundLabel}
+                      aria-label="What this round is called"
+                      placeholder="Phone screen, take-home, onsite…"
+                      onChange={(event) => set({ roundLabel: event.target.value })}
+                    />
+                  </div>
+                  <p className="text-faint text-[12px]">
+                    Optional, and only you see it — the number is what the funnel on Analytics
+                    is drawn from.
+                  </p>
+                </div>
+              )}
+
+              {stage === "LOST" && (
+                <div className="space-y-1.5">
+                  <Label>Why it ended</Label>
+                  <TagPicker
+                    kind="LOSS"
+                    value={values.lossTags}
+                    options={lossOptions}
+                    placeholder="Rejected, ghosted, withdrew…"
+                    onChange={(lossTags) => set({ lossTags })}
+                    onCatalogChange={refresh}
+                  />
+                  <p className="text-faint text-[12px]">
+                    Worth one click: silence and a no lead to different advice, and this is what
+                    the chart reads.
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <Label>Job link</Label>

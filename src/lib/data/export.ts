@@ -6,7 +6,13 @@ import {
   type ContactMissing,
   type ContactSort,
 } from "@/lib/crm-filters";
-import { STAGE_LABEL, listApplications, listCompanies, listContacts } from "@/lib/data/pipeline";
+import {
+  STAGE_LABEL,
+  listApplications,
+  listCompanies,
+  listContacts,
+  roundLabelOf,
+} from "@/lib/data/pipeline";
 import { toListRow, sortRows, type ListSort } from "@/lib/pipeline-list";
 import { matchesFilters, type PipelineFilters } from "@/lib/pipeline-filters";
 import { timeZoneOf } from "@/lib/data/me";
@@ -234,6 +240,7 @@ export async function exportApplicationsCsv(userId: string, options?: Applicatio
       "Role",
       "Stage",
       "Tags",
+      "Why it ended",
       "Location",
       "Work mode",
       "Salary",
@@ -241,6 +248,7 @@ export async function exportApplicationsCsv(userId: string, options?: Applicatio
       "Next follow-up",
       "Closed",
       "Resume",
+      "Round",
       "Days in stage",
       "Days quiet",
       "Activity",
@@ -256,7 +264,8 @@ export async function exportApplicationsCsv(userId: string, options?: Applicatio
           application.company.name,
           application.roleTitle,
           STAGE_LABEL[application.stage],
-          tagNames(application.tags),
+          ofKind(application.tags, "APPLICATION"),
+          ofKind(application.tags, "LOSS"),
           application.location,
           application.workMode,
           application.salaryRange,
@@ -264,6 +273,7 @@ export async function exportApplicationsCsv(userId: string, options?: Applicatio
           day(application.nextFollowUpAt, zone),
           day(application.closedAt, zone),
           application.resume?.name ?? "",
+          roundLabelOf(application.interviewRound, application.roundLabel),
           application.daysInStage,
           application.quietDays,
           application._count.activities,

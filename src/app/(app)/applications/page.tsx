@@ -12,7 +12,7 @@ import {
 } from "@/lib/data/pipeline";
 import { listSchedule } from "@/lib/data/schedule";
 import { listResumeNames } from "@/lib/data/resumes";
-import { listTags } from "@/lib/data/tags";
+import { listTags, tagsOfKind } from "@/lib/data/tags";
 import { archiveCounts } from "@/lib/data/archive";
 import { getProfile } from "@/lib/data/me";
 import { civilDay } from "@/lib/time";
@@ -385,7 +385,10 @@ export default async function ApplicationsPage({
     quietDays: application.quietDays,
     jobUrl: application.jobUrl,
     domain: domainFor(application),
-    tags: application.tags,
+    // Source tags only. A loss reason is a tag too, and it rides the same
+    // array — but the board is the one screen that stays quiet, so why
+    // something ended belongs on the opened application, not the card.
+    tags: tagsOfKind(application.tags, "APPLICATION"),
   });
 
   // Which columns the board draws. Filtering to one stage should show that one

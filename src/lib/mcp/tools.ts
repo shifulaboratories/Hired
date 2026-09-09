@@ -358,7 +358,7 @@ function enumArrayArg<T extends string>(
 }
 
 const TAG_COLORS = ["slate", "blue", "teal", "green", "amber", "red", "violet", "pink"] as const;
-const TAG_KINDS = ["APPLICATION", "COMPANY", "CONTACT", "INDUSTRY", "SIZE", "LOCATION"] as const;
+const TAG_KINDS = ["APPLICATION", "COMPANY", "CONTACT", "INDUSTRY", "SIZE", "LOCATION", "LOSS"] as const;
 const COMPANY_FILTERS = ["active", "applied", "never-applied", "with-contacts"] as const;
 const CONTACT_FILTERS = ["ping-due", "with-application", "no-company"] as const;
 const ARCHIVE_KIND_VALUES = ["company", "contact", "application"] as const;
@@ -1946,7 +1946,7 @@ export const tools: McpTool[] = [
     name: "pipeline_stats",
     title: "Pipeline stats",
     description:
-      "Counts by stage, applications still in flight, applications sent this week, how many are at a phone screen and how many are further into interviews, offers, open tasks, follow-ups due and response rate. Start here for any 'how is my search going' question. Two things worth knowing before you quote a number: `active` counts applications actually sent and still alive, so a wishlist row is not in it; and `responseRate` is measured the way the funnel is, by how far each application ever got, so one that got a phone screen and was then rejected counts as a response. `responseRateBasis` is how many applications that rate is computed from — under about ten it is describing luck rather than a search, and the web app shows a dash instead of a figure. Say so rather than quoting a percentage at somebody who has applied to three things.",
+      "Counts by stage, applications still in flight, applications sent this week, how many are interviewing and the deepest round anyone has reached, offers, open tasks, follow-ups due and response rate. Start here for any 'how is my search going' question. Two things worth knowing before you quote a number: `active` counts applications actually sent and still alive, so a wishlist row is not in it; and `responseRate` is measured the way the funnel is, by how far each application ever got, so one that got an interview and was then rejected counts as a response. `responseRateBasis` is how many applications that rate is computed from — under about ten it is describing luck rather than a search, and the web app shows a dash instead of a figure. Say so rather than quoting a percentage at somebody who has applied to three things.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -1960,7 +1960,7 @@ export const tools: McpTool[] = [
     name: "list_applications",
     title: "List applications",
     description:
-      "List job applications. By default the closed ones (accepted, rejected, withdrawn, ghosted) are excluded. Every row carries two different numbers and they answer different questions: daysInStage is how long it has sat where it is, measured from the last stage change; quietDays is how long since ANYTHING happened to it — a logged call, an email, a stage move. 'What has gone quiet' is quietDays, and lastTouchAt is the date it counts from. Pass quietForDays to return only the ones past that many silent days, which is the fastest way to answer 'what needs chasing'.",
+      "List job applications. By default the closed ones (ACCEPTED and LOST) are excluded. Every row carries two different numbers and they answer different questions: daysInStage is how long it has sat where it is, measured from the last stage change; quietDays is how long since ANYTHING happened to it — a logged call, an email, a stage move. 'What has gone quiet' is quietDays, and lastTouchAt is the date it counts from. Pass quietForDays to return only the ones past that many silent days, which is the fastest way to answer 'what needs chasing'.",
     inputSchema: object({
       stage: { type: "string", enum: STAGE_VALUES, description: "Only this stage" },
       includeClosed: bool("Include accepted / rejected / withdrawn"),
@@ -2121,6 +2121,13 @@ export const tools: McpTool[] = [
         companyWebsite: str("The company's own site, e.g. stripe.com. Shows their logo in the pipeline."),
         roleTitle: str("Job title"),
         stage: { type: "string", enum: STAGE_VALUES, description: "Starting stage. Default WISHLIST." },
+        interviewRound: num(
+          "Which round of interviews it is on, counting from 1. Only meaningful while INTERVIEWING; 0 means nobody has said, which is fine. It is never cleared when an application ends — a rejection after four rounds is a fact about how far it got, and the funnel is built out of exactly this.",
+        ),
+        roundLabel: str("What that round is called — 'Phone screen', 'Take-home', 'Onsite'. Optional."),
+        lossReasons: strArray(
+          "Why it ended, by name — 'Rejected', 'Ghosted', 'Withdrew', 'Declined their offer', 'Role closed', or their own words. Only read when the stage is LOST. Matched against the reasons they already use and created when nothing matches.",
+        ),
         jobUrl: str("Link to the posting"),
         jobDescription: str("The full job posting text"),
         location: str("Job location. Free text — call list_field_values first and reuse a spelling already in use."),
@@ -2152,6 +2159,9 @@ export const tools: McpTool[] = [
         ...defined({
           companyWebsite: s(args, "companyWebsite"),
           stage: s(args, "stage") as Stage | undefined,
+          interviewRound: n(args, "interviewRound"),
+          roundLabel: s(args, "roundLabel"),
+          lossReasons: a(args, "lossReasons"),
           jobUrl: s(args, "jobUrl"),
           jobDescription: s(args, "jobDescription"),
           location: s(args, "location"),
@@ -2172,7 +2182,7 @@ export const tools: McpTool[] = [
     name: "update_application",
     title: "Update an application",
     description:
-      "Update fields on an application. Changing `stage` here also writes a timeline entry and resets the follow-up date. `sources` REPLACES the whole list — read the current one from get_application, add or remove, and pass the full list back.",
+      "Update fields on an application. Changing `stage` here also writes a timeline entry and resets the follow-up date. `sources` and `lossReasons` each REPLACE the whole list — read the current one from get_application, add or remove, and pass the full list back. The two are separate sets on the same application: writing one never disturbs the other.",
     inputSchema: object(
       {
         id: str("Application id"),
@@ -2180,6 +2190,14 @@ export const tools: McpTool[] = [
         companyWebsite: str("The company's own site, e.g. stripe.com. Shows their logo in the pipeline."),
         roleTitle: str("Job title"),
         stage: { type: "string", enum: STAGE_VALUES, description: "New stage" },
+        interviewRound: num(
+          "Which round of interviews it is on, counting from 1. Only meaningful while INTERVIEWING; 0 means nobody has said, which is fine. It is never cleared when an application ends — a rejection after four rounds is a fact about how far it got, and the funnel is built out of exactly this.",
+        ),
+        roundLabel: str("What that round is called — 'Phone screen', 'Take-home', 'Onsite'. Optional."),
+        lossReasons: strArray(
+          "Why it ended, by name. REPLACES the whole set — read the current one from get_application first. Only read when the stage is LOST.",
+        ),
+        lossTagIds: strArray("The same by id, from list_tags kind LOSS. Exact; wins over lossReasons."),
         jobUrl: str("Posting link"),
         jobDescription: str("Job posting text"),
         location: str("Location. Free text — list_field_values first, and an empty string clears it."),
@@ -2211,6 +2229,10 @@ export const tools: McpTool[] = [
           companyWebsite: s(args, "companyWebsite"),
           roleTitle: s(args, "roleTitle"),
           stage: s(args, "stage") as Stage | undefined,
+          interviewRound: n(args, "interviewRound"),
+          roundLabel: s(args, "roundLabel"),
+          lossTagIds: a(args, "lossTagIds"),
+          lossReasons: a(args, "lossReasons"),
           jobUrl: s(args, "jobUrl"),
           jobDescription: s(args, "jobDescription"),
           location: s(args, "location"),
@@ -2231,7 +2253,7 @@ export const tools: McpTool[] = [
     name: "move_applications_stage",
     title: "Move several applications to one stage",
     description:
-      "Move a batch of applications to the same stage — the tool for 'close out everything I never heard back from' or 'mark these four as applied'. Each one gets its own timeline entry and follow-up date, exactly as if it had been moved on its own, so the funnel history stays intact. Ids that no longer exist are skipped rather than failing the batch; the result lists what moved and what was skipped. Read the ids from list_applications first, and for silence use GHOSTED rather than REJECTED.",
+      "Move a batch of applications to the same stage — the tool for 'close out everything I never heard back from' or 'mark these four as applied'. Each one gets its own timeline entry and follow-up date, exactly as if it had been moved on its own, so the funnel history stays intact. Ids that no longer exist are skipped rather than failing the batch; the result lists what moved and what was skipped. Read the ids from list_applications first, and when closing them out pass `lossReasons` saying why — 'Ghosted' for silence, 'Rejected' for a no. The stage is the same either way; the reason is what makes the funnel worth reading.",
     inputSchema: object(
       {
         ids: strArray("The application ids to move"),
@@ -2255,12 +2277,20 @@ export const tools: McpTool[] = [
     name: "move_application_stage",
     title: "Move an application to a new stage",
     description:
-      "Advance or close an application. Automatically logs the change to the timeline and schedules the next follow-up. On the four endings: REJECTED is for when they said no, WITHDRAWN for when the user pulled out, ACCEPTED for a signed offer, and GHOSTED for the far more common ending where nobody ever replied. Use GHOSTED rather than REJECTED when there was no answer — the funnel counts a rejection as a decision against the user and a ghosting as a non-response, and the advice that falls out of those is different.",
+      "Advance or close an application. Automatically logs the change to the timeline and schedules the next follow-up. Six stages: WISHLIST for something not applied to yet, APPLIED, INTERVIEWING for every conversation from a recruiter screen to a final round, OFFER, ACCEPTED for a signed offer, and LOST for every other ending. Moving to INTERVIEWING sets round 1 unless you pass a round — pass `interviewRound` when they say which one it is (\"second interview\" is 2), and `roundLabel` for what it was called. Moving to LOST, pass `lossReasons` with WHY: \"Rejected\" when they said no, \"Ghosted\" for the far more common ending where nobody ever replied, \"Withdrew\", \"Declined their offer\", \"Role closed\", or anything else that fits — names are matched against what they already use and created when nothing does. The reason is what the funnel reads to tell a decision against them apart from silence, and the advice that falls out of those is different, so it is worth asking rather than guessing.",
     inputSchema: object(
       {
         id: str("Application id"),
         stage: { type: "string", enum: STAGE_VALUES, description: "The new stage" },
         note: str("Optional note for the timeline entry"),
+        interviewRound: num("Which round this puts it in, counting from 1. Only read when moving to INTERVIEWING."),
+        roundLabel: str("What that round is called — 'Phone screen', 'Take-home', 'Onsite'. Optional."),
+        lossReasons: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Why it ended, by name. REPLACES any reasons already on it. Only read when moving to LOST.",
+        },
       },
       ["id", "stage"],
     ),
@@ -2271,17 +2301,23 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) =>
-      pipeline.moveApplicationStage(ctx.userId, 
+      pipeline.moveApplicationStage(
+        ctx.userId,
         required(args, "id"),
         required(args, "stage") as Stage,
         s(args, "note"),
+        defined({
+          interviewRound: n(args, "interviewRound"),
+          roundLabel: s(args, "roundLabel"),
+          lossReasons: a(args, "lossReasons"),
+        }),
       ),
   },
   {
     name: "delete_application",
     title: "Archive an application",
     description:
-      "Put an application in the archive. It leaves the board, the list, the calendar and the funnel, taking its timeline and its tasks with it, and restore_records brings the lot back for a set number of days — 30 by default — before it is deleted for good. Nothing is destroyed here. Still reach for move_application_stage with REJECTED, WITHDRAWN or GHOSTED whenever the thread actually ended: the funnel and diagnose_search are built from applications that ended, and archiving one takes it out of that record entirely. Archive is for something that should never have been tracked; a stage is for something that ended.",
+      "Put an application in the archive. It leaves the board, the list, the calendar and the funnel, taking its timeline and its tasks with it, and restore_records brings the lot back for a set number of days — 30 by default — before it is deleted for good. Nothing is destroyed here. Still reach for move_application_stage with LOST, and a reason, whenever the thread actually ended: the funnel and diagnose_search are built from applications that ended, and archiving one takes it out of that record entirely. Archive is for something that should never have been tracked; a stage is for something that ended.",
     inputSchema: object({ id: str("Application id") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -2426,7 +2462,7 @@ export const tools: McpTool[] = [
     name: "diagnose_search",
     title: "Diagnose the job search",
     description:
-      "Works out what is actually going wrong with the search, rather than reporting counts. Returns a one-sentence verdict naming which step of the funnel is losing people — no responses at all is a resume or targeting problem, responses that die at the phone screen is a story problem, interviews that do not convert is something else again — plus per-step conversion, median days spent in each stage, weekly volume for the last six weeks, applications that have gone quiet, and the response rate of each resume so you can see which one is working. Progress is measured by the furthest stage an application ever reached, so a rejection after a final round counts as having got that far. Reach for this before giving advice about a search: it is the difference between 'send more applications' and 'stop sending, the resume is the problem'. Says so plainly when there is not enough data yet. Read-only.",
+      "Works out what is actually going wrong with the search, rather than reporting counts. Returns a one-sentence verdict naming which step of the funnel is losing people — no responses at all is a resume or targeting problem, interviews that do not convert is something else again — plus per-step conversion, median days spent in each stage, weekly volume for the last six weeks, applications that have gone quiet, and the response rate of each resume so you can see which one is working. Progress is measured by the furthest an application ever got — its `interviewRound` where it has one — so a rejection after a fourth round counts as having got that far. Reach for this before giving advice about a search: it is the difference between 'send more applications' and 'stop sending, the resume is the problem'. Says so plainly when there is not enough data yet. Read-only.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -2440,7 +2476,7 @@ export const tools: McpTool[] = [
     name: "get_funnel",
     title: "Get the funnel, rung by rung",
     description:
-      "The numbers behind the flow chart on the analytics page: for each rung of the ladder — applied, phone screen, interview, final round, offer — how many ever got that far, how many went on, how many are still sitting there, and how many left at that exact point and where they went (rejected, ghosted, withdrawn, offer accepted). Progress is measured by the furthest stage an application actually reached, so a rejection after two interviews is counted as leaking out of the interview rung rather than the applied one — which is the whole reason to look at this rather than at raw stage counts. `visited` says how many were genuinely in a rung, `reached` how many got at least that deep; they differ when someone skips a step, and only `visited` is honest about whether a stage happened. Wishlist rows are counted separately and are not in the funnel at all, because nothing was ever sent. Archived applications are excluded. Use export_funnel_image for the picture. Read-only. Says nothing is there yet rather than dividing by zero.",
+      "The numbers behind the flow chart on the analytics page. The ladder is built from the rounds this person actually records: with none it is applied → interviewing → offer, and with rounds logged it is applied → round 1 → round 2 → … → offer, which is the whole reason to number them. For each rung: how many ever got that far, how many went on, how many are still sitting there, and how many left at that exact point and why — `ended` carries their own LOSS tag names, plus 'Offer accepted' for a signed one and 'Lost' for an ending nobody gave a reason for. Progress is measured by the furthest an application actually got, so a rejection after two rounds leaks out of round two rather than out of applied. Each rung carries its own `label` and a `tone` token, so do not translate the keys yourself. Wishlist rows are counted separately and are not in the funnel at all, because nothing was ever sent. Archived applications are excluded. Use export_funnel_image for the picture. Read-only. Says nothing is there yet rather than dividing by zero.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -2583,7 +2619,7 @@ export const tools: McpTool[] = [
     name: "list_saved_views",
     title: "List saved pipeline views",
     description:
-      "The cuts of the pipeline this person has named and kept — 'Chasing', 'Dream jobs', 'Gone quiet'. Each one returns a name and a query string like \"view=list&f=SCREEN,INTERVIEW&sort=waiting\". Call this when someone refers to a view by name, then read the query to work out what they mean — save_view documents every parameter it can hold. Reading a view tells you what they consider one job; it is a good place to look before asking what they want reviewed.",
+      "The cuts of the pipeline this person has named and kept — 'Chasing', 'Dream jobs', 'Gone quiet'. Each one returns a name and a query string like \"view=list&f=INTERVIEWING&sort=waiting\". Call this when someone refers to a view by name, then read the query to work out what they mean — save_view documents every parameter it can hold. Reading a view tells you what they consider one job; it is a good place to look before asking what they want reviewed.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -2597,7 +2633,7 @@ export const tools: McpTool[] = [
     name: "save_view",
     title: "Save a pipeline view under a name",
     description:
-      "Name a cut of the pipeline so it can be reopened in one click. The query is the pipeline URL's own parameters without the leading '?', and every filter combines with every other: view (board | list | calendar); f (comma-separated stages, plus 'overdue' as a flag that ANDs rather than replacing the stages, and 'closed' which expands to the four endings); src (comma-separated tag ids from list_tags); co (company ids); cv (resume ids, or 'none' for applications with no resume attached); w (minimum days sitting in the current stage); qd (minimum days since anything at all was logged — the chasing question, which is not the same as w); sort (followUp | company | stage | updated | salary | waiting | quiet) and dir; q (search across company, role, notes, location, work mode, the posting text and tag names); month (YYYY-MM, calendar only). Example: name 'Referrals gone quiet', query 'view=list&f=APPLIED,SCREEN&qd=14&sort=quiet&dir=desc'. Saving under a name that already exists REPLACES that view rather than creating a second one, which is how you edit one. Anything outside those parameters is dropped. co and cv hold ids, so a view naming a company later folded away by merge_companies simply stops matching it.",
+      "Name a cut of the pipeline so it can be reopened in one click. The query is the pipeline URL's own parameters without the leading '?', and every filter combines with every other: view (board | list | calendar); f (comma-separated stages, plus 'overdue' as a flag that ANDs rather than replacing the stages, and 'closed' which expands to both endings; the six retired stage names — SCREEN, INTERVIEW, FINAL, REJECTED, WITHDRAWN, GHOSTED — are still understood and map to the stages that replaced them, so views saved before the change keep working); src (comma-separated tag ids from list_tags); co (company ids); cv (resume ids, or 'none' for applications with no resume attached); w (minimum days sitting in the current stage); qd (minimum days since anything at all was logged — the chasing question, which is not the same as w); sort (followUp | company | stage | updated | salary | waiting | quiet) and dir; q (search across company, role, notes, location, work mode, the posting text and tag names); month (YYYY-MM, calendar only). Example: name 'Referrals gone quiet', query 'view=list&f=APPLIED,INTERVIEWING&qd=14&sort=quiet&dir=desc'. Saving under a name that already exists REPLACES that view rather than creating a second one, which is how you edit one. Anything outside those parameters is dropped. co and cv hold ids, so a view naming a company later folded away by merge_companies simply stops matching it.",
     inputSchema: object(
       {
         name: str("What to call it, e.g. 'Chasing'"),
@@ -2804,7 +2840,7 @@ export const tools: McpTool[] = [
         sort: str("The same sort key the matching list tool takes"),
         dir: { type: "string", enum: [...SORT_DIRECTIONS], description: "asc | desc" },
         query: str(
-          "For applications: a pipeline query string, e.g. \"f=SCREEN,INTERVIEW&src=<tagId>\" — the same one the app puts in its URL",
+          "For applications: a pipeline query string, e.g. \"f=INTERVIEWING&src=<tagId>\" — the same one the app puts in its URL",
         ),
       },
       ["kind"],

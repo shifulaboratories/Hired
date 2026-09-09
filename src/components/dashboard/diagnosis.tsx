@@ -38,11 +38,11 @@ export function DiagnosisCard({ diagnosis }: { diagnosis: SearchDiagnosis }) {
         {diagnosis.confident && steps.some((step) => step.reached > 0) && (
           <div className="space-y-1">
             {steps.map((step) => {
-              const isWeak = step.from === weakest;
+              const isWeak = step.key === weakest;
               return (
                 <div
-                  key={step.from}
-                  style={{ ["--tone" as string]: STAGE_TONE[step.from] }}
+                  key={step.key}
+                  style={{ ["--tone" as string]: step.tone }}
                   className={cn(
                     "flex items-center gap-3 rounded-control px-2 py-1.5",
                     isWeak && "stage-chip",
@@ -53,7 +53,7 @@ export function DiagnosisCard({ diagnosis }: { diagnosis: SearchDiagnosis }) {
                       remaining space below md instead of forcing the page
                       sideways; the counts wait for a screen with room. */}
                   <span className="text-muted-foreground min-w-0 flex-1 truncate text-[12.5px] md:w-48 md:flex-none">
-                    {STAGE_LABEL[step.from]} → {STAGE_LABEL[step.to]}
+                    {step.from} → {step.to}
                   </span>
                   <span className="nums text-faint hidden w-16 shrink-0 text-[12px] sm:block">
                     {step.advanced} of {step.reached}
@@ -71,7 +71,7 @@ export function DiagnosisCard({ diagnosis }: { diagnosis: SearchDiagnosis }) {
                       className="absolute inset-y-0 left-0 rounded-full"
                       style={{
                         width: `${step.rate ?? 0}%`,
-                        background: STAGE_TONE[step.from],
+                        background: step.tone,
                       }}
                     />
                   </span>

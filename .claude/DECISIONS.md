@@ -5642,3 +5642,73 @@ including the identical sequence. The only mechanism that fits is the seeding
 effect's `router.refresh()` landing after the reader has navigated away, so
 that refresh is now dropped on unmount. Six consecutive full sweeps — every
 screen, two zones, from an unseeded profile — are clean.
+
+## 2026-09-09 — Ten stages become six, and the detail moves off the board
+
+Screening, interviewing and a final round were three board columns for one thing —
+talking to them — and which of the three a given employer's process belonged in was a
+guess that changed by employer. Rejected, withdrawn and ghosted were three more for
+another one thing: it ended and you did not get it. Six columns became two.
+
+**How deep you are is a number, not a column.** `Application.interviewRound`, 1-based, 0
+for "nobody has said", plus an optional `roundLabel` for what that round was called. The
+board deliberately shows neither: asked what he wanted, the answer was "minimize the main
+view… it's good to label the amount of rounds when looking at the overview or analysis,
+but it's not helpful in the small-picture main action board". So the round lives on the
+opened application and in the funnel, and nowhere else.
+
+**The funnel is built out of it.** `funnelLadder(deepestRound)` returns Applied →
+Interviewing → Offer when nobody records rounds, and Applied → Round 1 → … → Offer when
+they do, capped at six. `funnelFlows` and `diagnoseSearch` share it — one ladder, because
+the last time those two computed the same thing separately the response rate reported 0%
+on a search where everyone replied. `FunnelStep` carries its own label and tone now
+instead of a Stage key, and `weakest` is a rung key rather than a stage, which is what let
+the verdict stop naming three hard-coded stages and instead pick the worst-converting
+round generically.
+
+**Why it ended is a tag, not an enum.** Asked, the answer was to "allow the person to
+create, select, or multi-select tags, and have those as default tags that can be deleted".
+That is exactly the `Tag` table, so `TagKind.LOSS` joins the six kinds and rides the
+`ApplicationTag` join that already exists — no new model, and the picker, the colours, the
+rename and the delete all came free. It starts with Rejected, Ghosted, Withdrew, Declined
+their offer and Role closed; the last two were never expressible as stages, and turning
+down an offer is not a rejection.
+
+**The trap that came with it, and it is a real one.** Two catalogues now share one join
+table, so `deleteMany: {}` on an application's tags — which is how "replace the whole set"
+was written — would take the loss reasons off with the source tags, and vice versa. Every
+replacement narrows by kind. Prisma cannot express that directly (a nested `deleteMany`
+takes a scalar filter and cannot reach through to `tag.kind`), so the ids of the kinds
+being replaced are looked up first. Proven both directions against real Postgres.
+
+**Saved views keep working.** Every view is a stored query string and every shared link is
+one too, so `parsePipelineFilters` maps the six retired spellings — SCREEN, INTERVIEW,
+FINAL, REJECTED, WITHDRAWN, GHOSTED — onto the stages that replaced them. Same argument as
+`src` still being the tag parameter. Verified in a browser: `?f=REJECTED` still matches.
+
+**The migration keeps what people already recorded.** SCREEN, INTERVIEW and FINAL become
+INTERVIEWING at rounds 1, 2 and 3 with their old names as the label; an application that
+ENDED after interviews has no stage left to read, so its round is recovered from the
+furthest `Activity.toStage` it ever had — which is where the funnel always read progress
+from. The three endings become LOST, and each account gets the matching LOSS tag created
+and attached, so nothing that was recorded is lost in the rename. Stage-change rows that
+now read "Interviewing → Interviewing" have their stage columns nulled, because that is no
+longer a move. Run against a real database with all ten old stages in it: 36 lost
+applications, every one carrying a reason, and a rejection that had reached a final round
+kept `interviewRound = 3`.
+
+**Two Postgres details worth keeping.** `ALTER TYPE … ADD VALUE` cannot be used in the
+transaction that added it, and Prisma runs a migration in one transaction — so both enums
+are swapped by building a new type and casting, which is the same move the Stage change
+needed anyway. And the Sankey emitter already escaped its labels, which matters more than
+it did: an exit label is now a tag name the person typed, and it lands in raw SVG markup.
+
+**One thing lost, deliberately.** `visited` and `reached` on a funnel rung used to differ,
+because a process could skip a stage. Rounds are counted rather than named, so there is
+nothing to skip and the two now agree. The field stays because it is what decides whether
+a column is drawn at all.
+
+**Colour.** `--stage-lost` is a muted rose at about a third of the old rejected red. Most
+applications end; a wall of alarm red tells somebody their search is failing when it is
+doing the normal thing, which is the same argument as the Analytics empty state. The three
+interview hues survive as the round tones, so a deeper round still reads as further along.

@@ -5,7 +5,7 @@ import { PageShell } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { FadeIn } from "@/components/motion";
 import { applicationFieldValues, getApplication, listCompanies } from "@/lib/data/pipeline";
-import { listTags } from "@/lib/data/tags";
+import { listTags, tagsOfKind } from "@/lib/data/tags";
 import { getResume, listResumeNames } from "@/lib/data/resumes";
 import { requireUser } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
@@ -17,11 +17,21 @@ export const dynamic = "force-dynamic";
 export default async function ApplicationPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
-  const [application, resumes, tagOptions, companies, { companyLogos }, googleConnection, fieldValues] =
+  const [
+    application,
+    resumes,
+    tagOptions,
+    lossOptions,
+    companies,
+    { companyLogos },
+    googleConnection,
+    fieldValues,
+  ] =
     await Promise.all([
       getApplication(user.id, id),
       listResumeNames(user.id),
       listTags(user.id, "APPLICATION"),
+      listTags(user.id, "LOSS"),
       listCompanies(user.id),
       getSettings(),
       accountAccess(user.id),
@@ -48,13 +58,16 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
             company: application.company.name,
             companyId: application.companyId,
             roleTitle: application.roleTitle,
+            interviewRound: application.interviewRound,
+            roundLabel: application.roundLabel,
             stage: application.stage,
             jobUrl: application.jobUrl,
             jobDescription: application.jobDescription,
             location: application.location,
             workMode: application.workMode,
             salaryRange: application.salaryRange,
-            tags: application.tags,
+            tags: tagsOfKind(application.tags, "APPLICATION"),
+            lossTags: tagsOfKind(application.tags, "LOSS"),
             notes: application.notes,
             appliedAt: application.appliedAt?.toISOString() ?? null,
             nextFollowUpAt: application.nextFollowUpAt?.toISOString() ?? null,
@@ -82,12 +95,8 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
           }))}
           resumes={resumes.map((resume) => ({ id: resume.id, name: resume.name }))}
           fieldValues={fieldValues}
-          tagOptions={tagOptions.map((tag) => ({
-                id: tag.id,
-                name: tag.name,
-                color: tag.color,
-                count: tag._count.applications + tag._count.companies + tag._count.contacts,
-              }))}
+          tagOptions={tagOptions.map(asOption)}
+          lossOptions={lossOptions.map(asOption)}
           company={{
             id: application.companyId,
             name: application.company.name,
@@ -122,4 +131,19 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
       </FadeIn>
     </PageShell>
   );
+}
+
+/** The picker wants a flat count, not the three it is summed from. */
+function asOption(tag: {
+  id: string;
+  name: string;
+  color: string;
+  _count: { applications: number; companies: number; contacts: number };
+}) {
+  return {
+    id: tag.id,
+    name: tag.name,
+    color: tag.color,
+    count: tag._count.applications + tag._count.companies + tag._count.contacts,
+  };
 }

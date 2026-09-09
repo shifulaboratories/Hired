@@ -74,11 +74,18 @@ board, not the employer.
 
 ## Ending something, and deleting it
 
-An ending is a stage. `REJECTED`, `GHOSTED` and `WITHDRAWN` close an application and keep
-it: it drops off the board and stays in the funnel, which is what makes `pipeline_stats` and
-`diagnose_search` worth reading. File silence as `GHOSTED`, never `REJECTED` — a rejection is
-a decision against them, a ghosting is a non-response, and the advice that falls out of those
-two is completely different.
+An ending is a stage. `LOST` closes an application and keeps it: it drops off the board and
+stays in the funnel, which is what makes `pipeline_stats` and `diagnose_search` worth
+reading. Always pass `lossReasons` saying why — "Rejected", "Ghosted", "Withdrew",
+"Declined their offer", "Role closed", or their own words. File silence as "Ghosted", never
+"Rejected": a rejection is a decision against them, a ghosting is a non-response, and the
+advice that falls out of those two is completely different. A `LOST` with no reason on it
+tells the funnel only that it stopped.
+
+While something is live, `interviewRound` is how deep it is — 1 for a first conversation,
+up from there. Set it when they say which round they are on. It is what the funnel's rungs
+are built from, and it is never cleared when an application ends, because how far it got is
+the point.
 
 Deleting is the other thing, and it is reversible. `delete_application`, `delete_company` and
 `delete_contact` archive rather than destroy: the row leaves every list, board, picker and
@@ -144,7 +151,7 @@ people or applications as a spreadsheet, taking the same filters, search and sor
 - Do not create a company record just to have one. Applications create their company
   automatically; `create_company` is for somewhere they are researching before there
   is an application.
-- Do not delete an application that was rejected. Move it to `REJECTED` — deleting takes it
+- Do not delete an application that was rejected. Move it to `LOST` with a reason — deleting takes it
   out of the funnel, and the funnel is the only thing that can tell them where the search is
   losing people.
 - Do not call `empty_archive` or `delete_archived` without reading the archive back to them

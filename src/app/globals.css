@@ -146,12 +146,14 @@ body:has(> .auth-field.theme-light) {
   --stage-final: oklch(0.55 0.18 340);
   --stage-offer: oklch(0.58 0.14 68);
   --stage-accepted: oklch(0.55 0.13 152);
-  --stage-rejected: oklch(0.55 0.19 25);
-  --stage-withdrawn: oklch(0.68 0.008 265);
-  /* Silence gets a colour of its own, warmer than withdrawn so the two endings
-     do not read as the same grey, and duller than rejected because nobody
-     actually said no. */
-  --stage-ghosted: oklch(0.62 0.035 75);
+  /* One ending where there were three, and deliberately muted.
+     Rejected was a full red, which was fine when it was one column of several
+     — but most applications end, so the single LOST stage is most of the board
+     and most of every list. A wall of alarm red tells somebody their search is
+     failing when it is doing the normal thing. This keeps the hue, so the
+     meaning is still "this one did not work", at about a third of the chroma.
+     WHY it ended is a tag now, and a tag brings its own colour. */
+  --stage-lost: oklch(0.58 0.06 25);
 
   /* How much of the ink shows through the wash behind a chip. */
   --stage-wash: 12%;
@@ -281,9 +283,7 @@ body:has(> .auth-field.theme-light) {
   --stage-final: oklch(0.74 0.15 340);
   --stage-offer: oklch(0.79 0.13 75);
   --stage-accepted: oklch(0.75 0.13 152);
-  --stage-rejected: oklch(0.7 0.17 25);
-  --stage-withdrawn: oklch(0.52 0.008 265);
-  --stage-ghosted: oklch(0.66 0.04 75);
+  --stage-lost: oklch(0.68 0.055 25);
 
   --stage-wash: 20%;
 

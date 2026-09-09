@@ -57,13 +57,13 @@ export type ResumeListOpts = {
 export type ResumeOutcomes = {
   /** Applications that actually went out — anything past WISHLIST. */
   sent: number;
-  /** Of those, how many reached at least a screen. */
+  /** Of those, how many got as far as talking to somebody. */
   interviewed: number;
   /** How many reached an offer. */
   offers: number;
 };
 
-const INTERVIEWED_STAGES: Stage[] = ["SCREEN", "INTERVIEW", "FINAL", "OFFER", "ACCEPTED"];
+const INTERVIEWED_STAGES: Stage[] = ["INTERVIEWING", "OFFER", "ACCEPTED"];
 const OFFER_STAGES: Stage[] = ["OFFER", "ACCEPTED"];
 
 export async function listResumes(userId: string, opts: ResumeListOpts = {}) {

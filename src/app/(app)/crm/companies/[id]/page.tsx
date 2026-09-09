@@ -72,7 +72,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
             workMode: application.workMode,
             salaryRange: application.salaryRange,
             jobUrl: application.jobUrl,
-            tags: application.tags,
+            tags: tagsOfKind(application.tags, "APPLICATION"),
             appliedAt: application.appliedAt?.toISOString() ?? null,
             nextFollowUpAt: application.nextFollowUpAt?.toISOString() ?? null,
           }))}

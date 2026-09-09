@@ -15,13 +15,26 @@
  * departures stack below them.
  */
 
+/**
+ * What this module needs to draw one rung — and nothing else.
+ *
+ * It used to take stage keys and look their words and colours up through the
+ * caller's catalogue. It cannot any more: a rung may be "Round 3" and an exit
+ * may be a tag the person named themselves, neither of which any catalogue
+ * here could know. So each rung and each ending arrives carrying its own label
+ * and its own colour, and this file knows no palette and no vocabulary at all,
+ * which is what its header always claimed.
+ */
 export type FunnelRungInput = {
-  stage: string;
+  key: string;
+  label: string;
+  /** A CSS colour, already resolved by the caller. */
+  tone: string;
   reached: number;
-  /** How many were actually in this stage, not merely past its depth. */
+  /** How many were actually in this rung, not merely past its depth. */
   visited: number;
   advanced: number;
-  ended: { stage: string; count: number }[];
+  ended: { key: string; label: string; tone: string; count: number }[];
   open: number;
 };
 
@@ -60,10 +73,9 @@ export type SankeyLayout = {
 export type SankeyOptions = {
   width?: number;
   height?: number;
-  /** Colour per stage key, plus a fallback. Resolved by the caller. */
-  tones: Record<string, string>;
-  exitTone: string;
-  labelFor: (stage: string) => string;
+  /** What the still-live band at each rung is called, and its colour. */
+  openLabel: string;
+  openTone: string;
 };
 
 const NODE_WIDTH = 14;
@@ -153,7 +165,7 @@ export function sankeyLayout(rungs: FunnelRungInput[], options: SankeyOptions): 
   const departures: {
     id: string;
     label: string;
-    key: string;
+    tone: string;
     value: number;
     /** Where it leaves the spine. Fixed — this is what makes it readable. */
     fromX: number;
@@ -169,14 +181,14 @@ export function sankeyLayout(rungs: FunnelRungInput[], options: SankeyOptions): 
     const spineHeight = Math.max(1, rung.reached * perUnit);
 
     nodes.push({
-      id: `stage-${rung.stage}`,
-      label: options.labelFor(rung.stage),
+      id: `rung-${rung.key}`,
+      label: rung.label,
       value: rung.reached,
       x,
       y: top,
       width: NODE_WIDTH,
       height: spineHeight,
-      tone: options.tones[rung.stage] ?? options.exitTone,
+      tone: rung.tone,
       kind: "spine",
     });
 
@@ -187,10 +199,10 @@ export function sankeyLayout(rungs: FunnelRungInput[], options: SankeyOptions): 
       const h = Math.max(1, rung.advanced * perUnit);
       const nextX = PADDING.left + (index + 1) * columnGap;
       links.push({
-        id: `flow-${rung.stage}`,
+        id: `flow-${rung.key}`,
         path: ribbon(x + NODE_WIDTH, cursor, h, nextX, top, Math.max(1, next.reached * perUnit)),
         value: rung.advanced,
-        tone: options.tones[next.stage] ?? options.exitTone,
+        tone: next.tone,
         kind: "spine",
       });
       cursor += h;
@@ -199,20 +211,22 @@ export function sankeyLayout(rungs: FunnelRungInput[], options: SankeyOptions): 
     // Then everything that left here, stacked under the survivors and pushed
     // out to the right margin where the labels live.
     const exits = [
-      ...rung.ended.map((ending) => ({ key: ending.stage, value: ending.count })),
+      ...rung.ended,
       // "Still going" is an exit from the diagram, not from the search — drawn
       // last so an in-flight application never sits above a rejection.
-      ...(rung.open > 0 ? [{ key: "OPEN", value: rung.open }] : []),
-    ].filter((exit) => exit.value > 0);
+      ...(rung.open > 0
+        ? [{ key: "OPEN", label: options.openLabel, tone: options.openTone, count: rung.open }]
+        : []),
+    ].filter((exit) => exit.count > 0);
 
     let exitY = cursor + (exits.length > 0 ? GAP : 0);
     for (const exit of exits) {
-      const h = Math.max(1, exit.value * perUnit);
+      const h = Math.max(1, exit.count * perUnit);
       departures.push({
-        id: `${rung.stage}-${exit.key}`,
-        label: options.labelFor(exit.key),
-        key: exit.key,
-        value: exit.value,
+        id: `${rung.key}-${exit.key}`,
+        label: exit.label,
+        tone: exit.tone,
+        value: exit.count,
         fromX: x + NODE_WIDTH,
         fromY: cursor,
         height: h,
@@ -238,7 +252,7 @@ export function sankeyLayout(rungs: FunnelRungInput[], options: SankeyOptions): 
       id: `exit-${exit.id}`,
       path: ribbon(exit.fromX, exit.fromY, exit.height, endX, y, exit.height),
       value: exit.value,
-      tone: options.tones[exit.key] ?? options.exitTone,
+      tone: exit.tone,
       kind: "exit",
     });
     nodes.push({
@@ -249,7 +263,7 @@ export function sankeyLayout(rungs: FunnelRungInput[], options: SankeyOptions): 
       y,
       width: NODE_WIDTH,
       height: exit.height,
-      tone: options.tones[exit.key] ?? options.exitTone,
+      tone: exit.tone,
       kind: "exit",
     });
   }

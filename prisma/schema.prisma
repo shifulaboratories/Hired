@@ -358,34 +358,34 @@ model WaitlistSignup {
 // ---------------------------------------------------------------------------
 
 model Profile {
-  id             String   @id @default(cuid())
-  userId         String   @unique
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fullName       String   @default("")
-  headline       String   @default("")
-  email          String   @default("")
-  phone          String   @default("")
-  location       String   @default("")
-  website        String   @default("")
-  linkedin       String   @default("")
-  github         String   @default("")
-  twitter        String   @default("")
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName       String    @default("")
+  headline       String    @default("")
+  email          String    @default("")
+  phone          String    @default("")
+  location       String    @default("")
+  website        String    @default("")
+  linkedin       String    @default("")
+  github         String    @default("")
+  twitter        String    @default("")
   /// Long-form "about me" background: values, working style, career narrative,
   /// what you want next, salary expectations, non-negotiables, etc.
   ///
   /// The column is still called brainDump — the concept was renamed to "me"
   /// and its raw text to "background", and @map keeps that rename off the
   /// database so no self-hosted instance needs a migration to follow along.
-  summary        String   @default("")
-  background     String   @default("") @map("brainDump")
+  summary        String    @default("")
+  background     String    @default("") @map("brainDump")
   /// Which optional fields each pipeline view draws. Empty means "the default
   /// set for that view" rather than "nothing", so an account that has never
   /// touched this looks exactly as it did — and a field added to a catalogue
   /// later shows up for everybody instead of hiding behind a stored list that
   /// predates it. Scalar string lists, like Role.skills and Highlight.tags.
-  boardFields    String[] @default([])
-  listFields     String[] @default([])
-  calendarFields String[] @default([])
+  boardFields    String[]  @default([])
+  listFields     String[]  @default([])
+  calendarFields String[]  @default([])
   /// How wide each resizable column is, per list, as
   /// { "<list>": { "<column>": <pixels> } }. Json rather than the String[]
   /// above because this is a map with a number in it and a parallel array of
@@ -398,13 +398,13 @@ model Profile {
   /// clamped to each column's min and max on the way in AND on the way out:
   /// a stored 4000 predates a narrower max, and nothing that renders should
   /// trust a number a client sent months ago.
-  columnWidths   Json     @default("{}")
+  columnWidths   Json      @default("{}")
   /// A square headshot, held as a data URI ("data:image/jpeg;base64,..."). It
   /// lives in the row rather than an object store so self-hosting still needs
   /// one environment variable, and so a published resume renders the picture
   /// with no second request to fetch it. The browser downscales before upload
   /// and the server refuses anything over PHOTO_MAX_BYTES.
-  photo          String   @default("")
+  photo          String    @default("")
   /// When this person last finished — or skipped — the welcome tour. Null means
   /// they have never seen it, which is what makes the tour show itself once and
   /// then stay out of the way. Skipping sets it too: somebody who closed it does
@@ -421,8 +421,8 @@ model Profile {
   /// the machine under their desk. The browser fills it in on first sight
   /// (src/components/onboarding/time-zone-seed.tsx) and Settings can override
   /// it. See src/lib/time.ts for the arithmetic.
-  timeZone       String   @default("")
-  updatedAt      DateTime @updatedAt
+  timeZone       String    @default("")
+  updatedAt      DateTime  @updatedAt
 }
 
 model Role {
@@ -631,19 +631,26 @@ model Resume {
 // PIPELINE — the job-search CRM
 // ---------------------------------------------------------------------------
 
+/// Where an application sits. Six, deliberately.
+///
+/// It was ten. Screening, interviewing and final round were three columns for
+/// one thing — talking to them — and which one a process belonged in was a
+/// guess that changed by employer. They are one INTERVIEWING stage now, and
+/// how deep you are is `Application.interviewRound`: a number the person sets,
+/// which the board does not show and the funnel is built out of.
+///
+/// Rejected, withdrawn and ghosted were three columns for one thing too — it
+/// is over and you did not get it. They are LOST, and WHY is a LOSS tag, so
+/// the reasons are rows the person owns rather than an enum only a migration
+/// can change. Losing to a rejection and losing to silence still read
+/// differently in the funnel; they read differently by tag now.
 enum Stage {
   WISHLIST
   APPLIED
-  SCREEN
-  INTERVIEW
-  FINAL
+  INTERVIEWING
   OFFER
   ACCEPTED
-  REJECTED
-  WITHDRAWN
-  /// No reply, long enough that it is over. Distinct from REJECTED because
-  /// nobody said no — the funnel counts it as a non-response, not a decision.
-  GHOSTED
+  LOST
 }
 
 enum ActivityType {
@@ -706,6 +713,17 @@ model Application {
   company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   roleTitle      String
   stage          Stage            @default(WISHLIST)
+  /// Which round of interviews this is on, counting from 1. Zero means nobody
+  /// has said — which is most of them, and is why the board shows nothing for
+  /// it. It is not cleared when an application ends: an offer that came after
+  /// four rounds, and a rejection that came after four rounds, are both facts
+  /// about how far it got, and the funnel reads exactly this column to build
+  /// its rungs.
+  interviewRound Int              @default(0)
+  /// What that round was called, when it had a name worth keeping — "Phone
+  /// screen", "Take-home", "Onsite". Optional, and only ever meaningful while
+  /// INTERVIEWING. The three stages this replaced left their names here.
+  roundLabel     String           @default("")
   jobUrl         String           @default("")
   jobDescription String           @default("")
   location       String           @default("")
@@ -766,6 +784,12 @@ enum TagKind {
   INDUSTRY
   SIZE
   LOCATION
+  /// Why an application ended without an offer. These were the REJECTED,
+  /// WITHDRAWN and GHOSTED stages; a tag rather than an enum because the real
+  /// answer is "the role was cancelled" as often as it is "they said no", and
+  /// nobody should need a migration to say so. Rides the same
+  /// ApplicationTag join as the rest.
+  LOSS
 }
 
 model Tag {

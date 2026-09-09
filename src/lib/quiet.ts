@@ -23,9 +23,12 @@ export const DAY = 86_400_000;
  */
 export const STALE_AFTER: Partial<Record<string, number>> = {
   APPLIED: 21,
-  SCREEN: 14,
-  INTERVIEW: 14,
-  FINAL: 10,
+  // One number for the whole of interviewing, where there used to be three
+  // (14 for a screen, 14 for an interview, 10 for a final round). Two of them
+  // were the same anyway, and which of the three a given employer's process
+  // belonged in was a guess — so the tighter of the two live numbers wins and
+  // the rule stays one sentence: two weeks of silence mid-process is quiet.
+  INTERVIEWING: 14,
   OFFER: 7,
 };
 

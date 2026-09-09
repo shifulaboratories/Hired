@@ -37,61 +37,71 @@ import { loadPosting, type ParsedPosting } from "@/lib/posting";
 export const STAGES: Stage[] = [
   "WISHLIST",
   "APPLIED",
-  "SCREEN",
-  "INTERVIEW",
-  "FINAL",
+  "INTERVIEWING",
   "OFFER",
   "ACCEPTED",
-  "REJECTED",
-  "WITHDRAWN",
-  "GHOSTED",
+  "LOST",
 ];
 
 /** Stages shown as columns on the board. Terminal states get their own view. */
-export const BOARD_STAGES: Stage[] = [
-  "WISHLIST",
-  "APPLIED",
-  "SCREEN",
-  "INTERVIEW",
-  "FINAL",
-  "OFFER",
-];
+export const BOARD_STAGES: Stage[] = ["WISHLIST", "APPLIED", "INTERVIEWING", "OFFER"];
 
 export const STAGE_LABEL: Record<Stage, string> = {
   WISHLIST: "Wishlist",
   APPLIED: "Applied",
-  SCREEN: "Screening",
-  INTERVIEW: "Interviewing",
-  FINAL: "Final round",
+  INTERVIEWING: "Interviewing",
   OFFER: "Offer",
   ACCEPTED: "Accepted",
-  REJECTED: "Rejected",
-  WITHDRAWN: "Withdrawn",
-  GHOSTED: "Ghosted",
+  LOST: "Lost",
 };
 
 /**
  * A stage is a position on one path, not a category, so the hue rotates in one
- * direction as an application advances — steel, blue, violet, pink, then gold
- * at the offer. Turning one way is what keeps it a path: you can tell "further
- * along" from two chips without knowing which label is which.
+ * direction as an application advances — steel, violet, then gold at the offer.
+ * Turning one way is what keeps it a path: you can tell "further along" from
+ * two chips without knowing which label is which.
  *
- * The three endings sit outside the rotation because they mean something other
+ * The two endings sit outside the rotation because they mean something other
  * than progress. Values are CSS variables so they follow the theme; a fixed
  * colour tuned for one mode goes muddy in the other.
  */
 export const STAGE_TONE: Record<Stage, string> = {
   WISHLIST: "var(--stage-wishlist)",
   APPLIED: "var(--stage-applied)",
-  SCREEN: "var(--stage-screen)",
-  INTERVIEW: "var(--stage-interview)",
-  FINAL: "var(--stage-final)",
+  INTERVIEWING: "var(--stage-interview)",
   OFFER: "var(--stage-offer)",
   ACCEPTED: "var(--stage-accepted)",
-  REJECTED: "var(--stage-rejected)",
-  WITHDRAWN: "var(--stage-withdrawn)",
-  GHOSTED: "var(--stage-ghosted)",
+  LOST: "var(--stage-lost)",
 };
+
+/**
+ * How deep into interviewing a card is, as a colour.
+ *
+ * Screening, interviewing and final round were three stages and therefore three
+ * hues, and losing them would have flattened the one thing they got right: you
+ * could see from across the board that one job was further along than another.
+ * The rounds inherit those hues instead — round 1 wears what screening wore,
+ * round 2 what interviewing wore, round 3 and beyond what the final round wore.
+ * An application whose round nobody has set gets the base tone, which is most
+ * of them and is the point: the board says nothing until you say something.
+ */
+export const ROUND_TONE = [
+  "var(--stage-screen)",
+  "var(--stage-interview)",
+  "var(--stage-final)",
+] as const;
+
+export function roundTone(round: number): string {
+  if (round <= 0) return STAGE_TONE.INTERVIEWING;
+  return ROUND_TONE[Math.min(round, ROUND_TONE.length) - 1];
+}
+
+/** "Round 2", or the name it was given. Empty when nobody has said. */
+export function roundLabelOf(round: number, label: string): string {
+  const named = label.trim();
+  if (named) return named;
+  return round > 0 ? `Round ${round}` : "";
+}
 
 export const ACTIVITY_LABEL: Record<ActivityType, string> = {
   NOTE: "Note",
@@ -125,15 +135,29 @@ export const ACTIVITY_OPTIONS: ActivityType[] = [
   "REFERRAL",
 ];
 
-export const TERMINAL_STAGES: Stage[] = ["ACCEPTED", "REJECTED", "WITHDRAWN", "GHOSTED"];
+export const TERMINAL_STAGES: Stage[] = ["ACCEPTED", "LOST"];
 
 /**
- * The endings where someone else decided, or nobody did. Used by the funnel:
- * a rejection is a decision against you and a ghosting is the absence of one,
- * and telling them apart is the difference between "my resume is not landing"
- * and "I am not following up".
+ * Why an ending happened is a LOSS tag now, not a stage.
+ *
+ * Rejected, withdrawn and ghosted were three stages, and the funnel read the
+ * difference between them: a rejection is a decision against you and a
+ * ghosting is the absence of one, which is the difference between "my resume
+ * is not landing" and "I am not following up". That distinction still matters,
+ * so it did not disappear with the stages — it moved to a tag the person owns,
+ * which means they can also record the two endings the enum never had (turning
+ * down an offer, a role being cancelled) and delete the ones they never use.
+ *
+ * The cost, stated plainly: a LOST application with no reason on it tells the
+ * funnel nothing beyond "it ended". The migration attached a reason to every
+ * one that had a stage to convert, and the picker offers the list, but nothing
+ * forces it — so `endedUnlabelled` on a funnel rung is a real number and the
+ * chart says so rather than guessing.
  */
-export const NO_ANSWER_STAGES: Stage[] = ["GHOSTED"];
+export const LOSS_REASON_KIND = TagKind.LOSS;
+
+/** The reasons that mean nobody ever answered, by key. See `tagKey`. */
+export const NO_ANSWER_KEYS = new Set(["ghosted", "no reply", "no response"]);
 
 // ---------------------------------------------------------------------------
 // Companies
@@ -693,6 +717,14 @@ export type ApplicationInput = {
   companyWebsite?: string;
   roleTitle: string;
   stage?: Stage;
+  /** Which round of interviews, counting from 1. 0 clears it. */
+  interviewRound?: number;
+  /** What that round is called. Only meaningful while INTERVIEWING. */
+  roundLabel?: string;
+  /** Why it ended, as LOSS tag ids. REPLACES the set. Only read when LOST. */
+  lossTagIds?: string[];
+  /** The same by name — created only when nothing matches. Loses to ids. */
+  lossReasons?: string[];
   jobUrl?: string;
   jobDescription?: string;
   location?: string;
@@ -717,6 +749,25 @@ export type ApplicationInput = {
  * plenty of saved prompts and scripts still use. One translation here rather
  * than a second code path: the new names win, the old ones still work.
  */
+/**
+ * The LOSS tags for an application, resolved the same way its other tags are.
+ *
+ * Kept beside `tagArgs` and not folded into it, because the two sets live in
+ * one join table and are replaced independently: setting where a job came from
+ * must not clear why it ended, and saying why it ended must not clear where it
+ * came from. That is also why every replacement below narrows its `deleteMany`
+ * by kind — an unqualified one wipes the other set, silently.
+ */
+function lossArgs(input: { lossTagIds?: string[]; lossReasons?: string[] }) {
+  return { tagIds: input.lossTagIds, tags: input.lossReasons };
+}
+
+/** A round is 1-based, or 0 for "nobody has said". Never negative. */
+function cleanRound(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  return Number.isFinite(value) ? Math.max(0, Math.min(Math.trunc(value), 99)) : 0;
+}
+
 function tagArgs(input: {
   tagIds?: string[];
   tags?: string[];
@@ -983,15 +1034,18 @@ export async function createApplication(userId: string, input: ApplicationInput)
       companyId: company.id,
       roleTitle: input.roleTitle,
       stage,
+      interviewRound: cleanRound(input.interviewRound) ?? 0,
+      roundLabel: input.roundLabel?.trim() ?? "",
       jobUrl: input.jobUrl ?? "",
       jobDescription: input.jobDescription ?? "",
       location: input.location ?? "",
       workMode: input.workMode ?? "",
       salaryRange: input.salaryRange ?? "",
       tags: {
-        create: ((await resolveTagIds(userId, TagKind.APPLICATION, tagArgs(input))) ?? []).map(
-          (tagId) => ({ tagId }),
-        ),
+        create: [
+          ...((await resolveTagIds(userId, TagKind.APPLICATION, tagArgs(input))) ?? []),
+          ...((await resolveTagIds(userId, TagKind.LOSS, lossArgs(input))) ?? []),
+        ].map((tagId) => ({ tagId })),
       },
       notes: input.notes ?? "",
       appliedAt,
@@ -1081,10 +1135,30 @@ export async function updateApplication(
   if (patch.location !== undefined) data.location = patch.location;
   if (patch.workMode !== undefined) data.workMode = patch.workMode;
   if (patch.salaryRange !== undefined) data.salaryRange = patch.salaryRange;
-  // Replaces the whole set, like every other array in this layer.
+  const round = cleanRound(patch.interviewRound);
+  if (round !== undefined) data.interviewRound = round;
+  if (patch.roundLabel !== undefined) data.roundLabel = patch.roundLabel.trim();
+  // Replaces the whole set, like every other array in this layer — but only the
+  // set it is about. Both kinds ride one join table, so an unqualified
+  // deleteMany here would take the loss reasons off with the source tags.
   const tagIds = await resolveTagIds(userId, TagKind.APPLICATION, tagArgs(patch));
-  if (tagIds !== undefined) {
-    data.tags = { deleteMany: {}, create: tagIds.map((tagId) => ({ tagId })) };
+  const lossIds = await resolveTagIds(userId, TagKind.LOSS, lossArgs(patch));
+  const relinks = [
+    ...(tagIds === undefined ? [] : [{ kind: TagKind.APPLICATION, ids: tagIds }]),
+    ...(lossIds === undefined ? [] : [{ kind: TagKind.LOSS, ids: lossIds }]),
+  ];
+  if (relinks.length > 0) {
+    // `deleteMany` on a nested relation takes a scalar filter, so it cannot
+    // reach through to the tag's kind — the ids of the kinds being replaced
+    // have to be looked up and matched by id.
+    const replacing = await db.tag.findMany({
+      where: { userId, kind: { in: relinks.map((relink) => relink.kind) } },
+      select: { id: true },
+    });
+    data.tags = {
+      deleteMany: { tagId: { in: replacing.map((tag) => tag.id) } },
+      create: relinks.flatMap((relink) => relink.ids.map((tagId) => ({ tagId }))),
+    };
   }
   if (patch.notes !== undefined) data.notes = patch.notes;
   if (patch.sortOrder !== undefined) data.sortOrder = patch.sortOrder;
@@ -1125,9 +1199,11 @@ export async function updateApplication(
 /** Days after entering a stage that a nudge should fire. */
 const FOLLOW_UP_DAYS: Partial<Record<Stage, number>> = {
   APPLIED: 7,
-  SCREEN: 4,
-  INTERVIEW: 4,
-  FINAL: 3,
+  // Four days, which is what screening and interviewing both used. The final
+  // round's three is gone with the stage: the tighter number belonged to the
+  // last conversation, and there is no longer a column that says which one
+  // that is. A round is the person's note to themselves, not a rule.
+  INTERVIEWING: 4,
   OFFER: 2,
 };
 
@@ -1202,6 +1278,14 @@ export async function moveApplicationStage(
   id: string,
   stage: Stage,
   note?: string,
+  extra?: {
+    /** Which round this move puts it in. Only read when moving to INTERVIEWING. */
+    interviewRound?: number;
+    roundLabel?: string;
+    /** Why it ended, as LOSS tag names or ids. Only read when moving to LOST. */
+    lossTagIds?: string[];
+    lossReasons?: string[];
+  },
 ) {
   const current = await db.application.findFirst({ where: { id, userId } });
   if (!current) throw new Error(`No application with id ${id}`);
@@ -1217,6 +1301,27 @@ export async function moveApplicationStage(
   } else {
     data.closedAt = null;
     data.nextFollowUpAt = defaultFollowUp(await timeZoneOf(userId), stage);
+  }
+
+  // The round is a record of how far this got, so nothing here clears it —
+  // an offer that took four rounds and a rejection after four rounds are the
+  // same fact about the process, and the funnel is built out of exactly this.
+  // Landing in interviewing with no round yet is round one by definition.
+  const asked = cleanRound(extra?.interviewRound);
+  if (asked !== undefined) data.interviewRound = asked;
+  else if (stage === "INTERVIEWING" && current.interviewRound === 0) data.interviewRound = 1;
+  if (extra?.roundLabel !== undefined) data.roundLabel = extra.roundLabel.trim();
+
+  const lossIds = await resolveTagIds(userId, TagKind.LOSS, lossArgs(extra ?? {}));
+  if (lossIds !== undefined) {
+    const owned = await db.tag.findMany({
+      where: { userId, kind: TagKind.LOSS },
+      select: { id: true },
+    });
+    data.tags = {
+      deleteMany: { tagId: { in: owned.map((tag) => tag.id) } },
+      create: lossIds.map((tagId) => ({ tagId })),
+    };
   }
 
   const updated = flattenTags(
@@ -1243,7 +1348,7 @@ export async function moveApplicationStage(
 function stageActivityType(stage: Stage): ActivityType {
   if (stage === "APPLIED") return "APPLIED";
   if (stage === "OFFER" || stage === "ACCEPTED") return "OFFER";
-  if (stage === "REJECTED") return "REJECTION";
+  if (stage === "LOST") return "REJECTION";
   return "STAGE_CHANGE";
 }
 
@@ -2214,12 +2319,60 @@ export async function listSchedule(
  * from a rejection after applying.
  */
 
-/** The one path forward. Terminal stages sit outside it and end the journey. */
-const LADDER: Stage[] = ["APPLIED", "SCREEN", "INTERVIEW", "FINAL", "OFFER"];
+/**
+ * One position on the path forward, which is no longer one stage each.
+ *
+ * The ladder used to be the five stages between wishlist and an ending. Three
+ * of those are one stage now, so the middle of the ladder is built from the
+ * rounds a person actually records: no rounds and it is Applied → Interviewing
+ * → Offer, three columns and nothing to learn; a search where rounds are
+ * logged draws Applied → Round 1 → Round 2 → Round 3 → Offer and shows where
+ * the process actually stops. The board deliberately shows none of this — a
+ * round is a detail you set on one application, and the funnel is the only
+ * place it earns its space.
+ */
+export type Rung = {
+  /** Stable across renders and safe as a React key: "APPLIED", "ROUND_2". */
+  key: string;
+  stage: Stage;
+  /** 1-based round when this rung is one, 0 when it is a whole stage. */
+  round: number;
+  label: string;
+  tone: string;
+};
+
+/**
+ * How many rounds the chart will draw before it stops adding columns.
+ *
+ * Somebody who types 12 into the round box should not get a chart with
+ * fourteen columns in it, none of them readable. Everything past this folds
+ * into the last round drawn, which is the honest summary: "round six or deeper".
+ */
+export const MAX_FUNNEL_ROUNDS = 6;
+
+export function funnelLadder(deepestRound: number): Rung[] {
+  const rounds = Math.min(Math.max(deepestRound, 1), MAX_FUNNEL_ROUNDS);
+  return [
+    { key: "APPLIED", stage: "APPLIED", round: 0, label: STAGE_LABEL.APPLIED, tone: STAGE_TONE.APPLIED },
+    ...Array.from({ length: rounds }, (_, index) => ({
+      key: `ROUND_${index + 1}`,
+      stage: "INTERVIEWING" as Stage,
+      round: index + 1,
+      // One rung needs no number on it: "Round 1" with no round 2 anywhere
+      // reads like a missing column rather than a whole stage.
+      label: rounds === 1 ? STAGE_LABEL.INTERVIEWING : `Round ${index + 1}`,
+      tone: roundTone(index + 1),
+    })),
+    { key: "OFFER", stage: "OFFER", round: 0, label: STAGE_LABEL.OFFER, tone: STAGE_TONE.OFFER },
+  ];
+}
 
 export type FunnelStep = {
-  from: Stage;
-  to: Stage;
+  /** The rung this step leaves from. Stable key, not a label. */
+  key: string;
+  from: string;
+  to: string;
+  tone: string;
   reached: number;
   advanced: number;
   /** Null rather than 0 when nobody has reached this step yet. */
@@ -2232,7 +2385,8 @@ export type SearchDiagnosis = {
   headline: string;
   detail: string;
   /** Which step is the bottleneck, or null when there isn't enough to say. */
-  weakest: Stage | null;
+  /** The key of the rung that is losing people, or null. See `Rung.key`. */
+  weakest: string | null;
   confident: boolean;
   steps: FunnelStep[];
   applied: number;
@@ -2272,8 +2426,7 @@ function median(values: number[]): number | null {
  * Archived applications are out, for the reason pipelineStats gives: half a
  * population is worse than either.
  */
-export type FunnelRung = {
-  stage: Stage;
+export type FunnelRung = Rung & {
   /**
    * How many ever got at least this far — a DEPTH, not a visit count.
    *
@@ -2284,12 +2437,32 @@ export type FunnelRung = {
    * decide whether the column exists at all.
    */
   reached: number;
-  /** How many were actually IN this stage — moved into it, or sitting in it. */
+  /**
+   * How many were actually IN this rung, as opposed to past it.
+   *
+   * It used to differ from `reached` because a process could skip a stage —
+   * straight from an interview to an offer with no final round. Rounds are
+   * counted rather than named, so there is nothing to skip: being in round 3
+   * means rounds 1 and 2 happened. The two agree now, and the field stays
+   * because it is what decides whether a column is drawn at all.
+   */
   visited: number;
   /** How many of those went on to the next rung. */
   advanced: number;
-  /** How many stopped here, by the ending they stopped with. */
-  ended: { stage: Stage; count: number }[];
+  /**
+   * How many stopped here, by the reason they stopped with.
+   *
+   * Reasons are LOSS tags, so they are whatever this person calls them — and
+   * "Lost" is the bucket for an ending nobody gave a reason for, which is a
+   * real answer rather than a guess. An application wearing several reasons is
+   * counted once, under the first by name, so the ribbons still add up.
+   *
+   * `tone` is a palette TOKEN — one of TAG_COLORS, or "accepted", or "lost" —
+   * never a resolved colour. The screen wants a CSS variable so it follows the
+   * theme and the downloadable image wants hex, because the browser that
+   * renders it loads no stylesheet of ours.
+   */
+  ended: { reason: string; tone: string; count: number }[];
   /** How many are sitting here right now, still live. */
   open: number;
 };
@@ -2303,7 +2476,16 @@ export async function funnelFlows(userId: string): Promise<{
   const [applications, transitions] = await Promise.all([
     db.application.findMany({
       where: { userId, archivedAt: null },
-      select: { id: true, stage: true, appliedAt: true },
+      select: {
+        id: true,
+        stage: true,
+        appliedAt: true,
+        interviewRound: true,
+        tags: {
+          where: { tag: { kind: TagKind.LOSS } },
+          select: { tag: { select: { name: true, color: true } } },
+        },
+      },
     }),
     db.activity.findMany({
       where: { userId, toStage: { not: null }, application: { archivedAt: null } },
@@ -2311,68 +2493,79 @@ export async function funnelFlows(userId: string): Promise<{
     }),
   ]);
 
-  const best = new Map<string, number>();
-  const rank = (stage: Stage | null) => (stage ? LADDER.indexOf(stage) : -1);
-  // Which rungs each application was genuinely in, as opposed to past.
-  const seen = new Map<string, Set<number>>();
+  // Anything that was ever moved into interviewing got at least one round,
+  // whether or not anybody numbered it.
+  const interviewed = new Set<string>();
+  const offered = new Set<string>();
   for (const transition of transitions) {
     if (!transition.applicationId) continue;
-    const previous = best.get(transition.applicationId) ?? -1;
-    const index = rank(transition.toStage);
-    best.set(transition.applicationId, Math.max(previous, index));
-    if (index >= 0) {
-      const set = seen.get(transition.applicationId);
-      if (set) set.add(index);
-      else seen.set(transition.applicationId, new Set([index]));
-    }
+    if (transition.toStage === "INTERVIEWING") interviewed.add(transition.applicationId);
+    if (transition.toStage === "OFFER") offered.add(transition.applicationId);
   }
 
-  const rungs: FunnelRung[] = LADDER.map((stage) => ({
-    stage,
+  const ladder = funnelLadder(
+    applications.reduce((deepest, row) => Math.max(deepest, row.interviewRound), 0),
+  );
+  const offerIndex = ladder.length - 1;
+  const roundCount = offerIndex - 1;
+
+  /** How far one application got, as an index into that ladder. */
+  const depthOf = (application: (typeof applications)[number]): number => {
+    if (application.stage === "OFFER" || application.stage === "ACCEPTED") return offerIndex;
+    if (offered.has(application.id)) return offerIndex;
+    if (application.interviewRound > 0) return Math.min(application.interviewRound, roundCount);
+    if (application.stage === "INTERVIEWING" || interviewed.has(application.id)) return 1;
+    if (application.appliedAt || application.stage !== "WISHLIST") return 0;
+    return -1;
+  };
+
+  const rungs: FunnelRung[] = ladder.map((rung) => ({
+    ...rung,
     reached: 0,
     visited: 0,
     advanced: 0,
     ended: [],
     open: 0,
   }));
-  const endings = LADDER.map(() => new Map<Stage, number>());
+  const endings = ladder.map(() => new Map<string, { tone: string; count: number }>());
   let wishlist = 0;
 
   for (const application of applications) {
-    let furthest = Math.max(rank(application.stage), best.get(application.id) ?? -1);
-    // ACCEPTED is not a rung, it is what happens at the top of one.
-    if (application.stage === "ACCEPTED") furthest = Math.max(furthest, LADDER.indexOf("OFFER"));
-    // Applied without a single logged move still applied.
-    if (furthest < 0 && application.appliedAt) furthest = 0;
+    const furthest = depthOf(application);
     if (furthest < 0) {
       wishlist += 1;
       continue;
     }
 
-    const visits = seen.get(application.id) ?? new Set<number>();
-    // Where it sits now counts as a visit; so does where it started.
-    const here = rank(application.stage);
-    if (here >= 0) visits.add(here);
-    if (application.appliedAt || application.stage !== "WISHLIST") visits.add(0);
-
     for (let i = 0; i <= furthest; i++) {
       rungs[i].reached += 1;
-      if (visits.has(i)) rungs[i].visited += 1;
+      rungs[i].visited += 1;
       if (i < furthest) rungs[i].advanced += 1;
     }
+
     // Where it stopped: an ending if it has one, otherwise it is still open.
-    if (TERMINAL_STAGES.includes(application.stage)) {
-      const map = endings[furthest];
-      map.set(application.stage, (map.get(application.stage) ?? 0) + 1);
-    } else {
+    if (!TERMINAL_STAGES.includes(application.stage)) {
       rungs[furthest].open += 1;
+      continue;
     }
+    const reasons = application.tags
+      .map((link) => link.tag)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const ending =
+      application.stage === "ACCEPTED"
+        ? { name: "Offer accepted", tone: "accepted" }
+        : reasons[0]
+          ? { name: reasons[0].name, tone: reasons[0].color }
+          : { name: STAGE_LABEL.LOST, tone: "lost" };
+    const map = endings[furthest];
+    const already = map.get(ending.name);
+    map.set(ending.name, { tone: ending.tone, count: (already?.count ?? 0) + 1 });
   }
 
   for (const [index, map] of endings.entries()) {
     rungs[index].ended = [...map.entries()]
-      .map(([stage, count]) => ({ stage, count }))
-      .sort((a, b) => b.count - a.count || a.stage.localeCompare(b.stage));
+      .map(([reason, { tone, count }]) => ({ reason, tone, count }))
+      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason));
   }
 
   return { rungs, applied: rungs[0]?.reached ?? 0, wishlist };
@@ -2393,6 +2586,7 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
         createdAt: true,
         updatedAt: true,
         resumeId: true,
+        interviewRound: true,
         company: { select: { name: true } },
         resume: { select: { id: true, name: true } },
       },
@@ -2419,17 +2613,33 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
   }
 
   // --- how far each application ever got ------------------------------------
-  const rank = (stage: Stage | null) => (stage ? LADDER.indexOf(stage) : -1);
+  // The same ladder the Sankey is drawn from, built here from the same rule, so
+  // the picture and the sentence under it cannot disagree about what a rung is.
+  const ladder = funnelLadder(
+    applications.reduce((deepest, row) => Math.max(deepest, row.interviewRound), 0),
+  );
+  const offerIndex = ladder.length - 1;
+  const roundCount = offerIndex - 1;
   const furthest = new Map<string, number>();
   for (const application of applications) {
-    let best = rank(application.stage);
-    // ACCEPTED means they got the offer, whatever the row says now.
-    if (application.stage === "ACCEPTED") best = LADDER.indexOf("OFFER");
-    for (const transition of byApplication.get(application.id) ?? []) {
-      best = Math.max(best, rank(transition.toStage));
+    const moves = byApplication.get(application.id) ?? [];
+    const everTo = (stage: Stage) => moves.some((move) => move.toStage === stage);
+    let best = -1;
+    if (
+      application.stage === "OFFER" ||
+      application.stage === "ACCEPTED" ||
+      everTo("OFFER") ||
+      everTo("ACCEPTED")
+    ) {
+      best = offerIndex;
+    } else if (application.interviewRound > 0) {
+      best = Math.min(application.interviewRound, roundCount);
+    } else if (application.stage === "INTERVIEWING" || everTo("INTERVIEWING")) {
+      best = 1;
+    } else if (application.appliedAt || application.stage !== "WISHLIST") {
+      // An application with a date on it was sent, even if nothing was logged.
+      best = 0;
     }
-    // An application with a date on it was sent, even if nothing was logged.
-    if (best < 0 && application.appliedAt) best = 0;
     furthest.set(application.id, best);
   }
 
@@ -2447,16 +2657,21 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
     }
   }
 
-  const steps: FunnelStep[] = LADDER.slice(0, -1).map((from, index) => {
+  const steps: FunnelStep[] = ladder.slice(0, -1).map((rung, index) => {
     const reached = [...furthest.values()].filter((value) => value >= index).length;
     const advanced = [...furthest.values()].filter((value) => value >= index + 1).length;
     return {
-      from,
-      to: LADDER[index + 1],
+      key: rung.key,
+      from: rung.label,
+      to: ladder[index + 1].label,
+      tone: rung.tone,
       reached,
       advanced,
       rate: reached > 0 ? Math.round((advanced / reached) * 100) : null,
-      medianDays: median(daysIn.get(from) ?? []),
+      // Timing is measured between STAGE changes, and moving from round two to
+      // round three is not one — so every round rung reports how long the
+      // interviewing stage takes, which is the only thing the timeline knows.
+      medianDays: median(daysIn.get(rung.stage) ?? []),
     };
   });
 
@@ -2559,11 +2774,16 @@ function verdict(
   applied: number,
   velocity: { weekStart: string; count: number }[],
 ) {
-  const step = (from: Stage) => steps.find((candidate) => candidate.from === from);
-  const response = step("APPLIED");
-  const screen = step("SCREEN");
-  const interview = step("INTERVIEW");
-  const final = step("FINAL");
+  const response = steps.find((candidate) => candidate.key === "APPLIED");
+  // The three interview stages were three named tests here. There is one stage
+  // and any number of rounds now, so the test is generic: of the interview
+  // steps with enough behind them to mean something, the one converting worst
+  // is the one worth a sentence. Ties go to the earliest, because a problem in
+  // round one is upstream of a problem in round three.
+  const rounds = steps.filter((candidate) => candidate.key.startsWith("ROUND_"));
+  const weakRound = rounds
+    .filter((candidate) => candidate.reached >= 3 && (candidate.rate ?? 100) < 40)
+    .sort((a, b) => (a.rate ?? 100) - (b.rate ?? 100))[0];
 
   const thisWeek = velocity[velocity.length - 1]?.count ?? 0;
   const previous = velocity.slice(0, -1);
@@ -2586,34 +2806,21 @@ function verdict(
     return {
       headline: "Almost nothing is coming back.",
       detail: `${response.advanced} of ${response.reached} applications got any response. At this volume that is not bad luck — it is the resume or which jobs you are applying to, and sending more of the same will not fix it.${slowing}`,
-      weakest: "APPLIED" as Stage,
+      weakest: "APPLIED",
       confident: true,
     };
   }
 
-  if (screen && screen.reached >= 4 && (screen.rate ?? 0) < 34) {
+  if (weakRound) {
+    const toOffer = weakRound.to === STAGE_LABEL.OFFER;
     return {
-      headline: "You are getting responses but not past the screen.",
-      detail: `${screen.advanced} of ${screen.reached} screens became an interview. The resume is working — this is a phone-screen problem, which is usually how you tell the story rather than what is in it.${slowing}`,
-      weakest: "SCREEN" as Stage,
-      confident: true,
-    };
-  }
-
-  if (interview && interview.reached >= 3 && (interview.rate ?? 0) < 40) {
-    return {
-      headline: "You are getting into the room and not converting.",
-      detail: `${interview.advanced} of ${interview.reached} interviews went further. You are being taken seriously; something in the loop itself is losing it.${slowing}`,
-      weakest: "INTERVIEW" as Stage,
-      confident: true,
-    };
-  }
-
-  if (final && final.reached >= 2 && (final.rate ?? 0) < 50) {
-    return {
-      headline: "You are reaching final rounds and stopping there.",
-      detail: `${final.advanced} of ${final.reached} final rounds became an offer. This close, the difference is usually fit and how you close rather than capability.${slowing}`,
-      weakest: "FINAL" as Stage,
+      headline: toOffer
+        ? "You are reaching the last round and stopping there."
+        : "You are getting into the room and not converting.",
+      detail: toOffer
+        ? `${weakRound.advanced} of ${weakRound.reached} got from ${weakRound.from.toLowerCase()} to an offer. This close, the difference is usually fit and how you close rather than capability.${slowing}`
+        : `${weakRound.advanced} of ${weakRound.reached} went further than ${weakRound.from.toLowerCase()}. You are being taken seriously; something in the loop itself is losing it.${slowing}`,
+      weakest: weakRound.key,
       confident: true,
     };
   }
@@ -2639,7 +2846,7 @@ export async function pipelineStats(userId: string) {
   // "This week" is the reader's week. Read before the counts rather than inside
   // them so all ten queries still go out together.
   const weekStart = startOfWeek(await timeZoneOf(userId));
-  const [byStage, total, active, thisWeek, interviews, screening, offers, tasksOpen, followUps, flow] =
+  const [byStage, total, active, thisWeek, interviews, deepest, offers, tasksOpen, followUps, flow] =
     await Promise.all([
       // Archived applications leave the funnel with everything else. Half of
       // them would be worse than either: `applied` below is derived as
@@ -2663,9 +2870,15 @@ export async function pipelineStats(userId: string) {
         where: { userId, archivedAt: null, appliedAt: { gte: weekStart } },
       }),
       db.application.count({
-        where: { userId, archivedAt: null, stage: { in: ["INTERVIEW", "FINAL"] } },
+        where: { userId, archivedAt: null, stage: "INTERVIEWING" },
       }),
-      db.application.count({ where: { userId, archivedAt: null, stage: "SCREEN" } }),
+      // How deep anyone has got. `screening` used to sit here, back when a
+      // phone screen was its own stage; the useful number now is how many
+      // rounds this search has actually reached.
+      db.application.aggregate({
+        where: { userId, archivedAt: null },
+        _max: { interviewRound: true },
+      }),
       db.application.count({
         where: { userId, archivedAt: null, stage: { in: ["OFFER", "ACCEPTED"] } },
       }),
@@ -2694,7 +2907,8 @@ export async function pipelineStats(userId: string) {
     active,
     thisWeek,
     interviews,
-    screening,
+    /** Deepest round anyone has reached. 0 when nobody has numbered one. */
+    deepestRound: deepest._max.interviewRound ?? 0,
     offers,
     tasksOpen,
     followUpsDue: followUps.length,

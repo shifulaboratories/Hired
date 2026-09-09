@@ -46,7 +46,7 @@ const STEPS = [
   },
   {
     title: "Every job you apply to is a card.",
-    body: "Drag it along as things happen — applied, phone screen, interview, offer. One glance tells you where everything stands.",
+    body: "Drag it along as things happen — wishlist, applied, interviewing, offer. One glance tells you where everything stands.",
     art: <ArtBoard />,
   },
   {

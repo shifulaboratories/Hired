@@ -7,60 +7,73 @@ icon: "list-check"
 An application is one job you are chasing at one company. It carries the posting, a
 stage, a timeline of everything that happened, and the dates that decide what you do next.
 
-## The ten stages
+## The six stages
 
-Six are positions on the path. Four are endings, and the difference between them is the
-whole point.
+Four are positions on the path. Two are endings.
 
 | Stage | Label | Means |
 | --- | --- | --- |
 | `WISHLIST` | Wishlist | Interested, nothing sent. |
 | `APPLIED` | Applied | Sent. |
-| `SCREEN` | Screening | Recruiter conversation under way. |
-| `INTERVIEW` | Interviewing | In the loop. |
-| `FINAL` | Final round | Last stage before a decision. |
+| `INTERVIEWING` | Interviewing | Talking to them, at any depth. |
 | `OFFER` | Offer | They made one. |
 | `ACCEPTED` | Accepted | Signed. |
-| `REJECTED` | Rejected | They said no. |
-| `WITHDRAWN` | Withdrawn | You pulled out. |
-| `GHOSTED` | Ghosted | Nobody ever replied. |
+| `LOST` | Lost | It ended without an offer. |
 
-The first six are the board columns. The four endings get their own view.
+The first four are the board columns. The two endings get their own view below it.
 
 ```mermaid
 flowchart LR
-  W[Wishlist] --> A[Applied] --> S[Screening] --> I[Interviewing] --> F[Final round] --> O[Offer]
-  O --> AC[Accepted]
-  A -.-> G[Ghosted]
-  S -.-> G
-  I -.-> G
-  A -.-> R[Rejected]
-  S -.-> R
-  I -.-> R
-  F -.-> R
-  W -.-> WD[Withdrawn]
-  O -.-> WD
+  W[Wishlist] --> A[Applied] --> I[Interviewing] --> O[Offer] --> AC[Accepted]
+  A -.-> L[Lost]
+  I -.-> L
+  O -.-> L
+  W -.-> L
 ```
 
-Solid arrows are progress; dotted ones are the endings, and an application can reach any
-of them from anywhere. Nothing enforces the order — you can move a card straight from the
-wishlist to an offer if that is what happened.
+Solid arrows are progress; dotted ones are the ending, and an application can reach it
+from anywhere. Nothing enforces the order — you can move a card straight from the wishlist
+to an offer if that is what happened.
+
+### How deep you got is a number, not a column
+
+Screening, interviewing and a final round used to be three of those columns. They were one
+thing — talking to them — and which column a given employer's process belonged in was a
+guess that changed by employer. They are one stage, and how far in you are is a **round**:
+a number you set on the opened application, with an optional name for what that round was.
+
+The board shows none of it, deliberately. A card should say as little as possible. The
+round is what the funnel on **Analytics** is built from: with no rounds recorded it draws
+Applied → Interviewing → Offer, and with rounds it draws Applied → Round 1 → Round 2 → …
+→ Offer, which is where knowing you stall at round three is worth something.
+
+### Why it ended is a tag
+
+Rejected, withdrawn and ghosted were three more columns for one thing: it is over and you
+did not get it. That is `LOST`, and **why** is a [tag](/concepts/tags) of kind `LOSS` — a
+row you own, so you can rename it, recolour it, delete it, and add the reasons no enum
+would have had. The five it starts with are Rejected, Ghosted, Withdrew, Declined their
+offer and Role closed. An application can carry more than one.
 
 <Warning>
-  **File silence as `GHOSTED`, not `REJECTED`.** Silence is the most common ending in any
-  search, and calling it a rejection makes the funnel lie about what went wrong. A
+  **Say why, especially when the answer is silence.** Silence is the most common ending in
+  any search, and a `LOST` with no reason on it tells the funnel only that it stopped. A
   rejection is a decision against you; a ghosting is a non-response — and the advice that
-  falls out of those two is completely different.
+  falls out of those two is completely different. It is one click at the moment you close
+  the job out.
 </Warning>
 
-Colour carries the same information: hue rotates in one direction as an application
-advances — steel, blue, violet, pink, then gold at the offer — so two chips read as
-"further along" without you knowing which label is which. The endings sit outside that
-rotation, because they mean something other than progress.
+Colour carries progress the same way it always did: hue rotates in one direction as an
+application advances — steel, violet, then gold at the offer — so two chips read as
+"further along" without you knowing which label is which. Inside interviewing the rounds
+inherit the three hues the three old stages wore, so a deeper round still looks deeper.
+The endings sit outside the rotation, and `LOST` is deliberately muted rather than alarm
+red: most applications end, and a wall of red says a search is failing when it is doing
+the normal thing.
 
 ### An ending is not a deletion
 
-`REJECTED`, `GHOSTED` and `WITHDRAWN` close an application and keep it: it drops off the
+`LOST` and `ACCEPTED` close an application and keep it: it drops off the
 board, stays in the funnel, and `list_applications` returns it with `includeClosed`. That is
 what you want for almost everything that ends, because a rejection you cannot count is a
 rejection you cannot learn from.
@@ -158,12 +171,10 @@ Changing stage schedules the next nudge automatically, for 9am on the day it fal
 | Entering | Nudge after |
 | --- | --- |
 | `APPLIED` | 7 days |
-| `SCREEN` | 4 days |
-| `INTERVIEW` | 4 days |
-| `FINAL` | 3 days |
+| `INTERVIEWING` | 4 days |
 | `OFFER` | 2 days |
 
-Moving to `WISHLIST` schedules nothing. Moving to one of the four endings **clears** any
+Moving to `WISHLIST` schedules nothing. Moving to either ending **clears** any
 follow-up date the application had and stamps it closed — a finished application should not
 keep nagging you. Override any of it by hand: `nextFollowUpAt` on the application, or the
 cell in the table.
@@ -204,8 +215,8 @@ not convert is something else again — plus per-step conversion, median days in
 stage, weekly volume for the last six weeks, applications that have gone quiet, and the
 response rate of each resume so you can see which one is working.
 
-Progress is measured by the furthest stage an application ever reached, so a rejection
-after a final round counts as having got that far. When there is not enough data yet, it
+Progress is measured by the furthest an application ever got — its round, where it has
+one — so a rejection after a fourth round counts as having got that far. When there is not enough data yet, it
 says so plainly rather than inventing a trend.
 
 <Tip>
@@ -219,8 +230,8 @@ says so plainly rather than inventing a trend.
 The pipeline toolbar picks the view — a drag-and-drop **board**, a sortable **table**, or
 a month **calendar** of everything with a date on it — plus a filter and a search.
 
-Filters combine — all of them, with each other. "Screening and interviewing" is one view
-rather than two trips, and so are "screening but only the overdue ones" and "closed, but
+Filters combine — all of them, with each other. "Applied and interviewing" is one view
+rather than two trips, and so are "interviewing but only the overdue ones" and "closed, but
 only the ghostings".
 
 Everything lives behind the **Filter** button beside the search: the stage, its tags, the
@@ -252,7 +263,7 @@ A cut worth keeping gets saved under a name. A saved view stores the pipeline UR
 parameters:
 
 ```
-view=list&f=APPLIED,SCREEN&sort=waiting&dir=desc
+view=list&f=APPLIED,INTERVIEWING&sort=waiting&dir=desc
 ```
 
 | Parameter | Values |

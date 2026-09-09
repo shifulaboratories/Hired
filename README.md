@@ -16,15 +16,21 @@ just *talk* to it.
 - **Pipeline** — stages, activity timeline, tasks, and follow-up dates that schedule
   themselves. A toolbar across the top picks the view — a drag-and-drop board, a sortable
   table, or a month calendar of everything that has a date on it — plus the cut and a search.
-  Filters combine — all of them, with each other: "screening and interviewing", "screening
+  Filters combine — all of them, with each other: "applied and interviewing", "interviewing
   but only the overdue ones", "everything from a referral that has sat a fortnight". Stage
   chips are the fast lane and the rest live behind one button, counted against what the
   other filters left. A cut worth keeping gets saved under a name. The table edits in place: stage,
   follow-up, salary and location are the cells themselves, a Waiting column counts days in
   the current stage and a Quiet column counts days since anything was logged — the second
   is the one to chase on — and selecting rows closes a batch out in one action.
-  Applications end as accepted, rejected, withdrawn or ghosted — silence is the most common
-  ending, and filing it as a rejection makes the funnel lie about what went wrong. An
+  Screening, interviewing and a final round are one **Interviewing** stage — which of the
+  three a given employer's process belonged in was always a guess — and how deep you are is
+  a round number you set on the opened job. The board shows none of it; the funnel on
+  Analytics is built out of it, and draws Applied → Round 1 → Round 2 → Offer once you
+  start numbering them. Applications end as accepted or **lost**, and why they were lost is
+  a tag you own: rejected, ghosted, withdrew, declined their offer, role closed, or your own
+  words. Say which — silence is the most common ending, and filing it as a rejection makes
+  the funnel lie about what went wrong. An
   application carries tags — several at once, because a job board posting, a referral and a
   LinkedIn message are often the same job — and a listing is optional: a role you're only
   chasing through a DM is still worth a card. Opening

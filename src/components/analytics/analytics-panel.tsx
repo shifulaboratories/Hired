@@ -129,7 +129,7 @@ export async function AnalyticsPanel({ userId }: { userId: string }) {
             label="Response rate"
             value={stats.responseRate}
             suffix="%"
-            hint={interviewHint(stats.interviews, stats.screening)}
+            hint={interviewHint(stats.interviews, stats.deepestRound)}
           />
         ) : (
           <QuietStat
@@ -137,7 +137,7 @@ export async function AnalyticsPanel({ userId }: { userId: string }) {
             label="Response rate"
             hint={
               stats.interviews > 0
-                ? `${interviewHint(stats.interviews, stats.screening)}. A rate needs about ten applications behind it.`
+                ? `${interviewHint(stats.interviews, stats.deepestRound)}. A rate needs about ten applications behind it.`
                 : "Needs about ten applications behind it to mean anything."
             }
           />
@@ -305,16 +305,17 @@ function StatCard({
 }
 
 /**
- * "2 in interviews, 1 at a phone screen".
+ * "3 in interviews, deepest round 4".
  *
- * These were one number under the word "interviews", which counted phone
- * screens as interviews — the one distinction the whole funnel is built on,
- * flattened in the summary above it.
+ * It read "2 in interviews, 1 at a phone screen" while a screen was its own
+ * stage. It is one stage now, so the second half says how deep the search has
+ * actually got instead — the number rounds were added for. It stays quiet
+ * until somebody has numbered a round past the first.
  */
-function interviewHint(interviews: number, screening: number) {
+function interviewHint(interviews: number, deepestRound: number) {
   const parts = [
     interviews > 0 ? `${interviews} in interviews` : "",
-    screening > 0 ? `${screening} at a phone screen` : "",
+    deepestRound > 1 ? `deepest round ${deepestRound}` : "",
   ].filter(Boolean);
   return parts.length ? parts.join(", ") : "Nothing in play yet";
 }

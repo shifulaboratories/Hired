@@ -64,6 +64,7 @@ export const TAG_KINDS = [
   "INDUSTRY",
   "SIZE",
   "LOCATION",
+  "LOSS",
 ] as const;
 
 /** What each kind is called on screen, singular and plural. */
@@ -74,6 +75,7 @@ export const TAG_KIND_LABEL: Record<TagKind, { one: string; many: string }> = {
   INDUSTRY: { one: "Industry", many: "Industries" },
   SIZE: { one: "Size", many: "Size" },
   LOCATION: { one: "Location", many: "Locations" },
+  LOSS: { one: "Reason", many: "Reasons" },
 };
 
 /**
@@ -94,6 +96,11 @@ export const TAG_SUGGESTIONS: Partial<Record<TagKind, readonly string[]>> = {
   ],
   CONTACT: ["Recruiter", "Hiring manager", "Referral", "Ex-colleague", "Friend"],
   SIZE: ["1-10", "11-50", "51-200", "201-500", "501-1000", "1000+"],
+  // The three endings this replaced, plus the two that were never expressible:
+  // turning down an offer is not a rejection, and a role being cancelled is
+  // nobody's verdict on you. Offered, not imposed — every one of them can be
+  // renamed or deleted, and a reason nobody here has can be typed in.
+  LOSS: ["Rejected", "Ghosted", "Withdrew", "Declined their offer", "Role closed"],
 };
 
 export function tagKey(name: string): string {

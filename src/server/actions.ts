@@ -1533,11 +1533,21 @@ export async function deleteCrmContactAction(id: string) {
  */
 export async function getApplicationForPanelAction(id: string) {
   const user = await requireUser();
-  const [application, resumeList, tagOptions, companies, settings, googleConnection, fieldValues] =
+  const [
+    application,
+    resumeList,
+    tagOptions,
+    lossOptions,
+    companies,
+    settings,
+    googleConnection,
+    fieldValues,
+  ] =
     await Promise.all([
       pipeline.getApplication(user.id, id),
       resumes.listResumeNames(user.id),
       tags.listTags(user.id, "APPLICATION"),
+      tags.listTags(user.id, "LOSS"),
       pipeline.listCompanies(user.id),
       getSettings(),
       accounts.accountAccess(user.id),
@@ -1556,12 +1566,16 @@ export async function getApplicationForPanelAction(id: string) {
       companyId: application.companyId,
       roleTitle: application.roleTitle,
       stage: application.stage,
+      interviewRound: application.interviewRound,
+      roundLabel: application.roundLabel,
       jobUrl: application.jobUrl,
       jobDescription: application.jobDescription,
       location: application.location,
       workMode: application.workMode,
       salaryRange: application.salaryRange,
-      tags: application.tags,
+      // One join table, two catalogues: where it came from, and why it ended.
+      tags: tags.tagsOfKind(application.tags, "APPLICATION"),
+      lossTags: tags.tagsOfKind(application.tags, "LOSS"),
       notes: application.notes,
       appliedAt: application.appliedAt?.toISOString() ?? null,
       nextFollowUpAt: application.nextFollowUpAt?.toISOString() ?? null,
@@ -1589,6 +1603,7 @@ export async function getApplicationForPanelAction(id: string) {
     })),
     resumes: resumeList.map((resume) => ({ id: resume.id, name: resume.name })),
     tagOptions: tagOptions.map(asOption),
+    lossOptions: lossOptions.map(asOption),
     fieldValues,
     company: {
       id: application.companyId,

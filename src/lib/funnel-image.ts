@@ -1,5 +1,5 @@
 import { chromium } from "playwright-core";
-import { FUNNEL_TITLE, funnelOptions } from "@/components/analytics/funnel-sankey";
+import { FUNNEL_TITLE, funnelOptions, toSankeyInput } from "@/components/analytics/funnel-sankey";
 import { sankeyDocument, sankeyLayout } from "@/lib/funnel-sankey";
 import { chromiumPath } from "@/lib/pdf";
 import type { FunnelRung } from "@/lib/data/pipeline";
@@ -25,7 +25,7 @@ import { civilDay, SERVER_ZONE } from "@/lib/time";
 const SCALE = 2;
 
 export function funnelSvg(rungs: FunnelRung[], options?: { width?: number }): string {
-  const layout = sankeyLayout(rungs, funnelOptions(options?.width ?? 1000, 460));
+  const layout = sankeyLayout(toSankeyInput(rungs), funnelOptions(options?.width ?? 1000, 460));
   // React never renders this, so the XML declaration a standalone file wants
   // has to be written by hand.
   return `<?xml version="1.0" encoding="UTF-8"?>\n${sankeyDocument(layout, FUNNEL_TITLE)}`;
