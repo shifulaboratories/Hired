@@ -194,7 +194,12 @@ export const MCP_CLIENTS: McpClientRecipe[] = [
         codeLabel: "Terminal",
       },
       {
-        text: "Set Accept: text/event-stream if you'd rather have the reply as SSE. Both are supported.",
+        text: "That's the older shape and it keeps working. On MCP 2026-07-28 there is no handshake at all: say which version you're speaking in the header and in _meta, mirror the method into Mcp-Method, and start with server/discover.",
+        code: `curl -s ${url} \\\n  -H 'Content-Type: application/json' \\\n  -H 'MCP-Protocol-Version: 2026-07-28' \\\n  -H 'Mcp-Method: server/discover' \\\n  -d '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{\n        "io.modelcontextprotocol/protocolVersion":"2026-07-28",\n        "io.modelcontextprotocol/clientCapabilities":{}}}}'`,
+        codeLabel: "Terminal (2026-07-28)",
+      },
+      {
+        text: "Set Accept: text/event-stream if you'd rather have the reply as SSE. Both are supported. Send an Origin header only if you're calling from a browser — one that isn't this instance is refused.",
       },
     ],
   },

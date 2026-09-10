@@ -35,7 +35,8 @@ near-duplicate. And the **archive** is where deleting sends a company, a person 
 application: `list_archive` says what is in there and when each thing is due to go,
 `restore_records` brings it back.
 
-If they have connected their own Google account — `get_google_connection` says —
+If they have connected a mail and calendar account — `list_linked_accounts` says which, and
+Google, Microsoft 365 and any IMAP or CalDAV provider all work —
 `list_correspondence` returns the real threads and meetings behind any record, read live
 and never stored. Call it before saying where an application stands: the timeline only
 knows what somebody logged by hand.

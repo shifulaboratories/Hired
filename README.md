@@ -265,7 +265,7 @@ to run, now or after any future update.
 ### 6. Connect your AI
 
 Open **Settings** in the app. It opens on **Connections**, because this is the step that
-makes everything else work. You already have one waiting; hit **Set up**, pick whichever
+makes everything else work. You already have one waiting; click it, pick whichever
 assistant you use — each is listed with its own logo — and the exact steps appear, with the
 config already filled in with your URL, ready to copy.
 
@@ -282,11 +282,17 @@ config already filled in with your URL, ready to copy.
 Hit **Test** next to any connection and the app calls its own endpoint the way a client
 would, then tells you how many tools answered — 127, or 160 if you're an admin.
 
+That is a lot of tools, and spelled out in full they're around 45,000 tokens of context
+before you've said anything. If your client has tool search — Claude Code does, and has it
+on by default — leave it on: it loads six of them up front, about 2,000 tokens, and looks
+the rest up when they're needed. On a client without it you're paying the full amount every
+conversation, which works but is worth knowing.
+
 #### One connection per client
 
 **Connect** gives each assistant its own URL. That matters more than it sounds:
 
-- Your laptop dies, or you paste a URL somewhere you shouldn't — **Rotate** or
+- Your laptop dies, or you paste a URL somewhere you shouldn't — **New URL** or
   **Disconnect** that one client. Everything else stays connected.
 - Each row shows when it was last used and what called in, so "is it actually working?"
   stops being a guess.
