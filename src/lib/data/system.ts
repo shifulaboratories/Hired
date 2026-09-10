@@ -31,16 +31,27 @@ const RETENTION_DAYS = 30;
 /** Long enough to diagnose, short enough that nothing pastes a payload in. */
 const DETAIL_LIMIT = 300;
 
-export type SystemEventSource =
-  | "stripe.webhook"
-  | "billing.sync"
-  | "email.send"
-  | "google.signin"
-  | "google.data"
-  | "microsoft.data"
-  | "mcp.tool"
-  | "mcp.origin"
-  | "app";
+/**
+ * Every part of the app that records events, as a runtime list.
+ *
+ * A list rather than a bare union because `admin_recent_errors` publishes these
+ * as an enum an assistant can filter on, and a hand-copied enum drifts: it was
+ * four sources behind before anybody noticed. Add one here and the tool's
+ * schema, its docs page and this type all follow.
+ */
+export const SYSTEM_EVENT_SOURCES = [
+  "stripe.webhook",
+  "billing.sync",
+  "email.send",
+  "google.signin",
+  "google.data",
+  "microsoft.data",
+  "mcp.tool",
+  "mcp.origin",
+  "app",
+] as const;
+
+export type SystemEventSource = (typeof SYSTEM_EVENT_SOURCES)[number];
 
 /**
  * Record something the instance did.

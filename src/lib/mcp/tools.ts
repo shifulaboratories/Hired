@@ -8,6 +8,7 @@ import type { TagKind } from "@prisma/client";
 import * as views from "@/lib/data/views";
 import * as audit from "@/lib/data/audit";
 import * as system from "@/lib/data/system";
+import { SYSTEM_EVENT_SOURCES } from "@/lib/data/system";
 import * as pipelineShare from "@/lib/data/pipeline-share";
 import * as users from "@/lib/data/users";
 import * as waitlist from "@/lib/data/waitlist";
@@ -4539,7 +4540,7 @@ export const tools: McpTool[] = [
     name: "admin_recent_errors",
     title: "Read what has failed recently",
     description:
-      "The instance's own event stream, newest first: failed emails, Stripe webhooks that did not verify or did not sync, tool calls that threw, and pages that errored. Use it after admin_health reports errors, or to answer 'did that invite actually send'. Each entry has a level (INFO, WARN or ERROR), a source, a one-line message, and the address of whoever's request hit it. Pass level ERROR for failures only — the default includes INFO entries such as successful webhook deliveries, which are what prove Stripe is still reaching this instance at all. Entries older than 30 days are removed automatically. This never contains anyone's content: the arguments that caused a failure are deliberately not recorded, only the failure.",
+      "The instance's own event stream, newest first: failed emails, Stripe webhooks that did not verify or did not sync, reads of somebody's connected mail and calendar, MCP requests refused for naming a browser origin this instance does not allow, tool calls that threw, and pages that errored. Use it after admin_health reports errors, or to answer 'did that invite actually send'. Each entry has a level (INFO, WARN or ERROR), a source, a one-line message, and the address of whoever's request hit it. Pass level ERROR for failures only — the default includes INFO entries such as successful webhook deliveries, which are what prove Stripe is still reaching this instance at all. Entries older than 30 days are removed automatically. This never contains anyone's content: the arguments that caused a failure are deliberately not recorded, only the failure.",
     inputSchema: object({
       limit: num("How many entries, newest first. Default 50, max 200."),
       level: {
@@ -4549,7 +4550,7 @@ export const tools: McpTool[] = [
       },
       source: {
         type: "string",
-        enum: ["stripe.webhook", "billing.sync", "email.send", "mcp.tool", "app"],
+        enum: [...SYSTEM_EVENT_SOURCES],
         description: "Only entries from this part of the app. Omit for everything.",
       },
     }),

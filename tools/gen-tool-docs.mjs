@@ -156,6 +156,11 @@ const COMPANY_MISSING = ["website", "industry", "location"];
 const CONTACT_MISSING = ["email", "tags"];
 const PIPELINE_VIEW_VALUES = ["board", "list", "calendar"];
 const COLUMN_LIST_VALUES = ["pipeline", "companies", "contacts"];
+// Mirrors SYSTEM_EVENT_SOURCES in src/lib/data/system.ts, checked below.
+const SYSTEM_EVENT_SOURCES = [
+  "stripe.webhook", "billing.sync", "email.send", "google.signin", "google.data",
+  "microsoft.data", "mcp.tool", "mcp.origin", "app",
+];
 
 for (const [name, values] of [
   ["ACTIVITY_VALUES", ACTIVITY_VALUES],
@@ -181,6 +186,19 @@ for (const [name, values] of [
   }
 }
 {
+  // The event sources live in the data layer; tools.ts publishes them as an
+  // enum. They drifted four behind once, which is what the runtime list and
+  // this check are for.
+  const system = readFileSync(join(ROOT, "src", "lib", "data", "system.ts"), "utf8");
+  const declared = /export const SYSTEM_EVENT_SOURCES = \[([\s\S]*?)\]/.exec(system);
+  const found = declared ? [...declared[1].matchAll(/"([a-z.]+)"/g)].map((m) => m[1]) : [];
+  if (found.join(",") !== SYSTEM_EVENT_SOURCES.join(",")) {
+    throw new Error(
+      `SYSTEM_EVENT_SOURCES changed in system.ts (${found.join(", ")}) — update tools/gen-tool-docs.mjs`,
+    );
+  }
+}
+{
   // The list cap. Mirrored above so the argument tables can be generated without
   // importing TypeScript; checked here so raising it in tools.ts fails this run
   // instead of leaving every "hard ceiling 500" in the manual wrong.
@@ -201,7 +219,7 @@ for (const [name, values] of [
 }
 
 const scope = {
-  str, num, bool, strArray, object, limitArg,
+  str, num, bool, strArray, object, limitArg, SYSTEM_EVENT_SOURCES,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
   ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,
   COMPANY_MISSING, CONTACT_MISSING, PIPELINE_VIEW_VALUES, COLUMN_LIST_VALUES,

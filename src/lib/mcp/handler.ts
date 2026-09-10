@@ -562,9 +562,12 @@ function originAllowed(origin: string, baseUrl: string, extra: string): boolean 
   } catch {
     return false;
   }
-  if (host.hostname === "localhost" || host.hostname === "127.0.0.1" || host.hostname === "[::1]") {
-    return true;
-  }
+  // The hostname off a parsed URL, never a substring of the raw header: a
+  // hostname match written as `origin.includes("localhost")` would welcome
+  // https://localhost.attacker.example, and one written against the raw string
+  // would be fooled by userinfo — http://localhost@attacker.example parses with
+  // hostname "attacker.example", which is the answer that matters.
+  if (LOOPBACK.has(host.hostname)) return true;
   if (origin === baseUrl) return true;
   return extra
     .split(",")
@@ -572,6 +575,9 @@ function originAllowed(origin: string, baseUrl: string, extra: string): boolean 
     .filter(Boolean)
     .includes(origin);
 }
+
+/** Every spelling of "this machine" a browser will send. */
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 export function corsHeaders(): Record<string, string> {
   return {
@@ -589,7 +595,7 @@ export function corsHeaders(): Record<string, string> {
   };
 }
 
-function sseResponse(payload: unknown) {
+function sseResponse(payload: unknown, status = 200) {
   const body = `event: message\ndata: ${JSON.stringify(payload)}\n\n`;
   const stream = new ReadableStream({
     start(controller) {
@@ -598,7 +604,7 @@ function sseResponse(payload: unknown) {
     },
   });
   return new Response(stream, {
-    status: 200,
+    status,
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
@@ -631,6 +637,22 @@ function eraFor(request: Request, message: JsonRpcRequest): Era {
 }
 
 /**
+ * Every protocol version this request names, in either of the two places it can
+ * be named. Deduplicated, because the usual case names the same one twice.
+ */
+function declaredVersions(request: Request, messages: JsonRpcRequest[]): string[] {
+  const found = new Set<string>();
+  const header = request.headers.get("mcp-protocol-version");
+  if (header !== null) found.add(header);
+  for (const message of messages) {
+    const meta = (message?.params?._meta ?? {}) as Record<string, unknown>;
+    const declared = meta[META_PROTOCOL_VERSION];
+    if (typeof declared === "string") found.add(declared);
+  }
+  return [...found];
+}
+
+/**
  * The modern revision mirrors three body fields into headers so a proxy can
  * route without parsing, and requires the server to reject any disagreement —
  * the point being that a gateway routing on the header and a server acting on
@@ -640,32 +662,50 @@ function eraFor(request: Request, message: JsonRpcRequest): Era {
  * undefined, and inventing a rule there would refuse messages nothing is
  * required to shape.
  */
-function checkModernHeaders(request: Request, message: JsonRpcRequest): string | null {
+function checkModernHeaders(
+  request: Request,
+  message: JsonRpcRequest,
+): { code: number; message: string } | null {
   const header = (name: string) => request.headers.get(name);
   const params = message.params ?? {};
   const meta = (params._meta ?? {}) as Record<string, unknown>;
 
+  // A missing body field is a params error, not a header mismatch: -32020 is
+  // defined for headers that disagree with the body or are absent, and calling
+  // an absent body field a header problem sends a client looking at its proxy.
   if (typeof meta[META_PROTOCOL_VERSION] !== "string") {
-    return `${MODERN_PROTOCOL_VERSION} requires params._meta["${META_PROTOCOL_VERSION}"] on every request.`;
+    return {
+      code: INVALID_PARAMS,
+      message: `${MODERN_PROTOCOL_VERSION} requires params._meta["${META_PROTOCOL_VERSION}"] on every request.`,
+    };
   }
   const declared = header("mcp-protocol-version");
   if (declared !== null && declared !== meta[META_PROTOCOL_VERSION]) {
-    return (
-      `Header mismatch: MCP-Protocol-Version header value '${declared}' ` +
-      `does not match body value '${String(meta[META_PROTOCOL_VERSION])}'.`
-    );
+    return {
+      code: HEADER_MISMATCH,
+      message:
+        `Header mismatch: MCP-Protocol-Version header value '${declared}' ` +
+        `does not match body value '${String(meta[META_PROTOCOL_VERSION])}'.`,
+    };
   }
   if (meta[META_CLIENT_CAPABILITIES] === undefined) {
-    return (
-      `${MODERN_PROTOCOL_VERSION} requires params._meta["${META_CLIENT_CAPABILITIES}"]; ` +
-      `send an empty object if the client has no optional capabilities.`
-    );
+    return {
+      code: INVALID_PARAMS,
+      message:
+        `${MODERN_PROTOCOL_VERSION} requires params._meta["${META_CLIENT_CAPABILITIES}"]; ` +
+        `send an empty object if the client has no optional capabilities.`,
+    };
   }
 
   const method = header("mcp-method");
-  if (method === null) return "Header mismatch: Mcp-Method is required and was not sent.";
+  if (method === null) {
+    return { code: HEADER_MISMATCH, message: "Header mismatch: Mcp-Method is required and was not sent." };
+  }
   if (method !== message.method) {
-    return `Header mismatch: Mcp-Method header value '${method}' does not match body value '${message.method}'.`;
+    return {
+      code: HEADER_MISMATCH,
+      message: `Header mismatch: Mcp-Method header value '${method}' does not match body value '${message.method}'.`,
+    };
   }
 
   // Mcp-Name mirrors params.name or params.uri, and only for the three methods
@@ -673,9 +713,17 @@ function checkModernHeaders(request: Request, message: JsonRpcRequest): string |
   if (message.method === "tools/call" || message.method === "prompts/get") {
     const expected = typeof params.name === "string" ? params.name : "";
     const sent = header("mcp-name");
-    if (sent === null) return "Header mismatch: Mcp-Name is required for this method and was not sent.";
+    if (sent === null) {
+      return {
+        code: HEADER_MISMATCH,
+        message: "Header mismatch: Mcp-Name is required for this method and was not sent.",
+      };
+    }
     if (decodeMcpName(sent) !== expected) {
-      return `Header mismatch: Mcp-Name header value '${sent}' does not match body value '${expected}'.`;
+      return {
+        code: HEADER_MISMATCH,
+        message: `Header mismatch: Mcp-Name header value '${sent}' does not match body value '${expected}'.`,
+      };
     }
   }
   return null;
@@ -710,10 +758,19 @@ export async function handleMcpPost(request: Request, caller: McpCaller): Promis
   // because the fix — adding it to the setting — needs the address, and the
   // admin will otherwise only see a client that stopped working.
   const origin = request.headers.get("origin");
-  if (origin) {
+  if (origin && !originAllowed(origin, baseUrl, "")) {
+    // The settings row is only read once loopback and same-origin have both
+    // said no, which is every request a real client makes. An admin's extra
+    // origins are the rare case and can afford the query.
     const { mcpAllowedOrigins } = await getSettings().catch(() => ({ mcpAllowedOrigins: "" }));
     if (!originAllowed(origin, baseUrl, mcpAllowedOrigins)) {
       await recordSystemEvent({
+        // WARN, not the ERROR that recordSystemEvent defaults to: this is the
+        // server working, and instanceHealth counts ERROR rows to decide
+        // whether the instance is down — twenty in a day is enough to say so.
+        // A browser client that retries would otherwise report a healthy
+        // instance as broken, which is the opposite of what this row is for.
+        level: "WARN",
         source: "mcp.origin",
         message: `Refused an MCP request from origin ${origin}`,
         detail: "Settings → Variables → Extra MCP origins allows it, if it is meant to be there.",
@@ -743,17 +800,24 @@ export async function handleMcpPost(request: Request, caller: McpCaller): Promis
   // looked at, and the refusal names what it does speak so the client can pick
   // one and retry. HTTP 400 rather than 200 is the load-bearing part: it is the
   // status a modern client reads to decide whether to fall back.
-  const declaredVersion = request.headers.get("mcp-protocol-version");
-  if (declaredVersion !== null && !SUPPORTED_PROTOCOL_VERSIONS.includes(declaredVersion)) {
-    return jsonResponse(
-      err(
-        messages[0]?.id ?? null,
-        UNSUPPORTED_PROTOCOL_VERSION,
-        `Unsupported protocol version: ${declaredVersion}`,
-        { requested: declaredVersion, supported: SUPPORTED_PROTOCOL_VERSIONS },
-      ),
-      400,
-    );
+  //
+  // Both places it can be declared are checked. Reading only the header let a
+  // client naming an unknown version in `params._meta` — with no header at all,
+  // which is a shape the modern revision permits — fall through and be served a
+  // legacy answer, which is the silent wrong-version failure this check exists
+  // to prevent.
+  for (const declared of declaredVersions(request, messages)) {
+    if (!SUPPORTED_PROTOCOL_VERSIONS.includes(declared)) {
+      return jsonResponse(
+        err(
+          messages[0]?.id ?? null,
+          UNSUPPORTED_PROTOCOL_VERSION,
+          `Unsupported protocol version: ${declared}`,
+          { requested: declared, supported: SUPPORTED_PROTOCOL_VERSIONS },
+        ),
+        400,
+      );
+    }
   }
 
   // Batching was legal in exactly one revision, 2025-03-26, which this server
@@ -776,10 +840,14 @@ export async function handleMcpPost(request: Request, caller: McpCaller): Promis
     }
     const era = eraFor(request, message);
     if (era === "modern") modernRequested = true;
-    const isNotification = message.id === undefined || message.id === null;
-    if (era === "modern" && !isNotification) {
+    // A notification is a message with NO id. `id: null` is a request with a
+    // null id, and dispatch treats it as a notification for legacy reasons —
+    // which meant a modern tools/call could carry `id: null` and skip every
+    // mirrored-header check while still running the tool. The exemption here
+    // is the narrow one the revision actually grants.
+    if (era === "modern" && "id" in message) {
       const problem = checkModernHeaders(request, message);
-      if (problem) return jsonResponse(err(message.id ?? null, HEADER_MISMATCH, problem), 400);
+      if (problem) return jsonResponse(err(message.id ?? null, problem.code, problem.message), 400);
     }
     try {
       const response = await handleMessage(message, ctx, era);
@@ -796,18 +864,22 @@ export async function handleMcpPost(request: Request, caller: McpCaller): Promis
   }
 
   const payload = Array.isArray(body) ? responses : responses[0];
-  if (wantsSse) return sseResponse(payload);
 
   // A method this server does not implement is a 404 in the modern era and a
   // 200 carrying a JSON-RPC error in the old one, and the difference is not
   // pedantry: the status is how a modern client tells "this endpoint does not
   // host that method" from "this is not an MCP endpoint at all". Only ever
   // applied to a single unbatched message, since a batch has no one status.
+  //
+  // Decided before the content type is chosen rather than after, because the
+  // status is a fact about the request and asking for SSE does not change it.
+  // It used to sit below the SSE return, so a modern client that advertised
+  // text/event-stream — which is every client the spec describes, since one
+  // MUST accept both — got a 200 for a method that does not exist.
   const single = Array.isArray(body) ? null : responses[0];
-  if (single?.error?.code === METHOD_NOT_FOUND && modernRequested) {
-    return jsonResponse(payload, 404);
-  }
-  return jsonResponse(payload);
+  const status = single?.error?.code === METHOD_NOT_FOUND && modernRequested ? 404 : 200;
+
+  return wantsSse ? sseResponse(payload, status) : jsonResponse(payload, status);
 }
 
 export function mcpUnauthorized() {
