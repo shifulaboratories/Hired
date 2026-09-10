@@ -91,15 +91,6 @@ const SERVER_INFO = {
  */
 const HEAD_BUDGET = 2000;
 
-/**
- * What the WHOLE standing-rules section may take out of the head — its heading,
- * the rules themselves and the notice that says some were left out. Counting
- * only the rules was wrong: the heading and the notice together are another
- * three hundred characters, which pushed the head past the cap on an account
- * with a lot of rules on file, and the thing that fell off the end was the
- * fourth critical rule.
- */
-const STANDING_RULES_BUDGET = 1000;
 
 /**
  * The tail for an account with nothing in it.
@@ -182,7 +173,7 @@ const AREAS = `The areas:
  * matters. This block is the only place a constraint is guaranteed to be in
  * context — which is exactly why it has to survive a 2KB cut.
  */
-async function standingRulesFor(userId: string) {
+async function standingRulesFor(userId: string, allowance: number) {
   const guardrails = await listGuardrails(userId).catch(() => []);
   if (guardrails.length === 0) return "";
 
@@ -194,7 +185,7 @@ preferences. Breaking one produces a document that reads as true and is not.`;
   const notice = (n: number) =>
     `\n• (${n} more rules are on file and are NOT in this briefing — call list_notes with kind ` +
     `GUARDRAIL and read them before writing anything.)`;
-  const budget = STANDING_RULES_BUDGET - heading.length - notice(guardrails.length).length;
+  const budget = allowance - heading.length - notice(guardrails.length).length;
 
   const lines: string[] = [];
   let used = 0;
@@ -233,9 +224,10 @@ Rules that are never optional:
 - update_resume and update_role REPLACE what you send. Read first, modify, then write back whole.
   When they tell you something new about a job already on file, append_role_background adds
   instead of overwriting.
-- delete_archived and empty_archive are the only acts here that cannot be undone. Read the archive
-  back to them and get a plain yes first. Deleting a role, highlight, note, resume, task, tag or
-  saved view is also permanent.
+- Four acts cannot be undone: delete_archived and empty_archive destroy what is in the archive,
+  merge_companies folds one employer into another for good, and admin_delete_user removes an
+  account and everything it owns. Say what will go and get a plain yes before any of them.
+  Deleting a role, highlight, note, resume, task, tag or saved view is also permanent.
 - Connection URLs are credentials with full read and write over this workspace. Never repeat one
   anywhere it will be stored.`;
 
@@ -245,15 +237,26 @@ async function instructionsFor(user: User) {
   // their workspace is empty.
   const empty = await meIsEmpty(user.id).catch(() => false);
 
-  const head = `Hired is ${user.name || user.email}'s career knowledge base, resume builder and job-search CRM.
+  // The two fixed halves of the head are measured before the rules are asked
+  // for, and what is left over is their allowance. A constant here drifted the
+  // moment CRITICAL_RULES grew by a sentence: the head was 992 characters, then
+  // 1,131, and an account with seventeen rules on file went 24 over the cap
+  // without anything in the diff looking like it touched the budget. Derived,
+  // it cannot. The name is in there too, and a long one costs its own rules
+  // room, which is the right way round.
+  const identity = `Hired is ${user.name || user.email}'s career knowledge base, resume builder and job-search CRM.
 You are connected as them; every tool reads and writes only their data. search_me is the first
-tool to reach for when the question is about their experience.${await standingRulesFor(user.id)}
+tool to reach for when the question is about their experience.`;
+  const allowance = HEAD_BUDGET - identity.length - CRITICAL_RULES.length - 1;
+
+  const head = `${identity}${await standingRulesFor(user.id, allowance)}
 ${CRITICAL_RULES}`;
 
   if (head.length > HEAD_BUDGET) {
-    // Not fatal — a longer head only means a client that truncates loses the
-    // tail sooner — but it means the budget above needs revisiting, and that
-    // is not something to discover from a user report.
+    // Only reachable now if the fixed halves alone exceed the cap, which is a
+    // change somebody made to CRITICAL_RULES without measuring. Not fatal — a
+    // longer head only means a client that truncates loses the tail sooner —
+    // but it is not something to discover from a user report.
     console.warn(
       `[mcp] instructions head is ${head.length} chars, past the ${HEAD_BUDGET} budget: a 2KB client will cut inside it`,
     );
@@ -282,8 +285,9 @@ Also worth knowing:
 - When the ask covers several records at once, reach for the bulk tool rather than a loop:
   move_applications_stage, tag_companies, tag_contacts, schedule_contact_pings, archive_records.
   The tagging ones ADD and REMOVE where update_company and update_contact REPLACE — so "tag these
-  nine as fintech" written as nine update_company calls would strip the size and location off all
-  nine. Every bulk tool skips ids that are not theirs rather than failing the whole call.
+  nine as fintech" written as nine update_company calls would replace each company's whole industry
+  list with fintech alone, losing every other industry they were filed under. Every bulk tool skips
+  ids that are not theirs rather than failing the whole call.
 - export_csv turns any of the three lists into a spreadsheet, taking the same filters, search and
   sort as list_companies, list_contacts and list_applications. It is the answer to "send me this
   as a file" — do not assemble one by hand from a list call.
@@ -773,7 +777,7 @@ export async function handleMcpPost(request: Request, caller: McpCaller): Promis
         level: "WARN",
         source: "mcp.origin",
         message: `Refused an MCP request from origin ${origin}`,
-        detail: "Settings → Variables → Extra MCP origins allows it, if it is meant to be there.",
+        detail: "Settings → Admin → Configuration → Instance → Extra MCP origins allows it.",
         userEmail: user.email,
       });
       return jsonResponse(err(null, INVALID_REQUEST, `Origin not allowed: ${origin}`), 403);

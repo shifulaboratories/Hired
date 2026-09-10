@@ -5947,8 +5947,15 @@ The standing-rules budget covers the whole section — its heading, the rules an
 that says some were left out. Budgeting only the rules was wrong and measured wrong: the
 heading and notice are another three hundred characters, and an account with seventeen
 guardrails pushed the head to 2,174 and lost the fourth critical rule off the end. Measured
-against a real database, through a real `initialize` on a production build: 992 characters
-with no rules, 1,459 with three, and 1,877 with seventeen and the overflow notice.
+against a real database, through a real `initialize` on a production build.
+
+The allowance is derived rather than a constant, and that is the point. A constant drifted
+the moment `CRITICAL_RULES` grew by a sentence: the head went from 992 characters to 1,131,
+and an account with seventeen rules on file went 24 over the cap without anything in the
+diff looking like it had touched a budget. Measuring the two fixed halves and handing the
+remainder to the rules cannot drift — and it charges a long name against its owner's own
+rules room, which is the right way round. Measured now: 1,131 with no rules, 1,598 with
+three, and 1,879 with seventeen, sixty, or any number above that.
 
 **Tool `_meta` now carries Anthropic's hints**, in three small tables in `tools.ts` rather
 than on a hundred and fifty tool literals. `anthropic/alwaysLoad` on six tools — the one
@@ -6054,6 +6061,16 @@ named only in `params._meta` was served a legacy answer instead of a 400; `id: n
 skipped every mirrored-header check while still running the tool; the unknown-method
 404 sat below the SSE return, so any client advertising text/event-stream got a 200;
 and a missing body field was reported as -32020, which is the code for headers.
+
+A seventh reviewer read only the prose against only the code, and found five places where
+the two disagreed inside this same diff. The briefing told every assistant that nine
+update_company calls strip a company's size and location, when update_company's own
+description says each list replaces its own set and leaves the others alone — the real trap
+is that it replaces the whole industry list. The briefing named two irreversible acts when
+tools.ts names four. The origin-refusal event pointed admins at a screen called Variables,
+which does not exist; it is Admin → Configuration. The run-the-search guide said the bulk
+mover takes no reason, in the same diff that gave it one. And Test was described as sitting
+next to a connection when it lives inside the opened one.
 
 Two the pass got right about the origin check. Refusals were recorded at ERROR, and
 `instanceHealth` calls twenty ERROR rows in a day "down" — so the defence working

@@ -279,12 +279,12 @@ config already filled in with your URL, ready to copy.
 | **Windsurf** | A three-line block in `~/.codeium/windsurf/mcp_config.json` |
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
-Hit **Test** next to any connection and the app calls its own endpoint the way a client
-would, then tells you how many tools answered — 127, or 160 if you're an admin.
+Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
+then tells you how many tools answered — 127, or 160 if you're an admin.
 
 That is a lot of tools, and spelled out in full they're around 45,000 tokens of context
 before you've said anything. If your client has tool search — Claude Code does, and has it
-on by default — leave it on: it loads six of them up front, about 2,000 tokens, and looks
+on by default — leave it on: it loads six of them up front, about 1,700 tokens, and looks
 the rest up when they're needed. On a client without it you're paying the full amount every
 conversation, which works but is worth knowing.
 
@@ -886,7 +886,7 @@ type and cache hints. Everything before it — back to 2024-11-05 — still open
 `initialize` and still works, because every client shipping today does that. Statelessness
 used to be this server's own idea and is now the protocol's, so nothing had to change
 underneath: era is a pure function of one message. A browser origin that is not this
-instance's own is refused outright; the "Extra MCP origins" variable in Settings is there
+instance's own is refused outright; Extra MCP origins, under Admin → Configuration, is there
 for the rare client that needs to be let in.
 
 The token lives in the URL path (`/api/mcp/<token>`) because that is the one shape every

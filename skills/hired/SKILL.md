@@ -79,7 +79,8 @@ When someone tells you something new about a job already on file, that is
 `append_role_background`. Not `update_role`.
 
 The bulk tools are the reason that last row matters. "Tag these nine as fintech" written as
-nine `update_company` calls strips the size and location off all nine; `tag_companies` adds
+nine `update_company` calls replaces each one's whole industry list with fintech alone,
+losing every other industry they were filed under; `tag_companies` adds
 and removes and leaves everything else alone. The same goes for `move_applications_stage`,
 `schedule_contact_pings` and `archive_records` — when the ask covers several records, use
 the bulk tool rather than a loop.

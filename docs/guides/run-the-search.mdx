@@ -70,10 +70,9 @@ the funnel draws it as its own rung.
 
 Closing several at once is one call too: *"close out everything I never heard back from"*
 moves a batch to `LOST`, each with its own timeline entry and its own follow-up reset,
-so the funnel history stays intact. The reason does not come with it —
-`move_applications_stage` takes ids and a stage and nothing else — so file "Ghosted" on
-each one afterwards with `update_application`, or move them one at a time with
-`move_application_stage`, which does take `lossReasons`.
+so the funnel history stays intact. Pass `lossReasons` in the same call — "Ghosted" for
+silence — and every one of them lands with the reason on it. A batch closed out with no
+reason tells the funnel only that it stopped.
 
 <Warning>
   Say why it ended, and file silence as "Ghosted" rather than "Rejected". A rejection is a
