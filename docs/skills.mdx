@@ -54,12 +54,14 @@ It carries:
   and `update_contact` all replace what you send; `append_role_background` adds, and so do
   the bulk tools. Getting this wrong silently deletes work, so it is written out as a table
   — the row that earns its place is the one saying "tag these nine as fintech" written as
-  nine `update_company` calls strips the size and location off all nine.
+  nine `update_company` calls replaces the industry list on each, dropping whatever else
+  it held.
 - **The order of operations** before writing anything: search Me, snapshot it for
   profile and dates, read the company record, then draft.
 - **A reminder to read your notes and look for the ones marked `GUARDRAIL`**, because your
   own standing rules override anything an assistant would otherwise infer. `list_notes`
-  takes no arguments and returns all of them, so the picking-out happens on the way back.
+  takes a `limit`, a hundred by default, and says so when it cut the list off, so the
+  picking-out happens on the way back.
 - **What is reversible and what is not.** Deleting a company, a person or an application
   archives it; everything else is gone when it goes. The two acts that really destroy
   something get read back to you before they run.
@@ -99,7 +101,7 @@ and the weekly review.
   someone's research by writing over it is the worst outcome available in the tool.
 - **An ending is a stage, not a deletion.** `LOST`, with a reason on it, keeps an application in
   the funnel, which is the only thing that can say where the search is losing people.
-  Deleting takes it out — and archives it, so it is recoverable for thirty days.
+  Deleting takes it out — and archives it, so it is recoverable for thirty days by default.
 - **Working a list rather than a record.** Both CRM lists filter and sort the same way the
   list tools do, acts that cover a selection have their own add-and-remove tools, and
   `export_csv` hands back the whole list as a spreadsheet.

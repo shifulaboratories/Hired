@@ -1365,12 +1365,26 @@ function stageActivityType(stage: Stage): ActivityType {
  * closing out twelve dead applications doesn't fail on the one that was
  * already deleted in another tab. Returns what actually moved.
  */
-export async function moveApplicationsStage(userId: string, ids: string[], stage: Stage) {
+/**
+ * The same move, applied to a selection.
+ *
+ * `extra` is passed through to every one of them, which is the point: closing
+ * out a batch is the commonest reason to reach for this, and a batch that lands
+ * in LOST with no reason on it tells the funnel only that it stopped. The tool
+ * description said to pass a reason here long before the argument existed, so
+ * an assistant that did as it was told had it silently dropped.
+ */
+export async function moveApplicationsStage(
+  userId: string,
+  ids: string[],
+  stage: Stage,
+  extra?: Parameters<typeof moveApplicationStage>[4],
+) {
   const moved: string[] = [];
   const skipped: string[] = [];
   for (const id of ids) {
     try {
-      await moveApplicationStage(userId, id, stage);
+      await moveApplicationStage(userId, id, stage, undefined, extra);
       moved.push(id);
     } catch {
       skipped.push(id);

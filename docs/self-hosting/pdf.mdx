@@ -17,12 +17,15 @@ to.
 
 ## The fallback
 
-Where the browser is missing, the **PDF** button says so rather than failing silently, and
-`export_resume_pdf` reports the same thing. The fallback produces an identical document:
+Where the browser is missing, the editor's **PDF** button becomes **Save as PDF** and
+opens the print view instead, so you never press PDF and land on an error.
+`export_resume_pdf` says the same and hands back the print url. The fallback produces an
+identical document:
 
 <Steps>
   <Step title="Open the print view">
-    In the resume editor: **⋯ → Open print view**. It is a US-Letter page at
+    In the resume editor, **Save as PDF** opens it in a new tab, and
+    **⋯ → Open print view** goes to the same place. It is a US-Letter page at
     `/print/<id>`, and it is auth-gated like the rest of the app.
   </Step>
   <Step title="Save as PDF">

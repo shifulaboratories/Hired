@@ -21,7 +21,7 @@ keep alive. If your client insists on a header, there is a
   workspace — your career history, your resumes, your pipeline. It cannot reach anyone else's
   data on the instance, but it can reach all of yours. Treat it like a password: never
   paste one into a chat, a ticket, a screenshot or a repository. If one gets out,
-  **Rotate** the connection and the old address dies immediately.
+  press **New URL** on that connection and the old address dies immediately.
 </Warning>
 
 ## Get your URL
@@ -29,9 +29,9 @@ keep alive. If your client insists on a header, there is a
 Sign in, open **Settings**, and stay on the **Connections** tab. There is already one
 connection waiting, so nobody ever lands here with nothing to copy.
 
-Press **Set up** on a connection, choose the client you are wiring up, and the exact
-steps appear with the URL already substituted into the config. Everything below is that
-same recipe, written out.
+Open a connection — the whole row is the button — choose the client you are wiring up, and
+the exact steps appear with the URL already substituted into the config. Everything below
+is that same recipe, written out.
 
 ### One connection per client
 
@@ -41,8 +41,8 @@ It costs nothing and it buys you two things:
 - **Revocation that is not all-or-nothing.** Laptop stolen, URL pasted somewhere it
   should not have been — rotate or delete that one client. Everything else stays
   connected.
-- **A truthful answer to "is it actually working?"** Each row shows when it was last
-  used and what called in, guessed from the user agent.
+- **A truthful answer to "is it actually working?"** Each row says when it was last
+  used, and opening one names what called in, guessed from the user agent.
 
 You can do all of it by talking, too: `list_connections`, `create_connection`,
 `rename_connection`, `rotate_connection`, `delete_connection`. Listing never returns
@@ -273,13 +273,14 @@ The rest depends on whether you have written anything yet.
     because none of it does anything yet.
   </Card>
   <Card title="A workspace with something in it" icon="user">
-    The briefing describes the four areas and which tool to reach for first in each:
+    The briefing describes the five areas and which tool to reach for first in each:
     `search_me` for everything about you, `get_resume_format` before writing a document,
     `list_schedule` when the question is about a stretch of time, `get_company` before
-    writing anything about a company.
+    writing anything about a company, and `list_correspondence` for the real threads and
+    meetings behind a record once you have connected an account.
   </Card>
 </CardGroup>
 
-Any note you have saved with `kind: "GUARDRAIL"` is carried at the end of that briefing,
-so your own standing rules are in context before a single tool is called. See
-[Me](/concepts/me#standing-rules).
+Any note you have saved with `kind: "GUARDRAIL"` is carried near the top of that briefing,
+ahead of the area tour, so your own standing rules are in context before a single tool is
+called. See [Me](/concepts/me#standing-rules).

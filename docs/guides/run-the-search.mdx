@@ -60,21 +60,26 @@ Twelve activity types are available; the ones that come up are `CALL`, `INTERVIE
 
 ### Moving stages
 
-> Helios moved me to the final round.
+> Helios moved me to a second interview — that one was with the hiring manager.
 
 `move_application_stage` writes its own timeline entry and resets the follow-up date, so
-it is one call. Do not also log the change by hand.
+it is one call. Do not also log the change by hand. There is no separate screen, interview
+and final-round stage any more: it is all `INTERVIEWING`, and how deep it got is a round
+number on the application, with an optional name for that round. Say which one it was and
+the funnel draws it as its own rung.
 
 Closing several at once is one call too: *"close out everything I never heard back from"*
-moves a batch to `LOST` with the reason "Ghosted", each with its own timeline entry and
-its own follow-up reset,
-so the funnel history stays intact.
+moves a batch to `LOST`, each with its own timeline entry and its own follow-up reset,
+so the funnel history stays intact. The reason does not come with it —
+`move_applications_stage` takes ids and a stage and nothing else — so file "Ghosted" on
+each one afterwards with `update_application`, or move them one at a time with
+`move_application_stage`, which does take `lossReasons`.
 
 <Warning>
   Say why it ended, and file silence as "Ghosted" rather than "Rejected". A rejection is a
-  decision against you; a ghosting is a non-response. Filing one as the other — or leaving
-  the reason off entirely — makes `diagnose_search` give you the wrong advice about what to
-  fix.
+  decision against you; a ghosting is a non-response. The reason is a LOSS tag and
+  `get_funnel` is what reads it — file one as the other, or leave it off, and the funnel
+  can only say where an application stopped, not what stopped it.
 </Warning>
 
 ### People
@@ -93,8 +98,9 @@ answerable.
   <Card title="What is due now" icon="bell">
     > What do I need to chase this week?
 
-    Returns two lists — applications whose follow-up date has arrived, and people whose
-    ping date has. Both are work; plan a day from the pair.
+    Returns three lists — applications whose follow-up date has arrived, people whose
+    ping date has, and tasks that are due or already late. All three are work; plan a day
+    from the set.
   </Card>
   <Card title="What the week looks like" icon="calendar-days">
     > What does next week look like?

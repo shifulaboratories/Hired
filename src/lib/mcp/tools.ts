@@ -2330,6 +2330,14 @@ export const tools: McpTool[] = [
       {
         ids: strArray("The application ids to move"),
         stage: { type: "string", enum: STAGE_VALUES, description: "The stage they all move to" },
+        interviewRound: num("Which round this puts them all in, counting from 1. Only read when moving to INTERVIEWING."),
+        roundLabel: str("What that round is called — 'Phone screen', 'Onsite'. Applied to all of them."),
+        lossReasons: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Why they ended, by name — the same reasons on every one. REPLACES any already on them. Only read when moving to LOST.",
+        },
       },
       ["ids", "stage"],
     ),
@@ -2342,7 +2350,16 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => {
       const ids = a(args, "ids");
       if (!ids?.length) throw new Error("ids is required: pass at least one application id");
-      return pipeline.moveApplicationsStage(ctx.userId, ids, required(args, "stage") as Stage);
+      return pipeline.moveApplicationsStage(
+        ctx.userId,
+        ids,
+        required(args, "stage") as Stage,
+        defined({
+          interviewRound: n(args, "interviewRound"),
+          roundLabel: s(args, "roundLabel"),
+          lossReasons: a(args, "lossReasons"),
+        }),
+      );
     },
   },
   {

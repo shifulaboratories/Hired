@@ -36,16 +36,18 @@ once. It is separate from Google sign-in and is never used to sign anyone in.
   </Step>
 </Steps>
 
-The Microsoft option appears on the account picker the moment both are saved, and
-disappears again if the client ID is cleared. Accounts already connected keep working until
-their token next needs refreshing, then show as needing reconnecting.
+The Microsoft option is always on the account picker; until both halves are saved it sits
+there greyed out and unclickable, reading "Needs an admin: Admin → Configuration →
+Accounts". Clearing either one greys it out again. Accounts already connected keep working
+until their token next needs refreshing, then show as needing reconnecting.
 
 By conversation: `admin_get_microsoft_config`, `admin_set_microsoft_config`.
 
 ## What is stored
 
-A refresh token per connected account, as Microsoft issues it, the same way MCP connection
-tokens are stored. Microsoft rotates refresh tokens on use and the app keeps the newest.
-Nothing read through a token is ever written to the database, and disconnecting deletes the
-row. Microsoft has no revoke endpoint for a single app; a person who wants to be certain can
-also remove the app under their Microsoft account's privacy settings.
+A refresh token per connected account, as Microsoft issues it, plus the short-lived access
+token it buys and when that expires — stored the same way MCP connection tokens are.
+Microsoft rotates refresh tokens on use and the app keeps the newest. Nothing read through a
+token is ever written to the database, and disconnecting deletes the row. Microsoft has no
+revoke endpoint for a single app; a person who wants to be certain can also remove the app
+under their Microsoft account's privacy settings.

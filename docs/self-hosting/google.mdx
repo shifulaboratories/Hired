@@ -5,8 +5,10 @@ icon: "google"
 ---
 
 Passwords always work. Adding a Google OAuth client puts a **Continue with Google** button
-on the sign-in page as well, and clearing the client ID takes it away again — nothing else
-changes either way, so it is a safe thing to try.
+on the sign-in page as well, and clearing the client ID takes it away again. The same
+client is what lets people connect Gmail and Calendar, though, so clearing it also greys
+out the Google option under **Settings → Connections** and stops the accounts already
+connected there.
 
 ## Setting it up
 
@@ -43,7 +45,7 @@ Google work:
     **APIs & Services → Library**: enable the **Gmail API** and the **Google Calendar
     API** in the project that owns the OAuth client. Without them, a connect succeeds and
     every read fails with Google's "API has not been used in project" message — it is
-    shown on the page and in Health, and names the project.
+    shown on the page that asked for it, and names the project.
   </Step>
   <Step title="Add the scopes to the consent screen">
     **APIs & Services → OAuth consent screen → Scopes**: add

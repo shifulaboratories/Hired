@@ -55,10 +55,11 @@ So: every claim on a resume traces to something already in Me. If the evidence
 is not there, say so and ask. An honest gap is a conversation. A confident
 overstatement is something they have to defend in a room.
 
-Call `list_notes` and read the ones whose `kind` is `GUARDRAIL` — it takes no arguments
-and returns everything, so pick them out of the result. This person may have written down
-specific things they have been burned by. Those override anything you would otherwise
-infer, and they are also carried in the briefing you were given on connect.
+Call `list_notes` and read the ones whose `kind` is `GUARDRAIL` — it takes a `limit`, a
+hundred by default, and says so when it cut the list off, so pick them out of the result.
+This person may have written down specific things they have been burned by. Those
+override anything you would otherwise infer, and they are also carried in the briefing
+you were given on connect.
 
 ## Replace versus append
 

@@ -126,12 +126,16 @@ Rules that hold up:
     Check it lands near one page **before** saving anything.
   </Step>
   <Step title="Save it">
-    `create_resume`, named `"<Company> — <Role>"`, with `targetRole` and `targetCompany`
-    set. Adapting an existing one? `duplicate_resume` first and edit the copy — never the
-    version already attached to an application.
+    Already have a base resume? `duplicate_resume` it and edit the copy — never the
+    version already attached to an application. That records where it came from, so
+    `compare_resumes` can show what the tailoring changed. Nothing to duplicate from?
+    `create_resume`. Either way, name it `"<Company> — <Role>"` and set `targetRole` and
+    `targetCompany`.
   </Step>
   <Step title="Hand back the honest summary">
-    What was led with, what was cut, and what could not be evidenced.
+    What was led with, what was cut, and what could not be evidenced. Then check it rather
+    than remembering it: `trace_resume_evidence` reads the saved document back and says,
+    for every bullet, which material in Me stands behind it — and which nothing does.
   </Step>
 </Steps>
 

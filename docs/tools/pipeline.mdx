@@ -209,6 +209,9 @@ Move a batch of applications to the same stage — the tool for 'close out every
 | --- | --- | --- |
 | `ids` | string[] | **required** — The application ids to move |
 | `stage` | enum | **required** — The stage they all move to  `WISHLIST` · `APPLIED` · `INTERVIEWING` · `OFFER` · `ACCEPTED` · `LOST` |
+| `interviewRound` | number | Which round this puts them all in, counting from 1. Only read when moving to INTERVIEWING. |
+| `roundLabel` | string | What that round is called — 'Phone screen', 'Onsite'. Applied to all of them. |
+| `lossReasons` | string[] | Why they ended, by name — the same reasons on every one. REPLACES any already on them. Only read when moving to LOST. |
 
 ### `move_application_stage`
 

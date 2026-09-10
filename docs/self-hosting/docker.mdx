@@ -31,7 +31,7 @@ Every one is optional. Put them in a `.env` file next to `docker-compose.yml`:
 | Variable | What it does |
 | --- | --- |
 | `ADMIN_EMAIL` | Owner email instead of `owner@localhost`. |
-| `APP_PASSWORD` | Owner password instead of a generated one. |
+| `APP_PASSWORD` | Owner password instead of a generated one. Read once, on the boot that first creates the owner account — setting it later changes nothing. |
 | `PUBLIC_URL` | The sign-in address printed in the startup banner beside your owner password. Invite links come from **Public URL** in **Admin → Configuration**, not from this. |
 | `POSTGRES_PASSWORD` | Database password. The database is not reachable from outside the compose network, which is why a default is acceptable — set one anyway if your host is shared. |
 | `PORT` | Host port to listen on. The container stays on 3000. |

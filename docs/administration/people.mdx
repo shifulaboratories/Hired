@@ -46,6 +46,13 @@ would let hold the owner's own connection URL.
 a password, and land in their own empty workspace. Links stay valid for 14 days. What is
 still outstanding is listed under the form, with a link to copy and a control to revoke.
 
+You can choose the password yourself instead. The form takes one, and then the accept page
+asks the person only for their name. It is never put in the invitation email — a message
+carrying both the link and the password it opens *is* the account, sent to an address
+nobody has proven yet — so tell them some other way. Pair it with **must change password**
+when you would rather not keep a way in: they replace yours the moment they are through
+the door.
+
 Email is optional. Until Resend is configured, creating an invite gives you a link to send
 however you like — nothing is blocked on it.
 
@@ -61,8 +68,10 @@ That is [`onboard_teammate`](/workflows#invite-and-onboard-someone): it checks w
 email is configured and says so plainly if not, creates the invitation, hands you the
 accept URL in full when no email went out, and drafts the message to send.
 
-`admin_list_invites` shows what is outstanding with links and expiry.
-`admin_revoke_invite` cancels one so its link stops working.
+`admin_list_invites` shows what is outstanding with links, expiry, and whether a password
+was set on each — never the password itself. `admin_set_invite_password` puts one on an
+invitation that has already gone out, or clears it with an empty string, without changing
+the link you already sent. `admin_revoke_invite` cancels one so its link stops working.
 
 ## When somebody cannot get in
 

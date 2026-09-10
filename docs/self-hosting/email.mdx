@@ -23,7 +23,7 @@ moment somebody asks for access through the waitlist.
     that fails, and it is worth doing properly first.
   </Step>
   <Step title="Paste the key and the from address">
-    **Admin → Configuration → Resend.** The API key starts with `re_`. The from address
+    **Admin → Configuration → Email.** The API key starts with `re_`. The from address
     must be on the domain you just verified.
   </Step>
   <Step title="Send a test">
@@ -47,16 +47,17 @@ returns the exact error when it does not.
 
 <Steps>
   <Step title="Check whether it left at all">
-    `admin_user_detail` on the account says whether the invitation email actually went
-    out. That single fact tells you whether the problem is the account or the email, and
-    it is worth knowing before you reset anything.
+    `admin_list_invites` says whether it left: every outstanding invitation carries
+    `emailSent`, and `emailError` with Resend's exact words when the send was refused. An
+    invitation is not an account until somebody accepts it, so `admin_user_detail` has
+    nothing to look up yet.
   </Step>
   <Step title="Read the failure">
     `admin_recent_errors` with `source: "email.send"` carries the specifics. Entries older
     than 30 days are removed automatically.
   </Step>
   <Step title="Send the link by hand">
-    `admin_list_invites` returns outstanding invitations with their links and expiry. Send
-    one however you like — it is the same link the email would have carried.
+    That same list carries each invitation's link and expiry. Send one however you like —
+    it is the link the email would have carried.
   </Step>
 </Steps>

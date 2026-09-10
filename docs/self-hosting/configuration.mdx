@@ -6,8 +6,8 @@ icon: "sliders"
 
 `DATABASE_URL` is the only thing this app asks of its host. Every other setting lives in
 the database, which is what makes **Admin → Configuration** possible: every setting the
-instance stores, grouped into Instance, Email and Billing, with what each one does written
-next to the box you type it in.
+instance stores, grouped into Instance, Sign-in, Accounts, Email and Billing, with what
+each one does written next to the box you type it in.
 
 Change one and it takes effect on the next request. There is nothing to redeploy.
 
@@ -26,10 +26,14 @@ been configured here".
 | `public_url` | Instance | Where this instance is reachable from outside. Invitation links and the Stripe webhook URL are built from it. Left empty, the app guesses from the incoming request — right until something sits in front of it. | *(empty)* |
 | `landing_url` | Instance | The marketing site in front of this instance, if it has one. On a domain shared with the app, signing in leaves a flag there so somebody already signed in who lands on the marketing page is sent through to the app. | *(empty)* |
 | `company_logos` | Instance | Shows each company's favicon in the pipeline. | On |
+| `mcp_allowed_origins` | Instance | Browser origins allowed to call the MCP endpoint, comma separated. This instance's own address and anything on localhost are always allowed and need no listing. Almost every client connects from a server or a desktop app and sends no origin, so empty is normally right. | *(empty)* |
+| `archive_retention_days` | Instance | How many days a deleted company, person or application waits in the archive before it goes for good. Everyone on the instance gets the same window. 0 keeps everything until somebody empties it by hand. | `30` |
 | `google_client_id` | Sign-in | OAuth client ID from the Google Cloud console. Setting it puts a Continue with Google button on the sign-in page. | *(empty)* |
 | `google_client_secret` | Sign-in | The secret for that OAuth client. | *(empty)* |
 | `google_allow_signup` | Sign-in | Whether a Google account nobody invited may create an account here. | Off |
 | `google_allowed_domains` | Sign-in | Comma-separated domains a new Google sign-up must be on. Only consulted when sign-up is on. | *(empty)* |
+| `microsoft_client_id` | Accounts | Application (client) ID of an app registration in Microsoft Entra. Setting it lets each person connect their Microsoft 365 or Outlook.com mail and calendar under Settings → Connections. Never used for signing in. | *(empty)* |
+| `microsoft_client_secret` | Accounts | A client secret from that same app registration. Stored on your server and never shown again. Entra secrets expire, two years at most. | *(empty)* |
 | `resend_api_key` | Email | Starts with `re_`. Stored on your server and never shown again. | *(empty)* |
 | `resend_from_email` | Email | The address invitations are sent from, on a domain verified in Resend. | *(empty)* |
 | `resend_from_name` | Email | Display name on outgoing mail. | `Hired` |

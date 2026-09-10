@@ -98,8 +98,11 @@ In the pages that follow, a tool marked **Overwrites or deletes** carries
     `update_application` all **replace** the fields you pass rather than merging into
     them. Read the record, modify what you got back, send the whole thing.
 
-    `append_role_background` is the additive counterpart, and it is the right call
-    whenever somebody says something new about a job already on file.
+    `append_role_background` is the additive counterpart in Me, and it is the right call
+    whenever somebody says something new about a job already on file. Resumes have their
+    own: `add_role_to_resume` brings one job into a document that already exists, and
+    `reorder_resume` moves sections and bullets around inside one. Neither resends the
+    document, so neither can drop a section.
   </Accordion>
 
   <Accordion title="List filters fail loudly" icon="triangle-exclamation">

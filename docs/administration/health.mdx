@@ -42,7 +42,11 @@ address of whoever's request hit it.
 | `stripe.webhook` | Deliveries, including successful ones. |
 | `billing.sync` | Reconciliation runs. |
 | `email.send` | Invitations and test sends. |
+| `google.signin` | Sign-ins through Continue with Google. |
+| `google.data` | Reads of somebody's connected Gmail and Calendar. |
+| `microsoft.data` | The same for a connected Microsoft 365 account. |
 | `mcp.tool` | Tool calls that threw. |
+| `mcp.origin` | Requests refused because a browser named an origin this instance does not allow. This is what a client that suddenly stopped working looks like, and the entry names the address so you can decide whether to add it under **Extra MCP origins**. |
 | `app` | Pages that errored. |
 
 <Note>
@@ -68,5 +72,6 @@ Entries older than 30 days are removed automatically. Default 50 entries, maximu
 
 > Is anyone actually using their assistant?
 
-The health check reports when a tool call last arrived. `list_connections` on an individual
-account shows the same thing per client, including what called in.
+The health check reports when a tool call last arrived anywhere on the instance.
+`admin_user_detail` narrows that to one account: every assistant they have connected, when
+each last called, and what called in.

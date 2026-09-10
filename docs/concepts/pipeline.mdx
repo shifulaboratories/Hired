@@ -1,6 +1,6 @@
 ---
 title: "The pipeline"
-description: "Ten stages including four different endings, an activity timeline, tasks, follow-up dates that set themselves, saved views, and a read-only link for whoever is helping you."
+description: "Six stages with two endings, an activity timeline, tasks, follow-up dates that set themselves, saved views, and a read-only link for whoever is helping you."
 icon: "list-check"
 ---
 
@@ -137,11 +137,11 @@ a tag is created only when nothing matches. Call `list_tags` first either way.
   Both `tagIds` and `tags` REPLACE the whole set on an application, like every other array
   in this API. Read the current one with `get_application` before writing it back.
 
-  `sources`, `sourceIds` and `source` still work: tags were called sources until they grew
+  `sources` and `source` still work: tags were called sources until they grew
   to cover companies and people too. `tags` wins wherever both are passed.
 </Note>
 
-A new workspace is offered LinkedIn, Job board, Company site, Referral, Recruiter reached
+A new workspace is offered LinkedIn, Indeed, Company site, Referral, Recruiter reached
 out and Cold outreach as a one-click start. They are a seed, not a fixture: accept them and
 they are your rows, to rename, recolour or throw away.
 
@@ -183,14 +183,15 @@ Moving out of `WISHLIST` for the first time also stamps the applied date, if it 
 already set.
 
 Contacts have their own version: `nextFollowUpAt` on a person is where "ping Sarah in two
-weeks" lives. In the app, both land on **Tasks**.
+weeks" lives. In the app, both land on **Today**.
 
 ### Three ways to ask what is due
 
 <CardGroup cols={3}>
   <Card title="list_follow_ups" icon="bell">
-    What is already due, or due within N days. Returns two lists: applications whose date
-    has arrived, and contacts whose ping has. Both are work.
+    What is already due, or due within N days. Returns three lists: applications whose date
+    has arrived, contacts whose ping has, and tasks that are due or already late. All three
+    are work.
   </Card>
   <Card title="list_schedule" icon="calendar-days">
     Everything dated between two dates, merged and sorted: follow-ups, task deadlines and
@@ -235,7 +236,7 @@ rather than two trips, and so are "interviewing but only the overdue ones" and "
 only the ghostings".
 
 Everything lives behind the **Filter** button beside the search: the stage, its tags, the
-company, which resume went out, how long it has sat still, and how much you want it. It
+company, which resume went out, how long it has sat still, and how long since anything was logged. It
 opens on the dimensions rather than on every value at once — click **Stage** and you get the
 stages, click **Company** and you get companies — and typing searches across all of them
 together, saying which dimension each match came from. Every count you see is counted
@@ -269,11 +270,12 @@ view=list&f=APPLIED,INTERVIEWING&sort=waiting&dir=desc
 | Parameter | Values |
 | --- | --- |
 | `view` | `board`, `list`, `calendar` |
-| `f` | Comma-separated stages, plus `overdue` as a flag. `closed` expands to the four endings. |
+| `f` | Comma-separated stages, plus `overdue` as a flag. `closed` expands to both endings. |
 | `src` | Comma-separated tag ids. Spelled `src` because tags were called sources when saved views started storing them, and renaming it would break every view already saved. |
 | `co` | Comma-separated company ids |
 | `cv` | Comma-separated resume ids, or `none` for the ones with no resume attached |
 | `w` | Minimum days sitting in the current stage |
+| `qd` | Minimum days since anything was logged |
 | `sort`, `dir` | Column and direction |
 | `q` | Search text — company, role, notes, location, work mode, the posting, and tag names |
 | `month` | `YYYY-MM`, for the calendar view |

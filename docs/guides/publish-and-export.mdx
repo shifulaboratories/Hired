@@ -91,10 +91,11 @@ download and nothing to expire.
 Server-side rendering needs a Chromium on the machine. The Docker image ships one, so a
 compose deploy has working one-click PDF from first boot. A stock Railway deploy does not.
 
-Where it is missing, the **PDF** button says so and the fallback still works:
-**⋯ → Open print view**, then your browser's **Save as PDF** with margins set to
-**None**. Same document, one more step. `export_resume_pdf` reports the same thing rather
-than failing silently.
+Where it is missing, the editor doesn't offer **PDF** at all — the same slot becomes
+**Save as PDF**, which opens the print view in a new tab. From there it's your browser's
+**Save as PDF** with margins set to **None**. Same document, one more step.
+(**⋯ → Open print view** reaches the same page on any host.) `export_resume_pdf` reports
+the same thing rather than failing silently.
 
 [Getting one-click PDF on a host without Chromium →](/self-hosting/pdf)
 
@@ -111,8 +112,8 @@ For the measured answer, export the PDF — the page count comes back with it.
 
 An application can have a resume attached, and `diagnose_search` reports the response rate
 of each resume so you can see which one is actually working. That is only true if you
-attach them, which is one field on the application — `resumeId`, or the cell in the
-pipeline table.
+attach them, which is one field on the application — `resumeId`, or the **Resume used**
+picker on the application panel.
 
 <Tip>
   Never edit a resume that is already attached to an application. That is the version you

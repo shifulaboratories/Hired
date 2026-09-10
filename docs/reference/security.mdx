@@ -42,14 +42,18 @@ on a member — so an admin with a connection can promote one. It gains that adm
 they did not already have, but it does mean the admin set is not the owner's to control
 alone. Treat an admin account as trusted accordingly.
 
-Every administrative action is written to the audit log with the acting admin's name,
-values included for everything that is not a secret. Secrets are recorded as having been
-set, never as their value. Audit rows survive the deletion of the account they describe.
+Every administrative action is written to the audit log with the acting admin's email
+address, values included for everything that is not a secret. Secrets are recorded as having
+been set, never as their value. Audit rows survive the deletion of the account they
+describe.
 
 ## Connection tokens
 
 A connection URL contains a secret token tied to **one account**. It cannot reach anyone
-else's data. It can read and write all of that account's data.
+else's data. It can read and write all of that account's data — and where that person has
+connected a mailbox or a calendar, read those too. `list_correspondence`, `search_email`,
+`get_email_thread` and `search_calendar` are ordinary tools, available to anyone holding
+the URL. They are read-only, and nothing they return is stored here.
 
 - **Treat it like a password.** Never in a chat, a ticket, a screenshot or a repository.
 - **One per client.** That is what makes revocation surgical rather than all-or-nothing.
@@ -135,11 +139,12 @@ would send one to is someone you already decided to send it to.
 ## What connected assistants are told
 
 Before an assistant sees a single tool, it receives a briefing generated for the account
-it is connected as. It carries the four areas, which tool to reach for first in each, the
-fact that deleting a company, a person or an application archives it and that emptying that
-archive is one of only two acts on the server that cannot be undone, the fact that
-connection URLs are credentials that must never be repeated where they will be stored — and
-the standing rules:
+it is connected as. It carries the five areas — Me, resumes, the pipeline, the CRM, and
+mail and calendar — plus the tags that cut across them, which tool to reach for first in
+each, the fact that deleting a company, a person or an application archives it and that
+emptying that archive is one of only two acts on the server that cannot be undone, the fact
+that connection URLs are credentials that must never be repeated where they will be
+stored — and the standing rules:
 
 - Never invent experience, employers, dates or metrics. Everything on a resume must trace
   back to something in Me. If evidence is missing, say so and ask.
@@ -158,9 +163,10 @@ the standing rules:
 - The profile photo is one picture the whole app shares. Only ever use a file or link the
   user gave you; never find them a picture.
 
-Your own [standing rules](/concepts/me#standing-rules) are appended to that briefing,
-under a header saying they override any inference the assistant would otherwise make. They
-share a 4,096-character budget; if you have more than fits, the rest are dropped — and the
+Your own [standing rules](/concepts/me#standing-rules) come first in that briefing, ahead of
+everything but the line naming whose workspace it is, under a header saying they override
+any inference the assistant would otherwise make. They share a 1,000-character budget,
+header and notice included; if you have more than fits, the rest are dropped — and the
 briefing says so out loud rather than truncating them silently, so the assistant knows some
 are missing and you can trim them.
 
@@ -173,8 +179,9 @@ Very little, and all of it is optional.
 | Company favicons from `twenty-icons.com` | Only if company logos are on. Each viewer's browser makes the request, so that service can see which companies are in a pipeline. | Turn logos off instance-wide. |
 | Invitation and notification email, via Resend | Only if email is configured. | Do not configure it — invites still work as links. |
 | Stripe API calls | Only if billing is configured. | Do not configure it. |
-| Fetching a job posting page | Only when `capture_job_posting` is called. | Do not call it. |
+| Fetching a job posting page | When `capture_job_posting` is called, and when you paste a link into the new-application dialog. | Do not call it, and paste the description in by hand rather than the link. |
 | Fetching an image URL | Only when `set_profile_photo` is given an `https` URL. | Pass the bytes instead. |
+| Reading your mail and calendar | Only if you connected an account under **Settings → Connections**: Google, Microsoft 365, or your own IMAP and CalDAV servers. Every read is live and read-only, and nothing that comes back is stored here. | Disconnect the account. That deletes the credential, which is the only thing this instance was holding. |
 
 Nothing else. No analytics, no telemetry, no webfont on a rendered document.
 

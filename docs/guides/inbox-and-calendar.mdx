@@ -11,7 +11,7 @@ calendar view shows the interview you accepted in Google Calendar, and an assist
 
 ## Connecting
 
-**Settings → Connections → Connect an account.** Three kinds, and you can connect more than
+**Settings → Connections → Connect → Accounts.** Three kinds, and you can connect more than
 one if recruiters write to more than one:
 
 - **Google.** A consent screen asks for read-only access to Gmail and Calendar; leave either
@@ -33,10 +33,11 @@ one if recruiters write to more than one:
   sends.
 </Note>
 
-If Google or Microsoft is missing from the picker, the instance has no client for it yet.
-That is an admin's job: [Google sign-in](/self-hosting/google) for Google, which powers
-Continue with Google too, and a [Microsoft app registration](/self-hosting/microsoft) for
-Microsoft. IMAP and CalDAV need nothing from an admin.
+If the Google or Microsoft tile is greyed out and says it needs an admin, the instance has
+no client for it yet. That is an admin's job: [Google sign-in](/self-hosting/google) for
+Google, which powers Continue with Google too, and a
+[Microsoft app registration](/self-hosting/microsoft) for Microsoft. IMAP and CalDAV need
+nothing from an admin.
 
 Open any account's tile to **Test** it — one read from each half, with the provider's own
 words when something is wrong — rename it, reconnect it, or disconnect it.
@@ -55,9 +56,9 @@ words when something is wrong — rename it, reconnect it, or disconnect it.
   calendar, appear alongside your follow-ups and tasks, and `list_schedule` returns them the
   same way. The same interview on a work and a personal calendar shows once.
 
-Open a thread on any of those and it expands in place; **Open in Gmail** or **Open in
-Outlook** takes you to the real thing where the provider has somewhere to go. An IMAP
-account has no web client to link to, so its threads only expand.
+Open a thread on any of those and it expands in place, with a link out underneath it. The
+link says **Open in Gmail** whichever account the thread came from, and only goes somewhere
+for Google and Microsoft — an IMAP account has no web client to link to.
 
 ## What to say
 

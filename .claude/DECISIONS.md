@@ -5986,3 +5986,40 @@ take a `limit` (default 100, 200 for highlights, ceiling 500) and a truncated re
 carries the count it was cut from — as its own content block BEFORE the data, using the
 same idiom as `withLinks`, because a notice sitting behind the payload is a notice behind
 the thing that gets truncated.
+
+## 2026-09-10 — The manual audited against the code, and the bug that found
+
+Every hand-written page in `docs/` was read against the code by one agent and each of its
+findings independently verified by another before anything was edited. Twenty-six pages
+were wrong about something. The pattern worth remembering is that almost none of it was
+prose drift: it was the app changing underneath sentences that stayed true-sounding.
+
+**Buttons.** The quickstart, the connect page and the Railway guide all sent people to a
+**Set up** button and a **Rotate** button. Neither exists — a connection row is itself the
+button, and the one that issues a fresh URL reads **New URL**. The README said it too.
+Somebody following those sentences had nothing to look for, and nothing in the toolchain
+could have caught it.
+
+**Counts and names.** Ten stages on the front page, four endings in the glossary, "Table"
+for a view called List, "CRM" for a sidebar entry called People, `list_follow_ups`
+returning two lists when it returns three, seven workflows when there are eight.
+
+**One real bug.** `move_applications_stage` has always told the assistant, in its own
+description, to pass `lossReasons` when closing a batch out. Its `inputSchema` never
+accepted one, so an assistant that did as it was told had the argument silently dropped and
+the whole batch landed in LOST with no reason on it — which is the exact failure the
+description exists to prevent. Fixed by making the tool true rather than the description
+smaller: the bulk mover now takes `lossReasons`, `interviewRound` and `roundLabel` and
+passes them through to every application. Verified against a real database: both the bulk
+and the single path leave the same LOSS tag on the row.
+
+That is the second time this session a tool description promised something the schema did
+not deliver — `inbox_review` naming a tool that has never existed was the first. Both were
+found by reading the docs against the code, not by reading the code. Worth doing again
+after any change to `tools.ts`.
+
+**What the manual now says about the protocol.** The connect page describes five areas
+rather than four, says the standing rules come near the top of the briefing rather than at
+the end, and gives their real budget. `docs/self-hosting/configuration.mdx` had four
+declared instance variables it never documented, `mcp_allowed_origins` among them.
+`docs/administration/health.mdx` listed five event sources out of nine.

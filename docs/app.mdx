@@ -13,7 +13,7 @@ and Resumes is a tab on Me, because both are a second look at something you alre
 open rather than a separate filing cabinet.
 Docs, this manual, Settings and — for admins — Admin are account actions, so they live in
 the profile menu at the top right instead. `⌘K` / `Ctrl+K` opens a search palette: somewhere to go,
-something to create, and every role, resume and application by name.
+something to create, and every role, resume, application, company and person by name.
 
 Beside the profile menu is a bell. It carries one number — everything with a date that has
 come round: follow-ups due, people you meant to ping, tasks past their date — and opens
@@ -74,9 +74,11 @@ second tab rather than a screen of its own, one click from the list and never in
 it. `/analytics` still works and lands here.
 
 At the top, the funnel drawn as a flow chart: every application enters on the left as
-"Applied", the survivors carry across to the phone screen, the interview, the final round
-and the offer, and everything that leaves peels off sideways to where it went — rejected,
-no response, withdrew, offer accepted, still going. An application that was rejected after
+"Applied", the survivors carry across to the interview rungs and then the offer — one rung
+called Interviewing until you start numbering rounds, then Round 1, Round 2 and so on up to
+six — and everything that leaves peels off sideways to where it went: the loss reason you
+tagged it with, offer accepted, plain "Lost" where you tagged no reason, and "still going"
+for whatever is sitting there now. An application that was rejected after
 two interviews leaks out of the interview rung, not the applied one, because progress is
 measured by how far it actually got. A rung nobody was ever in is not drawn at all.
 
@@ -159,10 +161,11 @@ One toolbar across the top picks the view, the cut and the search.
 
 <AccordionGroup>
   <Accordion title="Board" icon="table-columns">
-    Drag-and-drop across the six live stages. The four endings get their own view rather
-    than a column each.
+    Drag-and-drop across the four live stages: Wishlist, Applied, Interviewing, Offer. The
+    two endings are not columns — anything accepted or lost lists under the board, and the
+    Filter's **Closed** row is how you look at only those.
   </Accordion>
-  <Accordion title="Table" icon="table">
+  <Accordion title="List" icon="table">
     Sortable, resizable, and it edits in place — stage, follow-up, salary and location are
     the cells themselves, with dates on a calendar rather than a browser's own date box. Two columns count days and they answer different questions:
     **Waiting** is how long it has sat in the stage it is in, **Quiet** is how long since
@@ -178,16 +181,22 @@ One toolbar across the top picks the view, the cut and the search.
 
 Filters combine — all of them, with each other. The **Filter** button holds every
 dimension: the stage, the tags, the company, which resume went out, how long something has
-sat still and how much you want it. It opens on the dimensions and you step into one, so a
+sat still and how long since anything was logged. It opens on the dimensions and you step into one, so a
 list of stages is a click rather than a scroll past forty companies. Two chips stay above
 the board — **Everything** and **Needs a nudge** — because what is overdue is the one cut
 worth reaching from anywhere. A cut worth keeping saves under a name.
 
 Opening an application slides it in from the right, so you keep your place on the board.
 The people you are talking to come first, then the resume you sent — drawn as the page it
-is, not named in a dropdown — then the timeline. The posting itself is folded away, because
-you pasted it once and it is the thing on that screen you look at least. The employer is a
+is, not named in a dropdown. That is the Overview tab, and three more sit beside it: the
+timeline, the posting you pasted once, and your notes. The employer is a
 chip: click it for their research, their people and the other roles you have there.
+
+Two fields appear only when they mean something. While it is interviewing, a round number
+and an optional name for that round — the board deliberately shows neither, because on the
+small picture they are noise, and the funnel is where they pay off. Once it is lost, the
+reason, as one or more tags you pick or type. Neither is required, and an ending with no
+reason on it tells the funnel only that it stopped.
 
 ## Archive
 

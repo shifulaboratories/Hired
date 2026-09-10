@@ -121,6 +121,11 @@ Three routes, and they suit different moments.
   changed deletes the rest.
 </Warning>
 
+Two tools exist so that a whole-document rewrite is not the only way. `add_role_to_resume`
+brings one job over from Me into a document that already exists, and `reorder_resume`
+moves sections and bullets around within one. Both leave everything they did not touch
+alone, so neither can drop a section the way a partial `update_resume` would.
+
 ### Checking length before you commit
 
 `preview_resume_text` renders a document to plain text and estimates the lines it will

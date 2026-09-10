@@ -94,10 +94,13 @@ icon: "screwdriver-wrench"
   </Accordion>
 
   <Accordion title="diagnose_search gives advice that seems wrong" icon="gauge">
-    Check the reason on your lost applications. Silence tagged "Rejected" reads as people
-    deciding against you; tagged "Ghosted" it reads as a non-response. Those two produce
-    different advice, and the second one is usually the true story. A `LOST` with no reason
-    on it tells the funnel only that it stopped.
+    The reason an application ended is not an input. `diagnose_search` reads how far each
+    one ever got — its stage history and `interviewRound` — plus how many you send a week,
+    how long each stage takes and which resume gets answered; a round nobody numbered
+    counts as the first one, so deep interviews left unnumbered read as shallow ones.
+    Reasons are what the funnel reads: `get_funnel` splits each rung's endings by their
+    LOSS tag, so "Ghosted" and "Rejected" separate there rather than in the advice, and a
+    `LOST` with no reason on it tells the funnel only that it stopped.
   </Accordion>
 
   <Accordion title="Research notes were overwritten" icon="building">
@@ -117,9 +120,10 @@ icon: "screwdriver-wrench"
   </Accordion>
 
   <Accordion title="An invitation never arrived" icon="envelope">
-    `admin_user_detail` says whether the email actually left, which tells you whether the
-    problem is the account or the email. `admin_list_invites` gives you the link to send by
-    hand. [Email →](/self-hosting/email)
+    `admin_list_invites` is where an unaccepted invitation lives: it carries `emailSent`,
+    the exact `emailError` when the send failed, and the link to send by hand. Nobody has
+    an account until they accept, so `admin_user_detail` has nothing to look up yet — that
+    one is for somebody already in. [Email →](/self-hosting/email)
   </Accordion>
 
   <Accordion title="A test email fails" icon="envelope-circle-check">
