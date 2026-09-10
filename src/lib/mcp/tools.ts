@@ -204,11 +204,20 @@ const LIST_CEILING = 500;
 function capped<T>(rows: T[], asked: number | undefined, fallback: number): T[] | NoticedResult {
   const max = Math.min(Math.max(Math.trunc(asked ?? fallback), 1), LIST_CEILING);
   if (rows.length <= max) return rows;
-  return withNotice(
-    rows.slice(0, max),
-    `Showing the first ${max} of ${rows.length}. This list was cut off — narrow it with the ` +
-      `filters this tool takes rather than reporting these as everything, or raise \`limit\` ` +
-      `(up to ${LIST_CEILING}) if you genuinely need more.`,
+  return withNotice(rows.slice(0, max), truncationNotice(max, rows.length));
+}
+
+/**
+ * The one wording for "this got cut off", so the two places that cap say the
+ * same thing. Both numbers describe the WHOLE result, not whichever slice the
+ * caller happened to cap — a notice saying "97 of 140" above a hundred rows is
+ * worse than no notice, because it reads as a bug rather than a boundary.
+ */
+function truncationNotice(shown: number, total: number): string {
+  return (
+    `Showing the first ${shown} of ${total}. This list was cut off — narrow it with the ` +
+    `filters this tool takes rather than reporting these as everything, or raise \`limit\` ` +
+    `(up to ${LIST_CEILING}) if you genuinely need more.`
   );
 }
 
@@ -440,8 +449,20 @@ const COLUMN_LIST_VALUES = ["pipeline", "companies", "contacts"] as const;
  * assistant's context with a picture it cannot look at, so every tool that
  * hands back a profile reports whether one is set and leaves the bytes here.
  */
+/**
+ * The profile as an assistant should see it.
+ *
+ * The photo is a data URI that would be tens of kilobytes of base64 in a tool
+ * result nothing can do anything with, so it becomes a boolean. The row id and
+ * updatedAt go too: there is one profile per person, so the id is never an
+ * argument to anything, and an account that has never saved has no row — which
+ * used to surface as an empty id and a 1970 timestamp, from which a model can
+ * only draw a wrong conclusion.
+ */
 function withoutPhotoBytes<T extends { photo: string }>(profile: T) {
-  const { photo, ...rest } = profile;
+  const { photo, ...rest } = profile as T & { id?: unknown; updatedAt?: unknown };
+  delete rest.id;
+  delete rest.updatedAt;
   return { ...rest, hasPhoto: Boolean(photo) };
 }
 
@@ -915,7 +936,7 @@ export const tools: McpTool[] = [
     name: "list_notes",
     title: "List notes",
     description:
-      "Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything. Capped, and the result says so when it was cut off; search_me is the better tool when you are looking for something specific.",
+      "Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything. Capped, and the result says so when it was cut off — except for standing rules, which are never cut. search_me is the better tool when you are looking for something specific.",
     inputSchema: object({ limit: limitArg(100) }),
     annotations: {
       readOnlyHint: true,
@@ -923,7 +944,27 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (args, ctx) => capped(await me.listNotes(ctx.userId), n(args, "limit"), 100),
+    handler: async (args, ctx) => {
+      // Notes sort NOTE before GUARDRAIL, because that is the enum's order and
+      // Postgres sorts an enum by declaration. So a plain cap took the first
+      // hundred ordinary notes and dropped every standing rule — the one thing
+      // on this server that must never go missing, cut by the very feature
+      // added to stop things being cut silently.
+      //
+      // Guardrails are few by design and they come first now, whatever the
+      // limit. The cap applies to what is left.
+      const notes = await me.listNotes(ctx.userId);
+      const rules = notes.filter((note) => note.kind === "GUARDRAIL");
+      const rest = notes.filter((note) => note.kind !== "GUARDRAIL");
+      const max = Math.min(Math.max(Math.trunc(n(args, "limit") ?? 100), 1), LIST_CEILING);
+      const room = Math.max(max - rules.length, 0);
+      const rows = [...rules, ...rest.slice(0, room)];
+      // Counted over everything returned and everything on file, not over the
+      // slice that was capped — the rules are part of the answer.
+      return rows.length < notes.length
+        ? withNotice(rows, truncationNotice(rows.length, notes.length))
+        : rows;
+    },
   },
   {
     name: "create_note",
@@ -2028,7 +2069,7 @@ export const tools: McpTool[] = [
     name: "list_applications",
     title: "List applications",
     description:
-      "List job applications. By default the closed ones (ACCEPTED and LOST) are excluded. Every row carries two different numbers and they answer different questions: daysInStage is how long it has sat where it is, measured from the last stage change; quietDays is how long since ANYTHING happened to it — a logged call, an email, a stage move. 'What has gone quiet' is quietDays, and lastTouchAt is the date it counts from. Pass quietForDays to return only the ones past that many silent days, which is the fastest way to answer 'what needs chasing'.",
+      "List job applications. By default the closed ones (ACCEPTED and LOST) are excluded. Every row carries two different numbers and they answer different questions: daysInStage is how long it has sat where it is, measured from the last stage change; quietDays is how long since ANYTHING happened to it — a logged call, an email, a stage move. 'What has gone quiet' is quietDays, and lastTouchAt is the date it counts from. Pass quietForDays to return only the ones past that many silent days, which is the fastest way to answer 'what needs chasing'. Capped at 100 rows unless you raise `limit`, and a cut-off result says how many there were before the data, so narrow the filters rather than reporting a short list as everything.",
     inputSchema: object({
       stage: { type: "string", enum: STAGE_VALUES, description: "Only this stage" },
       includeClosed: bool("Include accepted / rejected / withdrawn"),
@@ -2331,13 +2372,15 @@ export const tools: McpTool[] = [
       {
         ids: strArray("The application ids to move"),
         stage: { type: "string", enum: STAGE_VALUES, description: "The stage they all move to" },
-        interviewRound: num("Which round this puts them all in, counting from 1. Only read when moving to INTERVIEWING."),
+        interviewRound: num(
+          "Which round they all reached, counting from 1. Recorded whatever the stage — 'rejected after round 3' is exactly how the funnel knows where they fell out.",
+        ),
         roundLabel: str("What that round is called — 'Phone screen', 'Onsite'. Applied to all of them."),
         lossReasons: {
           type: "array",
           items: { type: "string" },
           description:
-            "Why they ended, by name — the same reasons on every one. REPLACES any already on them. Only read when moving to LOST.",
+            "Why they ended, by name — the same reasons on every one. REPLACES any already on them, and an empty list clears them, whatever the stage.",
         },
       },
       ["ids", "stage"],
@@ -2373,13 +2416,15 @@ export const tools: McpTool[] = [
         id: str("Application id"),
         stage: { type: "string", enum: STAGE_VALUES, description: "The new stage" },
         note: str("Optional note for the timeline entry"),
-        interviewRound: num("Which round this puts it in, counting from 1. Only read when moving to INTERVIEWING."),
+        interviewRound: num(
+          "Which round it reached, counting from 1. Recorded whatever the stage, because 'rejected after round 3' is how the funnel knows where it fell out; moving to INTERVIEWING with none on file yet sets round 1.",
+        ),
         roundLabel: str("What that round is called — 'Phone screen', 'Take-home', 'Onsite'. Optional."),
         lossReasons: {
           type: "array",
           items: { type: "string" },
           description:
-            "Why it ended, by name. REPLACES any reasons already on it. Only read when moving to LOST.",
+            "Why it ended, by name. REPLACES any reasons already on it, and an empty list clears them, whatever the stage.",
         },
       },
       ["id", "stage"],
@@ -3196,7 +3241,7 @@ export const tools: McpTool[] = [
     name: "list_companies",
     title: "List companies",
     description:
-      "Every company on file, with how many applications and contacts each one has, plus lastAppliedAt (when you last applied there) and openApplications (how many are still live). Reach for this to answer 'who have I applied to', to find a companyId before get_company, or to cut the list down to something specific before working through it. Every row carries its tags: industry, size, location and free tags, all as labels rather than the single strings they used to be. Everything below ANDs, so one call asks for 'fintech, remote, never applied'. search matches the name, the website, your notes and any tag name. filter is one cut and only one. industryIds, sizeIds and locationIds each take tag ids of that kind from list_tags and match a company wearing ANY id in the group — so a group ORs inside itself and ANDs with the others. tagIds is the loose one: it matches a tag of any kind, which is what to use when you have an id and do not care which list it came from. missing finds the gaps worth fixing in one sitting, and those AND with each other. sort is name, applied, apps or people; every sort but name defaults to most-first, and companies you have never applied to sort last whichever way 'applied' points, because that is a question about the others. Ids only — call list_tags first to turn 'fintech' into an id; a name here would narrow nothing and hand you every company as if that were the answer. Archived companies are never returned; list_archive is where those are. Read-only: it saves nothing and creates no tags.",
+      "Every company on file, with how many applications and contacts each one has, plus lastAppliedAt (when you last applied there) and openApplications (how many are still live). Reach for this to answer 'who have I applied to', to find a companyId before get_company, or to cut the list down to something specific before working through it. Every row carries its tags: industry, size, location and free tags, all as labels rather than the single strings they used to be. Everything below ANDs, so one call asks for 'fintech, remote, never applied'. search matches the name, the website, your notes and any tag name. filter is one cut and only one. industryIds, sizeIds and locationIds each take tag ids of that kind from list_tags and match a company wearing ANY id in the group — so a group ORs inside itself and ANDs with the others. tagIds is the loose one: it matches a tag of any kind, which is what to use when you have an id and do not care which list it came from. missing finds the gaps worth fixing in one sitting, and those AND with each other. sort is name, applied, apps or people; every sort but name defaults to most-first, and companies you have never applied to sort last whichever way 'applied' points, because that is a question about the others. Ids only — call list_tags first to turn 'fintech' into an id; a name here would narrow nothing and hand you every company as if that were the answer. Archived companies are never returned; list_archive is where those are. Read-only: it saves nothing and creates no tags. Capped at 100 rows unless you raise `limit`, and a cut-off result says how many there were before the data, so narrow the filters rather than reporting a short list as everything.",
     inputSchema: object({
       search: str("Match name, website, notes or any tag — industry and location included"),
       tagIds: strArray("Only companies wearing one of these tags, of any kind. Ids from list_tags."),
@@ -3418,7 +3463,7 @@ export const tools: McpTool[] = [
     name: "list_contacts",
     title: "List contacts",
     description:
-      "Recruiters, hiring managers, referrals and the friend who might put in a word. Reach for this to find a contactId before get_contact or update_contact, to see who you already know somewhere before an interview, or to build the list you are about to work through. Returns each person with `companies` — a list, because someone can be a founder at one place and an advisor at another — their `tags`, their next ping date, the application they are attached to, and their most recent logged activity. Everything below ANDs. search matches name, title, relationship, email, notes, employer names and tag names. filter is one cut and only one. companyIds matches anyone linked to ANY of those companies — linked, not employed by, so an advisor at one of them counts; companyId is the single-company shorthand for the same thing. tagIds takes CONTACT tag ids from list_tags. quietDays is the networking question: everyone you have logged nothing against for at least that many days, counting from the day you added somebody you have never logged anything against at all, so people you filed and forgot come back rather than hiding behind a blank. missing finds the gaps: 'email' means nobody you can write to, 'tags' means filed under nothing so no tag filter will ever find them. sort is name, company (people with nobody on file last), ping (soonest first, no date last) or touch (longest since you logged anything, first). log_activity with a contactId is what moves the last-touch date; update_contact's nextFollowUpAt is what schedules the next ping. Archived people are never returned; list_archive is where those are. Read-only; it saves nothing.",
+      "Recruiters, hiring managers, referrals and the friend who might put in a word. Reach for this to find a contactId before get_contact or update_contact, to see who you already know somewhere before an interview, or to build the list you are about to work through. Returns each person with `companies` — a list, because someone can be a founder at one place and an advisor at another — their `tags`, their next ping date, the application they are attached to, and their most recent logged activity. Everything below ANDs. search matches name, title, relationship, email, notes, employer names and tag names. filter is one cut and only one. companyIds matches anyone linked to ANY of those companies — linked, not employed by, so an advisor at one of them counts; companyId is the single-company shorthand for the same thing. tagIds takes CONTACT tag ids from list_tags. quietDays is the networking question: everyone you have logged nothing against for at least that many days, counting from the day you added somebody you have never logged anything against at all, so people you filed and forgot come back rather than hiding behind a blank. missing finds the gaps: 'email' means nobody you can write to, 'tags' means filed under nothing so no tag filter will ever find them. sort is name, company (people with nobody on file last), ping (soonest first, no date last) or touch (longest since you logged anything, first). log_activity with a contactId is what moves the last-touch date; update_contact's nextFollowUpAt is what schedules the next ping. Archived people are never returned; list_archive is where those are. Read-only; it saves nothing. Capped at 100 rows unless you raise `limit`, and a cut-off result says how many there were before the data, so narrow the filters rather than reporting a short list as everything.",
     inputSchema: object({
       applicationId: str("Limit to one application"),
       companyId: str("Limit to people linked to one company"),

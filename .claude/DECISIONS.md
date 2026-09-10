@@ -6023,3 +6023,46 @@ rather than four, says the standing rules come near the top of the briefing rath
 the end, and gives their real budget. `docs/self-hosting/configuration.mdx` had four
 declared instance variables it never documented, `mcp_allowed_origins` among them.
 `docs/administration/health.mdx` listed five event sources out of nine.
+
+## 2026-09-10 — What an adversarial pass over the finished diff found
+
+Before the merge, the whole diff was read again by five reviewers on separate
+dimensions, each finding put to a verifier told to refute it. Six survived, and two
+of them were mine and serious. Worth recording because both were introduced BY a
+safety feature, which is the shape of mistake that gets past a careful author.
+
+**The list cap dropped every standing rule.** `listNotes` orders by `kind` ascending,
+Postgres sorts an enum by declaration order, and `NoteKind` declares `NOTE` before
+`GUARDRAIL`. So `list_notes` with the default cap of a hundred returned the first
+hundred ordinary notes and none of the guardrails — the one thing on this server that
+must never go missing, cut by the feature added to stop things being cut silently.
+Reproduced with 140 notes and three rules: zero rules returned. Guardrails now come
+first whatever the limit and the cap applies to what is left, and the notice counts
+the whole result rather than the slice that was capped, because "97 of 140" above a
+hundred rows reads as a bug.
+
+**`ensureProfile` was not atomic.** `upsert` with an empty `update: {}` gives Prisma
+nothing to update, so it reads and then inserts instead of emitting ON CONFLICT.
+Eight concurrent first writes on a fresh account produced seven unique-constraint
+failures. Not hypothetical: a new account has the browser seeding its time zone at
+the same moment an assistant writes the profile it was asked to fill in. Assigning
+`userId` to itself gives the update clause a field and makes it one statement; the
+same eight-by-eight measurement then passes clean.
+
+Four conformance gaps in the transport, each reproduced first: an unknown version
+named only in `params._meta` was served a legacy answer instead of a 400; `id: null`
+skipped every mirrored-header check while still running the tool; the unknown-method
+404 sat below the SSE return, so any client advertising text/event-stream got a 200;
+and a missing body field was reported as -32020, which is the code for headers.
+
+Two the pass got right about the origin check. Refusals were recorded at ERROR, and
+`instanceHealth` calls twenty ERROR rows in a day "down" — so the defence working
+would have reported a healthy instance as broken. And the settings row was read on
+every request carrying an Origin, including the same-origin and loopback ones that
+can never need it.
+
+**The pattern.** Every one of these was invisible to the compiler, the build and the
+existing probes, and every one was found by someone reading the diff against the code
+with an adversarial brief. On a repository with no CI and no test suite that pass is
+not optional, and the probe suite is where its findings go: 58 assertions now, each
+one a bug that was real once.

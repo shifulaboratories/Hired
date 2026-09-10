@@ -629,11 +629,12 @@ export async function acceptInvite(input: { token: string; name: string; passwor
           },
         });
     // The name and address they just typed are the header of every resume they
-    // will ever build, and they used to stop at the User row: getProfile
-    // creates an empty Profile on first read, so a brand-new account opened the
-    // resume editor with a blank name and had to type it a second time to find
-    // out why. An empty `update` so a re-run never overwrites something they
-    // have since edited by hand.
+    // will ever build, and they used to stop at the User row — so a brand-new
+    // account opened the resume editor with a blank name and had to type it a
+    // second time to find out why. This is now the only thing that puts them on
+    // the Profile at signup, since reading one no longer creates it. An empty
+    // `update` so a re-run never overwrites something they have since edited by
+    // hand.
     await tx.profile.upsert({
       where: { userId: created.id },
       create: { userId: created.id, fullName: input.name.trim(), email: invite.email },

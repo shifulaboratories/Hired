@@ -45,7 +45,7 @@ No arguments.
 
 _List applications_
 
-List job applications. By default the closed ones (ACCEPTED and LOST) are excluded. Every row carries two different numbers and they answer different questions: daysInStage is how long it has sat where it is, measured from the last stage change; quietDays is how long since ANYTHING happened to it — a logged call, an email, a stage move. 'What has gone quiet' is quietDays, and lastTouchAt is the date it counts from. Pass quietForDays to return only the ones past that many silent days, which is the fastest way to answer 'what needs chasing'.
+List job applications. By default the closed ones (ACCEPTED and LOST) are excluded. Every row carries two different numbers and they answer different questions: daysInStage is how long it has sat where it is, measured from the last stage change; quietDays is how long since ANYTHING happened to it — a logged call, an email, a stage move. 'What has gone quiet' is quietDays, and lastTouchAt is the date it counts from. Pass quietForDays to return only the ones past that many silent days, which is the fastest way to answer 'what needs chasing'. Capped at 100 rows unless you raise `limit`, and a cut-off result says how many there were before the data, so narrow the filters rather than reporting a short list as everything.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -209,9 +209,9 @@ Move a batch of applications to the same stage — the tool for 'close out every
 | --- | --- | --- |
 | `ids` | string[] | **required** — The application ids to move |
 | `stage` | enum | **required** — The stage they all move to  `WISHLIST` · `APPLIED` · `INTERVIEWING` · `OFFER` · `ACCEPTED` · `LOST` |
-| `interviewRound` | number | Which round this puts them all in, counting from 1. Only read when moving to INTERVIEWING. |
+| `interviewRound` | number | Which round they all reached, counting from 1. Recorded whatever the stage — 'rejected after round 3' is exactly how the funnel knows where they fell out. |
 | `roundLabel` | string | What that round is called — 'Phone screen', 'Onsite'. Applied to all of them. |
-| `lossReasons` | string[] | Why they ended, by name — the same reasons on every one. REPLACES any already on them. Only read when moving to LOST. |
+| `lossReasons` | string[] | Why they ended, by name — the same reasons on every one. REPLACES any already on them, and an empty list clears them, whatever the stage. |
 
 ### `move_application_stage`
 
@@ -226,9 +226,9 @@ Advance or close an application. Automatically logs the change to the timeline a
 | `id` | string | **required** — Application id |
 | `stage` | enum | **required** — The new stage  `WISHLIST` · `APPLIED` · `INTERVIEWING` · `OFFER` · `ACCEPTED` · `LOST` |
 | `note` | string | Optional note for the timeline entry |
-| `interviewRound` | number | Which round this puts it in, counting from 1. Only read when moving to INTERVIEWING. |
+| `interviewRound` | number | Which round it reached, counting from 1. Recorded whatever the stage, because 'rejected after round 3' is how the funnel knows where it fell out; moving to INTERVIEWING with none on file yet sets round 1. |
 | `roundLabel` | string | What that round is called — 'Phone screen', 'Take-home', 'Onsite'. Optional. |
-| `lossReasons` | string[] | Why it ended, by name. REPLACES any reasons already on it. Only read when moving to LOST. |
+| `lossReasons` | string[] | Why it ended, by name. REPLACES any reasons already on it, and an empty list clears them, whatever the stage. |
 
 ### `delete_application`
 

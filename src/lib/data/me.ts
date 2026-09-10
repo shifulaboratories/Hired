@@ -64,8 +64,10 @@ export async function getProfile(userId: string): Promise<Profile> {
  *
  * Every column's own default, spelled out rather than inferred, so a field
  * added to the model shows up here as a type error instead of as undefined at
- * render time. The id is empty because there is no row to name: nothing reads
- * it except a search hit that a blank profile cannot produce.
+ * render time. The id is empty because there is no row to name, and the only
+ * place that reads it is a search hit a blank profile cannot produce. It never
+ * leaves the server either way: the MCP payload drops the id and updatedAt, so
+ * nothing has to reason about an empty id or a 1970 timestamp.
  */
 function blankProfile(userId: string): Profile {
   return {
@@ -101,9 +103,19 @@ function blankProfile(userId: string): Profile {
  *
  * The write half of `getProfile`. Every path that is about to `update` the row
  * calls this first, because `update` on a row that does not exist throws.
+ *
+ * The empty `update: {}` this used to pass looked like the tidiest possible
+ * upsert and was not atomic: with nothing to update, Prisma reads and then
+ * inserts rather than emitting ON CONFLICT, and eight concurrent first writes
+ * on a fresh account produced seven unique-constraint failures. That is not a
+ * hypothetical race — a new account has the browser seeding its time zone at
+ * the same moment an assistant writes the profile it was just asked to fill in.
+ *
+ * Assigning userId to itself gives the update clause a field, which is what
+ * makes it one statement. Re-measured the same way afterwards: no failures.
  */
 async function ensureProfile(userId: string): Promise<Profile> {
-  return db.profile.upsert({ where: { userId }, create: { userId }, update: {} });
+  return db.profile.upsert({ where: { userId }, create: { userId }, update: { userId } });
 }
 
 /**
@@ -801,11 +813,12 @@ export async function getMeSnapshot(userId: string) {
  * `initialize` — which is why it asks for one id per table rather than counting,
  * and why it is a single round trip.
  *
- * It reads the Profile row directly rather than through `getProfile`, which
- * creates one when it finds none. A predicate whose whole job is to report that
- * nothing exists must not bring something into existence to answer, and it must
- * not then read its own row back as evidence of a filled-in workspace. The row
- * is judged on its contents for the same reason: blank fields are not a career.
+ * It reads the Profile row directly rather than through `getProfile`. That used
+ * to matter because `getProfile` created a row when it found none, and a
+ * predicate whose whole job is to report that nothing exists must not bring
+ * something into existence to answer. `getProfile` is a pure read now, so this
+ * is no longer load-bearing — but the row is still judged on its contents
+ * rather than its existence, because blank fields are not a career.
  *
  * Deliberately Me-only. Someone can have applications and nothing filed here — that is
  * exactly the person this predicate exists to catch, because they have a
