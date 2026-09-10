@@ -117,9 +117,9 @@ failed call. Say so plainly instead of closing the gap with something plausible.
 Ask one thing before anything else: "Do you have a resume or a LinkedIn export you can paste, or
 would you rather talk me through your last job?" If they paste a document, parse it yourself and
 file the whole thing with ONE import_resume call — roles with their bullets, education, skills,
-profile facts — copying what it says and inventing nothing. Offer its create_base_resume argument in the
-same call so they see a rendered resume in their first minutes. If they would rather talk, file what comes back with
-these:
+profile facts — copying what it says and inventing nothing. Pass its create_base_resume argument
+in the same call so they see a rendered resume in their first minutes. If they would rather talk
+it through, file what comes back with these:
 • update_profile — name, contact details, links, and their personal background: what they want
   next, what they will not take.
 • create_role — one per job, with dates. The raw material goes in its background, where length is a
@@ -192,7 +192,8 @@ preferences. Breaking one produces a document that reads as true and is not.`;
   // number that could be, so the section fits its budget in every case rather
   // than only in the ones where nothing overflows.
   const notice = (n: number) =>
-    `\n• (${n} more rules are on file and are NOT in this briefing — call list_notes with kind GUARDRAIL and read them before writing anything.)`;
+    `\n• (${n} more rules are on file and are NOT in this briefing — call list_notes with kind ` +
+    `GUARDRAIL and read them before writing anything.)`;
   const budget = STANDING_RULES_BUDGET - heading.length - notice(guardrails.length).length;
 
   const lines: string[] = [];
@@ -222,7 +223,7 @@ preferences. Breaking one produces a document that reads as true and is not.`;
 }
 
 /**
- * The five rules whose absence produces a wrong document or an act nobody can
+ * The four rules whose absence produces a wrong document or an act nobody can
  * undo. Everything else is in the tail.
  */
 const CRITICAL_RULES = `
@@ -649,10 +650,16 @@ function checkModernHeaders(request: Request, message: JsonRpcRequest): string |
   }
   const declared = header("mcp-protocol-version");
   if (declared !== null && declared !== meta[META_PROTOCOL_VERSION]) {
-    return `Header mismatch: MCP-Protocol-Version header value '${declared}' does not match body value '${String(meta[META_PROTOCOL_VERSION])}'.`;
+    return (
+      `Header mismatch: MCP-Protocol-Version header value '${declared}' ` +
+      `does not match body value '${String(meta[META_PROTOCOL_VERSION])}'.`
+    );
   }
   if (meta[META_CLIENT_CAPABILITIES] === undefined) {
-    return `${MODERN_PROTOCOL_VERSION} requires params._meta["${META_CLIENT_CAPABILITIES}"]; send an empty object if the client has no optional capabilities.`;
+    return (
+      `${MODERN_PROTOCOL_VERSION} requires params._meta["${META_CLIENT_CAPABILITIES}"]; ` +
+      `send an empty object if the client has no optional capabilities.`
+    );
   }
 
   const method = header("mcp-method");
