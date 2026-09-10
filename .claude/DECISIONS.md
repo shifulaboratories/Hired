@@ -5947,8 +5947,8 @@ The standing-rules budget covers the whole section — its heading, the rules an
 that says some were left out. Budgeting only the rules was wrong and measured wrong: the
 heading and notice are another three hundred characters, and an account with seventeen
 guardrails pushed the head to 2,174 and lost the fourth critical rule off the end. Measured
-against a real database: 990 characters with no rules, 1,458 with three, 1,884 with
-seventeen and the overflow notice.
+against a real database, through a real `initialize` on a production build: 992 characters
+with no rules, 1,459 with three, and 1,877 with seventeen and the overflow notice.
 
 **Tool `_meta` now carries Anthropic's hints**, in three small tables in `tools.ts` rather
 than on a hundred and fifty tool literals. `anthropic/alwaysLoad` on six tools — the one
