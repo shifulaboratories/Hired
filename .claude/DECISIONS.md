@@ -5880,3 +5880,109 @@ a column is drawn at all.
 applications end; a wall of alarm red tells somebody their search is failing when it is
 doing the normal thing, which is the same argument as the Analytics empty state. The three
 interview hues survive as the round tones, so a deeper round still reads as further along.
+
+## 2026-09-10 — The MCP server answers two protocol revisions, and stops trusting a foreign origin
+
+The tool surface was audited against the specification and against Anthropic's own client
+documentation, both read from primary sources rather than from memory. Four things came
+out of it. The research is worth restating because a later session will otherwise redo it.
+
+**The current MCP revision is 2026-07-28, and the full list is 2024-11-05, 2025-03-26,
+2025-06-18, 2025-11-25, 2026-07-28.** That was established from the schema directory in
+modelcontextprotocol/modelcontextprotocol and from the versioning page, independently, by
+two readers who were then asked to refute each other and could not. This server had been
+pinned at 2025-06-18, two revisions behind.
+
+**The handshake is gone in the new revision, so the server now picks an era per request.**
+`initialize` does not exist in 2026-07-28: a client declares its version in the
+`MCP-Protocol-Version` header and in `params._meta`, calls `server/discover` instead of
+handshaking, and gets results carrying `resultType`, plus `ttlMs` and `cacheScope` on
+anything cacheable. `eraFor()` reads one message and answers "modern" or "legacy", which
+is only possible because this transport was already stateless — the thing invariant 3 has
+always insisted on turned out to be where the protocol was going. Every legacy client is
+untouched by construction: nothing changes shape unless the caller names 2026-07-28.
+
+`initialize` negotiates from `LEGACY_PROTOCOL_VERSIONS`, deliberately not the full list. A
+client that sends `initialize` is speaking the old shape whatever version string it names,
+so answering "2026-07-28" there would promise a result shape that branch never emits.
+
+**2025-11-25 is supported by nobody here and is refused.** It exists, and its changelog was
+never read. Claiming a revision you have not read is how a server answers wrongly with
+confidence, so the header check returns `-32022` for it like any other unknown version.
+
+**Origin validation was the one real conformance gap**, and it is a MUST at every revision
+since 2025-03-26, not a new obligation. A browser naming an origin that is neither this
+instance nor loopback now gets a 403 before anything is parsed. Loopback is allowed on any
+port because the MCP Inspector lives there. The escape hatch is one instance variable
+("Extra MCP origins"), not an env var, and every refusal is written to the event log with
+the address — an admin who finds a client broken needs to see what to allow. Nothing in the
+app library sends an `Origin` at all: they connect from a server or a desktop process.
+
+**Batching stays accepted on the legacy path and is refused on the modern one.** It was
+legal in exactly one revision, 2025-03-26, which this server still answers. No verified
+source puts a server-side MUST on rejecting an array, so refusing it outright would break
+something we advertise to gain nothing.
+
+**What was deliberately not built:** `subscriptions/listen`, the MRTR input-request flow,
+the extensions framework, `Mcp-Session-Id`, the GET SSE stream and `Last-Event-ID`. Three
+of those the new revision deleted; the rest need a server that initiates or streams, and
+this one does neither. `mcpUnauthorized()` still sends no `WWW-Authenticate`, which is
+correct rather than an oversight: authorization is OPTIONAL in MCP, and advertising a
+challenge sends clients down an OAuth discovery path that does not exist here.
+
+## 2026-09-10 — What Claude Code actually does with a server briefing, and what it cost us
+
+Verified verbatim from code.claude.com/docs/en/mcp: "Claude Code truncates tool
+descriptions and server instructions at 2KB each. Keep them concise to avoid truncation,
+and put critical details near the start."
+
+The briefing was 10,919 characters and opened with a tour of the areas, appending the
+person's own standing rules LAST. So on the client most likely to be reading it, the one
+thing that must never be missing was the first thing dropped — and silently. It is now a
+head and a tail: identity, `search_me`, the person's guardrails and the four rules whose
+absence produces a wrong document or an unrecoverable act, all inside 2KB; then the area
+tour, which a truncating client can rediscover from the tool list anyway.
+
+The standing-rules budget covers the whole section — its heading, the rules and the notice
+that says some were left out. Budgeting only the rules was wrong and measured wrong: the
+heading and notice are another three hundred characters, and an account with seventeen
+guardrails pushed the head to 2,174 and lost the fourth critical rule off the end. Measured
+against a real database: 990 characters with no rules, 1,458 with three, 1,884 with
+seventeen and the overflow notice.
+
+**Tool `_meta` now carries Anthropic's hints**, in three small tables in `tools.ts` rather
+than on a hundred and fifty tool literals. `anthropic/alwaysLoad` on six tools — the one
+the briefing names as the way in, and the reads whose absence causes a write to destroy
+something. `anthropic/maxResultSizeChars` on nine that legitimately return a career, a
+mailbox or a spreadsheet. `anthropic/requiresUserInteraction` on the four acts no tool here
+can undo. The `_meta` key rules were checked against the 2026-07-28 schema: a single-label
+prefix like `anthropic/` is valid, and only a prefix whose SECOND label is
+`modelcontextprotocol` or `mcp` is reserved.
+
+**Every tool description now fits under 2KB.** `import_resume` was 2,112 characters and was
+tightened rather than truncated, since the part a 2KB cut would have taken is the
+`preview_resume_import` warning.
+
+## 2026-09-10 — Three defects the audit found that had nothing to do with the protocol
+
+**`inbox_review` opened by telling the assistant to call `get_google_connection`, which has
+never been a tool on this server.** The first step of a shipped workflow named a tool that
+does not exist; the correct one is `list_linked_accounts`. `gen-tool-docs.mjs` now fails
+when any "Call <name>" in a prompt body is not a real tool. Only that phrasing is checked,
+because it is the shape every step uses and cannot be confused with an argument name.
+
+**`getProfile` created a row when it found none.** Convenient, and wrong: `search_me`,
+`get_me_snapshot` and `get_profile` all go through it, so the three most-called reads on
+the server had to declare `readOnlyHint: false`, and a client that asks before letting a
+tool write was asking before answering "what do you know about me". It is now a pure read
+returning a blank profile, with `ensureProfile` on the four write paths. The blank spells
+out every column so that adding one to the model is a type error rather than an undefined
+at render time — which the compiler proved immediately by catching `updatedAt`.
+
+**Six list tools returned the whole table.** For almost everyone that is fine and still is:
+under the cap the result is byte-for-byte what it was. Past it the client truncates the
+JSON mid-array and the model then reasons from a list it believes is complete. They now
+take a `limit` (default 100, 200 for highlights, ceiling 500) and a truncated result
+carries the count it was cut from — as its own content block BEFORE the data, using the
+same idiom as `withLinks`, because a notice sitting behind the payload is a notice behind
+the thing that gets truncated.

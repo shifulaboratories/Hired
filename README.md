@@ -504,7 +504,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other eight are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
-hands back a step-by-step plan that it then follows. Admins get 32 more — 31 data tools and
+hands back a step-by-step plan that it then follows. Admins get 33 more — 32 data tools and
 a ninth workflow — and members never even see those in the tool list, so nobody is tempted
 by a permission they don't have.
 
@@ -872,6 +872,16 @@ The MCP server lives in `src/lib/mcp/` and speaks the Streamable HTTP transport 
 no session state, so it survives restarts and replicas without reconnecting. Tools are
 defined once in `src/lib/mcp/tools.ts` and share the same data layer (`src/lib/data/`) as
 the UI, so anything an assistant writes shows up in the app immediately and vice versa.
+
+It answers two revisions of the protocol, picked per request rather than per connection.
+The current one, 2026-07-28, has no handshake: a client says which version it is speaking
+in each message, asks `server/discover` what is here, and gets results that carry their own
+type and cache hints. Everything before it — back to 2024-11-05 — still opens with
+`initialize` and still works, because every client shipping today does that. Statelessness
+used to be this server's own idea and is now the protocol's, so nothing had to change
+underneath: era is a pure function of one message. A browser origin that is not this
+instance's own is refused outright; the "Extra MCP origins" variable in Settings is there
+for the rare client that needs to be let in.
 
 The token lives in the URL path (`/api/mcp/<token>`) because that is the one shape every
 client can express — no headers to configure, no OAuth discovery. Clients that insist on a

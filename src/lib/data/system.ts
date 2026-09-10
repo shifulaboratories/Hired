@@ -39,6 +39,7 @@ export type SystemEventSource =
   | "google.data"
   | "microsoft.data"
   | "mcp.tool"
+  | "mcp.origin"
   | "app";
 
 /**

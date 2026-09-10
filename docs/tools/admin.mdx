@@ -122,7 +122,7 @@ Put a password on an invitation that has already gone out, or take one off, with
 
 _Revoke an invite_
 
-Cancel an outstanding invitation so its link stops working.
+Cancel an outstanding invitation. The link stops working immediately and cannot be revived — inviting the same address again mints a new token and a new link. Only touches invitations that have not been accepted; once somebody is through the door, use admin_set_user_active to suspend them or admin_delete_user to remove them. Takes an id from admin_list_invites.
 
 **Admin only.** **Overwrites or deletes.**
 
@@ -250,7 +250,7 @@ Suspending signs the person out everywhere and blocks their login and their MCP 
 
 _Delete someone_
 
-PERMANENT. Removes the account and everything it owns: career history, resumes, applications. Confirm with the person you are talking to before calling this.
+Destroy an account and everything it owns — career history, highlights, resumes, published links, applications, contacts, tasks and the archive itself. PERMANENT, with nothing behind it: this is the single most destructive tool on the instance, and there is no export step built into it. Read admin_user_detail back to the person you are talking to, say what the numbers are, and get a plain yes. Cannot be used on the instance owner. Suspending with admin_set_user_active blocks their login and their MCP connection while keeping everything, and is what somebody usually means by removing a member.
 
 **Admin only.** **Overwrites or deletes.**
 

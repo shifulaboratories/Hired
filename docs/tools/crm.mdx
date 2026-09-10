@@ -44,6 +44,7 @@ Every company on file, with how many applications and contacts each one has, plu
 | `filter` | enum | Cut the list: active \| applied \| never-applied \| with-contacts  `active` · `applied` · `never-applied` · `with-contacts` |
 | `sort` | enum | name \| applied \| apps \| people. Default name.  `name` · `applied` · `apps` · `people` |
 | `dir` | enum | asc \| desc  `asc` · `desc` |
+| `limit` | number | Max rows to return. Default 100, hard ceiling 500. Prefer narrowing the filters. |
 
 ### `get_company`
 
@@ -152,6 +153,7 @@ Recruiters, hiring managers, referrals and the friend who might put in a word. R
 | `filter` | enum | Cut the list: ping-due \| with-application \| no-company  `ping-due` · `with-application` · `no-company` |
 | `sort` | enum | name \| company \| ping \| touch. Default name.  `name` · `company` · `ping` · `touch` |
 | `dir` | enum | asc \| desc  `asc` · `desc` |
+| `limit` | number | Max rows to return. Default 100, hard ceiling 500. Prefer narrowing the filters. |
 
 ### `get_contact`
 

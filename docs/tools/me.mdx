@@ -99,9 +99,11 @@ Give the user a headshot, or remove the one they have. One picture serves the wh
 
 _List roles_
 
-List every job/role in the knowledge base with dates and how many highlights each has. Does not include the full background — use get_role for that.
+List every job/role in the knowledge base with dates and how many highlights each has. Does not include the full background — use get_role for that. Capped, and the result says so when it was cut off.
 
-No arguments.
+| Argument | Type | |
+| --- | --- | --- |
+| `limit` | number | Max rows to return. Default 100, hard ceiling 500. Prefer narrowing the filters. |
 
 ### `get_role`
 
@@ -170,7 +172,7 @@ Safely ADD text to the end of a role's background without touching what is alrea
 
 _Delete a role_
 
-Permanently delete a role and all of its highlights.
+Destroy a job and everything hanging off it: its background, every highlight drawn from it, and the evidence behind any resume bullet that came from there. There is no archive for a role and no undo — this is not delete_application, which files things away. Resumes already written keep their text; what they lose is the material that proves it, so trace_resume_evidence will start reporting those bullets as unsupported. Almost nobody means this: a role kept out of a document is a resume edit, not a deletion. Read it back with get_role and get a plain yes first.
 
 **Overwrites or deletes.**
 
@@ -182,11 +184,12 @@ Permanently delete a role and all of its highlights.
 
 _List highlights_
 
-Reusable, polished achievement bullets, strongest first. These are the distilled lines you pull from when assembling a resume.
+Reusable, polished achievement bullets, strongest first. These are the distilled lines you pull from when assembling a resume. Capped, and the result says so when it was cut off — pass roleId to narrow it to one job.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `roleId` | string | Only return highlights for this role id |
+| `limit` | number | Max rows to return. Default 200, hard ceiling 500. Prefer narrowing the filters. |
 
 ### `create_highlights`
 
@@ -202,7 +205,7 @@ Distil raw background material into one or more reusable achievement bullets. Wr
 
 _Update a highlight_
 
-Edit or archive one achievement bullet.
+Rewrite one achievement bullet, or take it out of circulation with archived: true — which keeps it on file and stops it being offered for new resumes, and is what to reach for when somebody has outgrown a bullet rather than disowned it. Passing `text` REPLACES the bullet outright, so read it with list_highlights first if you are sharpening the wording rather than writing a new claim. Never strengthen a number or a scope the user did not give you. Resumes already written are not rewritten by this: they hold their own copy of the text.
 
 **Overwrites or deletes.**
 
@@ -219,7 +222,7 @@ Edit or archive one achievement bullet.
 
 _Delete a highlight_
 
-Permanently delete an achievement bullet.
+Destroy one achievement bullet. Permanent, with no archive behind it. Prefer update_highlight with archived: true when the bullet is simply out of date — that keeps the claim on file and out of new documents, which is what somebody usually means. Delete when the claim itself was wrong.
 
 **Overwrites or deletes.**
 
@@ -231,9 +234,11 @@ Permanently delete an achievement bullet.
 
 _List notes_
 
-Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything.
+Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything. Capped, and the result says so when it was cut off; search_me is the better tool when you are looking for something specific.
 
-No arguments.
+| Argument | Type | |
+| --- | --- | --- |
+| `limit` | number | Max rows to return. Default 100, hard ceiling 500. Prefer narrowing the filters. |
 
 ### `create_note`
 
@@ -349,7 +354,7 @@ Change fields on an item in one of the supporting collections. Reach for this in
 
 _Delete an education / project / skill group / certification_
 
-Remove an item from one of the supporting collections.
+Destroy one education entry, project, skill group or certification. Permanent, with no archive behind it, and it takes the `kind` as well as the id because ids are only unique within a collection. Reach for update_extra instead when the item is merely wrong: deleting and re-creating mints a new id and breaks anything pointing at the old one. Resumes already written keep their copy of the text.
 
 **Overwrites or deletes.**
 
@@ -362,7 +367,7 @@ Remove an item from one of the supporting collections.
 
 _Import a resume into Me_
 
-Turn an existing resume, LinkedIn export or any pasted career history into a filled-in Me in ONE call. This is the first tool to reach for when the workspace is empty and the user has a document — it is the difference between starting from their real history and starting from nothing, so offer it before asking them to talk through their life. You do the reading: parse the pasted text yourself into the structured payload — profile facts, one entry per role with its bullets, education, projects, skills, certifications. Copy what the document actually says and NEVER invent, upgrade or round anything: no employers, titles, dates or metrics the text does not state, and a field the document is silent on stays absent. Include startDate on every role — it is part of a role's identity, and two stints at the same company import as two roles only when their dates differ. Everything is additive and re-import is safe: nothing is ever overwritten or removed. Profile fields fill only where currently empty. A role already on file — same company+title, matching start date — is not created twice; instead the bullets it does not already have are added to it and the new wording is appended to its background, so re-importing an updated resume brings in what changed. An education entry with the same school+degree+field, or a project/certification with the same name, is skipped; a skill group with an existing name has its skills unioned in. Each role's bullets are saved as highlights and land in its background for search_me to mine. Returns exactly what was created, what was merged into with how many bullets each gained, and what was skipped — report that to the user. Call preview_resume_import first when the workspace is NOT empty: it returns this same report without writing, so you can tell them what a second import would change before it changes it. Pass create_base_resume: true to also build their first draft from what was imported; it reuses a resume already named 'Base resume' rather than minting another, so repeating the whole call is safe. Offer it — a resume is usually why they pasted one.
+Turn an existing resume, LinkedIn export or any pasted career history into a filled-in Me in ONE call. Reach for this first when the workspace is empty and the user has a document: it is the difference between starting from their real history and starting from nothing, so offer it before asking them to talk through their life. You do the reading — parse the pasted text yourself into the payload: profile facts, one entry per role with its bullets, education, projects, skills, certifications. Copy what the document says and NEVER invent, upgrade or round anything: no employer, title, date or metric the text does not state, and a field it is silent on stays absent. Include startDate on every role — it is part of a role's identity, and two stints at one company import as two roles only when their dates differ. Everything is additive and re-import is safe: nothing is overwritten or removed. Profile fields fill only where empty. A role already on file — same company and title, matching start date — is not created twice; instead it gains the bullets it does not have, and the new wording is appended to its background, so re-importing an updated resume brings in what changed. An education entry with the same school, degree and field, or a project or certification with the same name, is skipped; a skill group with an existing name has its skills unioned in. Each role's bullets are saved as highlights and land in its background for search_me to mine. Returns what was created, what was merged into and how many bullets each gained, and what was skipped — report that back. When the workspace is NOT empty, call preview_resume_import first: the same report, writing nothing. Pass create_base_resume: true to also build their first draft from what was imported; it reuses a resume already named 'Base resume' rather than minting another, so repeating the call is safe. Offer it — a resume is usually why they pasted one.
 
 | Argument | Type | |
 | --- | --- | --- |

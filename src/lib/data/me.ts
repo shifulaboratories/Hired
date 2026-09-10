@@ -1,4 +1,4 @@
-import type { NoteKind, Prisma } from "@prisma/client";
+import type { NoteKind, Prisma, Profile } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { PipelineView } from "@/lib/pipeline-fields";
 import {
@@ -39,10 +39,71 @@ async function existingOrThrow<T>(
   return found;
 }
 
-export async function getProfile(userId: string) {
+/**
+ * The person's profile, or a blank one if they have never had a row.
+ *
+ * A READ, and that word is load-bearing. This used to create the row when it
+ * found none, which was convenient and wrong: `get_profile`, `search_me` and
+ * `get_me_snapshot` all go through here, and the three of them are the most
+ * called reads on the server. A tool that writes cannot claim readOnlyHint, so
+ * the three had to declare themselves writers, and a client that asks before
+ * letting a tool write asked before answering "what do you know about me".
+ *
+ * The row is created by the things that actually change it — see
+ * `ensureProfile` — so a person who has never saved anything simply has an
+ * empty profile rather than an empty row, which is the same answer without the
+ * write. `timeZoneOf` has read it this way all along, for the same reason.
+ */
+export async function getProfile(userId: string): Promise<Profile> {
   const existing = await db.profile.findUnique({ where: { userId } });
-  if (existing) return existing;
-  return db.profile.create({ data: { userId } });
+  return existing ?? blankProfile(userId);
+}
+
+/**
+ * What an account with no profile row looks like.
+ *
+ * Every column's own default, spelled out rather than inferred, so a field
+ * added to the model shows up here as a type error instead of as undefined at
+ * render time. The id is empty because there is no row to name: nothing reads
+ * it except a search hit that a blank profile cannot produce.
+ */
+function blankProfile(userId: string): Profile {
+  return {
+    id: "",
+    userId,
+    fullName: "",
+    headline: "",
+    email: "",
+    phone: "",
+    location: "",
+    website: "",
+    linkedin: "",
+    github: "",
+    twitter: "",
+    summary: "",
+    background: "",
+    boardFields: [],
+    listFields: [],
+    calendarFields: [],
+    columnWidths: {},
+    photo: "",
+    tourSeenAt: null,
+    timeZone: "",
+    // The epoch rather than now: there is no row, so there is no moment it was
+    // last written, and a timestamp of "just now" would be a lie a caller could
+    // sort on.
+    updatedAt: new Date(0),
+  };
+}
+
+/**
+ * Create the profile row if it is missing, and return it.
+ *
+ * The write half of `getProfile`. Every path that is about to `update` the row
+ * calls this first, because `update` on a row that does not exist throws.
+ */
+async function ensureProfile(userId: string): Promise<Profile> {
+  return db.profile.upsert({ where: { userId }, create: { userId }, update: {} });
 }
 
 /**
@@ -92,7 +153,7 @@ export async function setColumnWidths(
   widths: Record<string, number>,
   options?: { reset?: boolean },
 ): Promise<StoredWidths> {
-  const profile = await getProfile(userId);
+  const profile = await ensureProfile(userId);
   const next = withWidths(parseWidths(profile.columnWidths), list, widths, options);
   const saved = await db.profile.update({
     where: { userId },
@@ -121,7 +182,7 @@ const PROFILE_COLUMNS = [
 ] as const;
 
 export async function updateProfile(userId: string, patch: ProfilePatch) {
-  await getProfile(userId);
+  await ensureProfile(userId);
   return db.profile.update({ where: { userId }, data: pick(patch, PROFILE_COLUMNS) });
 }
 
@@ -144,7 +205,7 @@ export async function setTimeZone(userId: string, timeZone: string) {
       `"${clean}" is not a time zone this server knows. Use an IANA name like "America/New_York", or "" for the server's own clock.`,
     );
   }
-  await getProfile(userId);
+  await ensureProfile(userId);
   const saved = await db.profile.update({ where: { userId }, data: { timeZone: clean } });
   return { timeZone: saved.timeZone };
 }
@@ -169,7 +230,7 @@ export async function timeZoneOf(userId: string): Promise<string> {
  */
 export async function setProfilePhoto(userId: string, input: string) {
   const resolved = await resolvePhoto(input);
-  await getProfile(userId);
+  await ensureProfile(userId);
   await db.profile.update({ where: { userId }, data: { photo: resolved?.dataUri ?? "" } });
   return resolved
     ? { photo: true, bytes: resolved.bytes, type: resolved.type }

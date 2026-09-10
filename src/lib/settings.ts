@@ -26,6 +26,7 @@ export const SETTING_KEYS = {
   publicUrl: "public_url",
   landingUrl: "landing_url",
   companyLogos: "company_logos",
+  mcpAllowedOrigins: "mcp_allowed_origins",
   archiveRetentionDays: "archive_retention_days",
   /** Bookkeeping the sweep owns, not a knob. See listVariables. */
   archiveSweptAt: "archive_swept_at",
@@ -50,6 +51,11 @@ export type InstanceSettings = {
   landingUrl: string;
   /** Off means no request ever leaves the browser for a logo. */
   companyLogos: boolean;
+  /**
+   * Extra browser origins allowed to POST to the MCP endpoint, comma separated.
+   * Same-origin and loopback are always allowed and are not listed here.
+   */
+  mcpAllowedOrigins: string;
   /**
    * Days a deleted company, person or application waits in the archive before
    * it is destroyed. 0 keeps everything until somebody empties it by hand.
@@ -144,6 +150,22 @@ export const VARIABLES: VariableDef[] = [
     group: "Instance",
     placeholder: "",
     fallback: "1",
+  },
+  {
+    key: SETTING_KEYS.mcpAllowedOrigins,
+    field: "mcpAllowedOrigins",
+    label: "Extra MCP origins",
+    // Empty by default and almost always right that way. The MCP spec makes
+    // rejecting a foreign Origin a MUST, and every client in the app library
+    // connects from a server or a desktop process, which sends no Origin at
+    // all. This exists for the one case that does: a browser-resident client
+    // — the MCP Inspector on a machine that is not this one, say — which
+    // otherwise gets a 403 with no way for an admin to allow it.
+    help: "Browser origins allowed to call the MCP endpoint, comma separated, e.g. https://inspector.example.com. This instance's own address and anything on localhost are always allowed and do not need listing. Almost every client connects from a server or a desktop app and sends no origin, so leaving this empty is normally right. A blocked origin is written to the event log with the address it came from.",
+    kind: "text",
+    group: "Instance",
+    placeholder: "https://inspector.example.com",
+    fallback: "",
   },
   {
     key: SETTING_KEYS.archiveRetentionDays,
@@ -316,6 +338,7 @@ export async function getSettings(): Promise<InstanceSettings> {
     publicUrl: raw(SETTING_KEYS.publicUrl),
     landingUrl: raw(SETTING_KEYS.landingUrl),
     companyLogos: raw(SETTING_KEYS.companyLogos) !== "0",
+    mcpAllowedOrigins: raw(SETTING_KEYS.mcpAllowedOrigins),
     archiveRetentionDays: retentionDays(raw(SETTING_KEYS.archiveRetentionDays)),
     googleClientId: raw(SETTING_KEYS.googleClientId),
     googleClientSecret: raw(SETTING_KEYS.googleClientSecret),

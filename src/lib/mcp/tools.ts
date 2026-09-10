@@ -154,6 +154,67 @@ export function splitLinks(result: unknown): { data: unknown; links: ResourceLin
   return { data: result, links: [] };
 }
 
+const RESULT_NOTICE = Symbol("mcp.result.notice");
+
+type NoticedResult = { [RESULT_NOTICE]: string; data: unknown };
+
+/**
+ * A sentence the caller must read, carried beside a result rather than inside it.
+ *
+ * Same idea as `withLinks`, and for a different failure: a list that got cut off
+ * has to SAY it got cut off, and burying that in the JSON puts it after the very
+ * payload a client might truncate. The handler emits this as its own text block,
+ * before the data, so it survives and gets read first.
+ *
+ * The two wrappers do not currently compose — nothing needs both — and the
+ * symbol keeps a result that escapes unwrapped serialising as plain JSON rather
+ * than as garbage.
+ */
+function withNotice(data: unknown, notice: string): NoticedResult {
+  return { [RESULT_NOTICE]: notice, data };
+}
+
+/** Split a handler's return value into the JSON body and any notice it carried. */
+export function splitNotice(result: unknown): { data: unknown; notice: string | null } {
+  if (result && typeof result === "object" && RESULT_NOTICE in result) {
+    const noticed = result as NoticedResult;
+    return { data: noticed.data, notice: noticed[RESULT_NOTICE] };
+  }
+  return { data: result, notice: null };
+}
+
+/** The most rows any list tool will hand back in one call, whatever is asked for. */
+const LIST_CEILING = 500;
+
+/**
+ * Cap a list, and say so when the cap bit.
+ *
+ * Every list tool here used to return the whole table. For most people that is
+ * fine and this changes nothing: under the cap, the result is byte-for-byte what
+ * it always was. It is the long search — four hundred applications, a CRM built
+ * over two years — where returning everything fails badly, because the client
+ * truncates the JSON somewhere in the middle and the model then reasons from a
+ * list it believes is complete.
+ *
+ * So the cap is generous, the notice is loud, and it names the total: an
+ * assistant that is told "100 of 412" narrows its filters, which is the right
+ * move and the one it cannot make without knowing.
+ */
+function capped<T>(rows: T[], asked: number | undefined, fallback: number): T[] | NoticedResult {
+  const max = Math.min(Math.max(Math.trunc(asked ?? fallback), 1), LIST_CEILING);
+  if (rows.length <= max) return rows;
+  return withNotice(
+    rows.slice(0, max),
+    `Showing the first ${max} of ${rows.length}. This list was cut off — narrow it with the ` +
+      `filters this tool takes rather than reporting these as everything, or raise \`limit\` ` +
+      `(up to ${LIST_CEILING}) if you genuinely need more.`,
+  );
+}
+
+/** The `limit` argument every capped list tool takes, worded the same way. */
+const limitArg = (fallback: number) =>
+  num(`Max rows to return. Default ${fallback}, hard ceiling ${LIST_CEILING}. Prefer narrowing the filters.`);
+
 const str = (description: string) => ({ type: "string", description });
 const num = (description: string) => ({ type: "number", description });
 const bool = (description: string) => ({ type: "boolean", description });
@@ -443,7 +504,7 @@ export const tools: McpTool[] = [
       ["query"],
     ),
     annotations: {
-      readOnlyHint: false,
+      readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
@@ -461,7 +522,7 @@ export const tools: McpTool[] = [
       ),
     }),
     annotations: {
-      readOnlyHint: false,
+      readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
@@ -486,7 +547,7 @@ export const tools: McpTool[] = [
       "The user's identity block: name, headline, contact details, links, career summary and their personal background (values, what they want next, comp expectations, non-negotiables). `hasPhoto` says whether a profile photo is set; the picture itself is not returned because it is hundreds of kilobytes of base64 — use set_profile_photo to change it. `timeZone` is the calendar every date in this workspace is read against — an IANA name, or empty meaning the server's own clock.",
     inputSchema: object({}),
     annotations: {
-      readOnlyHint: false,
+      readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
@@ -583,15 +644,15 @@ export const tools: McpTool[] = [
     name: "list_roles",
     title: "List roles",
     description:
-      "List every job/role in the knowledge base with dates and how many highlights each has. Does not include the full background — use get_role for that.",
-    inputSchema: object({}),
+      "List every job/role in the knowledge base with dates and how many highlights each has. Does not include the full background — use get_role for that. Capped, and the result says so when it was cut off.",
+    inputSchema: object({ limit: limitArg(100) }),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (_args, ctx) => me.listRoles(ctx.userId),
+    handler: async (args, ctx) => capped(await me.listRoles(ctx.userId), n(args, "limit"), 100),
   },
   {
     name: "get_role",
@@ -724,7 +785,8 @@ export const tools: McpTool[] = [
   {
     name: "delete_role",
     title: "Delete a role",
-    description: "Permanently delete a role and all of its highlights.",
+    description:
+      "Destroy a job and everything hanging off it: its background, every highlight drawn from it, and the evidence behind any resume bullet that came from there. There is no archive for a role and no undo — this is not delete_application, which files things away. Resumes already written keep their text; what they lose is the material that proves it, so trace_resume_evidence will start reporting those bullets as unsupported. Almost nobody means this: a role kept out of a document is a resume edit, not a deletion. Read it back with get_role and get a plain yes first.",
     inputSchema: object({ id: str("Role id") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -742,15 +804,16 @@ export const tools: McpTool[] = [
     name: "list_highlights",
     title: "List highlights",
     description:
-      "Reusable, polished achievement bullets, strongest first. These are the distilled lines you pull from when assembling a resume.",
-    inputSchema: object({ roleId: str("Only return highlights for this role id") }),
+      "Reusable, polished achievement bullets, strongest first. These are the distilled lines you pull from when assembling a resume. Capped, and the result says so when it was cut off — pass roleId to narrow it to one job.",
+    inputSchema: object({ roleId: str("Only return highlights for this role id"), limit: limitArg(200) }),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (args, ctx) => me.listHighlights(ctx.userId, s(args, "roleId")),
+    handler: async (args, ctx) =>
+      capped(await me.listHighlights(ctx.userId, s(args, "roleId")), n(args, "limit"), 200),
   },
   {
     name: "create_highlights",
@@ -798,7 +861,8 @@ export const tools: McpTool[] = [
   {
     name: "update_highlight",
     title: "Update a highlight",
-    description: "Edit or archive one achievement bullet.",
+    description:
+      "Rewrite one achievement bullet, or take it out of circulation with archived: true — which keeps it on file and stops it being offered for new resumes, and is what to reach for when somebody has outgrown a bullet rather than disowned it. Passing `text` REPLACES the bullet outright, so read it with list_highlights first if you are sharpening the wording rather than writing a new claim. Never strengthen a number or a scope the user did not give you. Resumes already written are not rewritten by this: they hold their own copy of the text.",
     inputSchema: object(
       {
         id: str("Highlight id"),
@@ -831,7 +895,8 @@ export const tools: McpTool[] = [
   {
     name: "delete_highlight",
     title: "Delete a highlight",
-    description: "Permanently delete an achievement bullet.",
+    description:
+      "Destroy one achievement bullet. Permanent, with no archive behind it. Prefer update_highlight with archived: true when the bullet is simply out of date — that keeps the claim on file and out of new documents, which is what somebody usually means. Delete when the claim itself was wrong.",
     inputSchema: object({ id: str("Highlight id") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -849,15 +914,15 @@ export const tools: McpTool[] = [
     name: "list_notes",
     title: "List notes",
     description:
-      "Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything.",
-    inputSchema: object({}),
+      "Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything. Capped, and the result says so when it was cut off; search_me is the better tool when you are looking for something specific.",
+    inputSchema: object({ limit: limitArg(100) }),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (_args, ctx) => me.listNotes(ctx.userId),
+    handler: async (args, ctx) => capped(await me.listNotes(ctx.userId), n(args, "limit"), 100),
   },
   {
     name: "create_note",
@@ -1155,7 +1220,8 @@ export const tools: McpTool[] = [
   {
     name: "delete_extra",
     title: "Delete an education / project / skill group / certification",
-    description: "Remove an item from one of the supporting collections.",
+    description:
+      "Destroy one education entry, project, skill group or certification. Permanent, with no archive behind it, and it takes the `kind` as well as the id because ids are only unique within a collection. Reach for update_extra instead when the item is merely wrong: deleting and re-creating mints a new id and breaks anything pointing at the old one. Resumes already written keep their copy of the text.",
     inputSchema: object(
       {
         kind: {
@@ -1193,7 +1259,7 @@ export const tools: McpTool[] = [
     name: "import_resume",
     title: "Import a resume into Me",
     description:
-      "Turn an existing resume, LinkedIn export or any pasted career history into a filled-in Me in ONE call. This is the first tool to reach for when the workspace is empty and the user has a document — it is the difference between starting from their real history and starting from nothing, so offer it before asking them to talk through their life. You do the reading: parse the pasted text yourself into the structured payload — profile facts, one entry per role with its bullets, education, projects, skills, certifications. Copy what the document actually says and NEVER invent, upgrade or round anything: no employers, titles, dates or metrics the text does not state, and a field the document is silent on stays absent. Include startDate on every role — it is part of a role's identity, and two stints at the same company import as two roles only when their dates differ. Everything is additive and re-import is safe: nothing is ever overwritten or removed. Profile fields fill only where currently empty. A role already on file — same company+title, matching start date — is not created twice; instead the bullets it does not already have are added to it and the new wording is appended to its background, so re-importing an updated resume brings in what changed. An education entry with the same school+degree+field, or a project/certification with the same name, is skipped; a skill group with an existing name has its skills unioned in. Each role's bullets are saved as highlights and land in its background for search_me to mine. Returns exactly what was created, what was merged into with how many bullets each gained, and what was skipped — report that to the user. Call preview_resume_import first when the workspace is NOT empty: it returns this same report without writing, so you can tell them what a second import would change before it changes it. Pass create_base_resume: true to also build their first draft from what was imported; it reuses a resume already named 'Base resume' rather than minting another, so repeating the whole call is safe. Offer it — a resume is usually why they pasted one.",
+      "Turn an existing resume, LinkedIn export or any pasted career history into a filled-in Me in ONE call. Reach for this first when the workspace is empty and the user has a document: it is the difference between starting from their real history and starting from nothing, so offer it before asking them to talk through their life. You do the reading — parse the pasted text yourself into the payload: profile facts, one entry per role with its bullets, education, projects, skills, certifications. Copy what the document says and NEVER invent, upgrade or round anything: no employer, title, date or metric the text does not state, and a field it is silent on stays absent. Include startDate on every role — it is part of a role's identity, and two stints at one company import as two roles only when their dates differ. Everything is additive and re-import is safe: nothing is overwritten or removed. Profile fields fill only where empty. A role already on file — same company and title, matching start date — is not created twice; instead it gains the bullets it does not have, and the new wording is appended to its background, so re-importing an updated resume brings in what changed. An education entry with the same school, degree and field, or a project or certification with the same name, is skipped; a skill group with an existing name has its skills unioned in. Each role's bullets are saved as highlights and land in its background for search_me to mine. Returns what was created, what was merged into and how many bullets each gained, and what was skipped — report that back. When the workspace is NOT empty, call preview_resume_import first: the same report, writing nothing. Pass create_base_resume: true to also build their first draft from what was imported; it reuses a resume already named 'Base resume' rather than minting another, so repeating the call is safe. Offer it — a resume is usually why they pasted one.",
     inputSchema: object(
       {
         profile: {
@@ -1818,7 +1884,8 @@ export const tools: McpTool[] = [
   {
     name: "delete_resume",
     title: "Delete a resume",
-    description: "Permanently delete a resume.",
+    description:
+      "Destroy a resume document. Permanent, with no archive behind it. If it was published, its public link dies with it and anyone holding that URL — a recruiter, a form already submitted — gets nothing; the material it was built from stays in Me either way. Prefer duplicate_resume and editing the copy when the point is a different version, rather than deleting and rebuilding. Read the list with list_resumes and name the one you are about to destroy before you call this.",
     inputSchema: object({ id: str("Resume id") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -1966,6 +2033,7 @@ export const tools: McpTool[] = [
       includeClosed: bool("Include accepted / rejected / withdrawn"),
       search: str("Filter by company, role title or notes"),
       quietForDays: num("Only those with no activity for at least this many days"),
+      limit: limitArg(100),
     }),
     annotations: {
       readOnlyHint: true,
@@ -1974,12 +2042,16 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) =>
-      pipeline.listApplications(ctx.userId, {
-        stage: s(args, "stage") as Stage | undefined,
-        includeClosed: b(args, "includeClosed"),
-        search: s(args, "search"),
-        quietForDays: n(args, "quietForDays"),
-      }),
+      capped(
+        await pipeline.listApplications(ctx.userId, {
+          stage: s(args, "stage") as Stage | undefined,
+          includeClosed: b(args, "includeClosed"),
+          search: s(args, "search"),
+          quietForDays: n(args, "quietForDays"),
+        }),
+        n(args, "limit"),
+        100,
+      ),
   },
   {
     name: "get_application",
@@ -3129,6 +3201,7 @@ export const tools: McpTool[] = [
         description: "name | applied | apps | people. Default name.",
       },
       dir: { type: "string", enum: [...SORT_DIRECTIONS], description: "asc | desc" },
+      limit: limitArg(100),
     }),
     annotations: {
       readOnlyHint: true,
@@ -3137,19 +3210,23 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) =>
-      pipeline.listCompanies(
-        ctx.userId,
-        defined({
-          search: s(args, "search"),
-          tagIds: a(args, "tagIds"),
-          industryIds: a(args, "industryIds"),
-          sizeIds: a(args, "sizeIds"),
-          locationIds: a(args, "locationIds"),
-          missing: enumArrayArg(args, "missing", COMPANY_MISSING),
-          filter: enumArg(args, "filter", COMPANY_FILTERS),
-          sort: enumArg(args, "sort", COMPANY_SORTS),
-          dir: enumArg(args, "dir", SORT_DIRECTIONS),
-        }),
+      capped(
+        await pipeline.listCompanies(
+          ctx.userId,
+          defined({
+            search: s(args, "search"),
+            tagIds: a(args, "tagIds"),
+            industryIds: a(args, "industryIds"),
+            sizeIds: a(args, "sizeIds"),
+            locationIds: a(args, "locationIds"),
+            missing: enumArrayArg(args, "missing", COMPANY_MISSING),
+            filter: enumArg(args, "filter", COMPANY_FILTERS),
+            sort: enumArg(args, "sort", COMPANY_SORTS),
+            dir: enumArg(args, "dir", SORT_DIRECTIONS),
+          }),
+        ),
+        n(args, "limit"),
+        100,
       ),
   },
   {
@@ -3347,6 +3424,7 @@ export const tools: McpTool[] = [
         description: "name | company | ping | touch. Default name.",
       },
       dir: { type: "string", enum: [...SORT_DIRECTIONS], description: "asc | desc" },
+      limit: limitArg(100),
     }),
     annotations: {
       readOnlyHint: true,
@@ -3355,20 +3433,24 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) =>
-      pipeline.listContacts(
-        ctx.userId,
-        defined({
-          applicationId: s(args, "applicationId"),
-          companyId: s(args, "companyId"),
-          companyIds: a(args, "companyIds"),
-          search: s(args, "search"),
-          tagIds: a(args, "tagIds"),
-          quietDays: n(args, "quietDays"),
-          missing: enumArrayArg(args, "missing", CONTACT_MISSING),
-          filter: enumArg(args, "filter", CONTACT_FILTERS),
-          sort: enumArg(args, "sort", CONTACT_SORTS),
-          dir: enumArg(args, "dir", SORT_DIRECTIONS),
-        }),
+      capped(
+        await pipeline.listContacts(
+          ctx.userId,
+          defined({
+            applicationId: s(args, "applicationId"),
+            companyId: s(args, "companyId"),
+            companyIds: a(args, "companyIds"),
+            search: s(args, "search"),
+            tagIds: a(args, "tagIds"),
+            quietDays: n(args, "quietDays"),
+            missing: enumArrayArg(args, "missing", CONTACT_MISSING),
+            filter: enumArg(args, "filter", CONTACT_FILTERS),
+            sort: enumArg(args, "sort", CONTACT_SORTS),
+            dir: enumArg(args, "dir", SORT_DIRECTIONS),
+          }),
+        ),
+        n(args, "limit"),
+        100,
       ),
   },
   {
@@ -4346,7 +4428,8 @@ export const tools: McpTool[] = [
   {
     name: "admin_revoke_invite",
     title: "Revoke an invite",
-    description: "Cancel an outstanding invitation so its link stops working.",
+    description:
+      "Cancel an outstanding invitation. The link stops working immediately and cannot be revived — inviting the same address again mints a new token and a new link. Only touches invitations that have not been accepted; once somebody is through the door, use admin_set_user_active to suspend them or admin_delete_user to remove them. Takes an id from admin_list_invites.",
     inputSchema: object({ id: str("Invite id") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -4597,7 +4680,7 @@ export const tools: McpTool[] = [
     name: "admin_delete_user",
     title: "Delete someone",
     description:
-      "PERMANENT. Removes the account and everything it owns: career history, resumes, applications. Confirm with the person you are talking to before calling this.",
+      "Destroy an account and everything it owns — career history, highlights, resumes, published links, applications, contacts, tasks and the archive itself. PERMANENT, with nothing behind it: this is the single most destructive tool on the instance, and there is no export step built into it. Read admin_user_detail back to the person you are talking to, say what the numbers are, and get a plain yes. Cannot be used on the instance owner. Suspending with admin_set_user_active blocks their login and their MCP connection while keeping everything, and is what somebody usually means by removing a member.",
     inputSchema: object({ userId: str("User id") }, ["userId"]),
     annotations: {
       readOnlyHint: false,
@@ -5174,7 +5257,7 @@ If the research on file is thin, say so and offer to run research_company first.
     build: (args) => `Bring my pipeline up to date from my inbox and calendar, looking back ${args.days ?? "7"} days.
 
 Work in this order:
-1. Call get_google_connection. If nothing is connected, stop and tell me how to connect; do not guess at my mail.
+1. Call list_linked_accounts. If nothing is connected, stop and tell me how to connect (Settings → Connections, or connect_imap_account with an app password); do not guess at my mail.
 2. Call list_applications (open ones) and list_follow_ups.
 3. For each open application, call list_correspondence with its applicationId and days=${args.days ?? "7"}. Where a thread looks like it changed something — a reply from the company, an interview invitation, a rejection, an offer, a take-home — call get_email_thread and read it rather than trusting the snippet.
 4. Call search_calendar for the same window forward ${args.days ?? "7"} days too, and note interviews or calls that are on the calendar but not on the pipeline.
@@ -5281,6 +5364,86 @@ function promptAsTool(prompt: McpPrompt): McpTool {
       return prompt.build(stringArgs);
     },
   };
+}
+
+/**
+ * Client hints, sent as each tool's `_meta`.
+ *
+ * These are Anthropic's keys, read by Claude and Claude Code and ignored by
+ * every other client, which is why they live in three small tables here rather
+ * than as fields on a hundred and fifty tool literals: the policy is worth
+ * reading in one place, and a tool that is in none of them needs no entry.
+ *
+ * Why they matter at all: a client with tool search on does not load this
+ * server's tools until it searches for them, and it caps how much of a result
+ * it will read. Both defaults are right for a small server and wrong for this
+ * one.
+ */
+
+/**
+ * Kept loaded even when a client defers the rest behind tool search.
+ *
+ * The bar is deliberately high — a large always-load set is the same thing as
+ * having no tool search — so it is exactly two kinds of tool: the one the
+ * server briefing names as the way in, and the reads whose absence causes a
+ * write to destroy something. get_resume_format, list_tags and get_company are
+ * the "read before you write" guards; without them loaded, an assistant writes
+ * a resume in the wrong shape, mints a near-duplicate label, or replaces a
+ * company's research with one fact.
+ */
+const ALWAYS_LOAD = new Set([
+  "search_me",
+  "list_applications",
+  "list_schedule",
+  "get_resume_format",
+  "list_tags",
+  "get_company",
+]);
+
+/**
+ * Results that are legitimately large, and what each may spend.
+ *
+ * A client's default cap is sized for a tool that returns a row. These return a
+ * career, a mailbox or a spreadsheet, and truncating one silently is worse than
+ * a long result: the assistant then reasons from half a work history without
+ * knowing the other half existed. The ceiling the key accepts is 500,000.
+ */
+const MAX_RESULT_CHARS: Record<string, number> = {
+  get_me_snapshot: 200_000,
+  export_csv: 200_000,
+  list_correspondence: 120_000,
+  trace_resume_evidence: 100_000,
+  compare_resumes: 80_000,
+  list_archive: 80_000,
+  get_resume: 80_000,
+  preview_resume_text: 60_000,
+  admin_audit_log: 80_000,
+};
+
+/**
+ * Never run these without a person in the loop.
+ *
+ * The test is not "destructive" — most of this server is, and the archive makes
+ * almost all of it reversible. It is "cannot be undone by any tool here". Four
+ * things qualify, and each of them can take years of someone's work in one
+ * call.
+ */
+const REQUIRES_USER_INTERACTION = new Set([
+  "delete_archived",
+  "empty_archive",
+  "merge_companies",
+  "admin_delete_user",
+]);
+
+/** The `_meta` for one tool, or undefined when it needs none. */
+export function metaFor(name: string): Json | undefined {
+  const meta: Json = {};
+  if (ALWAYS_LOAD.has(name)) meta["anthropic/alwaysLoad"] = true;
+  const cap = MAX_RESULT_CHARS[name];
+  if (cap !== undefined) meta["anthropic/maxResultSizeChars"] = cap;
+  // Must be a JSON true rather than a truthy string; the client checks the type.
+  if (REQUIRES_USER_INTERACTION.has(name)) meta["anthropic/requiresUserInteraction"] = true;
+  return Object.keys(meta).length > 0 ? meta : undefined;
 }
 
 /** The data tools plus the workflow tools. Order matters only for display. */

@@ -128,6 +128,13 @@ const object = (properties, required = []) => ({
   additionalProperties: false,
 });
 
+// Mirrors the list cap in src/lib/mcp/tools.ts. Checked below, like STAGE_VALUES
+// and TAG_KINDS, so a change there fails the build of these pages rather than
+// quietly documenting the wrong ceiling.
+const LIST_CEILING = 500;
+const limitArg = (fallback) =>
+  num(`Max rows to return. Default ${fallback}, hard ceiling ${LIST_CEILING}. Prefer narrowing the filters.`);
+
 // The constants those expressions close over. Duplicated, then verified against
 // the source below — a value added there and not here is an error, not a
 // quietly shorter table.
@@ -174,6 +181,16 @@ for (const [name, values] of [
   }
 }
 {
+  // The list cap. Mirrored above so the argument tables can be generated without
+  // importing TypeScript; checked here so raising it in tools.ts fails this run
+  // instead of leaving every "hard ceiling 500" in the manual wrong.
+  const declared = /const LIST_CEILING = (\d+);/.exec(src);
+  if (!declared) throw new Error("tools.ts no longer declares LIST_CEILING");
+  if (Number(declared[1]) !== LIST_CEILING) {
+    throw new Error(`LIST_CEILING is ${declared[1]} in tools.ts — update tools/gen-tool-docs.mjs`);
+  }
+}
+{
   // STAGES lives in the data layer; tools.ts aliases it as STAGE_VALUES.
   const pipeline = readFileSync(join(ROOT, "src", "lib", "data", "pipeline.ts"), "utf8");
   const declared = /export const STAGES: Stage\[\] = \[([\s\S]*?)\]/.exec(pipeline);
@@ -184,7 +201,7 @@ for (const [name, values] of [
 }
 
 const scope = {
-  str, num, bool, strArray, object,
+  str, num, bool, strArray, object, limitArg,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
   ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,
   COMPANY_MISSING, CONTACT_MISSING, PIPELINE_VIEW_VALUES, COLUMN_LIST_VALUES,
@@ -336,6 +353,27 @@ if (cursor !== tools.length) {
 const prompts = [...promptBody.matchAll(/^ {4}name: "([a-z_]+)",$/gm)].map((m) => m[1]);
 const promptAdmin = (promptBody.match(/^ {4}adminOnly: true,$/gm) ?? []).length;
 if (prompts.length === 0) throw new Error("No prompts found in tools.ts — the workflow counts would be wrong");
+
+{
+  // A workflow is a script an assistant follows literally, so a step naming a
+  // tool that does not exist is a broken feature rather than a typo — and it
+  // shipped that way once: inbox_review opened with "Call get_google_connection",
+  // which has never been a tool on this server.
+  //
+  // Only "Call <name>" is checked, which is the shape every step uses and the
+  // one that cannot be confused with an argument name.
+  const toolNames = new Set(tools.map((tool) => tool.name));
+  const bad = [];
+  for (const match of promptBody.matchAll(/\bCall ([a-z][a-z0-9_]+)\b/g)) {
+    if (!toolNames.has(match[1])) bad.push(match[1]);
+  }
+  if (bad.length > 0) {
+    throw new Error(
+      `A workflow in tools.ts tells the assistant to call ${[...new Set(bad)].join(", ")}, which is not a tool. ` +
+        "Fix the prompt body, not this check.",
+    );
+  }
+}
 
 const counts = {
   dataMember: tools.filter((tool) => !tool.adminOnly).length,
