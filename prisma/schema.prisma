@@ -85,6 +85,7 @@ model User {
   tasks          Task[]
   savedViews     SavedView[]
   tags           Tag[]
+  stageTemplates StageTemplate[]
   pipelineShare  PipelineShare?
   linkedAccounts LinkedAccount[]
 
@@ -923,6 +924,38 @@ model Offer {
 /// tag — the name, the colour, renaming it everywhere, deleting it — is the
 /// same code whatever it labels, and a person who learns the picker once has
 /// learned all of them.
+/// One line of a stage checklist: "when a job reaches this stage, add this task".
+///
+/// Rows a person owns rather than anything built in. Every search has its own
+/// ritual — one person sends a thank-you within a day of every interview,
+/// another always adds a reminder to check the posting is still up a week
+/// after applying — and a fixed list would be wrong for all of them.
+///
+/// Materialised by moveApplicationStage. Editing a template never touches the
+/// tasks it has already made: those are work in progress, not a setting.
+model StageTemplate {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The stage a job has to REACH for this to fire.
+  stage     Stage
+  title     String
+  detail    String   @default("")
+  /// Days from the move to the due date. 0 means due that day; null means the
+  /// task gets no date at all, which is the right answer for "eventually".
+  dueInDays Int?
+  /// Off keeps the row without firing it — the way somebody parks a step they
+  /// only want during a heavy month.
+  enabled   Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks Task[]
+
+  @@index([userId, stage])
+}
+
 enum TagKind {
   /// Where an application came from. These were the old Source rows.
   APPLICATION
@@ -1123,29 +1156,36 @@ model SavedView {
 /// src/lib/data/pipeline.ts does, on the way in, and the reader takes the first
 /// one it finds so a hand-written row can never render two subjects.
 model Task {
-  id            String       @id @default(cuid())
-  userId        String
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title         String
-  detail        String       @default("")
-  dueAt         DateTime?
-  done          Boolean      @default(false)
-  doneAt        DateTime?
-  applicationId String?
-  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  companyId     String?
-  company       Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  contactId     String?
-  contact       Contact?     @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  resumeId      String?
-  resume        Resume?      @relation(fields: [resumeId], references: [id], onDelete: Cascade)
-  roleId        String?
-  role          Role?        @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  noteId        String?
-  note          Note?        @relation(fields: [noteId], references: [id], onDelete: Cascade)
-  createdAt     DateTime     @default(now())
+  id              String         @id @default(cuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String
+  detail          String         @default("")
+  dueAt           DateTime?
+  done            Boolean        @default(false)
+  doneAt          DateTime?
+  applicationId   String?
+  application     Application?   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  companyId       String?
+  company         Company?       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contactId       String?
+  contact         Contact?       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  resumeId        String?
+  resume          Resume?        @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  roleId          String?
+  role            Role?          @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  noteId          String?
+  note            Note?          @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  /// Set when a stage move made this task from a checklist. It is what stops
+  /// the same item being added twice when a job goes back a stage and forward
+  /// again, and it is why it survives the template being deleted (SET NULL) —
+  /// a task you are already doing is not a setting.
+  stageTemplateId String?
+  stageTemplate   StageTemplate? @relation(fields: [stageTemplateId], references: [id], onDelete: SetNull)
+  createdAt       DateTime       @default(now())
 
   @@index([userId, done, dueAt])
+  @@index([applicationId, stageTemplateId])
   @@index([companyId])
   @@index([contactId])
   @@index([resumeId])

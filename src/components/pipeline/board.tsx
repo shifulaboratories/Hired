@@ -35,7 +35,7 @@ import { CompanyAvatar } from "@/components/pipeline/company-avatar";
 import { TagChip } from "@/components/tags/tag-chip";
 import { formatMoney } from "@/components/pipeline/offer-card";
 import { useOpenApplication } from "@/components/pipeline/application-panel";
-import { cn, relativeDay } from "@/lib/utils";
+import { cn, describeAdded, relativeDay } from "@/lib/utils";
 import { useViewerZone } from "@/components/viewer-zone";
 import { moveStageAction } from "@/server/actions";
 
@@ -168,8 +168,10 @@ export function PipelineBoard({
     setCards((prev) => prev.map((item) => (item.id === id ? { ...item, stage: target } : item)));
     startTransition(async () => {
       try {
-        await moveStageAction(id, target);
-        toast.success(`${card.company} → ${STAGE_LABEL[target]}`);
+        const { addedTasks } = await moveStageAction(id, target);
+        toast.success(`${card.company} → ${STAGE_LABEL[target]}`, {
+          description: describeAdded(addedTasks),
+        });
       } catch {
         setCards((prev) =>
           prev.map((item) => (item.id === id ? { ...item, stage: card.stage } : item)),

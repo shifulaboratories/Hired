@@ -9,6 +9,7 @@ import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
 import * as offers from "@/lib/data/offers";
 import * as letters from "@/lib/data/letters";
+import * as stageTemplates from "@/lib/data/stage-templates";
 import * as tags from "@/lib/data/tags";
 import { STAGE_LABEL } from "@/lib/data/pipeline";
 import * as views from "@/lib/data/views";
@@ -1129,6 +1130,40 @@ export async function updateApplicationAction(
 }
 
 /**
+ * Stage checklists. These are settings, so they revalidate the settings screen
+ * and nothing else — the tasks they make are created by a stage move, which
+ * revalidates its own screens.
+ */
+export async function createStageTemplateAction(input: stageTemplates.StageTemplateInput) {
+  const user = await requireUser();
+  const row = await stageTemplates.createStageTemplate(user.id, input);
+  revalidatePath("/settings");
+  return row.id;
+}
+
+export async function updateStageTemplateAction(
+  id: string,
+  patch: stageTemplates.StageTemplateInput,
+) {
+  const user = await requireUser();
+  await stageTemplates.updateStageTemplate(user.id, id, patch);
+  revalidatePath("/settings");
+}
+
+export async function deleteStageTemplateAction(id: string) {
+  const user = await requireUser();
+  await stageTemplates.deleteStageTemplate(user.id, id);
+  revalidatePath("/settings");
+}
+
+export async function seedStageTemplatesAction() {
+  const user = await requireUser();
+  const result = await stageTemplates.seedStageTemplates(user.id);
+  revalidatePath("/settings");
+  return result.created;
+}
+
+/**
  * Letters. Prose, so the body autosaves like everything else in this app —
  * `update` is a patch and only rewrites what it is handed.
  */
@@ -1201,10 +1236,13 @@ export async function moveApplicationsStageAction(ids: string[], stage: Stage) {
 
 export async function moveStageAction(id: string, stage: Stage) {
   const user = await requireUser();
-  await pipeline.moveApplicationStage(user.id, id, stage);
+  const moved = await pipeline.moveApplicationStage(user.id, id, stage);
   revalidatePath("/applications");
   revalidatePath(`/applications/${id}`);
   revalidatePath("/");
+  // The titles, not a count: the toast has to say what landed on the list, or
+  // the tasks appear out of nowhere and the checklist reads as a bug.
+  return { addedTasks: moved.addedTasks.map((task) => task.title) };
 }
 
 /** Archives, now. The name stays because the button still says Delete. */

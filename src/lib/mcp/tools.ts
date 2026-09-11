@@ -5,6 +5,7 @@ import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
 import * as offers from "@/lib/data/offers";
 import * as letters from "@/lib/data/letters";
+import * as stageTemplates from "@/lib/data/stage-templates";
 import { LETTER_KINDS } from "@/lib/data/letters";
 import * as tags from "@/lib/data/tags";
 import type { TagKind } from "@prisma/client";
@@ -2485,6 +2486,115 @@ export const tools: McpTool[] = [
       offers.offerBriefing(ctx.userId, required(args, "application_id")),
   },
   {
+    name: "list_stage_templates",
+    title: "List the stage checklists",
+    description:
+      "What this person has said should happen when a job reaches a stage. Each line carries the stage that fires it, the task title and detail, dueInDays (days from the move to the due date; null means the task gets no date), whether it is enabled, and `firedFor` — how many applications it has already made a task on. Read this before offering to add one, and before answering 'why did that task appear'. An empty list is normal and means nothing fires; seed_stage_templates offers a starting set. Read-only.",
+    inputSchema: object({
+      stage: { type: "string", enum: STAGE_VALUES, description: "Only the lines that fire on this stage" },
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const [rows, usage] = await Promise.all([
+        stageTemplates.listStageTemplates(ctx.userId, enumArg(args, "stage", STAGE_VALUES) as Stage | undefined),
+        stageTemplates.stageTemplateUsage(ctx.userId),
+      ]);
+      return rows.map((row) => ({ ...row, firedFor: usage.get(row.id) ?? 0 }));
+    },
+  },
+  {
+    name: "create_stage_template",
+    title: "Add a line to a stage checklist",
+    description:
+      "Say that reaching a stage should put a task on their list — 'send a thank-you' the day after every interview, 'check the posting is still up' a week after applying. The line fires ONCE PER APPLICATION, ever: going back a stage and forward again does not re-add what they already ticked off. It fires on future moves only and never retroactively, so adding a line does not put a task on forty existing jobs. dueInDays is counted from the move (0 is that day, 7 is a week later); leave it out and the task gets no due date at all, which is right for 'eventually'. Keep the title short and in the second person — it lands on a list beside things they wrote themselves.",
+    inputSchema: object(
+      {
+        stage: { type: "string", enum: STAGE_VALUES, description: "The stage a job has to reach for this to fire" },
+        title: str("The task, e.g. 'Send a thank-you'"),
+        detail: str("A line of context shown under it"),
+        dueInDays: num("Days from the move to the due date. 0 is that day. Omit for no due date"),
+      },
+      ["stage", "title"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      stageTemplates.createStageTemplate(ctx.userId, {
+        stage: required(args, "stage") as Stage,
+        title: required(args, "title"),
+        detail: s(args, "detail"),
+        dueInDays: n(args, "dueInDays"),
+      }),
+  },
+  {
+    name: "update_stage_template",
+    title: "Change a stage checklist line",
+    description:
+      "Edit one line — reword it, move it to a different stage, change when it comes due, or switch it off without deleting it. Only the fields you send change. This NEVER touches tasks the line has already made: those are on somebody's list already, and a setting should not rewrite work in progress.",
+    inputSchema: object(
+      {
+        id: str("Checklist line id, from list_stage_templates"),
+        stage: { type: "string", enum: STAGE_VALUES, description: "Fire on this stage instead" },
+        title: str("The task"),
+        detail: str("A line of context shown under it"),
+        dueInDays: num("Days from the move to the due date"),
+        enabled: bool("False parks the line without deleting it"),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      stageTemplates.updateStageTemplate(ctx.userId, required(args, "id"), {
+        stage: enumArg(args, "stage", STAGE_VALUES) as Stage | undefined,
+        title: s(args, "title"),
+        detail: s(args, "detail"),
+        dueInDays: n(args, "dueInDays"),
+        enabled: b(args, "enabled"),
+      }),
+  },
+  {
+    name: "delete_stage_template",
+    title: "Remove a stage checklist line",
+    description:
+      "Delete one line for good. The tasks it has already made STAY on the list — deleting a setting must not delete work somebody is part-way through. If the aim is to stop it firing for a while, update_stage_template with enabled false is the reversible version and is usually what they mean.",
+    inputSchema: object({ id: str("Checklist line id") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => stageTemplates.deleteStageTemplate(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "seed_stage_templates",
+    title: "Offer a starting set of stage checklists",
+    description:
+      "Fill in a short, boring starting set of checklist lines — the handful of things that actually get forgotten: check the posting is still up a week after applying, find someone who works there, send a thank-you the day after an interview, write down what they asked, record the offer numbers, ask a rejection what would have made the difference. Skips any stage that already has lines rather than adding duplicates, and reports how many it created and how many it skipped. Offer this once, to somebody who does not want to design their own; do not call it unprompted on an account that already has a checklist.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => stageTemplates.seedStageTemplates(ctx.userId),
+  },
+  {
     name: "list_tags",
     title: "List the tags on file",
     description:
@@ -2724,7 +2834,7 @@ export const tools: McpTool[] = [
     name: "move_applications_stage",
     title: "Move several applications to one stage",
     description:
-      "Move a batch of applications to the same stage — the tool for 'close out everything I never heard back from' or 'mark these four as applied'. Each one gets its own timeline entry and follow-up date, exactly as if it had been moved on its own, so the funnel history stays intact. Ids that no longer exist are skipped rather than failing the batch; the result lists what moved and what was skipped. Read the ids from list_applications first, and when closing them out pass `lossReasons` saying why — 'Ghosted' for silence, 'Rejected' for a no. The stage is the same either way; the reason is what makes the funnel worth reading.",
+      "Move a batch of applications to the same stage — the tool for 'close out everything I never heard back from' or 'mark these four as applied'. Each one gets its own timeline entry and follow-up date, exactly as if it had been moved on its own, so the funnel history stays intact. Ids that no longer exist are skipped rather than failing the batch; the result lists what moved and what was skipped. Read the ids from list_applications first, and when closing them out pass `lossReasons` saying why — 'Ghosted' for silence, 'Rejected' for a no. The stage is the same either way; the reason is what makes the funnel worth reading. `addedTasks` counts what any stage checklist put on their list across the whole batch.",
     inputSchema: object(
       {
         ids: strArray("The application ids to move"),
@@ -2767,7 +2877,7 @@ export const tools: McpTool[] = [
     name: "move_application_stage",
     title: "Move an application to a new stage",
     description:
-      "Advance or close an application. Automatically logs the change to the timeline and schedules the next follow-up. Six stages: WISHLIST for something not applied to yet, APPLIED, INTERVIEWING for every conversation from a recruiter screen to a final round, OFFER, ACCEPTED for a signed offer, and LOST for every other ending. Moving to INTERVIEWING sets round 1 unless you pass a round — pass `interviewRound` when they say which one it is (\"second interview\" is 2), and `roundLabel` for what it was called. Moving to LOST, pass `lossReasons` with WHY: \"Rejected\" when they said no, \"Ghosted\" for the far more common ending where nobody ever replied, \"Withdrew\", \"Declined their offer\", \"Role closed\", or anything else that fits — names are matched against what they already use and created when nothing does. The reason is what the funnel reads to tell a decision against them apart from silence, and the advice that falls out of those is different, so it is worth asking rather than guessing.",
+      "Advance or close an application. Automatically logs the change to the timeline and schedules the next follow-up. Six stages: WISHLIST for something not applied to yet, APPLIED, INTERVIEWING for every conversation from a recruiter screen to a final round, OFFER, ACCEPTED for a signed offer, and LOST for every other ending. Moving to INTERVIEWING sets round 1 unless you pass a round — pass `interviewRound` when they say which one it is (\"second interview\" is 2), and `roundLabel` for what it was called. Moving to LOST, pass `lossReasons` with WHY: \"Rejected\" when they said no, \"Ghosted\" for the far more common ending where nobody ever replied, \"Withdrew\", \"Declined their offer\", \"Role closed\", or anything else that fits — names are matched against what they already use and created when nothing does. The reason is what the funnel reads to tell a decision against them apart from silence, and the advice that falls out of those is different, so it is worth asking rather than guessing. Returns `addedTasks`: if they keep a checklist for the stage it just reached (list_stage_templates), the tasks it put on their list. Read those back — a stage move that silently adds four things is a stage move somebody stops trusting.",
     inputSchema: object(
       {
         id: str("Application id"),

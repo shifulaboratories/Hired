@@ -65,7 +65,7 @@ import type { ResumeDoc } from "@/lib/resume-schema";
 import { companyDomain } from "@/lib/company";
 import { useAutosave } from "@/hooks/use-autosave";
 import { ACTIVITY_LABEL, ACTIVITY_OPTIONS, STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
-import { cn, relativeDay } from "@/lib/utils";
+import { cn, describeAdded, relativeDay } from "@/lib/utils";
 import { useViewerZone } from "@/components/viewer-zone";
 import { civilDay, formatIn, shortCivilDay } from "@/lib/time";
 import { DateField, parseISODate } from "@/components/ui/date-field";
@@ -267,8 +267,10 @@ export function ApplicationDetail({
   const changeStage = (next: Stage) => {
     setStage(next);
     startTransition(async () => {
-      await moveStageAction(application.id, next);
-      toast.success(`Moved to ${STAGE_LABEL[next]}`);
+      const { addedTasks } = await moveStageAction(application.id, next);
+      toast.success(`Moved to ${STAGE_LABEL[next]}`, { description: describeAdded(addedTasks) });
+      // The checklist puts rows on the Tasks tab, so the host has to refetch.
+      if (addedTasks.length > 0) onServerChange?.();
     });
   };
 

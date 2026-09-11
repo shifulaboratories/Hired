@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   ArrowUpRightIcon,
   LibraryBigIcon,
+  KanbanIcon,
   PaletteIcon,
   PlugZapIcon,
   ShieldIcon,
@@ -16,6 +17,7 @@ import { requireUser, isAdmin, ensureDefaultConnection } from "@/lib/auth";
 import { ConnectionsPanel } from "@/components/settings/connections-panel";
 import { AccountPanel } from "@/components/settings/account-panel";
 import { AppearancePanel } from "@/components/settings/appearance-panel";
+import { StageChecklists } from "@/components/pipeline/stage-checklists";
 import { SkillsPanel } from "@/components/settings/skills-panel";
 import { listConnections } from "@/lib/data/connections";
 import { getProfile } from "@/lib/data/me";
@@ -25,14 +27,15 @@ import { guessClient } from "@/lib/mcp/clients";
 import { MANUAL_URL } from "@/lib/links";
 import { getSettings, googleIsConfigured, microsoftIsConfigured } from "@/lib/settings";
 import { listLinkedAccounts } from "@/lib/data/accounts";
+import { listStageTemplates, stageTemplateUsage } from "@/lib/data/stage-templates";
 import { isGoogleRefusal, refusalMessage } from "@/lib/google";
 
 export const dynamic = "force-dynamic";
 
-const TABS = ["connections", "account", "appearance"] as const;
+const TABS = ["connections", "pipeline", "account", "appearance"] as const;
 
 /**
- * Three tabs rather than one column of five cards.
+ * Four tabs rather than one column of cards.
  *
  * The page used to open on roughly twelve hundred pixels of connection
  * reference material, with the account you came to edit below all of it. Every
@@ -118,6 +121,9 @@ export default async function SettingsPage({
             <span className="text-muted-foreground ml-0.5 text-[11px] tabular-nums">
               {connections.length}
             </span>
+          </TabsTrigger>
+          <TabsTrigger value="pipeline">
+            <KanbanIcon className="hidden size-4 sm:block" /> Pipeline
           </TabsTrigger>
           <TabsTrigger value="account">
             <UserRoundIcon className="hidden size-4 sm:block" /> Account
@@ -212,6 +218,12 @@ export default async function SettingsPage({
           </FadeIn>
         </TabsContent>
 
+        <TabsContent value="pipeline">
+          <FadeIn>
+            <ChecklistsTab userId={user.id} />
+          </FadeIn>
+        </TabsContent>
+
         <TabsContent value="appearance">
           <FadeIn>
             <AppearancePanel />
@@ -219,5 +231,25 @@ export default async function SettingsPage({
         </TabsContent>
       </Tabs>
     </PageShell>
+  );
+}
+
+async function ChecklistsTab({ userId }: { userId: string }) {
+  const [lines, usage] = await Promise.all([
+    listStageTemplates(userId),
+    stageTemplateUsage(userId),
+  ]);
+  return (
+    <StageChecklists
+      lines={lines.map((line) => ({
+        id: line.id,
+        stage: line.stage,
+        title: line.title,
+        detail: line.detail,
+        dueInDays: line.dueInDays,
+        enabled: line.enabled,
+        firedFor: usage.get(line.id) ?? 0,
+      }))}
+    />
   );
 }
