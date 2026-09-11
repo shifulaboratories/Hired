@@ -200,6 +200,13 @@ export async function pendingProposalCount(userId: string) {
  * the stage is not a stage — the row is put back to PENDING with the reason on
  * it, because a proposal that silently vanished is worse than one that says
  * why it could not be done.
+ *
+ * Claiming first is a deliberate trade, and it has a losing side: a process
+ * that dies between the claim and the write leaves a proposal marked accepted
+ * that never happened. That is the better failure. The other order would
+ * double-log an interview on a double click, and a duplicate in somebody's
+ * timeline is a thing they have to find and delete; a proposal that quietly did
+ * nothing is a thing they notice the next time they look at the job.
  */
 export async function acceptProposal(userId: string, id: string) {
   const claimed = await db.proposal.updateMany({
