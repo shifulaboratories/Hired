@@ -97,7 +97,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  127 tools any MCP client can call (160 if you're an admin). Claude, Claude Code, ChatGPT,
+  129 tools any MCP client can call (162 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -280,7 +280,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 127, or 160 if you're an admin.
+then tells you how many tools answered — 129, or 162 if you're an admin.
 
 That is a lot of tools, and spelled out in full they're around 45,000 tokens of context
 before you've said anything. If your client has tool search — Claude Code does, and has it
@@ -506,7 +506,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-127 tools. One hundred and nineteen of them are the data tools across the four areas, the
+129 tools. One hundred and twenty-one of them are the data tools across the four areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other eight are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it

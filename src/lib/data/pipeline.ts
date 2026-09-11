@@ -1116,6 +1116,133 @@ export async function captureJobPosting(userId: string, url: string): Promise<Ca
   return { captured: true, application, parsed };
 }
 
+/**
+ * What a batch capture did, one entry per URL handed in.
+ *
+ * Three outcomes rather than a success count, because "seven of ten" is not
+ * something a person can act on. A duplicate names what it duplicates so they
+ * can go and look; a failure names the page's own problem so they can paste
+ * the description in by hand.
+ */
+export type BatchCaptureResult = {
+  captured: { url: string; id: string; company: string; roleTitle: string }[];
+  duplicates: { url: string; company: string; roleTitle: string; existingId: string; reason: string }[];
+  // `company` and `roleTitle` on a duplicate are the EXISTING row's spelling,
+  // not the page's: that is the one on the board, and the one they would go
+  // looking for.
+  failed: { url: string; reason: string; parsed: ParsedPosting }[];
+};
+
+/** How many postings are fetched at once. Polite to one job board, quick enough for ten. */
+const CAPTURE_CONCURRENCY = 4;
+
+/**
+ * Capture several postings in one go, without creating the same job twice.
+ *
+ * The same role is on Greenhouse, LinkedIn and the company's own careers page,
+ * and somebody pasting a morning's browsing does not want three rows for one
+ * job. Dedupe is company + role title, matched the way `upsertCompanyByName`
+ * matches — trimmed, case-insensitively, against LIVE rows only — so it agrees
+ * with what a single capture would have done.
+ *
+ * Two passes on purpose. Parsing is network-bound and runs a few at a time;
+ * creating is sequential, so two URLs for one job inside the SAME batch collide
+ * against each other and not just against what was already on file. Doing both
+ * concurrently would let a batch create the duplicate it exists to prevent.
+ *
+ * Nothing is created for a page that did not name an employer and a role, and
+ * one bad URL never costs the other nine.
+ */
+export async function captureJobPostings(userId: string, urls: string[]): Promise<BatchCaptureResult> {
+  const clean = [...new Set(urls.map((url) => url.trim()).filter(Boolean))];
+  const result: BatchCaptureResult = { captured: [], duplicates: [], failed: [] };
+  if (clean.length === 0) return result;
+
+  const parsedByUrl: { url: string; parsed: ParsedPosting }[] = [];
+  for (let at = 0; at < clean.length; at += CAPTURE_CONCURRENCY) {
+    const slice = clean.slice(at, at + CAPTURE_CONCURRENCY);
+    const batch = await Promise.all(
+      slice.map(async (url) => ({
+        url,
+        // A page that refuses to load is a failure for that URL, not for the
+        // batch — loadPosting throwing here used to take the whole call down.
+        parsed: await loadPosting(url).catch(() => ({}) as ParsedPosting),
+      })),
+    );
+    parsedByUrl.push(...batch);
+  }
+
+  const key = (company: string, roleTitle: string) =>
+    `${company.trim().toLowerCase()}\u0000${roleTitle.trim().toLowerCase()}`;
+
+  // Everything live already on file, so a paste of this morning's browsing does
+  // not re-add what last week's did.
+  const existing = await db.application.findMany({
+    where: { userId, archivedAt: null },
+    select: { id: true, roleTitle: true, company: { select: { name: true } } },
+  });
+  const seen = new Map<string, { id: string; company: string; roleTitle: string }>();
+  for (const row of existing) {
+    seen.set(key(row.company.name, row.roleTitle), {
+      id: row.id,
+      company: row.company.name,
+      roleTitle: row.roleTitle,
+    });
+  }
+
+  for (const { url, parsed } of parsedByUrl) {
+    if (!parsed.roleTitle || !parsed.company) {
+      const missing = [
+        !parsed.roleTitle ? "the role title" : null,
+        !parsed.company ? "the employer" : null,
+      ]
+        .filter(Boolean)
+        .join(" or ");
+      result.failed.push({
+        url,
+        reason: `The page didn't state ${missing} in a readable way. Nothing was created.`,
+        parsed,
+      });
+      continue;
+    }
+
+    const k = key(parsed.company, parsed.roleTitle);
+    const already = seen.get(k);
+    if (already) {
+      result.duplicates.push({
+        url,
+        company: already.company,
+        roleTitle: already.roleTitle,
+        existingId: already.id,
+        reason: `${already.roleTitle} at ${already.company} is already on the board. Nothing was created.`,
+      });
+      continue;
+    }
+
+    const application = await createApplication(userId, {
+      company: parsed.company,
+      companyWebsite: parsed.companyWebsite || undefined,
+      roleTitle: parsed.roleTitle,
+      stage: "WISHLIST",
+      jobUrl: url,
+      jobDescription: parsed.jobDescription,
+      location: parsed.location,
+      workMode: parsed.workMode,
+      salaryRange: parsed.salaryRange,
+      sources: parsed.source ? [parsed.source] : [],
+    });
+    seen.set(k, { id: application.id, company: parsed.company, roleTitle: parsed.roleTitle });
+    result.captured.push({
+      url,
+      id: application.id,
+      company: parsed.company,
+      roleTitle: parsed.roleTitle,
+    });
+  }
+
+  return result;
+}
+
 export async function updateApplication(
   userId: string,
   id: string,
@@ -2394,6 +2521,51 @@ export type FunnelStep = {
   medianDays: number | null;
 };
 
+/**
+ * What one person has been worth to the search, and how long since you spoke.
+ *
+ * The pipeline can already say which resume and which channel are working.
+ * Nothing could say which PEOPLE were, and referrals are the highest-converting
+ * channel most searches have — so the question "who got me interviews" was
+ * sitting in rows nobody joined.
+ *
+ * Two kinds of association, kept apart rather than added together, because
+ * adding them would lie. `direct` is an application this person is actually
+ * attached to: somebody referred you, or is the recruiter on that thread.
+ * `atCompany` is an application at a company they represent, which is a real
+ * signal and a much weaker one — a recruiter at a five-thousand-person employer
+ * you applied to three times did not get you three interviews. A caller that
+ * wants one number can add them; one that wants the truth has both.
+ */
+export type ContactStanding = {
+  id: string;
+  name: string;
+  title: string;
+  relationship: string;
+  companies: { id: string; name: string }[];
+  /** Applications they are attached to, and how far those got. */
+  direct: { applications: number; interviews: number; offers: number };
+  /** Applications at a company they represent. Weaker evidence; see the type doc. */
+  atCompany: { applications: number; interviews: number; offers: number };
+  /** Days since anything was logged against them. */
+  quietDays: number;
+  /** Their next ping, and whether it has come round. */
+  nextFollowUpAt: Date | null;
+  pingDue: boolean;
+};
+
+export type Relationships = {
+  /** Everyone, richest association first, then longest quiet. */
+  contacts: ContactStanding[];
+  /**
+   * The ones that earned something and have gone quiet, which is the whole
+   * point of asking. Sorted by what they were worth, not by how quiet.
+   */
+  worthKeepingWarm: ContactStanding[];
+  /** Says so plainly when there is not enough here to rank anybody. */
+  confident: boolean;
+};
+
 export type SearchDiagnosis = {
   /** The sentence. Everything else on the screen supports this. */
   headline: string;
@@ -2408,6 +2580,18 @@ export type SearchDiagnosis = {
   velocity: { weekStart: string; count: number }[];
   stalled: { id: string; company: string; roleTitle: string; stage: Stage; days: number }[];
   byResume: { id: string; name: string; sent: number; responded: number; rate: number | null }[];
+  /**
+   * The same question asked of where an application came from rather than what
+   * was sent. Referrals converting at four times a job board is the finding
+   * that changes where somebody spends a Saturday, and it was already in the
+   * data — every application carries its source as an APPLICATION tag.
+   *
+   * An application can wear several source tags, so it counts into each one and
+   * these do not sum to `applied`. That is the honest arithmetic: an
+   * application that came from a referral AND a job board is evidence about
+   * both.
+   */
+  bySource: { id: string; name: string; color: string; sent: number; responded: number; rate: number | null }[];
 };
 
 function median(values: number[]): number | null {
@@ -2585,6 +2769,147 @@ export async function funnelFlows(userId: string): Promise<{
   return { rungs, applied: rungs[0]?.reached ?? 0, wishlist };
 }
 
+/**
+ * Who in the CRM has actually been worth something, and who has gone quiet.
+ *
+ * `diagnoseSearch` for people. It reads the same rows the funnel does and
+ * applies the same rule for "how far did this get" — the live stage, or the
+ * furthest stage any activity ever recorded — so a contact attached to an
+ * application that was rejected after two interviews still gets the credit for
+ * those two interviews. Progress is not undone by an ending.
+ *
+ * Archived contacts and archived applications are both out, for the reason
+ * every other read here excludes them: a number that moves when you tidy up is
+ * a number nobody can act on.
+ */
+export async function listRelationships(userId: string, now = new Date()): Promise<Relationships> {
+  const [contacts, applications, stageMoves] = await Promise.all([
+    db.contact.findMany({
+      where: { userId, archivedAt: null },
+      select: {
+        id: true,
+        name: true,
+        title: true,
+        relationship: true,
+        nextFollowUpAt: true,
+        createdAt: true,
+        updatedAt: true,
+        applicationId: true,
+        companies: { select: { company: { select: { id: true, name: true, archivedAt: true } } } },
+        activities: { select: { occurredAt: true }, orderBy: { occurredAt: "desc" }, take: 1 },
+      },
+    }),
+    db.application.findMany({
+      where: { userId, archivedAt: null },
+      select: { id: true, companyId: true, stage: true },
+    }),
+    db.activity.findMany({
+      where: { userId, toStage: { not: null }, application: { archivedAt: null } },
+      select: { applicationId: true, toStage: true },
+    }),
+  ]);
+
+  // How far each application ever got, by the funnel's own rule: where it sits
+  // now, or the furthest it was ever moved to.
+  const reached = new Map<string, { interview: boolean; offer: boolean }>();
+  const mark = (id: string, stage: Stage) => {
+    const row = reached.get(id) ?? { interview: false, offer: false };
+    if (stage === "INTERVIEWING" || stage === "OFFER" || stage === "ACCEPTED") row.interview = true;
+    if (stage === "OFFER" || stage === "ACCEPTED") row.offer = true;
+    reached.set(id, row);
+  };
+  for (const application of applications) mark(application.id, application.stage);
+  for (const move of stageMoves) {
+    if (move.applicationId && move.toStage) mark(move.applicationId, move.toStage);
+  }
+
+  const byCompany = new Map<string, string[]>();
+  for (const application of applications) {
+    const list = byCompany.get(application.companyId);
+    if (list) list.push(application.id);
+    else byCompany.set(application.companyId, [application.id]);
+  }
+  const liveApplicationIds = new Set(applications.map((application) => application.id));
+
+  const tally = (ids: string[]) => {
+    const seen = new Set(ids);
+    let interviews = 0;
+    let offers = 0;
+    for (const id of seen) {
+      const row = reached.get(id);
+      if (row?.interview) interviews += 1;
+      if (row?.offer) offers += 1;
+    }
+    return { applications: seen.size, interviews, offers };
+  };
+
+  const standings: ContactStanding[] = contacts.map((contact) => {
+    // An applicationId pointing at something archived is not a live thread.
+    const directIds =
+      contact.applicationId && liveApplicationIds.has(contact.applicationId)
+        ? [contact.applicationId]
+        : [];
+    const companyIds = contact.companies
+      .filter((link) => link.company.archivedAt === null)
+      .map((link) => link.company.id);
+    // Their own application does not also count as a company one, or somebody
+    // who referred you to the place they work reads as two separate signals.
+    const companyApplicationIds = companyIds
+      .flatMap((companyId) => byCompany.get(companyId) ?? [])
+      .filter((id) => !directIds.includes(id));
+
+    return {
+      id: contact.id,
+      name: contact.name,
+      title: contact.title,
+      relationship: contact.relationship,
+      companies: contact.companies
+        .filter((link) => link.company.archivedAt === null)
+        .map((link) => ({ id: link.company.id, name: link.company.name })),
+      direct: tally(directIds),
+      atCompany: tally(companyApplicationIds),
+      // A person has no stage, and quietDaysFor only reads it through
+      // hasGoneQuiet, which this does not call. The empty string keeps the
+      // shared helper rather than forking a second way to count days.
+      quietDays: quietDaysFor(
+        {
+          stage: "",
+          lastActivityAt: contact.activities[0]?.occurredAt ?? null,
+          createdAt: contact.createdAt,
+        },
+        now,
+      ),
+      nextFollowUpAt: contact.nextFollowUpAt,
+      pingDue: contact.nextFollowUpAt !== null && contact.nextFollowUpAt <= now,
+    };
+  });
+
+  // What a person is worth, for ordering only. A direct interview outranks a
+  // company one because the evidence behind it is stronger, and neither is a
+  // score anybody is shown — the two counts are.
+  const weight = (row: ContactStanding) =>
+    row.direct.offers * 8 +
+    row.direct.interviews * 4 +
+    row.direct.applications * 2 +
+    row.atCompany.offers * 2 +
+    row.atCompany.interviews +
+    row.atCompany.applications * 0.25;
+
+  const sorted = [...standings].sort((a, b) => weight(b) - weight(a) || b.quietDays - a.quietDays);
+
+  return {
+    contacts: sorted,
+    worthKeepingWarm: sorted.filter(
+      (row) => weight(row) > 0 && (row.pingDue || row.quietDays >= CONTACT_QUIET_AFTER),
+    ),
+    // One contact and one application cannot tell anybody who matters.
+    confident: contacts.length >= 3 && applications.length >= 3,
+  };
+}
+
+/** Days of silence after which a contact who earned something is worth a nudge. */
+const CONTACT_QUIET_AFTER = 30;
+
 export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
   const [applications, transitions] = await Promise.all([
     db.application.findMany({
@@ -2603,6 +2928,13 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
         interviewRound: true,
         company: { select: { name: true } },
         resume: { select: { id: true, name: true } },
+        // Where it came from, for the same conversion question asked of the
+        // channel rather than the document. One join rather than a second pass
+        // over the table: this read already walks every live application.
+        tags: {
+          where: { tag: { kind: TagKind.APPLICATION } },
+          select: { tag: { select: { id: true, name: true, color: true } } },
+        },
       },
     }),
     db.activity.findMany({
@@ -2758,6 +3090,31 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
     .map((row) => ({ ...row, rate: row.sent > 0 ? Math.round((row.responded / row.sent) * 100) : null }))
     .sort((a, b) => b.sent - a.sent);
 
+  // --- which channel is actually working -------------------------------------
+  // Identical arithmetic to byResume, asked of the source tag instead. An
+  // application wearing two source tags counts into both, so these do not sum
+  // to `applied` — which is right: it is evidence about both channels, and
+  // splitting it between them would invent a precision nobody recorded.
+  const sourceRows = new Map<string, { id: string; name: string; color: string; sent: number; responded: number }>();
+  for (const application of applications) {
+    if ((furthest.get(application.id) ?? -1) < 0) continue;
+    for (const { tag } of application.tags) {
+      const row = sourceRows.get(tag.id) ?? {
+        id: tag.id,
+        name: tag.name,
+        color: tag.color,
+        sent: 0,
+        responded: 0,
+      };
+      row.sent += 1;
+      if ((furthest.get(application.id) ?? -1) >= 1) row.responded += 1;
+      sourceRows.set(tag.id, row);
+    }
+  }
+  const bySource = [...sourceRows.values()]
+    .map((row) => ({ ...row, rate: row.sent > 0 ? Math.round((row.responded / row.sent) * 100) : null }))
+    .sort((a, b) => b.sent - a.sent);
+
   const applied = [...furthest.values()].filter((value) => value >= 0).length;
   const inFlight = applications.filter(
     (application) => !TERMINAL_STAGES.includes(application.stage),
@@ -2771,6 +3128,7 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
     velocity,
     stalled,
     byResume,
+    bySource,
   };
 }
 
