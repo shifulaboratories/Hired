@@ -63,9 +63,9 @@ const SECTIONS = [
   { file: "accounts.mdx", first: "list_linked_accounts", last: "search_calendar",
     title: "Mail & Calendar", icon: "envelope",
     blurb: "the threads and meetings behind any record, read live from your own Google, Microsoft 365 or IMAP and CalDAV accounts." },
-  { file: "connections.mdx", first: "export_everything", last: "delete_connection",
+  { file: "connections.mdx", first: "get_digest_settings", last: "delete_connection",
     title: "Your account", icon: "plug",
-    blurb: "who you are, the wiring itself, and getting all of it back out again." },
+    blurb: "who you are, the two emails this app can send you, the wiring itself, and getting all of it back out again." },
   { file: "admin.mdx", first: "admin_instance_stats", last: "admin_delete_variable",
     title: "Admin", icon: "shield-halved",
     blurb: "accounts, invitations, the waitlist, sign-in, email, billing, health, configuration." },
@@ -163,6 +163,7 @@ const COLUMN_LIST_VALUES = ["pipeline", "companies", "contacts"];
 // src/lib/mcp/tools.ts. Both checked below.
 const PROPOSAL_KINDS = ["LOG_ACTIVITY", "MOVE_STAGE", "CREATE_TASK", "SET_FOLLOW_UP", "CREATE_CONTACT"];
 const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"];
+const DIGEST_KINDS = ["weekly", "nudge"];
 // Mirrors LETTER_KINDS in src/lib/data/letters.ts, checked below.
 const LETTER_KINDS = ["COVER_LETTER", "OUTREACH", "REFERRAL_ASK", "THANK_YOU", "REPLY", "OTHER"];
 // Mirrors SYSTEM_EVENT_SOURCES in src/lib/data/system.ts, checked below.
@@ -187,6 +188,7 @@ for (const [name, values] of [
   ["PIPELINE_VIEW_VALUES", PIPELINE_VIEW_VALUES],
   ["COLUMN_LIST_VALUES", COLUMN_LIST_VALUES],
   ["PROPOSAL_STATUSES", PROPOSAL_STATUSES],
+  ["DIGEST_KINDS", DIGEST_KINDS],
 ]) {
   const declared = new RegExp(`${name}[^=]*=\\s*\\[([\\s\\S]*?)\\]`).exec(src);
   if (!declared) throw new Error(`tools.ts no longer declares ${name}`);
@@ -248,7 +250,7 @@ for (const [name, values] of [
 
 const scope = {
   str, num, bool, strArray, object, limitArg, SYSTEM_EVENT_SOURCES, LETTER_KINDS,
-  PROPOSAL_KINDS, PROPOSAL_STATUSES,
+  PROPOSAL_KINDS, PROPOSAL_STATUSES, DIGEST_KINDS,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
   ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,
   COMPANY_MISSING, CONTACT_MISSING, PIPELINE_VIEW_VALUES, COLUMN_LIST_VALUES,

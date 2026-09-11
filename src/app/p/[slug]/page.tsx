@@ -33,7 +33,11 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const shared = await getSharedPipeline(slug);
   if (!shared) return { title: "Not found", robots: { index: false, follow: false } };
   return {
-    title: shared.ownerName ? `${shared.ownerName} — job search` : "Job search",
+    title: shared.viewName
+      ? `${shared.ownerName || "A"} — ${shared.viewName}`
+      : shared.ownerName
+        ? `${shared.ownerName} — job search`
+        : "Job search",
     // Unlisted means unlisted. An indexed "unlisted" link is a listed one.
     robots: { index: false, follow: false, nocache: true },
   };
@@ -44,7 +48,7 @@ export default async function SharedPipelinePage({ params }: Params) {
   const [shared, { companyLogos }] = await Promise.all([getSharedPipeline(slug), getSettings()]);
   if (!shared) notFound();
 
-  const { applications, ownerName, ownerTimeZone } = shared;
+  const { applications, ownerName, ownerTimeZone, viewName } = shared;
   const live = applications.filter((a) => !TERMINAL_STAGES.includes(a.stage));
 
   return (
@@ -57,10 +61,18 @@ export default async function SharedPipelinePage({ params }: Params) {
         <h1 className="text-[22px] leading-tight font-semibold tracking-tight md:text-[26px]">
           {ownerName ? `${ownerName}'s job search` : "A job search"}
         </h1>
+        {/* Named, so nobody mistakes a slice for the whole search and tells
+            them they have applied to four things. */}
+        {viewName && (
+          <p className="text-muted-foreground mt-1 text-[13.5px]">
+            Part of it: <span className="font-medium">{viewName}</span>
+          </p>
+        )}
         <p className="text-muted-foreground mt-1.5 text-[13.5px]">
           {live.length} live {live.length === 1 ? "application" : "applications"}
           {applications.length > live.length && ` · ${applications.length - live.length} closed`}.
-          Read-only — nothing here can be changed from this page.
+          {viewName ? " Part of a longer list." : ""} Read-only — nothing here can be changed
+          from this page.
         </p>
       </header>
 

@@ -25,7 +25,12 @@ import { listSkills } from "@/lib/skills";
 import { toolsFor, promptsFor } from "@/lib/mcp/tools";
 import { guessClient } from "@/lib/mcp/clients";
 import { MANUAL_URL } from "@/lib/links";
-import { getSettings, googleIsConfigured, microsoftIsConfigured } from "@/lib/settings";
+import {
+  emailIsConfigured,
+  getSettings,
+  googleIsConfigured,
+  microsoftIsConfigured,
+} from "@/lib/settings";
 import { listLinkedAccounts } from "@/lib/data/accounts";
 import { listStageTemplates, stageTemplateUsage } from "@/lib/data/stage-templates";
 import { isGoogleRefusal, refusalMessage } from "@/lib/google";
@@ -214,6 +219,12 @@ export default async function SettingsPage({
                 timeZone: profile.timeZone,
               }}
               googleReady={googleIsConfigured(settings)}
+              digest={{
+                weeklyDigest: profile.weeklyDigest,
+                dailyNudge: profile.dailyNudge,
+                digestHour: profile.digestHour,
+                emailConfigured: emailIsConfigured(settings),
+              }}
             />
           </FadeIn>
         </TabsContent>

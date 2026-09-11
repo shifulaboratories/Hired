@@ -59,6 +59,23 @@ export function clockIn(date: Date, timeZone: string) {
   return partsOf(date, timeZone);
 }
 
+/**
+ * Which day of the week this instant falls on there, Monday 1 through Sunday 7.
+ *
+ * ISO numbering rather than JavaScript's Sunday-zero, because every other
+ * weekday in this app — startOfWeek, the calendar grid — is Monday-first, and
+ * two conventions in one codebase is one off-by-one waiting to happen.
+ */
+export function weekdayIn(date: Date, timeZone: string): number {
+  const name = new Intl.DateTimeFormat("en-US", {
+    ...(timeZone ? { timeZone } : {}),
+    weekday: "short",
+  }).format(date);
+  const order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const found = order.indexOf(name);
+  return found === -1 ? 1 : found + 1;
+}
+
 /** "2026-03-14" — the calendar day this instant falls on, in that zone. */
 export function civilDay(date: Date, timeZone: string): string {
   const { year, month, day } = partsOf(date, timeZone);

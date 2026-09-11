@@ -87,7 +87,7 @@ model User {
   tags           Tag[]
   stageTemplates StageTemplate[]
   proposals      Proposal[]
-  pipelineShare  PipelineShare?
+  pipelineShares PipelineShare[]
   linkedAccounts LinkedAccount[]
 
   @@index([role])
@@ -231,20 +231,44 @@ model Invite {
 ///
 /// One per person. A second link would need naming, listing and separate
 /// revocation, which is a feature nobody has asked for yet.
+/// One row per THING SHARED, not one per person.
+///
+/// The whole-pipeline link is still the row with savedViewId null, wearing the
+/// slug it already had, so nothing about an existing link changes. Beside it
+/// there can now be a link per saved view: "everything I have from a referral"
+/// is a reasonable thing to show a friend, and the whole board is not.
 model PipelineShare {
-  id            String    @id @default(cuid())
-  userId        String    @unique
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String     @id @default(cuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The saved view this link shows, or null for the whole pipeline.
+  ///
+  /// Cascade rather than SetNull on purpose: SetNull would silently promote a
+  /// link showing four applications into one showing the entire search — a
+  /// widening of what a stranger can see, caused by deleting something else.
+  savedViewId   String?
+  savedView     SavedView? @relation(fields: [savedViewId], references: [id], onDelete: Cascade)
+  /// savedViewId, or "" for the whole-pipeline link.
+  ///
+  /// @@unique([userId, savedViewId]) would NOT stop one person holding two
+  /// whole-pipeline links: Postgres treats NULLs as distinct. Prisma cannot
+  /// express a partial unique index, so the discriminator is a column — the
+  /// same workaround Company.archiveKey and Tag.key already take.
+  shareKey      String     @default("")
   /// The public URL is /p/<slug>. Unique across the instance.
-  slug          String    @unique
+  slug          String     @unique
   /// Whether the closed applications appear. Off by default: the useful
   /// question for a reviewer is what is live, not what is over.
-  includeClosed Boolean   @default(false)
+  includeClosed Boolean    @default(false)
   /// Answers "has anyone actually opened this". A timestamp rather than a
   /// counter, for the reason recorded against McpConnection: a throttled
   /// counter is a number that is quietly wrong.
   lastViewedAt  DateTime?
-  createdAt     DateTime  @default(now())
+  createdAt     DateTime   @default(now())
+
+  @@unique([userId, shareKey])
+  @@index([userId])
+  @@index([savedViewId])
 }
 
 /// Failed sign-in counters, so a public login form cannot be guessed at forever.
@@ -439,7 +463,22 @@ model Profile {
   /// (src/components/onboarding/time-zone-seed.tsx) and Settings can override
   /// it. See src/lib/time.ts for the arithmetic.
   timeZone       String    @default("")
-  updatedAt      DateTime  @updatedAt
+
+  /// Outbound mail, off until somebody turns it on. Two different promises:
+  /// the weekly one is a summary you read on a Monday, the daily one only
+  /// arrives on a day something is actually due. Both need the instance to
+  /// have email configured; neither is a setting an admin can set for you.
+  weeklyDigest Boolean  @default(false)
+  dailyNudge   Boolean  @default(false)
+  /// The hour, in THEIR zone, both are sent at. 0-23.
+  digestHour   Int      @default(8)
+  /// The civil day each was last sent, in their zone, as YYYY-MM-DD. A day
+  /// string rather than a timestamp because the question the sweep asks is
+  /// "have they had today's yet", and that is a question about their calendar.
+  /// It is also what makes the sweep safe to run every hour, or twice.
+  lastDigestOn String   @default("")
+  lastNudgeOn  String   @default("")
+  updatedAt    DateTime @updatedAt
 }
 
 model Role {
@@ -1201,6 +1240,8 @@ model SavedView {
   query     String   @default("")
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+
+  shares PipelineShare[]
 
   @@unique([userId, name])
   @@index([userId, name])

@@ -39,6 +39,8 @@ export const SETTING_KEYS = {
   stripeSecretKey: "stripe_secret_key",
   stripeWebhookSecret: "stripe_webhook_secret",
   stripePaymentLink: "stripe_payment_link",
+  /// The shared secret the digest sweep URL carries. Minted on demand.
+  digestToken: "digest_token",
 } as const;
 
 export type InstanceSettings = {
@@ -80,6 +82,13 @@ export type InstanceSettings = {
   stripeWebhookSecret: string;
   /** A Stripe Payment Link — the public checkout URL for this instance. */
   stripePaymentLink: string;
+  /**
+   * The secret in the digest sweep URL. Empty means digests never go out on a
+   * schedule — a self-hoster mints one in Admin and points their platform's
+   * cron at the address it produces. A Setting rather than an env var, because
+   * DATABASE_URL is the only variable and that is a promise the README makes.
+   */
+  digestToken: string;
 };
 
 /**
@@ -300,6 +309,16 @@ export const VARIABLES: VariableDef[] = [
     placeholder: "https://buy.stripe.com/…",
     fallback: "",
   },
+  {
+    key: SETTING_KEYS.digestToken,
+    field: "digestToken",
+    label: "Digest sweep token",
+    help: "The secret in /api/digest/<token>. Point your host's scheduler at that address hourly and the people who asked for a weekly summary or a due-today nudge get one. Empty means nothing is sent on a schedule; anybody can still ask for one by hand.",
+    kind: "secret",
+    group: "Email",
+    placeholder: "A long random string",
+    fallback: "",
+  },
 ];
 
 const BY_KEY = new Map(VARIABLES.map((variable) => [variable.key, variable]));
@@ -349,6 +368,7 @@ export async function getSettings(): Promise<InstanceSettings> {
     stripeSecretKey: raw(SETTING_KEYS.stripeSecretKey),
     stripeWebhookSecret: raw(SETTING_KEYS.stripeWebhookSecret),
     stripePaymentLink: raw(SETTING_KEYS.stripePaymentLink),
+    digestToken: raw(SETTING_KEYS.digestToken),
   };
 }
 

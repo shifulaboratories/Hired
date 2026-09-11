@@ -16,6 +16,7 @@ import * as letters from "@/lib/data/letters";
 import * as stageTemplates from "@/lib/data/stage-templates";
 import * as proposals from "@/lib/data/proposals";
 import * as transfer from "@/lib/data/transfer";
+import * as digest from "@/lib/data/digest";
 import { PROPOSAL_KINDS } from "@/lib/data/proposals";
 import { LETTER_KINDS } from "@/lib/data/letters";
 import * as tags from "@/lib/data/tags";
@@ -239,6 +240,9 @@ function truncationNotice(shown: number, total: number): string {
 /** The `limit` argument every capped list tool takes, worded the same way. */
 const limitArg = (fallback: number) =>
   num(`Max rows to return. Default ${fallback}, hard ceiling ${LIST_CEILING}. Prefer narrowing the filters.`);
+
+/** The two messages this app can send. Mirrored in tools/gen-tool-docs.mjs. */
+const DIGEST_KINDS = ["weekly", "nudge"] as const;
 
 /** The three states a queued proposal can be in. Mirrored in tools/gen-tool-docs.mjs. */
 const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"] as const;
@@ -3290,9 +3294,10 @@ export const tools: McpTool[] = [
     name: "share_pipeline",
     title: "Get a read-only link to the pipeline",
     description:
-      "Mint a link that shows this person's pipeline to anyone holding it, without a login — for a friend, a coach or a former manager who is helping review the search. Returns publicUrl, which is the whole point: hand it straight to the user. Calling it twice returns the same link rather than a second one. What a viewer sees is deliberately narrow: company, role, stage, location, how long each has been sitting and when a follow-up is due. They do NOT see notes, job descriptions, salary, contacts or the activity timeline — say so if someone asks what will be visible, because a share link is consent to show a search, not to publish the people in it. Set include_closed to show finished applications too.",
+      "Mint a link that shows this person's pipeline to anyone holding it, without a login — for a friend, a coach or a former manager who is helping review the search. Returns publicUrl, which is the whole point: hand it straight to the user. Calling it twice for the same thing returns the same link rather than a second one. Pass saved_view_id (from list_saved_views) to share ONLY what that view shows — usually the better offer, because 'everything I have from a referral' is a reasonable thing to send someone and a whole board is not. Rows the view filters out are not in the page at all. Each thing shared has its own address and its own switches, so revoking one leaves the others alone. What a viewer sees is deliberately narrow: company, role, stage, location, how long each has been sitting and when a follow-up is due. They do NOT see notes, job descriptions, salary, contacts or the activity timeline — say so if someone asks what will be visible, because a share link is consent to show a search, not to publish the people in it.",
     inputSchema: object({
       include_closed: bool("Show accepted / rejected / withdrawn / ghosted applications too. Default false."),
+      saved_view_id: str("Share only this saved view. Omit for the whole pipeline"),
     }),
     annotations: {
       readOnlyHint: false,
@@ -3303,6 +3308,7 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => {
       const share = await pipelineShare.sharePipeline(ctx.userId, {
         includeClosed: b(args, "include_closed"),
+        savedViewId: s(args, "saved_view_id") ?? null,
       });
       const publicUrl = publicPipelineUrl(ctx.baseUrl, share.slug);
       return withLinks({ ...share, publicUrl }, [
@@ -3321,21 +3327,28 @@ export const tools: McpTool[] = [
     name: "unshare_pipeline",
     title: "Revoke the pipeline link",
     description:
-      "Stop sharing the pipeline. This DESTROYS the address rather than pausing it — anyone holding the old link gets nothing, and sharing again later mints a completely different URL. That is deliberate: the reason to revoke is usually that a link reached someone it should not have, and a pause that can be undone does not fix that.",
-    inputSchema: object({}),
+      "Stop sharing. This DESTROYS the address rather than pausing it — anyone holding the old link gets nothing, and sharing again later mints a completely different URL. That is deliberate: the reason to revoke is usually that a link reached someone it should not have, and a pause that can be undone does not fix that. With no arguments it revokes the whole-pipeline link and leaves any saved-view links alone; pass saved_view_id for one of those, or all true to kill every link at once, which is the answer to 'stop sharing anything'. Returns how many it revoked.",
+    inputSchema: object({
+      saved_view_id: str("Revoke the link for this saved view rather than the whole-pipeline one"),
+      all: bool("Revoke every share link this person has"),
+    }),
     annotations: {
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (_args, ctx) => pipelineShare.unsharePipeline(ctx.userId),
+    handler: async (args, ctx) =>
+      pipelineShare.unsharePipeline(ctx.userId, {
+        savedViewId: s(args, "saved_view_id") ?? null,
+        all: b(args, "all"),
+      }),
   },
   {
     name: "get_pipeline_share",
     title: "Check whether the pipeline is shared",
     description:
-      "Whether a read-only pipeline link currently exists, what it shows, and when it was last opened. Returns null when nothing is shared, and publicUrl when something is. Use it before minting a link so you can tell someone they already have one, and to answer 'has anyone actually looked at it'.",
+      "Every read-only link this person has minted, what each one shows, and when it was last opened. The one with savedView null is the whole pipeline; the rest each show one saved view. Returns an empty list when nothing is shared. Use it before minting a link so you can tell someone they already have one, and to answer 'has anyone actually looked at it' — lastViewedAt null means nobody has opened it yet.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -3344,17 +3357,21 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (_args, ctx) => {
-      const share = await pipelineShare.getPipelineShare(ctx.userId);
-      if (!share) return null;
-      const publicUrl = publicPipelineUrl(ctx.baseUrl, share.slug);
-      return withLinks({ ...share, publicUrl }, [
-        {
-          type: "resource_link",
-          uri: publicUrl,
-          name: "Shared pipeline",
+      const shares = await pipelineShare.listPipelineShares(ctx.userId);
+      if (shares.length === 0) return [];
+      const rows = shares.map((share) => ({
+        ...share,
+        publicUrl: publicPipelineUrl(ctx.baseUrl, share.slug),
+      }));
+      return withLinks(
+        rows,
+        rows.map((share) => ({
+          type: "resource_link" as const,
+          uri: share.publicUrl,
+          name: share.savedView ? `Shared view: ${share.savedView.name}` : "Shared pipeline",
           mimeType: "text/html",
-        },
-      ]);
+        })),
+      );
     },
   },
   {
@@ -4724,6 +4741,88 @@ export const tools: McpTool[] = [
   // -------------------------------------------------------------------------
   // ACCOUNT
   // -------------------------------------------------------------------------
+  {
+    name: "get_digest_settings",
+    title: "Check the two emails this app can send",
+    description:
+      "Whether this person has asked for a weekly summary or a due-today nudge, what hour they go out at in their own zone, when each was last sent, and whether the instance can send mail at all. `emailConfigured` false means both switches are inert until an admin sets up email — say that rather than turning something on that cannot work. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => digest.getDigestPreferences(ctx.userId),
+  },
+  {
+    name: "set_digest_settings",
+    title: "Turn the weekly summary or the daily nudge on or off",
+    description:
+      "Both are OFF until somebody asks for them, and this is the only thing that turns them on. The weekly one goes out on a Monday morning and says where the search stands, what moved, what is coming and the one thing worth fixing. The daily one arrives only on a day something is actually due — an offer to answer, a company to chase, a task — and sends nothing on a quiet day, on purpose, so the one that matters does not land in a folder nobody reads. `hour` is in their own time zone. Only offer this when somebody asks for mail; nobody wants to be signed up for email by an assistant.",
+    inputSchema: object({
+      weekly: bool("The Monday summary"),
+      daily: bool("The due-today nudge. Only sends on a day something is due"),
+      hour: num("What hour both go out at, 0-23, in their own zone. Default 8"),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      digest.setDigestPreferences(ctx.userId, {
+        weeklyDigest: b(args, "weekly"),
+        dailyNudge: b(args, "daily"),
+        digestHour: n(args, "hour"),
+      }),
+  },
+  {
+    name: "preview_digest",
+    title: "See what a digest would say",
+    description:
+      "Build the weekly summary or the due-today nudge and return it WITHOUT sending anything. This is the useful one in a conversation: it is the same read the mail is made from, so 'what does my week look like' and 'what is due today' are answered without anybody's inbox being involved. Returns the subject, the opening line and the sections. `empty` true on a nudge means nothing is due, which is why no mail would go out.",
+    inputSchema: object({
+      kind: {
+        type: "string",
+        enum: [...DIGEST_KINDS],
+        description: "weekly (the Monday summary) or nudge (what is due today). Default weekly",
+      },
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      digest.digestContent(
+        ctx.userId,
+        (enumArg(args, "kind", DIGEST_KINDS) as digest.DigestKind | undefined) ?? "weekly",
+      ),
+  },
+  {
+    name: "send_digest_now",
+    title: "Send one of the two emails now",
+    description:
+      "Actually send the weekly summary or the daily nudge to this person's own address, immediately, ignoring the schedule and the once-a-day guard. It does NOT ignore the opt-in: somebody who has not turned that message on gets nothing and the result says so. Use it to show someone what they signed up for, or when they ask for their week by mail. For reading it here, preview_digest is the tool — this one puts a message in an inbox.",
+    inputSchema: object({
+      kind: { type: "string", enum: [...DIGEST_KINDS], description: "weekly or nudge. Default weekly" },
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      digest.sendDigest(
+        ctx.userId,
+        (enumArg(args, "kind", DIGEST_KINDS) as digest.DigestKind | undefined) ?? "weekly",
+        { force: true },
+      ),
+  },
   {
     name: "export_everything",
     title: "Export the whole workspace",

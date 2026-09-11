@@ -1,12 +1,32 @@
 ---
 title: "Account and connection tools"
 sidebarTitle: "Your account"
-description: "Ten tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
+description: "Fourteen tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
 icon: "plug"
 ---
 
 "Add this to my work laptop" and "kill the one I pasted in a chat by mistake" are things
 you can just say. So is "give me everything you have on me".
+
+## The two emails
+
+Nothing leaves this app unless somebody asked for it. Two messages can:
+`set_digest_settings` turns on a Monday summary of where the search stands, a due-today
+nudge, or both, and `get_digest_settings` says which are on and whether the instance can
+send mail at all.
+
+The nudge sends nothing on a day nothing is due — deliberately, because a daily mail that
+says "nothing today" every day is a daily mail people filter, and then the one that
+mattered lands in the same folder.
+
+`preview_digest` builds either one and returns it without sending, which is usually the
+right tool in a conversation: "what does my week look like" is the same read the mail is
+made from. `send_digest_now` actually puts it in their inbox.
+
+<Note>
+  Neither is on by default and no admin can turn one on for somebody else. Only offer this
+  when a person asks for mail.
+</Note>
 
 ## Getting it all out
 
@@ -48,6 +68,48 @@ is a useful way to see whether anyone actually pasted it.
   assistant, which is why they address it rather than you. They are reproduced rather than
   rewritten so this page cannot drift from what your assistant actually receives.
 </Note>
+
+### `get_digest_settings`
+
+_Check the two emails this app can send_
+
+Whether this person has asked for a weekly summary or a due-today nudge, what hour they go out at in their own zone, when each was last sent, and whether the instance can send mail at all. `emailConfigured` false means both switches are inert until an admin sets up email — say that rather than turning something on that cannot work. Read-only.
+
+No arguments.
+
+### `set_digest_settings`
+
+_Turn the weekly summary or the daily nudge on or off_
+
+Both are OFF until somebody asks for them, and this is the only thing that turns them on. The weekly one goes out on a Monday morning and says where the search stands, what moved, what is coming and the one thing worth fixing. The daily one arrives only on a day something is actually due — an offer to answer, a company to chase, a task — and sends nothing on a quiet day, on purpose, so the one that matters does not land in a folder nobody reads. `hour` is in their own time zone. Only offer this when somebody asks for mail; nobody wants to be signed up for email by an assistant.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `weekly` | boolean | The Monday summary |
+| `daily` | boolean | The due-today nudge. Only sends on a day something is due |
+| `hour` | number | What hour both go out at, 0-23, in their own zone. Default 8 |
+
+### `preview_digest`
+
+_See what a digest would say_
+
+Build the weekly summary or the due-today nudge and return it WITHOUT sending anything. This is the useful one in a conversation: it is the same read the mail is made from, so 'what does my week look like' and 'what is due today' are answered without anybody's inbox being involved. Returns the subject, the opening line and the sections. `empty` true on a nudge means nothing is due, which is why no mail would go out.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `kind` | enum | weekly (the Monday summary) or nudge (what is due today). Default weekly  `weekly` · `nudge` |
+
+### `send_digest_now`
+
+_Send one of the two emails now_
+
+Actually send the weekly summary or the daily nudge to this person's own address, immediately, ignoring the schedule and the once-a-day guard. It does NOT ignore the opt-in: somebody who has not turned that message on gets nothing and the result says so. Use it to show someone what they signed up for, or when they ask for their week by mail. For reading it here, preview_digest is the tool — this one puts a message in an inbox.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `kind` | enum | weekly or nudge. Default weekly  `weekly` · `nudge` |
 
 ### `export_everything`
 

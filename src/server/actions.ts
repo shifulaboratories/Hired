@@ -11,6 +11,7 @@ import * as offers from "@/lib/data/offers";
 import * as letters from "@/lib/data/letters";
 import * as stageTemplates from "@/lib/data/stage-templates";
 import * as proposals from "@/lib/data/proposals";
+import * as digest from "@/lib/data/digest";
 import * as tags from "@/lib/data/tags";
 import { STAGE_LABEL } from "@/lib/data/pipeline";
 import * as views from "@/lib/data/views";
@@ -1131,6 +1132,28 @@ export async function updateApplicationAction(
 }
 
 /**
+ * The two emails. Both off until somebody turns them on here or over a
+ * connection; there is no path that subscribes a person to anything.
+ */
+export async function setDigestSettingsAction(patch: {
+  weeklyDigest?: boolean;
+  dailyNudge?: boolean;
+  digestHour?: number;
+}) {
+  const user = await requireUser();
+  const next = await digest.setDigestPreferences(user.id, patch);
+  revalidatePath("/settings");
+  return next;
+}
+
+export async function sendDigestNowAction(kind: digest.DigestKind) {
+  const user = await requireUser();
+  const outcome = await digest.sendDigest(user.id, kind, { force: true });
+  revalidatePath("/settings");
+  return outcome;
+}
+
+/**
  * The review queue. Accepting writes through the same data layer the tool does,
  * so there is exactly one implementation of what "accept" means.
  */
@@ -1836,16 +1859,21 @@ export async function getApplicationForPanelAction(id: string) {
 
 // --- sharing the pipeline read-only -----------------------------------------
 
-export async function sharePipelineAction(includeClosed?: boolean) {
+export async function sharePipelineAction(includeClosed?: boolean, savedViewId?: string | null) {
   const user = await requireUser();
-  const share = await pipelineShare.sharePipeline(user.id, { includeClosed });
+  const share = await pipelineShare.sharePipeline(user.id, { includeClosed, savedViewId });
   revalidatePath("/applications");
-  return { slug: share.slug, includeClosed: share.includeClosed, url: `${await currentBaseUrl()}/p/${share.slug}` };
+  return {
+    slug: share.slug,
+    includeClosed: share.includeClosed,
+    savedViewId: share.savedViewId,
+    url: `${await currentBaseUrl()}/p/${share.slug}`,
+  };
 }
 
-export async function unsharePipelineAction() {
+export async function unsharePipelineAction(savedViewId?: string | null) {
   const user = await requireUser();
-  await pipelineShare.unsharePipeline(user.id);
+  await pipelineShare.unsharePipeline(user.id, { savedViewId });
   revalidatePath("/applications");
 }
 

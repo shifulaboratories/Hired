@@ -6300,3 +6300,60 @@ One thing deliberately left out of the UI: there is no Restore button beside Dow
 Putting a file back belongs over a connection where it can be dry-run first and the report
 read back; a file picker in a settings panel cannot show somebody what 1,400 records are
 about to do.
+
+---
+
+## 2026-09-11 — One share row per thing shared
+
+`PipelineShare.userId` was `@unique`: one person, one link, the whole board. Sharing a
+saved view needed that to become one row per thing shared, and the interesting part is the
+uniqueness.
+
+`@@unique([userId, savedViewId])` does NOT stop somebody holding two whole-pipeline links:
+Postgres treats NULLs as distinct, so two rows with a null savedViewId do not collide.
+Prisma cannot express a partial unique index (`WHERE savedViewId IS NULL`), and an index
+that exists only in a migration is invisible to the next reader and to the next
+`migrate diff`. So the discriminator is a column, `shareKey`, holding the saved view's id
+or `""` — the same trade `Company.archiveKey` and `Tag.key` already took.
+
+**The foreign key CASCADES rather than SET NULL, and that is a security choice.** SET NULL
+would silently promote a link showing four applications into one showing the entire search,
+as a side effect of deleting something else. The probe deletes a shared view and asserts
+the link is gone rather than widened.
+
+**The view's filters are applied on the server, not in the page.** Rows the view excludes
+are not in the response at all. That needed the private columns the predicate reads —
+notes, jobDescription, companyId, resumeId — to be fetched and then dropped, which is worth
+knowing about the file whose whole job is an allow-list: the allow-list is on what is
+RETURNED, and the difference is spelled out in the comment. It also needed the real quiet
+metric rather than `updatedAt`, because an approximation would show a stranger rows the
+owner's own view excludes.
+
+## 2026-09-11 — Two emails, and nothing else ever leaves
+
+Until now nothing this app did reached out to anybody. Adding that is mostly a set of
+refusals:
+
+- **Off until asked.** Both default false. No admin can turn one on for somebody else. The
+  first upgrade after this ships must not be the day the app started emailing people.
+- **The nudge sends nothing on a quiet day.** A daily mail that says "nothing today" every
+  day is a daily mail people filter, and then the one that mattered lands in the same
+  folder. It stamps the day anyway so the hourly sweep stops rebuilding the same empty
+  answer until midnight.
+- **`force` skips the schedule, never the opt-in.** The "send me one now" button passes it;
+  the probe asserts that somebody who has not asked still gets nothing.
+- **Once per day, per person, in their zone.** `lastDigestOn` and `lastNudgeOn` hold a
+  civil day string rather than a timestamp, which is what makes the sweep safe to run
+  hourly, or twice from a cron that overlapped.
+
+**No scheduler inside the app.** Invariant three says the transport is stateless, and a
+replica that quietly became the one sending everybody's mail would end that. The schedule
+lives outside: `/api/digest/<token>`, hit hourly by whatever the host already runs. The
+token is a Setting rather than an env var — `DATABASE_URL` being the only variable is a
+promise the README makes — it is compared in constant time because it sits in a path that
+lands in every access log, and an unset token means the address is OFF rather than open.
+
+The weekly one fires on Monday in the reader's week. A Sunday-evening summary is read on
+Monday morning anyway, and Monday is when somebody can act on it. `weekdayIn` in
+`src/lib/time.ts` is ISO-numbered, Monday 1, because everything else weekday-shaped in this
+codebase is Monday-first and two conventions is one off-by-one waiting to happen.
