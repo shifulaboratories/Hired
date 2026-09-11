@@ -224,8 +224,9 @@ comment, as the seven exceptions already do.
 `Offer` is the first model to hang off an archivable one without carrying `archivedAt`
 itself: it belongs to its application and disappears with it. The cost is that every read in
 `src/lib/data/offers.ts` that does not start from an already-filtered application has to
-spell `application: { archivedAt: null }` by hand. There are three, each says so at the
-line, and the probe archives an application and checks all three.
+spell `application: { archivedAt: null }` by hand. There are five, each numbered at the
+line, and the probe archives an application and checks them. The two writes, `updateOffer`
+and `deleteOffer`, deliberately do not filter, and the file header says why.
 
 There is also one catalogue behind every label in the product: `src/lib/data/tags.ts` and
 the `Tag` table, keyed by `kind`. Where an application came from, a company's industry,
