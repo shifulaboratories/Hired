@@ -6261,3 +6261,42 @@ executed, so the rules are narrow on purpose:
 A dismissal is kept rather than deleted. It is an answer, and `list_proposals` can tell an
 assistant later that this was already declined, which is the difference between a queue and
 a nag.
+
+---
+
+## 2026-09-11 — The workspace export is a restore, not a replacement
+
+`export_csv` answers "give me this list in a spreadsheet". The other question — the one a
+self-hoster asks before putting two years of their career somewhere — is "can I get it all
+out, and could I put it back". `src/lib/data/transfer.ts` is that.
+
+**The import is additive and matched by natural key**: a role by employer and title, a
+company by name, a job by employer and role, a tag by kind and name. There is no mode that
+empties anything first, deliberately. That single decision is what makes the feature safe
+to offer at all: importing the same file twice does nothing the second time, and importing
+into a workspace somebody has already started cannot destroy what they have written. The
+probe asserts both, and asserts that a headline typed after the first import survives a
+second one.
+
+**Four things are not in the file, and the export names them.** Connection tokens and
+mail-account passwords, because a backup people email around must not carry a credential.
+Published `/r` and `/p` slugs, because copying a live public URL into a second workspace
+either collides or quietly republishes somebody's resume at an address they thought was
+theirs — the probe greps the serialised document for the slug. The review queue, because a
+proposal is a question rather than a record. And anything belonging to the instance. The
+profile photo goes too, for a duller reason: it is a data URI that would dwarf the file.
+
+**Every enum crosses the boundary through a fallback, not a cast.** The document is JSON
+somebody could have hand-edited, and a stage of "NOT_A_STAGE" reaching Prisma would throw
+halfway through a restore and leave the workspace half-populated. `enumOf` falls back
+instead: losing one field is recoverable, losing the rest of the import is not.
+
+**Two things the probe caught that review would not have.** Resume lineage needs a second
+pass, because a variant can appear before its base in the file. And the join tables were
+reporting four creations on a re-import where the upsert had created none — honest counts
+matter more here than anywhere, because the report is the only thing anybody reads.
+
+One thing deliberately left out of the UI: there is no Restore button beside Download.
+Putting a file back belongs over a connection where it can be dry-run first and the report
+read back; a file picker in a settings panel cannot show somebody what 1,400 records are
+about to do.

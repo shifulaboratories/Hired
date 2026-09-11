@@ -1,12 +1,32 @@
 ---
 title: "Account and connection tools"
 sidebarTitle: "Your account"
-description: "Eight tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
+description: "Ten tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
 icon: "plug"
 ---
 
 "Add this to my work laptop" and "kill the one I pasted in a chat by mistake" are things
-you can just say.
+you can just say. So is "give me everything you have on me".
+
+## Getting it all out
+
+`export_everything` returns a single JSON document holding every record the workspace
+owns — Me, resumes, letters, the whole pipeline with its timeline, tasks, offers, tags and
+saved views — and `import_everything` puts one back.
+
+The import is **additive and matched by natural key**: a role by employer and title, a
+company by name, a job by employer and role. What is already there is left exactly as it
+is, so importing the same file twice does nothing the second time and importing into a
+workspace someone has already started cannot overwrite it. There is no mode that empties
+anything first, deliberately. Run it with `dry_run` first on any file you did not just
+write, and read the report back.
+
+<Warning>
+  Four things are not in the file, and the export names them: connection tokens and
+  mail-account passwords, published `/r` and `/p` slugs, the review queue, and anything
+  belonging to the instance rather than the person. A backup people email around must not
+  carry a credential or a live public URL.
+</Warning>
 
 <Warning>
   `list_connections` deliberately never returns tokens. They are credentials, they would
@@ -28,6 +48,27 @@ is a useful way to see whether anyone actually pasted it.
   assistant, which is why they address it rather than you. They are reproduced rather than
   rewritten so this page cannot drift from what your assistant actually receives.
 </Note>
+
+### `export_everything`
+
+_Export the whole workspace_
+
+Every record this person owns, as one JSON document you can hand back to import_everything — Me, their resumes, their letters, the whole pipeline with its timeline, tasks, offers, tags and saved views. This is the answer to 'can I get my data out'. Four things are deliberately absent and the result names them: connection tokens and mail-account passwords (a backup file people email around must not carry a credential), published slugs (those are live public URLs), the review queue, and anything belonging to the instance rather than the person. `counts` says how many of each came out — read it back rather than claiming success blindly. A long search makes a big document; if it is too large to hand around, there is a Download everything button under Settings → Account that saves the same file straight from the browser. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `counts_only` | boolean | Return just the counts and what was excluded, with no records. Use it to check what a backup would contain |
+
+### `import_everything`
+
+_Put a workspace export back_
+
+Restore a document written by export_everything. ADDITIVE AND MATCHED BY NATURAL KEY: a role is matched by employer and title, a company by name, a job by employer and role, a tag by kind and name. What is already here is left exactly as it is and only what is missing gets written, so importing the same file twice does nothing the second time and importing into a workspace that already has material cannot overwrite it. It is a restore, not a replacement — there is no mode that empties anything first, deliberately. ALWAYS run it with dry_run true first on a file you did not just write, and read the report back: `created` and `skipped` per area, plus `problems` naming anything that could not be placed. A file from a different version is refused rather than half-read.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `document` | object | **required** — The whole export document, exactly as export_everything returned it |
+| `dry_run` | boolean | Do every lookup and no writes, and report the same numbers. Do this first |
 
 ### `whoami`
 

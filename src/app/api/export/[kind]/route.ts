@@ -17,11 +17,12 @@ import { parsePipelineFilters } from "@/lib/pipeline-filters";
 import { parseSort } from "@/lib/pipeline-list";
 import { STAGES } from "@/lib/data/pipeline";
 import { timeZoneOf } from "@/lib/data/me";
+import { exportWorkspace } from "@/lib/data/transfer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const KINDS = ["companies", "contacts", "applications"] as const;
+const KINDS = ["companies", "contacts", "applications", "everything"] as const;
 type Kind = (typeof KINDS)[number];
 
 /**
@@ -53,8 +54,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
   const one = (key: string) => url.searchParams.get(key) ?? undefined;
   const ids = one("ids")?.split(",").filter(Boolean);
 
+  // The whole workspace is JSON rather than a spreadsheet, because the point
+  // of it is being able to put it back — see src/lib/data/transfer.ts.
+  if (kind === "everything") {
+    const [doc, zone] = await Promise.all([exportWorkspace(user.id), timeZoneOf(user.id)]);
+    return new Response(JSON.stringify(doc, null, 2), {
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${exportFilename("everything", zone).replace(/\.csv$/, ".json")}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
   const [csv, zone] = await Promise.all([
-    build(kind as Kind, user.id, one, ids),
+    build(kind as Exclude<Kind, "everything">, user.id, one, ids),
     timeZoneOf(user.id),
   ]);
 
@@ -67,7 +81,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
   });
 }
 
-function build(kind: Kind, userId: string, one: (key: string) => string | undefined, ids?: string[]) {
+function build(kind: Exclude<Kind, "everything">, userId: string, one: (key: string) => string | undefined, ids?: string[]) {
   if (kind === "companies") {
     const filters = parseCompanyFilters(one);
     const sort = parseCompanySort(one("sort"));

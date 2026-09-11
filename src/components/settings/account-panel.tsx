@@ -4,6 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckIcon,
+  DownloadIcon,
   GraduationCapIcon,
   LoaderCircleIcon,
   LogOutIcon,
@@ -163,6 +164,10 @@ export function AccountPanel({
 
         <Separator />
 
+        <YourData />
+
+        <Separator />
+
         <form action={logoutAction}>
           <Button type="submit" variant="ghost" size="sm" className="text-muted-foreground">
             <LogOutIcon /> Sign out
@@ -170,6 +175,40 @@ export function AccountPanel({
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Everything you own, as a file.
+ *
+ * The question behind this button is the one anybody self-hosting asks before
+ * they put two years of their career somewhere: can I get it all out. A link
+ * rather than a server action, for the reason the CSV route records — a browser
+ * download wants a real response with a Content-Disposition on it.
+ *
+ * There is no Restore button beside it, and that is deliberate rather than
+ * unfinished: putting a file back is `import_everything` over a connection,
+ * where an assistant can dry-run it first and read the report back. A file
+ * picker in a settings panel cannot show somebody what 1,400 records are about
+ * to do to a workspace they have already started using.
+ */
+function YourData() {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium">Your data</p>
+        <p className="text-muted-foreground text-xs">
+          Everything you own as one JSON file: Me, your resumes, your letters and the whole
+          pipeline. Connection tokens, mail passwords and published links are left out on
+          purpose. Ask Claude to import_everything to put one back.
+        </p>
+      </div>
+      <Button asChild variant="outline" size="sm">
+        <a href="/api/export/everything" download>
+          <DownloadIcon /> Download everything
+        </a>
+      </Button>
+    </div>
   );
 }
 

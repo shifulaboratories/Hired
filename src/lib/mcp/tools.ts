@@ -15,6 +15,7 @@ import * as offers from "@/lib/data/offers";
 import * as letters from "@/lib/data/letters";
 import * as stageTemplates from "@/lib/data/stage-templates";
 import * as proposals from "@/lib/data/proposals";
+import * as transfer from "@/lib/data/transfer";
 import { PROPOSAL_KINDS } from "@/lib/data/proposals";
 import { LETTER_KINDS } from "@/lib/data/letters";
 import * as tags from "@/lib/data/tags";
@@ -4723,6 +4724,56 @@ export const tools: McpTool[] = [
   // -------------------------------------------------------------------------
   // ACCOUNT
   // -------------------------------------------------------------------------
+  {
+    name: "export_everything",
+    title: "Export the whole workspace",
+    description:
+      "Every record this person owns, as one JSON document you can hand back to import_everything — Me, their resumes, their letters, the whole pipeline with its timeline, tasks, offers, tags and saved views. This is the answer to 'can I get my data out'. Four things are deliberately absent and the result names them: connection tokens and mail-account passwords (a backup file people email around must not carry a credential), published slugs (those are live public URLs), the review queue, and anything belonging to the instance rather than the person. `counts` says how many of each came out — read it back rather than claiming success blindly. A long search makes a big document; if it is too large to hand around, there is a Download everything button under Settings → Account that saves the same file straight from the browser. Read-only.",
+    inputSchema: object({
+      counts_only: bool(
+        "Return just the counts and what was excluded, with no records. Use it to check what a backup would contain",
+      ),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const doc = await transfer.exportWorkspace(ctx.userId);
+      return b(args, "counts_only") ? { ...doc, data: {}, profile: null } : doc;
+    },
+  },
+  {
+    name: "import_everything",
+    title: "Put a workspace export back",
+    description:
+      "Restore a document written by export_everything. ADDITIVE AND MATCHED BY NATURAL KEY: a role is matched by employer and title, a company by name, a job by employer and role, a tag by kind and name. What is already here is left exactly as it is and only what is missing gets written, so importing the same file twice does nothing the second time and importing into a workspace that already has material cannot overwrite it. It is a restore, not a replacement — there is no mode that empties anything first, deliberately. ALWAYS run it with dry_run true first on a file you did not just write, and read the report back: `created` and `skipped` per area, plus `problems` naming anything that could not be placed. A file from a different version is refused rather than half-read.",
+    inputSchema: object(
+      {
+        document: {
+          type: "object",
+          description: "The whole export document, exactly as export_everything returned it",
+          additionalProperties: true,
+        },
+        dry_run: bool("Do every lookup and no writes, and report the same numbers. Do this first"),
+      },
+      ["document"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      transfer.importWorkspace(
+        ctx.userId,
+        (args.document ?? {}) as transfer.WorkspaceExport,
+        { dryRun: b(args, "dry_run") ?? false },
+      ),
+  },
   {
     name: "whoami",
     title: "Who am I connected as",

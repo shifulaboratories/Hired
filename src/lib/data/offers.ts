@@ -28,7 +28,11 @@ import { searchMe, timeZoneOf, type SearchHit } from "@/lib/data/me";
  * disappears when that is archived. That is a convenience with a sharp edge —
  * EVERY read here that does not start from an already-filtered application has
  * to spell `application: { archivedAt: null }` itself, because nothing in the
- * toolchain catches a miss. There are three, and each says so at the line.
+ * toolchain catches a miss. There are FIVE — listOffers, getOffer, compareOffers,
+ * offersDueBy and offersDueBetween — and each says so at the line. updateOffer
+ * and deleteOffer deliberately do NOT filter: fixing a typo on, or removing, an
+ * offer attached to a job you have since binned is a repair, and the id can only
+ * have come from somewhere that already showed it to you.
  */
 
 /** Postgres INTEGER, and the reason amounts are whole units rather than cents. */
@@ -198,7 +202,7 @@ export async function listOffers(
     where: {
       userId,
       ...(options?.applicationId ? { applicationId: options.applicationId } : {}),
-      // Archive filter #1 of 3. An offer has no archivedAt of its own, so this
+      // Archive filter 1 of 5. An offer has no archivedAt of its own, so this
       // read has to exclude the ones whose application is in the bin.
       application: {
         archivedAt: null,
@@ -221,6 +225,7 @@ export async function listOffers(
   return rows;
 }
 
+/** Archive filter 2 of 5. */
 export async function getOffer(userId: string, id: string): Promise<OfferRow | null> {
   return db.offer.findFirst({
     where: { id, userId, application: { archivedAt: null } },
@@ -310,7 +315,7 @@ export async function compareOffers(
       ...(options?.applicationIds?.length
         ? { applicationId: { in: options.applicationIds } }
         : {}),
-      // Archive filter #2 of 3.
+      // Archive filter 3 of 5.
       application: {
         archivedAt: null,
         ...(options?.includeLost ? {} : { stage: { not: "LOST" as Stage } }),
@@ -513,7 +518,7 @@ export async function offerBriefing(userId: string, applicationId: string): Prom
 /**
  * Offer deadlines coming due, for the bell and the calendar.
  *
- * Archive filter #3 of 3, and the one most easily forgotten — this read starts
+ * Archive filter 4 of 5, and the one most easily forgotten — this read starts
  * from Offer rather than from an application, so the filter has to be spelled
  * out here or a deleted application would keep nagging.
  */
@@ -533,7 +538,7 @@ export async function offersDueBy(userId: string, cutoff: Date) {
   });
 }
 
-/** The same rows in a window, for the calendar. */
+/** The same rows in a window, for the calendar. Archive filter 5 of 5. */
 export async function offersDueBetween(userId: string, start: Date, end: Date) {
   return db.offer.findMany({
     where: {
