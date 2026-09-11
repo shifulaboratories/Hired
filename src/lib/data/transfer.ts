@@ -80,6 +80,11 @@ function clean<T extends Record<string, unknown>>(row: T): Record<string, unknow
 }
 
 export async function exportWorkspace(userId: string): Promise<WorkspaceExport> {
+  // Archived rows are IN the file, deliberately — the one documented exception
+  // to the rule that every read of Company, Contact or Application excludes
+  // them. A backup that silently omits the bin is a backup that loses whatever
+  // somebody deleted last week and has not yet decided about, and `archivedAt`
+  // rides along so a restore puts it back in the bin rather than on the board.
   const where = { userId };
   const [
     profile,
@@ -557,7 +562,7 @@ export async function importWorkspace(
     }
   }
 
-  const liveCompanies = await db.company.findMany({ where: { userId } });
+  const liveCompanies = await db.company.findMany({ where: { userId, archivedAt: null } });
   const companyByName = new Map(liveCompanies.map((company) => [key(company.name), company.id]));
   for (const row of rowsOf(doc, "companies")) {
     const k = key(s(row, "name"));
@@ -584,7 +589,7 @@ export async function importWorkspace(
     map.company.set(s(row, "id"), made.id);
   }
 
-  const liveContacts = await db.contact.findMany({ where: { userId } });
+  const liveContacts = await db.contact.findMany({ where: { userId, archivedAt: null } });
   const contactByKey = new Map(liveContacts.map((row) => [key(row.name, row.email), row.id]));
   for (const row of rowsOf(doc, "contacts")) {
     const k = key(s(row, "name"), s(row, "email"));
@@ -621,8 +626,13 @@ export async function importWorkspace(
     map.contact.set(s(row, "id"), made.id);
   }
 
+  // Live rows only, here and for companies and contacts above. Matching a name
+  // against something in the bin would attach a restored job to an employer the
+  // person has deleted — a row on the board whose company is not. The archived
+  // copy stays where it is and the import adds a live one beside it, which is
+  // what `Company.archiveKey` exists to allow.
   const liveApplications = await db.application.findMany({
-    where: { userId },
+    where: { userId, archivedAt: null },
     include: { company: { select: { name: true } } },
   });
   const applicationByKey = new Map(
