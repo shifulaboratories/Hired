@@ -1,7 +1,7 @@
 ---
 title: "Pipeline tools"
 sidebarTitle: "Pipeline"
-description: "Fifty-three tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
+description: "Fifty-seven tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
 icon: "list-check"
 ---
 
@@ -235,6 +235,53 @@ _Offer a starting set of stage checklists_
 Fill in a short, boring starting set of checklist lines — the handful of things that actually get forgotten: check the posting is still up a week after applying, find someone who works there, send a thank-you the day after an interview, write down what they asked, record the offer numbers, ask a rejection what would have made the difference. Skips any stage that already has lines rather than adding duplicates, and reports how many it created and how many it skipped. Offer this once, to somebody who does not want to design their own; do not call it unprompted on an account that already has a checklist.
 
 No arguments.
+
+### `propose_changes`
+
+_Queue changes for them to approve_
+
+Put suggested changes on the dashboard for the person to accept or dismiss later, instead of asking about each one now. This is what to use at the end of inbox_review, or any time you have read something and found several things the pipeline does not know — they are rarely at the conversation when you finish, and anything they did not answer is otherwise lost. Each proposal needs a `summary` in plain words, the `evidence` that produced it (quote the line from the email or the calendar entry — a proposal nobody can check is a proposal nobody should accept), and a `payload` carrying the arguments of the single call it becomes. Five kinds, each mapping to one act: LOG_ACTIVITY (applicationId or contactId, type, body, occurredAt), MOVE_STAGE (applicationId, stage, note, interviewRound, lossReasons), CREATE_TASK (title, detail, dueAt, applicationId), SET_FOLLOW_UP (applicationId, nextFollowUpAt), CREATE_CONTACT (name, email, title, relationship, applicationId). NOTHING IS WRITTEN when you call this — that happens when they accept. A malformed proposal is refused on its own and the rest are kept; the result lists both, so read `refused` back rather than assuming everything queued.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `proposals` | object[] | **required** — The changes to queue, in the order you want them read |
+
+### `list_proposals`
+
+_What is waiting for a yes_
+
+The changes queued for this person to approve, oldest first, each with its summary, evidence, the job or person it is about, and the payload it would apply. Call this before proposing anything so you do not queue the same suggestion twice, and when they ask 'what have you got for me'. Defaults to the pending ones; pass status to look at what they accepted or dismissed — a dismissed proposal is an answer, and proposing it again is how an assistant becomes annoying. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `status` | enum | PENDING (default), ACCEPTED or DISMISSED  `PENDING` · `ACCEPTED` · `DISMISSED` |
+| `application_id` | string | Only the ones about this job |
+| `limit` | number | Max rows to return. Default 50, hard ceiling 500. Prefer narrowing the filters. |
+
+### `accept_proposal`
+
+_Apply a queued change_
+
+Do what a queued proposal says — log the activity, move the stage, add the task, whatever it was. THIS WRITES. Only call it when the person has said yes to that specific proposal; queueing something and then accepting it yourself defeats the point of a queue. Returns what it did. If the world moved underneath it — the job was deleted, the stage is not a stage — nothing is written, the proposal goes back to waiting with the reason on it, and the error says why.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Proposal id, from list_proposals |
+
+### `dismiss_proposal`
+
+_Say no to a queued change_
+
+Take a proposal off the queue without doing it. Nothing is written and nothing is deleted — the row stays as DISMISSED, which is how list_proposals can tell you later that this was already declined. Pass all true to clear everything still waiting, which is the 'I will do this myself' answer.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | Proposal id. Omit when passing all |
+| `all` | boolean | Dismiss everything still waiting |
 
 ### `list_tags`
 

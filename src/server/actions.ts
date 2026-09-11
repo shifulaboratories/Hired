@@ -10,6 +10,7 @@ import * as pipeline from "@/lib/data/pipeline";
 import * as offers from "@/lib/data/offers";
 import * as letters from "@/lib/data/letters";
 import * as stageTemplates from "@/lib/data/stage-templates";
+import * as proposals from "@/lib/data/proposals";
 import * as tags from "@/lib/data/tags";
 import { STAGE_LABEL } from "@/lib/data/pipeline";
 import * as views from "@/lib/data/views";
@@ -1127,6 +1128,30 @@ export async function updateApplicationAction(
   revalidatePath("/applications");
   revalidatePath(`/applications/${id}`);
   revalidatePath("/");
+}
+
+/**
+ * The review queue. Accepting writes through the same data layer the tool does,
+ * so there is exactly one implementation of what "accept" means.
+ */
+export async function acceptProposalAction(id: string) {
+  const user = await requireUser();
+  const done = await proposals.acceptProposal(user.id, id);
+  revalidateEverywhere();
+  return done.outcome;
+}
+
+export async function dismissProposalAction(id: string) {
+  const user = await requireUser();
+  await proposals.dismissProposal(user.id, id);
+  revalidatePath("/");
+}
+
+export async function dismissAllProposalsAction() {
+  const user = await requireUser();
+  const { dismissed } = await proposals.dismissAllProposals(user.id);
+  revalidatePath("/");
+  return dismissed;
 }
 
 /**

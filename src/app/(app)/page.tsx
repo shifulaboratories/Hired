@@ -12,6 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FadeIn } from "@/components/motion";
 import { FollowUpList } from "@/components/dashboard/follow-up-list";
 import { SetupStrip } from "@/components/dashboard/setup-strip";
+import { ReviewQueue } from "@/components/dashboard/review-queue";
+import { listProposals, PROPOSAL_LABEL } from "@/lib/data/proposals";
 import { QuickLog } from "@/components/dashboard/quick-log";
 import { TaskPanel } from "@/components/tasks/task-panel";
 import { PingScheduler } from "@/components/tasks/ping-scheduler";
@@ -160,7 +162,18 @@ async function TodayTab({
   /** The reader's calendar, so "Today" on this list means their today. */
   zone: string;
 }) {
-  const [tasks, applications, followUps, contactPings, contacts, companies, resumeNames, roles, notes] =
+  const [
+    tasks,
+    applications,
+    followUps,
+    contactPings,
+    contacts,
+    companies,
+    resumeNames,
+    roles,
+    notes,
+    queued,
+  ] =
     await Promise.all([
       listTasks(userId, { limit: 300 }),
       listApplications(userId),
@@ -173,6 +186,7 @@ async function TodayTab({
       listResumeNames(userId),
       listRoles(userId),
       listNotes(userId),
+      listProposals(userId),
     ]);
 
   // Everything a task can be about, in one list for the picker. Built here
@@ -260,6 +274,29 @@ async function TodayTab({
           own the moment the first job lands, the way the setup strip clears
           itself. */}
       {applications.length > 0 && <QuickLog />}
+
+      {/* Above the day's work, because this is somebody else's reading of your
+          inbox waiting on one word from you, and it goes stale. Draws nothing
+          when the queue is empty, which is most days. */}
+      <ReviewQueue
+        proposals={queued.map((proposal) => ({
+          id: proposal.id,
+          kind: proposal.kind,
+          label: PROPOSAL_LABEL[proposal.kind],
+          summary: proposal.summary,
+          evidence: proposal.evidence,
+          source: proposal.source,
+          outcome: proposal.outcome,
+          application: proposal.application
+            ? {
+                id: proposal.application.id,
+                company: proposal.application.company.name,
+                roleTitle: proposal.application.roleTitle,
+              }
+            : null,
+          contact: proposal.contact,
+        }))}
+      />
 
       <FadeIn>
         <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">

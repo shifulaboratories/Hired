@@ -159,6 +159,10 @@ const COMPANY_MISSING = ["website", "industry", "location"];
 const CONTACT_MISSING = ["email", "tags"];
 const PIPELINE_VIEW_VALUES = ["board", "list", "calendar"];
 const COLUMN_LIST_VALUES = ["pipeline", "companies", "contacts"];
+// Mirrors PROPOSAL_KINDS in src/lib/data/proposals.ts and PROPOSAL_STATUSES in
+// src/lib/mcp/tools.ts. Both checked below.
+const PROPOSAL_KINDS = ["LOG_ACTIVITY", "MOVE_STAGE", "CREATE_TASK", "SET_FOLLOW_UP", "CREATE_CONTACT"];
+const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"];
 // Mirrors LETTER_KINDS in src/lib/data/letters.ts, checked below.
 const LETTER_KINDS = ["COVER_LETTER", "OUTREACH", "REFERRAL_ASK", "THANK_YOU", "REPLY", "OTHER"];
 // Mirrors SYSTEM_EVENT_SOURCES in src/lib/data/system.ts, checked below.
@@ -182,6 +186,7 @@ for (const [name, values] of [
   ["CONTACT_MISSING", CONTACT_MISSING],
   ["PIPELINE_VIEW_VALUES", PIPELINE_VIEW_VALUES],
   ["COLUMN_LIST_VALUES", COLUMN_LIST_VALUES],
+  ["PROPOSAL_STATUSES", PROPOSAL_STATUSES],
 ]) {
   const declared = new RegExp(`${name}[^=]*=\\s*\\[([\\s\\S]*?)\\]`).exec(src);
   if (!declared) throw new Error(`tools.ts no longer declares ${name}`);
@@ -201,6 +206,15 @@ for (const [name, values] of [
     throw new Error(
       `SYSTEM_EVENT_SOURCES changed in system.ts (${found.join(", ")}) — update tools/gen-tool-docs.mjs`,
     );
+  }
+}
+{
+  // The proposal kinds live in the data layer; tools.ts imports them.
+  const file = readFileSync(join(ROOT, "src", "lib", "data", "proposals.ts"), "utf8");
+  const declared = /export const PROPOSAL_KINDS = \[([\s\S]*?)\]/.exec(file);
+  const found = declared ? [...declared[1].matchAll(/"([A-Z_]+)"/g)].map((m) => m[1]) : [];
+  if (found.join(",") !== PROPOSAL_KINDS.join(",")) {
+    throw new Error(`PROPOSAL_KINDS changed in proposals.ts (${found.join(", ")}) — update tools/gen-tool-docs.mjs`);
   }
 }
 {
@@ -234,6 +248,7 @@ for (const [name, values] of [
 
 const scope = {
   str, num, bool, strArray, object, limitArg, SYSTEM_EVENT_SOURCES, LETTER_KINDS,
+  PROPOSAL_KINDS, PROPOSAL_STATUSES,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
   ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,
   COMPANY_MISSING, CONTACT_MISSING, PIPELINE_VIEW_VALUES, COLUMN_LIST_VALUES,

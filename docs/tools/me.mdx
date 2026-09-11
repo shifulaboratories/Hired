@@ -33,7 +33,7 @@ already on file is skipped rather than overwritten, and running it twice is safe
 
 _Search Me_
 
-Ranked keyword search across everything the user has written about themselves: role backgrounds, achievement highlights, notes, projects and their profile. This is the FIRST tool to call when tailoring a resume or answering a question about their experience. Returns excerpts with the id and kind of each hit so you can fetch the full record.
+Ranked full-text search across everything the user has written about themselves: role backgrounds, achievement highlights, notes, projects and their profile. This is the FIRST tool to call when tailoring a resume or answering a question about their experience. Words are matched by stem, so "managing engineers" finds "managed three engineers" and a partial word finds the whole one — search the language of the POSTING rather than guessing how they phrased it, and search two or three times with different words before concluding they have no evidence for something. Terms are ORed and ranked, so a record matching two of three comes back above one matching one; nothing is excluded for missing a word. Returns an excerpt centred on the match, with the id and kind of each hit so you can fetch the full record. An empty query returns their roles, newest first.
 
 | Argument | Type | |
 | --- | --- | --- |
