@@ -1,7 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { runDigestSweep } from "@/lib/data/digest";
 import { getSettings } from "@/lib/settings";
-import { recordSystemEvent } from "@/lib/data/system";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,12 +30,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   if (!settings.digestToken) {
     return json({ error: "Digests are not scheduled on this instance." }, 404);
   }
+  // A wrong token records NOTHING, deliberately. Logging it would hand anyone
+  // who can reach this address a way to write a row per request into the event
+  // log — a few thousand of them bury whatever an admin was actually looking at
+  // in admin_recent_errors, and there is no rate limit in front of an
+  // unauthenticated route. A 404 is the whole answer.
   if (!matches(token, settings.digestToken)) {
-    await recordSystemEvent({
-      source: "email.send",
-      level: "WARN",
-      message: "A digest sweep was requested with the wrong token.",
-    });
     return json({ error: "Not found" }, 404);
   }
 

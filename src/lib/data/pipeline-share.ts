@@ -20,6 +20,25 @@ import { matchesFilters, parsePipelineFilters } from "@/lib/pipeline-filters";
  * slug it already had, so nothing an existing link does has changed.
  */
 
+/**
+ * The saved view a call names, or null for the whole pipeline.
+ *
+ * An EMPTY STRING is refused rather than read as null, and that is the whole
+ * reason this exists. `??` does not collapse "", so `savedViewId: ""` would
+ * have skipped the ownership check and then landed on shareKey "" — the
+ * whole-pipeline row. An assistant meaning to share one view would have been
+ * handed back the link to the entire board, or, calling unshare, would have
+ * destroyed that link while leaving the view's own one live. Both are quiet,
+ * and one of them is a privacy failure. Absent means the whole pipeline;
+ * present-but-empty means somebody got an id wrong, and says so.
+ */
+function viewIdOf(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  const id = value.trim();
+  if (id === "") throw new Error("No such saved view");
+  return id;
+}
+
 /** ~60 bits, the same entropy budget as a published resume's slug. */
 function newSlug() {
   return randomBytes(8).toString("base64url");
@@ -69,7 +88,7 @@ export async function sharePipeline(
   userId: string,
   options?: { includeClosed?: boolean; savedViewId?: string | null },
 ) {
-  const savedViewId = options?.savedViewId ?? null;
+  const savedViewId = viewIdOf(options?.savedViewId);
   if (savedViewId) {
     const view = await db.savedView.findFirst({
       where: { id: savedViewId, userId },
@@ -131,7 +150,7 @@ export async function unsharePipeline(
 ) {
   const where = options?.all
     ? { userId }
-    : { userId, shareKey: options?.savedViewId ?? "" };
+    : { userId, shareKey: viewIdOf(options?.savedViewId) ?? "" };
   const { count } = await db.pipelineShare.deleteMany({ where });
   return { shared: false as const, revoked: count };
 }

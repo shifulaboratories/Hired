@@ -179,7 +179,7 @@ export async function applyStageTemplates(
   // Once per application, ever — not once per move. Done tasks count: going
   // back a stage and forward again must not re-add what you already ticked.
   const already = await db.task.findMany({
-    where: { applicationId, stageTemplateId: { in: templates.map((row) => row.id) } },
+    where: { userId, applicationId, stageTemplateId: { in: templates.map((row) => row.id) } },
     select: { stageTemplateId: true },
   });
   const fired = new Set(already.map((row) => row.stageTemplateId));
