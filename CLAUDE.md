@@ -96,11 +96,15 @@ generates resume content inherits that rule and should restate it.
 
 ```
 prisma/schema.prisma          Data model. Migrations in prisma/migrations/, applied on boot.
-src/lib/data/                 THE data layer, one file per area: me, resumes, pipeline,
-                              pipeline-share, views, users, connections, waitlist, audit,
+src/lib/data/                 THE data layer, one file per area: me, resumes, letters,
+                              pipeline, offers, stage-templates, proposals, pipeline-share,
+                              schedule, views, tags, archive, export, transfer, digest,
+                              accounts, onboarding, users, connections, waitlist, audit,
                               system, patch. userId first wherever content is touched;
                               the instance-level files (users, waitlist, audit, system)
-                              say in their header comments why they are not exceptions.
+                              say in their header comments why they are not exceptions,
+                              and pipeline-share carries the app's second unauthenticated
+                              read, which its own comment treats accordingly.
 src/lib/mcp/tools.ts          Tool + prompt definitions. One array, one source of truth.
 src/lib/mcp/handler.ts        Streamable HTTP transport + the server instructions block.
 src/lib/mcp/clients.ts        Per-client setup recipes. Adding a client = one array entry.
@@ -108,8 +112,13 @@ src/lib/resume-schema.ts      The resume document contract (zod).
 src/lib/pdf.ts                Server-side PDF rendering. Needs a Chromium on the host;
                               degrades to the print page where there isn't one.
 src/server/actions.ts         Server actions for the UI. Never accepts a userId.
-src/app/(app)/                The app: dashboard, me, resumes, applications, tasks, crm,
-                              archive, docs, settings (admin lives under it).
+src/app/(app)/                The app: dashboard, me (roles, profile, notes, extras,
+                              resumes, letters), applications, tasks, crm, archive, docs,
+                              settings (pipeline checklists and admin live under it).
+src/app/api/digest/[token]/   The only address that makes this instance send mail. The
+                              token is a Setting, not an env var; unset means off.
+src/app/api/export/[kind]/    The three CSVs, plus `everything` — the whole workspace as
+                              one reimportable JSON file.
 src/app/api/mcp/[token]/      The connection URL. /api/mcp also accepts a bearer header.
 src/app/r/[slug]/             Published resume, no auth. With /p/[slug] (shared pipeline),
                               the only unauthenticated pages in the app — unlisted slugs
@@ -235,6 +244,35 @@ of it managed from one picker (`src/components/tags/tag-picker.tsx`) and one set
 `*_tag` tools. `sources` on an application is the old spelling and still works; the
 pipeline's saved views still spell the filter `src` in the URL, deliberately, because
 renaming it would break every view already saved. Don't add a second labelling mechanism.
+
+**Eleven things landed together in September 2026**, and none of them should be rebuilt.
+Each has a decision-log entry explaining the call that shaped it; read that before changing
+one.
+
+- **Offers** (`src/lib/data/offers.ts`) — rows, not columns, because offers get revised and
+  the movement IS the negotiation record. Never confused with `Application.salaryRange`,
+  which is what the posting advertised. `compare_offers` refuses to convert currencies.
+- **Letters** (`src/lib/data/letters.ts`) — everything that is not a resume. Its own model
+  rather than a `kind` on Resume, because `resume-schema.ts` is a contract. The feature is
+  `prep_letter`, which gathers the five things a good draft needs; `priorLetters` is the
+  one people do not expect and the one that matters.
+- **Stage checklists** (`src/lib/data/stage-templates.ts`) — fire once per application ever,
+  never retroactively, and deleting a line leaves the tasks it made.
+- **The review queue** (`src/lib/data/proposals.ts`) — the only place a stored blob written
+  by an assistant later becomes a write. Five kinds, validated twice, claimed before the
+  work runs. Read its header before adding a sixth.
+- **Full transfer** (`src/lib/data/transfer.ts`) — one JSON file out, the same file back in.
+  Additive and matched by natural key; there is no mode that empties anything first.
+- **Digests** (`src/lib/data/digest.ts`) — the only mail this app sends a member. Off until
+  asked, once a day in their zone, and scheduled OUTSIDE the app at
+  `/api/digest/<token>` because the transport stays stateless.
+- **Sharing a saved view** — `PipelineShare` is one row per thing shared, discriminated by
+  `shareKey` because Postgres treats NULLs as distinct and Prisma cannot write a partial
+  unique index.
+- **search_me is Postgres FTS now**, OR-ed and stemmed, with expression GIN indexes and an
+  immutable `hired_words` wrapper the migration creates.
+- Plus per-source conversion in `diagnose_search`, `list_relationships`, and
+  `capture_job_postings` for a morning of open tabs.
 
 What is worth doing next is unglamorous: `.claude/DECISIONS.md` is now long enough that
 its own advice — read from the end — is doing real work.

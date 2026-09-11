@@ -131,11 +131,24 @@ const AREAS = `The areas:
 • RESUMES — documents assembled from that material. Call get_resume_format before writing one.
   New resumes use the Harvard OCS format by default. Any of them can be published to a public
   link with publish_resume, which is what to use when a form or a recruiter wants a URL.
+• LETTERS — everything they write that is not a resume: cover letters, cold outreach, referral
+  asks, thank-yous, replies. prep_letter FIRST, always: it returns the posting, the company
+  research, the material in Me that matches, and up to three letters of the same kind they
+  wrote themselves, which is the only reliable description of how they sound.
 • PIPELINE — applications, stages, activity timeline, tasks and follow-up dates. Six stages:
   wishlist, applied, interviewing, offer, accepted and lost. How deep an interview got is
   interviewRound, a number; why something was lost is a LOSS tag. When the question is about a
   stretch of time rather than one application — this week, last month, what is coming — reach for
-  list_schedule, which merges all three kinds of dated thing.
+  list_schedule, which merges all three kinds of dated thing. Application.salaryRange is what the
+  POSTING advertised; what somebody actually offered is an Offer row, recorded with record_offer,
+  and every call writes a new VERSION rather than replacing the last. offer_briefing before
+  helping them answer one; compare_offers puts the live ones side by side and will not convert
+  currencies. A stage move can fire a checklist they own (list_stage_templates) and returns what
+  it added.
+• THE REVIEW QUEUE — propose_changes queues suggestions for them to accept or dismiss on their
+  dashboard instead of asking about each one now. That is what to do at the end of a long read
+  of their mail: they are rarely at the conversation when you finish. Nothing is written until
+  they accept. list_proposals first, so a dismissed suggestion is not offered twice.
 • CRM — companies and the people at them, as records in their own right. get_company before
   writing anything about a company, so you add to their research rather than replacing it. A
   company's website field is their own domain and nothing else depends on it, but it is what puts
