@@ -62,6 +62,16 @@ just *talk* to it.
   version, what the posting claimed, the lines in your own timeline where money came up
   with the note each came from, what you have written about being paid before, and what is
   still missing.
+- **Stage checklists** — the things you always mean to do and never do. Say once that
+  reaching Applied should add "check the posting is still up" in a week, or that every
+  interview should put "send a thank-you" on tomorrow's list, and it happens on its own
+  from then on. Settings → Pipeline holds them, one short list per stage, each line with a
+  due date counted from the move and a switch to park it. Two rules make it trustworthy:
+  a line fires once per job ever, so dropping back a stage and going forward again does
+  not re-add what you already ticked off, and adding a line never reaches backwards onto
+  jobs already on the board. Deleting a line leaves the tasks it already made alone —
+  deleting a setting should not delete work you are part-way through. A new account has
+  none; there is a starting set of six if you would rather not design your own.
 - **Nothing is deleted by accident** — pressing Delete on a company, a person or an
   application puts it in an archive rather than destroying it. It leaves every list, board,
   picker, filter and count immediately, and waits thirty days — an instance setting, or zero
@@ -121,7 +131,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  142 tools any MCP client can call (175 if you're an admin). Claude, Claude Code, ChatGPT,
+  147 tools any MCP client can call (180 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -304,7 +314,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 142, or 175 if you're an admin.
+then tells you how many tools answered — 147, or 180 if you're an admin.
 
 That is a lot of tools, and spelled out in full they're around 45,000 tokens of context
 before you've said anything. If your client has tool search — Claude Code does, and has it
@@ -530,7 +540,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-142 tools. One hundred and thirty-three of them are the data tools across the five areas, the
+147 tools. One hundred and thirty-eight of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it

@@ -84,3 +84,17 @@ export function truncate(text: string, max = 160) {
   if (text.length <= max) return text;
   return `${text.slice(0, max - 1).trimEnd()}…`;
 }
+
+/**
+ * What a stage checklist just put on somebody's list, for the toast.
+ *
+ * Named rather than counted. Tasks appearing from nowhere read as a bug, and
+ * "Added: Send a thank-you" is the line that makes the feature legible the
+ * first time it fires. Undefined when nothing fired, so the toast stays a
+ * single line in the ordinary case.
+ */
+export function describeAdded(titles: string[]): string | undefined {
+  if (titles.length === 0) return undefined;
+  if (titles.length <= 2) return `Added: ${titles.join(", ")}`;
+  return `Added ${titles.length} tasks: ${titles.slice(0, 2).join(", ")}, and ${titles.length - 2} more`;
+}

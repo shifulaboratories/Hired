@@ -12,6 +12,7 @@ import {
   tagInclude,
 } from "@/lib/data/tags";
 import { archiveRecords } from "@/lib/data/archive";
+import { applyStageTemplates } from "@/lib/data/stage-templates";
 import { timeZoneOf } from "@/lib/data/me";
 import { atHourInDays, civilDay, civilInstant, endOfDay, startOfWeek } from "@/lib/time";
 import {
@@ -1430,6 +1431,7 @@ export async function moveApplicationStage(
     throw new Error(`"${current.roleTitle}" is in the archive. Restore it before changing it.`);
   }
 
+  const zone = await timeZoneOf(userId);
   const data: Prisma.ApplicationUpdateInput = { stage };
   if (stage !== "WISHLIST" && !current.appliedAt) data.appliedAt = new Date();
   if (TERMINAL_STAGES.includes(stage)) {
@@ -1437,7 +1439,7 @@ export async function moveApplicationStage(
     data.nextFollowUpAt = null;
   } else {
     data.closedAt = null;
-    data.nextFollowUpAt = defaultFollowUp(await timeZoneOf(userId), stage);
+    data.nextFollowUpAt = defaultFollowUp(zone, stage);
   }
 
   // The round is a record of how far this got, so nothing here clears it —
@@ -1479,7 +1481,18 @@ export async function moveApplicationStage(
       },
     });
   }
-  return updated;
+
+  // The checklist fires only on a real move, and only once per application per
+  // line. Re-saving a job that is already INTERVIEWING must not add a second
+  // thank-you, and neither must dropping back to APPLIED and forward again.
+  //
+  // Returned rather than hidden: a stage move that silently puts four things on
+  // somebody's list is a stage move they stop trusting. Every caller says what
+  // was added.
+  const addedTasks =
+    current.stage === stage ? [] : await applyStageTemplates(userId, id, stage, zone);
+
+  return { ...updated, addedTasks };
 }
 
 function stageActivityType(stage: Stage): ActivityType {
@@ -1519,15 +1532,19 @@ export async function moveApplicationsStage(
 ) {
   const moved: string[] = [];
   const skipped: string[] = [];
+  // Counted rather than listed: closing out twelve jobs against a four-line
+  // checklist would otherwise return forty-eight task rows nobody reads.
+  let addedTasks = 0;
   for (const id of ids) {
     try {
-      await moveApplicationStage(userId, id, stage, undefined, extra);
+      const result = await moveApplicationStage(userId, id, stage, undefined, extra);
+      addedTasks += result.addedTasks.length;
       moved.push(id);
     } catch {
       skipped.push(id);
     }
   }
-  return { moved, skipped, stage };
+  return { moved, skipped, stage, addedTasks };
 }
 
 /**

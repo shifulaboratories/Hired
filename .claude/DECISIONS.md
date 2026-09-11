@@ -6168,3 +6168,36 @@ this shape in the codebase and the comment says so.
 Me beside Resumes, and the same component renders on an opened application filtered to that
 job. It is prose, so the editor autosaves like everything else — there is no document
 schema here and there should not be one.
+
+---
+
+## 2026-09-11 — Stage checklists fire once per application, ever
+
+"When a job reaches this stage, add these tasks" is a small feature with one hard
+question: what counts as a repeat. Firing per MOVE is wrong in a way that only shows up
+after a fortnight — an interview falls through, the job goes back to APPLIED, something
+comes back, and suddenly there are two of every task you already ticked off. So the
+dedupe is on `Task.stageTemplateId` and it does not care whether the task is done: a line
+has fired for an application or it has not, for the life of that application.
+
+That is why the column exists at all. Matching on title would break the first time
+somebody reworded a line, and it could not tell a checklist task from one they wrote
+themselves.
+
+**`Task.stageTemplateId` is SET NULL, not cascade.** Deleting a checklist line must not
+delete the task it already put on somebody's list. The template is a setting; the task is
+work in progress. Same reasoning as `Letter`'s three links, and the probe asserts it.
+
+**Never retroactive.** Adding a line does not reach backwards onto the forty jobs already
+at that stage. It fires on the next move. The screen says so, because the opposite
+assumption is the natural one and the surprise would be forty tasks.
+
+**The stage move returns what it added.** `moveApplicationStage` now returns
+`{ ...application, addedTasks }`, the tool description says to read it back, and the board
+and detail toasts name the tasks. Four things appearing on a list with no explanation is
+how a feature stops being trusted; the batch mover counts them instead of listing them,
+because twelve jobs against a four-line checklist is forty-eight rows nobody reads.
+
+**Nothing is built in.** Every search has its own ritual and a fixed list would be wrong
+for all of them, so a new account has no lines. `seed_stage_templates` offers six boring
+ones and skips any stage that already has something, so it is safe to offer twice.
