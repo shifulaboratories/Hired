@@ -379,6 +379,17 @@ export default async function ApplicationsPage({
     stage: application.stage,
     location: application.location,
     salaryRange: application.salaryRange,
+    // applicationInclude carries the newest version only — the one on the
+    // table. src/lib/data/offers.ts owns the history.
+    offer: application.offers[0]
+      ? {
+          total:
+            application.offers[0].baseAmount +
+            application.offers[0].bonusAmount +
+            application.offers[0].equityAmount,
+          currency: application.offers[0].currency,
+        }
+      : null,
     nextFollowUpAt: application.nextFollowUpAt ? application.nextFollowUpAt.toISOString() : null,
     resumeName: application.resume?.name ?? null,
     activityCount: application._count.activities,

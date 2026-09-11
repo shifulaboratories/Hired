@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { FadeIn } from "@/components/motion";
 import { applicationFieldValues, getApplication, listCompanies } from "@/lib/data/pipeline";
 import { listTags, tagsOfKind } from "@/lib/data/tags";
+import { offerForUi } from "@/lib/data/offers";
 import { getResume, listResumeNames } from "@/lib/data/resumes";
 import { requireUser } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
@@ -87,6 +88,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
             linkedin: contact.linkedin,
             relationship: contact.relationship,
           }))}
+          offers={application.offers.map(offerForUi)}
           tasks={application.tasks.map((task) => ({
             id: task.id,
             title: task.title,

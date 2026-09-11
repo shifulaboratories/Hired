@@ -78,6 +78,7 @@ model User {
   resumes        Resume[]
   companies      Company[]
   applications   Application[]
+  offers         Offer[]
   contacts       Contact[]
   activities     Activity[]
   tasks          Task[]
@@ -741,6 +742,16 @@ model Application {
   jobDescription String           @default("")
   location       String           @default("")
   workMode       String           @default("")
+  /// What the POSTING said, in the posting's own words — "$210k – $260k",
+  /// "competitive", or nothing at all. Written by capture_job_posting out of
+  /// the listing's structured data, and by whoever typed it.
+  ///
+  /// It is NOT what anyone offered. That is an Offer row, and the two are kept
+  /// apart on purpose: the gap between what was advertised and what was put on
+  /// the table is itself negotiation material. Nothing parses this into an
+  /// Offer, ever — salaryFloor() guesses a number to SORT by, where being wrong
+  /// costs a row position; the same guess inside a comparison table costs a
+  /// decision.
   salaryRange    String           @default("")
   /// Where this one came from, and anything else worth labelling it with.
   /// Rows the person owns rather than free strings, so a label can be renamed,
@@ -770,10 +781,75 @@ model Application {
   activities Activity[]
   contacts   Contact[]
   tasks      Task[]
+  /// Every version of what they offered. Almost always none, and more than one
+  /// when it was revised — which is the whole reason this is a relation rather
+  /// than a handful of columns. Offers carry no archivedAt of their own; see
+  /// the model.
+  offers     Offer[]
 
   @@index([userId, stage])
   @@index([userId, nextFollowUpAt])
   @@index([userId, archivedAt])
+}
+
+/// What someone actually offered, as numbers you can compare.
+///
+/// Rows rather than columns on Application because offers get REVISED, and the
+/// movement between the first number and the last IS the negotiation record. A
+/// column can only hold the latest, and overwriting it destroys exactly the
+/// history this product exists to keep — the same argument moveApplicationsStage
+/// makes for looping instead of issuing one updateMany.
+///
+/// The latest by receivedAt is the offer on the table. There is deliberately no
+/// status column: whether an offer is live is Application.stage, and why it
+/// ended is a LOSS tag. A third place to say the same thing is how those two
+/// start to disagree.
+///
+/// Amounts are WHOLE units of the currency — 215000 means two hundred and
+/// fifteen thousand — not minor units and not decimals. An Int tops out at
+/// 2,147,483,647, which holds a ₩2,000,000,000 salary; a grant larger than that
+/// goes in `terms` as words rather than silently wrapping.
+///
+/// No archivedAt. Like activities and tasks, offers follow their application in
+/// and out of the archive through ITS column. The cost is real and is the thing
+/// to remember here: every read of this table that does not start from an
+/// already-filtered application has to spell `application: { archivedAt: null }`
+/// itself, and nothing in the toolchain catches one that forgets.
+model Offer {
+  id            String      @id @default(cuid())
+  /// Denormalised so every query in src/lib/data/ filters on it directly, the
+  /// same shape Activity and Task use. This is what keeps tenant isolation a
+  /// compile-time property rather than a join somebody has to remember.
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  /// ISO 4217, uppercased on the way in. Comparing across two of these is
+  /// refused rather than converted — see compareOffers.
+  currency      String      @default("USD")
+  baseAmount    Int         @default(0)
+  bonusAmount   Int         @default(0)
+  /// The grant as a yearly figure where they stated one. Zero means not stated,
+  /// which is different from zero equity and is why `terms` exists.
+  equityAmount  Int         @default(0)
+  signOnAmount  Int         @default(0)
+  /// Everything the numbers cannot hold: "0.4% over four years, one year
+  /// cliff", "relocation on top", "review at six months".
+  terms         String      @default("")
+  vesting       String      @default("")
+  /// When it was put on the table. This orders the versions, so a revision
+  /// recorded later but dated earlier still reads in the right order.
+  receivedAt    DateTime    @default(now())
+  /// The deadline to answer, if they gave one. The bell and list_schedule read
+  /// it, which is the reason it is a column rather than a line in `terms`.
+  respondBy     DateTime?
+  startsOn      DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([applicationId])
+  @@index([userId, respondBy])
 }
 
 /// A channel an application came from, as something the person owns.

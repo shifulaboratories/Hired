@@ -104,6 +104,7 @@ export function ApplicationPanelProvider({ children }: { children: React.ReactNo
                 activities={data.activities}
                 contacts={data.contacts}
                 tasks={data.tasks}
+                offers={data.offers}
                 resumes={data.resumes}
                 tagOptions={data.tagOptions}
                 lossOptions={data.lossOptions}

@@ -1,7 +1,7 @@
 ---
 title: "Pipeline tools"
 sidebarTitle: "Pipeline"
-description: "Forty-two tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
+description: "Forty-eight tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
 icon: "list-check"
 ---
 
@@ -88,6 +88,93 @@ The same capture as capture_job_posting, over a list of URLs — for somebody wh
 | Argument | Type | |
 | --- | --- | --- |
 | `urls` | string[] | **required** — The postings' URLs. Duplicates within the list are collapsed before anything is fetched. |
+
+### `record_offer`
+
+_Record an offer_
+
+Save what somebody actually offered: base, bonus, equity, sign-on, the terms in words, and the date they need an answer by. Call this the moment a number is said out loud, even a verbal one — the figure a recruiter says on a Tuesday call is the figure nobody can remember on Friday. EVERY CALL WRITES A NEW VERSION rather than replacing the last: when they come back with more, call this again with the new numbers, and the two rows become the negotiation record. Only use update_offer to fix a typo in a row. Amounts are WHOLE UNITS of the currency — 215000 means two hundred and fifteen thousand — and "215k" is understood; equity is the yearly value where they stated one, with the schedule in vesting. Never invent a number: if they said "competitive" record nothing and say the base is still unknown. This does NOT move the application to the offer stage; check the stage that comes back and call move_application_stage if it is behind. Setting respond_by is what puts the deadline in their notifications.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_id` | string | **required** — Which application this offer is for |
+| `base_amount` | number | Annual base salary, whole units, e.g. 215000 |
+| `bonus_amount` | number | Target annual bonus in the same units. Omit when none was stated |
+| `equity_amount` | number | Yearly value of the equity grant where they stated one. Leave out when they only described a percentage — put that in terms |
+| `sign_on_amount` | number | One-off signing bonus |
+| `currency` | string | Three-letter code, e.g. USD, GBP, EUR. Defaults to USD |
+| `terms` | string | Everything the numbers cannot hold, in their words: '0.4% over four years, one year cliff', 'relocation on top', 'review at six months' |
+| `vesting` | string | The vesting schedule, e.g. '4 years, 1 year cliff, monthly after' |
+| `received_at` | string | The day it was put on the table, YYYY-MM-DD. Defaults to today |
+| `respond_by` | string | The day they need an answer, YYYY-MM-DD. This is what the notification bell reads |
+| `starts_on` | string | Proposed start date, YYYY-MM-DD |
+
+### `list_offers`
+
+_List offers_
+
+Every offer on file, newest first, each with the application and company it belongs to. Several rows for one application are its versions, not several offers — the first one recorded is the opening number and the newest is where it stands now. Pass application_id for one job's history, or live_only to drop the ones that came to nothing. For a side-by-side of what is actually on the table, compare_offers is the better tool; for arguing one of them, offer_briefing. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_id` | string | Only this application's offers, oldest to newest history included |
+| `live_only` | boolean | Drop offers whose application was lost. An accepted one stays — it is the one they took |
+| `limit` | number | Max rows to return. Default 50, hard ceiling 500. Prefer narrowing the filters. |
+
+### `update_offer`
+
+_Fix an offer row_
+
+Correct a recorded offer in place — a base typed with a digit missing, a respond-by that moved, a vesting schedule nobody wrote down. Only the fields you send change. THIS IS NOT FOR A NEW NUMBER: when they improved the offer, call record_offer again, because overwriting the old row destroys the only record that the number moved. Get the id from list_offers.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Offer id, from list_offers |
+| `base_amount` | number | Annual base salary, whole units |
+| `bonus_amount` | number | Target annual bonus |
+| `equity_amount` | number | Yearly value of the equity grant |
+| `sign_on_amount` | number | One-off signing bonus |
+| `currency` | string | Three-letter code, e.g. USD |
+| `terms` | string | Everything the numbers cannot hold. Replaces what is there |
+| `vesting` | string | The vesting schedule. Replaces what is there |
+| `received_at` | string | The day it was put on the table, YYYY-MM-DD |
+| `respond_by` | string | The day they need an answer, YYYY-MM-DD. Send an empty string to clear it |
+| `starts_on` | string | Proposed start date, YYYY-MM-DD. Send an empty string to clear it |
+
+### `delete_offer`
+
+_Delete an offer row_
+
+Remove one recorded offer for good. There is no archive for offers — this is gone. Use it for a row entered against the wrong job, not for an offer that was withdrawn: a withdrawn offer is part of the story, so leave the row and move the application to lost with a loss tag instead. Say what will go and get a plain yes first.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Offer id, from list_offers |
+
+### `compare_offers`
+
+_Compare the offers on the table_
+
+Every live offer side by side: one column per job, holding the newest version of it, sorted by what year one actually pays. Each column carries base, bonus, equity and sign-on, a yearlyTotal (base + bonus + equity, sign-on excluded because it lands once), a firstYearTotal that includes it, the deadline and how many days are left, how many times that offer has been revised, and `leads` naming the lines it wins outright. IT WILL NOT CONVERT CURRENCIES. When the offers are in different ones, comparable comes back false with the reason, every column still honest in its own currency, and nothing marked as leading — say so and ask which currency they want it in rather than picking a rate. Money is not the only axis: report the terms and vesting alongside the numbers, and remember a shorter cliff or a real start date can outweigh a bigger base. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_ids` | string[] | Only these applications. Omit for everything still on the table |
+| `include_lost` | boolean | Also include offers from applications that ended in a loss, for a historical comparison |
+
+### `offer_briefing`
+
+_Everything on file for one negotiation_
+
+Call this BEFORE helping somebody answer or negotiate an offer. It gathers in one read the four things that decide it and normally live four places apart: every version of the offer itself; `advertised`, which is what the POSTING claimed and is not what anybody offered; `saidDuringProcess`, the lines in their own timeline where money came up, each with the activity id so you can read the whole note; `pastPay`, what they have written in Me about what they have earned; and `competing`, the other offers on the table. `missing` names what is not on file that you would want — an unrecorded base, a vesting schedule for equity that has one, no deadline. Use the quotes as evidence and quote them back; never state a number that is not in this result, and never guess a market rate as though it came from their data. Read-only, saves nothing.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_id` | string | **required** — Which application to brief on |
 
 ### `list_tags`
 

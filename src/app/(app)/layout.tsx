@@ -2,7 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/shell";
 import { relativeDay } from "@/lib/utils";
-import { dueNow } from "@/lib/data/pipeline";
+import { dueNow } from "@/lib/data/schedule";
 import { WelcomeTour } from "@/components/onboarding/welcome-tour";
 import { ViewerZoneProvider } from "@/components/viewer-zone";
 import { hostZone } from "@/lib/time";
@@ -39,7 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // reader's in the browser, which is two different answers for one render.
   const stored = profile?.timeZone ?? "";
   const zone = stored || hostZone();
-  const notices = [...due.followUps, ...due.pings, ...due.tasks].map((item) => ({
+  const notices = [...due.offers, ...due.followUps, ...due.pings, ...due.tasks].map((item) => ({
     kind: item.kind,
     id: item.id,
     title: item.title,

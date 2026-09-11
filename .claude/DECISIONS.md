@@ -6083,3 +6083,46 @@ existing probes, and every one was found by someone reading the diff against the
 with an adversarial brief. On a repository with no CI and no test suite that pass is
 not optional, and the probe suite is where its findings go: 58 assertions now, each
 one a bug that was real once.
+
+---
+
+## 2026-09-11 — Offers are rows, not columns, and never the advertised range
+
+`Application.salaryRange` looked like the obvious place to put what somebody was offered.
+It is not: it holds what the POSTING advertised, in the posting's own words — "$210k –
+$260k", "competitive", or nothing at all — and a range a stranger wrote into a job ad is
+not a number anybody negotiated. Merging the two would make the one screen where a person
+decides between jobs unable to say which of its figures a human had actually said. So
+`Offer` is its own table, `salaryRange` got a doc comment explaining what it is for, and
+the migration deliberately backfills nothing. The parse that would have done it takes the
+first number it sees, which would have written a base nobody agreed to onto rows people
+then put in a comparison table.
+
+**Rows, not columns, because offers get revised.** Every `record_offer` call writes a new
+version. `update_offer` exists only for a typo, and its description says so twice, because
+an assistant reaching for "update" when a recruiter comes back with more would destroy the
+one piece of evidence anybody keeps that negotiating worked. The card in the app makes the
+same split: the fields autosave (that is the typo path) and a separate "Record a revision"
+button is the only way to write a second version.
+
+**It will not convert currencies.** `compareOffers` returns `comparable: false` with the
+reason naming both codes, every column still honest in its own currency, and nothing marked
+as leading. A rate needs a live feed, a date, and a decision about which currency the person
+is actually paid in, and being wrong picks the wrong job. Per-column totals are still
+computed — a sum within one currency is valid — which is a small divergence from the first
+design, and the honest one.
+
+**No `archivedAt` on Offer.** It belongs to its application and goes when that goes. The
+price is three reads that have to spell `application: { archivedAt: null }` themselves;
+nothing in the toolchain catches a miss, so each is numbered in a comment and the probe
+archives an application and asserts all three, plus the bell and the calendar.
+
+**Amounts are whole units.** 215000 is $215,000. Cents would halve the Int ceiling and
+nobody negotiates a base to the penny. The data layer reads "215k" and "$215,000" as well
+as the number, because assistants send all three, and refuses anything else rather than
+storing zero — zero on a comparison table reads as "they offered nothing".
+
+**The deadline is the feature.** `respondBy` is a column rather than a line in `terms`
+precisely so the bell and the calendar can read it. It is the one date in this app that
+cannot be caught up on tomorrow, so it sorts first in the notifications list and the bell
+counts it.

@@ -17,6 +17,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BuildingIcon,
+  HandshakeIcon,
   CalendarClockIcon,
   ChevronsLeftRightIcon,
   ChevronsRightLeftIcon,
@@ -32,6 +33,7 @@ import { SHOW_QUIET_AFTER, STALE_AFTER, hasGoneQuiet } from "@/lib/quiet";
 import { ApplicationActions } from "@/components/pipeline/application-actions";
 import { CompanyAvatar } from "@/components/pipeline/company-avatar";
 import { TagChip } from "@/components/tags/tag-chip";
+import { formatMoney } from "@/components/pipeline/offer-card";
 import { useOpenApplication } from "@/components/pipeline/application-panel";
 import { cn, relativeDay } from "@/lib/utils";
 import { useViewerZone } from "@/components/viewer-zone";
@@ -47,6 +49,12 @@ export type Card = {
   stage: Stage;
   location: string;
   salaryRange: string;
+  /**
+   * What they actually offered, once somebody has. Replaces the advertised
+   * range on the card when it exists: a real number beats a posting's range,
+   * and showing both would make the card ask you which one is true.
+   */
+  offer: { total: number; currency: string } | null;
   nextFollowUpAt: string | null;
   resumeName: string | null;
   activityCount: number;
@@ -426,7 +434,7 @@ function ApplicationCard({ card, overlay = false }: { card: Card; overlay?: bool
       </div>
 
       {((shows.has("location") && card.location) ||
-        (shows.has("salary") && card.salaryRange) ||
+        (shows.has("salary") && (card.offer || card.salaryRange)) ||
         (shows.has("tags") && card.tags.length > 0)) && (
         <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]">
           {shows.has("location") && card.location && (
@@ -435,12 +443,23 @@ function ApplicationCard({ card, overlay = false }: { card: Card; overlay?: bool
               {card.location}
             </span>
           )}
-          {shows.has("salary") && card.salaryRange && (
-            <span className="flex items-center gap-1">
-              <BuildingIcon className="size-2.5" />
-              {card.salaryRange}
-            </span>
-          )}
+          {shows.has("salary") &&
+            (card.offer ? (
+              <span
+                className="nums flex items-center gap-1 font-medium"
+                style={{ color: "var(--stage-offer)" }}
+              >
+                <HandshakeIcon className="size-2.5" />
+                {formatMoney(card.offer.total, card.offer.currency)}
+              </span>
+            ) : (
+              card.salaryRange && (
+                <span className="flex items-center gap-1">
+                  <BuildingIcon className="size-2.5" />
+                  {card.salaryRange}
+                </span>
+              )
+            ))}
           {shows.has("tags") &&
             card.tags.map((tag) => <TagChip key={tag.id} tag={tag} className="text-[10.5px]" />)}
         </div>
