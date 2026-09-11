@@ -91,6 +91,11 @@ function blankProfile(userId: string): Profile {
     photo: "",
     tourSeenAt: null,
     timeZone: "",
+    weeklyDigest: false,
+    dailyNudge: false,
+    digestHour: 8,
+    lastDigestOn: "",
+    lastNudgeOn: "",
     // The epoch rather than now: there is no row, so there is no moment it was
     // last written, and a timestamp of "just now" would be a lie a caller could
     // sort on.

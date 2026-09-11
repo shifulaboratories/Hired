@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { PhotoField } from "@/components/settings/photo-field";
+import { DigestPanel } from "@/components/settings/digest-panel";
 import {
   changeOwnPasswordAction,
   logoutAction,
@@ -36,7 +37,14 @@ const ROLE_LABEL: Record<string, string> = {
 export function AccountPanel({
   user,
   googleReady,
+  digest,
 }: {
+  digest: {
+    weeklyDigest: boolean;
+    dailyNudge: boolean;
+    digestHour: number;
+    emailConfigured: boolean;
+  };
   user: {
     name: string;
     email: string;
@@ -161,6 +169,10 @@ export function AccountPanel({
         <Separator />
 
         <ShowTourAgain />
+
+        <Separator />
+
+        <DigestPanel initial={digest} />
 
         <Separator />
 

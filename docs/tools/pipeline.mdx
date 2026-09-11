@@ -547,27 +547,31 @@ Render the funnel — the Sankey flow chart of where every application ended up 
 
 _Get a read-only link to the pipeline_
 
-Mint a link that shows this person's pipeline to anyone holding it, without a login — for a friend, a coach or a former manager who is helping review the search. Returns publicUrl, which is the whole point: hand it straight to the user. Calling it twice returns the same link rather than a second one. What a viewer sees is deliberately narrow: company, role, stage, location, how long each has been sitting and when a follow-up is due. They do NOT see notes, job descriptions, salary, contacts or the activity timeline — say so if someone asks what will be visible, because a share link is consent to show a search, not to publish the people in it. Set include_closed to show finished applications too.
+Mint a link that shows this person's pipeline to anyone holding it, without a login — for a friend, a coach or a former manager who is helping review the search. Returns publicUrl, which is the whole point: hand it straight to the user. Calling it twice for the same thing returns the same link rather than a second one. Pass saved_view_id (from list_saved_views) to share ONLY what that view shows — usually the better offer, because 'everything I have from a referral' is a reasonable thing to send someone and a whole board is not. Rows the view filters out are not in the page at all. Each thing shared has its own address and its own switches, so revoking one leaves the others alone. What a viewer sees is deliberately narrow: company, role, stage, location, how long each has been sitting and when a follow-up is due. They do NOT see notes, job descriptions, salary, contacts or the activity timeline — say so if someone asks what will be visible, because a share link is consent to show a search, not to publish the people in it.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `include_closed` | boolean | Show accepted / rejected / withdrawn / ghosted applications too. Default false. |
+| `saved_view_id` | string | Share only this saved view. Omit for the whole pipeline |
 
 ### `unshare_pipeline`
 
 _Revoke the pipeline link_
 
-Stop sharing the pipeline. This DESTROYS the address rather than pausing it — anyone holding the old link gets nothing, and sharing again later mints a completely different URL. That is deliberate: the reason to revoke is usually that a link reached someone it should not have, and a pause that can be undone does not fix that.
+Stop sharing. This DESTROYS the address rather than pausing it — anyone holding the old link gets nothing, and sharing again later mints a completely different URL. That is deliberate: the reason to revoke is usually that a link reached someone it should not have, and a pause that can be undone does not fix that. With no arguments it revokes the whole-pipeline link and leaves any saved-view links alone; pass saved_view_id for one of those, or all true to kill every link at once, which is the answer to 'stop sharing anything'. Returns how many it revoked.
 
 **Overwrites or deletes.**
 
-No arguments.
+| Argument | Type | |
+| --- | --- | --- |
+| `saved_view_id` | string | Revoke the link for this saved view rather than the whole-pipeline one |
+| `all` | boolean | Revoke every share link this person has |
 
 ### `get_pipeline_share`
 
 _Check whether the pipeline is shared_
 
-Whether a read-only pipeline link currently exists, what it shows, and when it was last opened. Returns null when nothing is shared, and publicUrl when something is. Use it before minting a link so you can tell someone they already have one, and to answer 'has anyone actually looked at it'.
+Every read-only link this person has minted, what each one shows, and when it was last opened. The one with savedView null is the whole pipeline; the rest each show one saved view. Returns an empty list when nothing is shared. Use it before minting a link so you can tell someone they already have one, and to answer 'has anyone actually looked at it' — lastViewedAt null means nobody has opened it yet.
 
 No arguments.
 

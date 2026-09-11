@@ -46,7 +46,7 @@ import {
 import { ApplicationPanelProvider } from "@/components/pipeline/application-panel";
 import { SavedViews } from "@/components/pipeline/saved-views";
 import { SharePipeline } from "@/components/pipeline/share-pipeline";
-import { getPipelineShare } from "@/lib/data/pipeline-share";
+import { listPipelineShares } from "@/lib/data/pipeline-share";
 import { listSavedViews, normaliseQuery } from "@/lib/data/views";
 import { NewApplicationDialog } from "@/components/pipeline/new-application-dialog";
 import { requireUser } from "@/lib/auth";
@@ -102,7 +102,7 @@ export default async function ApplicationsPage({
   // immediately rather than after a round trip.
   const profile = await getProfile(user.id);
   const zone = profile.timeZone;
-  const share = await getPipelineShare(user.id);
+  const shares = await listPipelineShares(user.id);
   const fieldValues = await applicationFieldValues(user.id);
   const shareBase = `${headerProto}://${headerHost}`;
 
@@ -115,6 +115,14 @@ export default async function ApplicationsPage({
       ),
     ).toString(),
   );
+  // Which saved view is open, if any, and the two links that can exist. The
+  // whole-pipeline one is the row with no saved view behind it.
+  const wholeShare = shares.find((row) => row.savedViewId === null) ?? null;
+  const openView = savedViews.find((view) => normaliseQuery(view.query) === currentQuery) ?? null;
+  const viewShare = openView
+    ? (shares.find((row) => row.savedViewId === openView.id) ?? null)
+    : null;
+
   const domainFor = (application: { company: { name: string; website: string } }) =>
     companyLogos
       ? companyDomain({ name: application.company.name, website: application.company.website })
@@ -262,9 +270,28 @@ export default async function ApplicationsPage({
           share={
             <SharePipeline
               initial={
-                share
-                  ? { url: `${shareBase}/p/${share.slug}`, includeClosed: share.includeClosed }
+                wholeShare
+                  ? {
+                      url: `${shareBase}/p/${wholeShare.slug}`,
+                      includeClosed: wholeShare.includeClosed,
+                    }
                   : null
+              }
+              // Only when a saved view is actually open: a second link for a
+              // view nobody is looking at is a control with no subject.
+              view={
+                openView
+                  ? {
+                      id: openView.id,
+                      name: openView.name,
+                      share: viewShare
+                        ? {
+                            url: `${shareBase}/p/${viewShare.slug}`,
+                            includeClosed: viewShare.includeClosed,
+                          }
+                        : null,
+                    }
+                  : undefined
               }
             />
           }

@@ -50,7 +50,10 @@ just *talk* to it.
   an application slides it in from the right, so you keep your place on the board. A
   read-only link shares the board with whoever is helping you — a friend, a coach, a former
   manager — showing companies, roles, stages and follow-up dates, and never your salaries,
-  notes, contacts or job descriptions.
+  notes, contacts or job descriptions. A saved view can have its own link, which is usually
+  the better offer: "everything I have from a referral" is a reasonable thing to send
+  someone and the whole board is not. Everything the view filters out is not in the page at
+  all, and each link has its own address, so revoking one leaves the others alone.
 - **Offers** — what somebody actually put on the table, which is a different fact from
   the range the posting advertised and is never mixed with it. Base, bonus, equity,
   sign-on, the vesting schedule, the terms in words, and the day you have to answer by —
@@ -65,6 +68,15 @@ just *talk* to it.
   version, what the posting claimed, the lines in your own timeline where money came up
   with the note each came from, what you have written about being paid before, and what is
   still missing.
+- **Two emails, if you want them** — nothing leaves this app unless you ask. Two things can:
+  a summary on Monday of where the search stands, what moved, what is coming and the one
+  thing worth fixing, and a nudge on a day something is actually due. The nudge sends
+  nothing on a quiet day, deliberately, so the one that matters never lands in the folder
+  you stopped reading. Both are off until you turn them on in Settings → Account, no admin
+  can turn one on for you, and every message says where the switch is. The app runs no
+  timers: an admin mints a token in Admin → Configuration and points their host's scheduler
+  at the address it produces, hourly, and the sweep works out who is due in their own time
+  zone.
 - **You can take it all with you** — Settings → Account has a Download everything button
   that saves one JSON file holding every record you own: Me, your resumes, your letters,
   the whole pipeline with its timeline, tasks, offers, tags and saved views. Connection
@@ -151,7 +163,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  153 tools any MCP client can call (186 if you're an admin). Claude, Claude Code, ChatGPT,
+  157 tools any MCP client can call (190 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -334,7 +346,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 153, or 186 if you're an admin.
+then tells you how many tools answered — 157, or 190 if you're an admin.
 
 That is a lot of tools, and spelled out in full they're around 45,000 tokens of context
 before you've said anything. If your client has tool search — Claude Code does, and has it
@@ -560,7 +572,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-153 tools. One hundred and forty-four of them are the data tools across the five areas, the
+157 tools. One hundred and forty-eight of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it

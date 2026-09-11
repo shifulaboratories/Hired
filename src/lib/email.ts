@@ -443,6 +443,87 @@ Nobody has been given access yet.`;
   return { subject, html, text };
 }
 
+/**
+ * The two messages somebody asked for: a weekly summary and a due-today nudge.
+ *
+ * One function, two subjects, because the difference between them is what is in
+ * the sections rather than how it is laid out — and two near-identical
+ * templates is two places to fix a rendering bug.
+ *
+ * The footer says where the switch is. Every message this app sends to a person
+ * who asked for it has to say how to stop, and "Settings → Account" is one
+ * click from wherever they are reading it.
+ */
+export function digestEmail(input: {
+  instanceName: string;
+  name: string;
+  content: { subject: string; intro: string; sections: { heading: string; lines: string[] }[] };
+  appUrl: string;
+}) {
+  return digestShell({ ...input, cta: "Open the board", path: "/applications" });
+}
+
+export function nudgeEmail(input: {
+  instanceName: string;
+  name: string;
+  content: { subject: string; intro: string; sections: { heading: string; lines: string[] }[] };
+  appUrl: string;
+}) {
+  return digestShell({ ...input, cta: "Open today", path: "/" });
+}
+
+function digestShell(input: {
+  instanceName: string;
+  name: string;
+  content: { subject: string; intro: string; sections: { heading: string; lines: string[] }[] };
+  appUrl: string;
+  cta: string;
+  path: string;
+}) {
+  const first = input.name.trim().split(/\s+/)[0] ?? "";
+  const href = input.appUrl ? `${input.appUrl}${input.path}` : "";
+
+  const sections = input.content.sections
+    .filter((section) => section.lines.length > 0)
+    .map((section) => `${eyebrow(section.heading)}${bullets(section.lines)}`)
+    .join(rule());
+
+  return {
+    subject: input.content.subject,
+    html: shell({
+      instanceName: input.instanceName,
+      title: input.content.subject,
+      preview: input.content.intro,
+      body: `${p(first ? `${escapeHtml(first)} — ${escapeHtml(input.content.intro)}` : escapeHtml(input.content.intro))}
+      ${sections}
+      ${href ? button(href, input.cta) : ""}`,
+      footer: "You asked for this one. Settings → Account turns it off.",
+    }),
+    text: [
+      input.content.intro,
+      "",
+      ...input.content.sections.flatMap((section) =>
+        section.lines.length === 0 ? [] : [section.heading.toUpperCase(), ...section.lines.map((line) => `  - ${line}`), ""],
+      ),
+      href ? `${input.cta}: ${href}` : "",
+      "",
+      "You asked for this one. Settings → Account turns it off.",
+    ].join("\n"),
+  };
+}
+
+/** A plain list. Not a <ul>: Outlook's bullet indentation is its own opinion. */
+function bullets(lines: string[]) {
+  return lines
+    .map(
+      (line) =>
+        `<div style="margin:0 0 8px;font-family:${FONT};font-size:14.5px;line-height:1.55;color:${C.ink};" class="ink">
+           <span style="color:${C.faint};">&bull;</span>&nbsp;&nbsp;${escapeHtml(line)}
+         </div>`,
+    )
+    .join("");
+}
+
 export function testEmail(instanceName: string) {
   return {
     subject: `${instanceName}: email is working`,
@@ -475,7 +556,7 @@ Sent from Admin → Configuration → Email on your instance.`,
 // a reason to hand one out.
 // ---------------------------------------------------------------------------
 
-export type EmailTemplateKey = "test" | "invite" | "waitlist";
+export type EmailTemplateKey = "test" | "invite" | "waitlist" | "digest" | "nudge";
 
 export const EMAIL_TEMPLATES: {
   key: EmailTemplateKey;
@@ -515,6 +596,59 @@ export const EMAIL_TEMPLATES: {
         source: "hired.tools",
         total: 1,
         adminUrl: base ? `${base}/admin` : "",
+      });
+      return { ...sample, subject: `[Sample] ${sample.subject}` };
+    },
+  },
+  {
+    key: "digest",
+    label: "Sample weekly summary",
+    render: (settings) => {
+      const base = (settings.publicUrl || "").replace(/\/$/, "");
+      const sample = digestEmail({
+        instanceName: settings.instanceName,
+        name: "A sample person",
+        appUrl: base,
+        content: {
+          subject: "Your week — 9 live applications, 3 things coming up",
+          intro: "Six things happened.",
+          sections: [
+            {
+              heading: "Where it stands",
+              lines: ["9 applications still live", "2 interviews in play", "4 applications sent this week"],
+            },
+            {
+              heading: "This week",
+              lines: ["2026-03-16 — Follow up with Northwind", "2026-03-18 — Interview · Acme"],
+            },
+            {
+              heading: "Gone quiet",
+              lines: ["Initech — Staff Engineer, 21 days since anything happened (Applied)"],
+            },
+          ],
+        },
+      });
+      return { ...sample, subject: `[Sample] ${sample.subject}` };
+    },
+  },
+  {
+    key: "nudge",
+    label: "Sample due-today nudge",
+    render: (settings) => {
+      const base = (settings.publicUrl || "").replace(/\/$/, "");
+      const sample = nudgeEmail({
+        instanceName: settings.instanceName,
+        name: "A sample person",
+        appUrl: base,
+        content: {
+          subject: "3 things today, 1 already late",
+          intro: "An offer needs an answer. That one first.",
+          sections: [
+            { heading: "Answer by today", lines: ["Answer Northwind — Staff Engineer"] },
+            { heading: "Chase", lines: ["Acme — Product Manager (overdue)"] },
+            { heading: "Tasks", lines: ["Send the take-home"] },
+          ],
+        },
       });
       return { ...sample, subject: `[Sample] ${sample.subject}` };
     },
