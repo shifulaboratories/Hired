@@ -1,7 +1,7 @@
 import type { Offer, Stage } from "@prisma/client";
 import { db } from "@/lib/db";
 import { pick } from "@/lib/data/patch";
-import { toDate } from "@/lib/data/pipeline";
+import { TERMINAL_STAGES, toDate } from "@/lib/data/pipeline";
 import { searchMe, timeZoneOf, type SearchHit } from "@/lib/data/me";
 
 /**
@@ -521,13 +521,19 @@ export async function offerBriefing(userId: string, applicationId: string): Prom
  * Archive filter 4 of 5, and the one most easily forgotten — this read starts
  * from Offer rather than from an application, so the filter has to be spelled
  * out here or a deleted application would keep nagging.
+ *
+ * TERMINAL_STAGES rather than just LOST, which the two comparison reads use.
+ * An accepted offer is still the one you took and belongs in compare_offers
+ * forever; its respond-by is a date that has already been answered, and left
+ * in the bell it would say "Answer Northwind" every morning for the rest of the
+ * job. Same rule the follow-up queries take.
  */
 export async function offersDueBy(userId: string, cutoff: Date) {
   return db.offer.findMany({
     where: {
       userId,
       respondBy: { lte: cutoff },
-      application: { archivedAt: null, stage: { not: "LOST" as Stage } },
+      application: { archivedAt: null, stage: { notIn: TERMINAL_STAGES } },
     },
     orderBy: { respondBy: "asc" },
     include: {
@@ -544,7 +550,7 @@ export async function offersDueBetween(userId: string, start: Date, end: Date) {
     where: {
       userId,
       respondBy: { gte: start, lte: end },
-      application: { archivedAt: null, stage: { not: "LOST" as Stage } },
+      application: { archivedAt: null, stage: { notIn: TERMINAL_STAGES } },
     },
     orderBy: { respondBy: "asc" },
     include: {
