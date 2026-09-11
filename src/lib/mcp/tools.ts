@@ -2128,6 +2128,28 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => pipeline.captureJobPosting(ctx.userId, required(args, "url")),
   },
   {
+    name: "capture_job_postings",
+    title: "Capture several job postings at once",
+    description:
+      "The same capture as capture_job_posting, over a list of URLs — for somebody who has spent a morning with twenty tabs open and wants them all on the board. Fetches the pages a few at a time, then creates in order. The SAME ROLE IS NOT CREATED TWICE: a job already on the board, matched on employer and role title against live applications, is reported as a duplicate rather than added again, and that also holds within the batch, so the same role on Greenhouse, LinkedIn and the company's own careers page produces one application and two duplicate lines. Returns three lists — captured with their new ids, duplicates naming what each one already matches, and failures naming the page's own problem — and every URL handed in appears in exactly one of them. Report all three back rather than a count: a duplicate is a thing they can go and look at, and a failure is a page they can paste the description from by hand with create_application. One bad URL never costs the others. Everything lands on the wishlist, so nothing here says they applied.",
+    inputSchema: object(
+      {
+        urls: strArray(
+          "The postings' URLs. Duplicates within the list are collapsed before anything is fetched.",
+        ),
+      },
+      ["urls"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      pipeline.captureJobPostings(ctx.userId, requiredArray(args, "urls")),
+  },
+  {
     name: "list_tags",
     title: "List the tags on file",
     description:
@@ -2594,10 +2616,24 @@ export const tools: McpTool[] = [
       }),
   },
   {
+    name: "list_relationships",
+    title: "Who has been worth something, and who has gone quiet",
+    description:
+      "diagnose_search for people. Ranks everyone in the CRM by what they have actually been worth to the search, and says how long since anything was logged against each. Reach for it when somebody asks who to thank, who to nudge, or where their referrals are really coming from — and before a week of cold applications, because the answer is usually that the people already on file outperform them. Two counts per person, kept apart on purpose: `direct` is applications they are attached to, which is somebody who referred you or the recruiter on that thread, and `atCompany` is applications at a company they represent, which is real evidence and much weaker — a recruiter at a five-thousand-person employer did not get you three interviews because you applied three times. Do not add them together and report one number. How far something got is the furthest it ever reached, so a contact on an application rejected after two rounds keeps credit for those two rounds. `worthKeepingWarm` is the subset that earned something and has since gone quiet or has a ping due, which is the actionable list. Archived people and archived applications are excluded. Says confident false when there is too little on file to rank anybody, and you should say so rather than reading the order as meaningful. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => pipeline.listRelationships(ctx.userId),
+  },
+  {
     name: "diagnose_search",
     title: "Diagnose the job search",
     description:
-      "Works out what is actually going wrong with the search, rather than reporting counts. Returns a one-sentence verdict naming which step of the funnel is losing people — no responses at all is a resume or targeting problem, interviews that do not convert is something else again — plus per-step conversion, median days spent in each stage, weekly volume for the last six weeks, applications that have gone quiet, and the response rate of each resume so you can see which one is working. Progress is measured by the furthest an application ever got — its `interviewRound` where it has one — so a rejection after a fourth round counts as having got that far. Reach for this before giving advice about a search: it is the difference between 'send more applications' and 'stop sending, the resume is the problem'. Says so plainly when there is not enough data yet. Read-only.",
+      "Works out what is actually going wrong with the search, rather than reporting counts. Returns a one-sentence verdict naming which step of the funnel is losing people — no responses at all is a resume or targeting problem, interviews that do not convert is something else again — plus per-step conversion, median days spent in each stage, weekly volume for the last six weeks, applications that have gone quiet, and the response rate of each resume AND of each source, so you can see both which document is working and which channel is. The source rates are the ones that change what somebody does with a Saturday: referrals converting at four times a job board is an argument for spending it messaging people rather than filling in forms. An application wearing two source tags counts into both, so those rows do not sum to the total applied. Progress is measured by the furthest an application ever got — its `interviewRound` where it has one — so a rejection after a fourth round counts as having got that far. Reach for this before giving advice about a search: it is the difference between 'send more applications' and 'stop sending, the resume is the problem'. Says so plainly when there is not enough data yet. Read-only.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,

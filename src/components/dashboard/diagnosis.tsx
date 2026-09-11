@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  * work — so the tool does that part and shows its working below.
  */
 export function DiagnosisCard({ diagnosis }: { diagnosis: SearchDiagnosis }) {
-  const { steps, weakest, headline, detail, velocity, byResume, stalled } = diagnosis;
+  const { steps, weakest, headline, detail, velocity, byResume, bySource, stalled } = diagnosis;
   const busiest = Math.max(1, ...velocity.map((week) => week.count));
 
   return (
@@ -134,6 +134,35 @@ export function DiagnosisCard({ diagnosis }: { diagnosis: SearchDiagnosis }) {
                     </span>
                     <span className="nums w-10 shrink-0 text-right text-[12.5px] font-medium">
                       {resume.rate === null ? "—" : `${resume.rate}%`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Where they came from, on the same gate and in the same shape as
+              the resumes above. This is the one of the two that changes what
+              somebody does on Saturday: a referral rate four times a job
+              board's is an argument for spending the morning messaging people
+              rather than filling in forms. */}
+          {diagnosis.confident && bySource.length > 0 && (
+            <div>
+              <div className="eyebrow mb-1.5">By source</div>
+              <ul className="space-y-1">
+                {bySource.slice(0, 3).map((source) => (
+                  <li key={source.id} className="flex items-center gap-2">
+                    <span
+                      aria-hidden
+                      style={{ ["--tone" as string]: `var(--tag-${source.color})` }}
+                      className="size-2 shrink-0 rounded-full bg-[var(--tone)]"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[12.5px]">{source.name}</span>
+                    <span className="nums text-faint shrink-0 text-[11.5px]">
+                      {source.responded}/{source.sent}
+                    </span>
+                    <span className="nums w-10 shrink-0 text-right text-[12.5px] font-medium">
+                      {source.rate === null ? "—" : `${source.rate}%`}
                     </span>
                   </li>
                 ))}

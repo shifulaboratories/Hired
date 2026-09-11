@@ -20,12 +20,14 @@ import {
   STAGE_LABEL,
   STAGE_TONE,
   diagnoseSearch,
+  listRelationships,
   funnelFlows,
   listActivities,
   pipelineStats,
 } from "@/lib/data/pipeline";
 import { truncate } from "@/lib/utils";
 import { DiagnosisCard } from "@/components/dashboard/diagnosis";
+import { RelationshipsCard } from "@/components/analytics/relationships";
 import { FunnelSankey } from "@/components/analytics/funnel-sankey";
 import { ShareFunnel } from "@/components/analytics/share-funnel";
 import { shortDay } from "@/lib/time";
@@ -44,9 +46,10 @@ import { timeZoneOf } from "@/lib/data/me";
  * competing with the one you clear daily.
  */
 export async function AnalyticsPanel({ userId }: { userId: string }) {
-  const [stats, diagnosis, funnel, activities, counts, zone] = await Promise.all([
+  const [stats, diagnosis, relationships, funnel, activities, counts, zone] = await Promise.all([
     pipelineStats(userId),
     diagnoseSearch(userId),
+    listRelationships(userId),
     funnelFlows(userId),
     listActivities(userId, undefined, 8),
     Promise.all([
@@ -164,6 +167,14 @@ export async function AnalyticsPanel({ userId }: { userId: string }) {
 
       <FadeIn delay={0.08}>
         <DiagnosisCard diagnosis={diagnosis} />
+      </FadeIn>
+
+      {/* Directly under the diagnosis, because it is the same question asked of
+          people, and because the answer is usually the one that changes what
+          somebody does next. Renders nothing until there is enough on file to
+          rank anybody — same gate as the card above it. */}
+      <FadeIn delay={0.12}>
+        <RelationshipsCard relationships={relationships} />
       </FadeIn>
 
       <div className="grid items-start gap-4 lg:grid-cols-3">
