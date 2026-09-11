@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { BellIcon, CalendarClockIcon, CircleUserRoundIcon, ListChecksIcon } from "lucide-react";
+import {
+  BellIcon,
+  CalendarClockIcon,
+  CircleUserRoundIcon,
+  HandshakeIcon,
+  ListChecksIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -14,10 +20,14 @@ import { cn } from "@/lib/utils";
  * top bar is on every page, which is the whole point of a thing that is trying
  * to interrupt you.
  *
- * One count, three groups. The count is a single number because two numbers in
+ * One count, four groups. The count is a single number because two numbers in
  * the chrome make you do arithmetic; the groups stay apart inside because
- * chasing a company, pinging a person and ticking a task are three different
- * actions and a flat list of look-alike rows hides which is which.
+ * chasing a company, pinging a person, ticking a task and answering an offer
+ * are four different actions and a flat list of look-alike rows hides which is
+ * which.
+ *
+ * An offer deadline sits at the top of the list. It is the only date here that
+ * cannot be caught up on tomorrow.
  *
  * Nothing here is dismissable, and that is deliberate: an item leaves this list
  * by being dealt with — logging the follow-up, moving the ping, ticking the
@@ -25,7 +35,7 @@ import { cn } from "@/lib/utils";
  * bell go quiet while the work stayed undone.
  */
 export type Notice = {
-  kind: "APPLICATION" | "CONTACT" | "TASK";
+  kind: "APPLICATION" | "CONTACT" | "TASK" | "OFFER";
   id: string;
   title: string;
   detail: string;
@@ -34,6 +44,12 @@ export type Notice = {
 };
 
 const GROUPS = [
+  {
+    key: "OFFER" as const,
+    label: "Answer by",
+    icon: HandshakeIcon,
+    href: (id: string) => `/applications/${id}`,
+  },
   {
     key: "APPLICATION" as const,
     label: "Follow up",

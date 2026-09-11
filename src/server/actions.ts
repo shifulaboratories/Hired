@@ -7,6 +7,7 @@ import type { ActivityType, NoteKind, Stage, TagKind, UserRole } from "@prisma/c
 import * as me from "@/lib/data/me";
 import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
+import * as offers from "@/lib/data/offers";
 import * as tags from "@/lib/data/tags";
 import { STAGE_LABEL } from "@/lib/data/pipeline";
 import * as views from "@/lib/data/views";
@@ -1126,6 +1127,40 @@ export async function updateApplicationAction(
   revalidatePath("/");
 }
 
+/**
+ * Offers are their own actions rather than fields on the application's autosave
+ * bag, and that is on purpose: the bag REPLACES what it is given, and an offer
+ * is a versioned record. Folding it in would mean every keystroke in the notes
+ * field rewriting a number somebody negotiated for.
+ */
+export async function recordOfferAction(applicationId: string, input: offers.OfferInput) {
+  const user = await requireUser();
+  const result = await offers.recordOffer(user.id, applicationId, input);
+  revalidateApplication(applicationId);
+  return offers.offerForUi(result.offer);
+}
+
+export async function updateOfferAction(id: string, patch: offers.OfferInput) {
+  const user = await requireUser();
+  const offer = await offers.updateOffer(user.id, id, patch);
+  revalidateApplication(offer.applicationId);
+  return offers.offerForUi(offer);
+}
+
+export async function deleteOfferAction(id: string) {
+  const user = await requireUser();
+  const offer = await offers.getOffer(user.id, id);
+  await offers.deleteOffer(user.id, id);
+  if (offer) revalidateApplication(offer.applicationId);
+}
+
+/** The three screens an offer shows on. */
+function revalidateApplication(id: string) {
+  revalidatePath("/applications");
+  revalidatePath(`/applications/${id}`);
+  revalidatePath("/");
+}
+
 export async function moveApplicationsStageAction(ids: string[], stage: Stage) {
   const user = await requireUser();
   const result = await pipeline.moveApplicationsStage(user.id, ids, stage);
@@ -1669,6 +1704,7 @@ export async function getApplicationForPanelAction(id: string) {
       done: task.done,
       dueAt: task.dueAt?.toISOString() ?? null,
     })),
+    offers: application.offers.map(offers.offerForUi),
     resumes: resumeList.map((resume) => ({ id: resume.id, name: resume.name })),
     tagOptions: tagOptions.map(asOption),
     lossOptions: lossOptions.map(asOption),

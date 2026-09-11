@@ -57,6 +57,7 @@ import type { TagValue } from "@/components/tags/tag-chip";
 import { CompanyChip } from "@/components/crm/company-chip";
 import { CompanyAvatar } from "@/components/pipeline/company-avatar";
 import { ValuePicker } from "@/components/pipeline/value-picker";
+import { OfferCard, type OfferValue } from "@/components/pipeline/offer-card";
 import { PaperThumb } from "@/components/resume/paper-thumb";
 import { ResumePaper, type PaperSettings } from "@/components/resume/resume-paper";
 import type { ResumeDoc } from "@/lib/resume-schema";
@@ -136,6 +137,7 @@ export function ApplicationDetail({
   activities,
   contacts,
   tasks,
+  offers,
   resumes,
   tagOptions,
   lossOptions,
@@ -151,6 +153,8 @@ export function ApplicationDetail({
   activities: Activity[];
   contacts: Contact[];
   tasks: Task[];
+  /** Every version of the offer, newest first. Empty until one is recorded. */
+  offers: OfferValue[];
   resumes: { id: string; name: string }[];
   /** Every source category on file, with usage counts. */
   tagOptions: TagOption[];
@@ -420,7 +424,19 @@ export function ApplicationDetail({
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
-            {/* People first. They are the reason the application moves, and they
+            {/* Above people, and only once there is an offer to show: at this
+                point in a search the number IS the application, and everything
+                else on the screen is context for it. Draws nothing at the
+                earlier stages. */}
+            <OfferCard
+              applicationId={application.id}
+              stage={stage}
+              advertised={values.salaryRange}
+              offers={offers}
+              onServerChange={onServerChange}
+            />
+
+            {/* People next. They are the reason the application moves, and they
                 were previously last in the right rail — in the panel, two
                 scrolls below the fold. */}
             <ContactsCard applicationId={application.id} company={values.company} contacts={contacts} />

@@ -803,6 +803,13 @@ const applicationInclude = {
     take: 1,
     select: { occurredAt: true },
   },
+  // The current offer, so the board can print the number in the column where
+  // it decides something. Newest first because an offer is versioned: the last
+  // one recorded is the one on the table. src/lib/data/offers.ts owns the rest.
+  offers: {
+    orderBy: [{ receivedAt: "desc" as const }, { createdAt: "desc" as const }],
+    take: 1,
+  },
 } satisfies Prisma.ApplicationInclude;
 
 /**
@@ -888,6 +895,9 @@ export async function getApplication(userId: string, id: string) {
       activities: { orderBy: { occurredAt: "desc" } },
       contacts: { where: { archivedAt: null }, orderBy: { createdAt: "asc" } },
       tasks: { orderBy: [{ done: "asc" }, { dueAt: "asc" }] },
+      // Every version, newest first. The distance between the first and the
+      // last is the negotiation, and the detail page draws it.
+      offers: { orderBy: [{ receivedAt: "desc" }, { createdAt: "desc" }] },
     },
   });
   if (!application) return null;
@@ -937,7 +947,7 @@ function cleanLinks(values: string[]): string[] {
  * follow-up picked by hand behaves exactly like one the app worked out. Values
  * that already carry a time are instants and pass through untouched.
  */
-function toDate(
+export function toDate(
   timeZone: string,
   value: Date | string | null | undefined,
 ): Date | null | undefined {
@@ -2227,7 +2237,12 @@ export async function contactFollowUpsDue(userId: string, withinDays = 0) {
  * `withinDays` defaults to 0 — today and everything already late.
  */
 export type DueItem = {
-  kind: "APPLICATION" | "CONTACT" | "TASK";
+  /**
+   * OFFER items are merged in by src/lib/data/schedule.ts rather than built
+   * here — same reason MEETING is, one level down: this file is imported by
+   * client components and must not pull in anything Node-only behind it.
+   */
+  kind: "APPLICATION" | "CONTACT" | "TASK" | "OFFER";
   id: string;
   title: string;
   detail: string;
@@ -2325,7 +2340,7 @@ export async function dueNow(
  * here, so this file — which client components import for its constants —
  * never reaches the provider code and its Node-only libraries.
  */
-export type ScheduleKind = "FOLLOW_UP" | "TASK" | "ACTIVITY" | "MEETING";
+export type ScheduleKind = "FOLLOW_UP" | "TASK" | "ACTIVITY" | "MEETING" | "OFFER";
 
 export type ScheduleEntry = {
   kind: ScheduleKind;

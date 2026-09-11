@@ -3,6 +3,7 @@ import * as me from "@/lib/data/me";
 import { civilInstant } from "@/lib/time";
 import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
+import * as offers from "@/lib/data/offers";
 import * as tags from "@/lib/data/tags";
 import type { TagKind } from "@prisma/client";
 import * as views from "@/lib/data/views";
@@ -265,6 +266,35 @@ function required(args: Json, key: string): string {
     throw new Error(`Missing required string argument "${key}"`);
   }
   return value;
+}
+
+/**
+ * The offer fields, read the same way by record_offer and update_offer.
+ *
+ * `defined` strips what was not sent, which is what makes update_offer a patch
+ * rather than a replace — and the reason a caller can correct a base without
+ * wiping the terms somebody typed by hand.
+ */
+function offerInputFrom(args: Json): offers.OfferInput {
+  // A string gets through as well as a number: the schema says number, and
+  // assistants send "215k" anyway. Passing it on means the data layer reads it
+  // or names the problem, where `n` alone would drop the base in silence.
+  const amount = (key: string) => {
+    const value = args[key];
+    return typeof value === "number" || typeof value === "string" ? value : undefined;
+  };
+  return defined({
+    currency: s(args, "currency"),
+    baseAmount: amount("base_amount"),
+    bonusAmount: amount("bonus_amount"),
+    equityAmount: amount("equity_amount"),
+    signOnAmount: amount("sign_on_amount"),
+    terms: s(args, "terms"),
+    vesting: s(args, "vesting"),
+    receivedAt: s(args, "received_at"),
+    respondBy: s(args, "respond_by"),
+    startsOn: s(args, "starts_on"),
+  });
 }
 
 /**
@@ -2148,6 +2178,142 @@ export const tools: McpTool[] = [
     },
     handler: async (args, ctx) =>
       pipeline.captureJobPostings(ctx.userId, requiredArray(args, "urls")),
+  },
+  {
+    name: "record_offer",
+    title: "Record an offer",
+    description:
+      "Save what somebody actually offered: base, bonus, equity, sign-on, the terms in words, and the date they need an answer by. Call this the moment a number is said out loud, even a verbal one — the figure a recruiter says on a Tuesday call is the figure nobody can remember on Friday. EVERY CALL WRITES A NEW VERSION rather than replacing the last: when they come back with more, call this again with the new numbers, and the two rows become the negotiation record. Only use update_offer to fix a typo in a row. Amounts are WHOLE UNITS of the currency — 215000 means two hundred and fifteen thousand — and \"215k\" is understood; equity is the yearly value where they stated one, with the schedule in vesting. Never invent a number: if they said \"competitive\" record nothing and say the base is still unknown. This does NOT move the application to the offer stage; check the stage that comes back and call move_application_stage if it is behind. Setting respond_by is what puts the deadline in their notifications.",
+    inputSchema: object(
+      {
+        application_id: str("Which application this offer is for"),
+        base_amount: num("Annual base salary, whole units, e.g. 215000"),
+        bonus_amount: num("Target annual bonus in the same units. Omit when none was stated"),
+        equity_amount: num("Yearly value of the equity grant where they stated one. Leave out when they only described a percentage — put that in terms"),
+        sign_on_amount: num("One-off signing bonus"),
+        currency: str("Three-letter code, e.g. USD, GBP, EUR. Defaults to USD"),
+        terms: str("Everything the numbers cannot hold, in their words: '0.4% over four years, one year cliff', 'relocation on top', 'review at six months'"),
+        vesting: str("The vesting schedule, e.g. '4 years, 1 year cliff, monthly after'"),
+        received_at: str("The day it was put on the table, YYYY-MM-DD. Defaults to today"),
+        respond_by: str("The day they need an answer, YYYY-MM-DD. This is what the notification bell reads"),
+        starts_on: str("Proposed start date, YYYY-MM-DD"),
+      },
+      ["application_id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      offers.recordOffer(ctx.userId, required(args, "application_id"), offerInputFrom(args)),
+  },
+  {
+    name: "list_offers",
+    title: "List offers",
+    description:
+      "Every offer on file, newest first, each with the application and company it belongs to. Several rows for one application are its versions, not several offers — the first one recorded is the opening number and the newest is where it stands now. Pass application_id for one job's history, or live_only to drop the ones that came to nothing. For a side-by-side of what is actually on the table, compare_offers is the better tool; for arguing one of them, offer_briefing. Read-only.",
+    inputSchema: object({
+      application_id: str("Only this application's offers, oldest to newest history included"),
+      live_only: bool("Drop offers whose application was lost. An accepted one stays — it is the one they took"),
+      limit: limitArg(50),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      capped(
+        await offers.listOffers(ctx.userId, {
+          applicationId: s(args, "application_id"),
+          liveOnly: b(args, "live_only"),
+        }),
+        n(args, "limit"),
+        50,
+      ),
+  },
+  {
+    name: "update_offer",
+    title: "Fix an offer row",
+    description:
+      "Correct a recorded offer in place — a base typed with a digit missing, a respond-by that moved, a vesting schedule nobody wrote down. Only the fields you send change. THIS IS NOT FOR A NEW NUMBER: when they improved the offer, call record_offer again, because overwriting the old row destroys the only record that the number moved. Get the id from list_offers.",
+    inputSchema: object(
+      {
+        id: str("Offer id, from list_offers"),
+        base_amount: num("Annual base salary, whole units"),
+        bonus_amount: num("Target annual bonus"),
+        equity_amount: num("Yearly value of the equity grant"),
+        sign_on_amount: num("One-off signing bonus"),
+        currency: str("Three-letter code, e.g. USD"),
+        terms: str("Everything the numbers cannot hold. Replaces what is there"),
+        vesting: str("The vesting schedule. Replaces what is there"),
+        received_at: str("The day it was put on the table, YYYY-MM-DD"),
+        respond_by: str("The day they need an answer, YYYY-MM-DD. Send an empty string to clear it"),
+        starts_on: str("Proposed start date, YYYY-MM-DD. Send an empty string to clear it"),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      offers.updateOffer(ctx.userId, required(args, "id"), offerInputFrom(args)),
+  },
+  {
+    name: "delete_offer",
+    title: "Delete an offer row",
+    description:
+      "Remove one recorded offer for good. There is no archive for offers — this is gone. Use it for a row entered against the wrong job, not for an offer that was withdrawn: a withdrawn offer is part of the story, so leave the row and move the application to lost with a loss tag instead. Say what will go and get a plain yes first.",
+    inputSchema: object({ id: str("Offer id, from list_offers") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => offers.deleteOffer(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "compare_offers",
+    title: "Compare the offers on the table",
+    description:
+      "Every live offer side by side: one column per job, holding the newest version of it, sorted by what year one actually pays. Each column carries base, bonus, equity and sign-on, a yearlyTotal (base + bonus + equity, sign-on excluded because it lands once), a firstYearTotal that includes it, the deadline and how many days are left, how many times that offer has been revised, and `leads` naming the lines it wins outright. IT WILL NOT CONVERT CURRENCIES. When the offers are in different ones, comparable comes back false with the reason, every column still honest in its own currency, and nothing marked as leading — say so and ask which currency they want it in rather than picking a rate. Money is not the only axis: report the terms and vesting alongside the numbers, and remember a shorter cliff or a real start date can outweigh a bigger base. Read-only.",
+    inputSchema: object({
+      application_ids: strArray("Only these applications. Omit for everything still on the table"),
+      include_lost: bool("Also include offers from applications that ended in a loss, for a historical comparison"),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      offers.compareOffers(ctx.userId, {
+        applicationIds: a(args, "application_ids"),
+        includeLost: b(args, "include_lost"),
+      }),
+  },
+  {
+    name: "offer_briefing",
+    title: "Everything on file for one negotiation",
+    description:
+      "Call this BEFORE helping somebody answer or negotiate an offer. It gathers in one read the four things that decide it and normally live four places apart: every version of the offer itself; `advertised`, which is what the POSTING claimed and is not what anybody offered; `saidDuringProcess`, the lines in their own timeline where money came up, each with the activity id so you can read the whole note; `pastPay`, what they have written in Me about what they have earned; and `competing`, the other offers on the table. `missing` names what is not on file that you would want — an unrecorded base, a vesting schedule for equity that has one, no deadline. Use the quotes as evidence and quote them back; never state a number that is not in this result, and never guess a market rate as though it came from their data. Read-only, saves nothing.",
+    inputSchema: object({ application_id: str("Which application to brief on") }, ["application_id"]),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      offers.offerBriefing(ctx.userId, required(args, "application_id")),
   },
   {
     name: "list_tags",
