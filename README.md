@@ -9,7 +9,10 @@ just *talk* to it.
 
 - **Me** — dump everything you know about every job you've had. No length limit, no
   structure required. Numbers, projects, stories, praise, screw-ups. This is the raw
-  material every resume gets built from.
+  material every resume gets built from. Searching it matches by stem, so looking for
+  "managing engineers" finds the line where you wrote "managed three engineers" — which
+  matters, because the alternative is a resume that says you have no evidence for
+  something you spent two years doing.
 - **Resumes** — tailored documents assembled from that material. Defaults to the Harvard
   OCS format; four other templates, live preview, real PDF export, and a shareable link for
   the application forms that want a URL instead of a file.
@@ -62,6 +65,14 @@ just *talk* to it.
   version, what the posting claimed, the lines in your own timeline where money came up
   with the note each came from, what you have written about being paid before, and what is
   still missing.
+- **A review queue** — an assistant that has read a week of your mail finds six things the
+  pipeline does not know. Answering them in the chat works only if you are at the chat, and
+  anything you did not answer is gone. It can queue them instead: they wait on Today, one
+  line each, with the sentence from the email that produced it printed underneath, and you
+  accept or dismiss them whenever you get to it. Five things can be queued — log it, move
+  the stage, add a task, change the follow-up date, add a person — and nothing is written
+  until you say yes. A dismissal is an answer too, so it stays on file and a good assistant
+  will not propose it again.
 - **Stage checklists** — the things you always mean to do and never do. Say once that
   reaching Applied should add "check the posting is still up" in a week, or that every
   interview should put "send a thank-you" on tomorrow's list, and it happens on its own
@@ -131,7 +142,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  147 tools any MCP client can call (180 if you're an admin). Claude, Claude Code, ChatGPT,
+  151 tools any MCP client can call (184 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -314,7 +325,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 147, or 180 if you're an admin.
+then tells you how many tools answered — 151, or 184 if you're an admin.
 
 That is a lot of tools, and spelled out in full they're around 45,000 tokens of context
 before you've said anything. If your client has tool search — Claude Code does, and has it
@@ -540,7 +551,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-147 tools. One hundred and thirty-eight of them are the data tools across the five areas, the
+151 tools. One hundred and forty-two of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it

@@ -6201,3 +6201,63 @@ because twelve jobs against a four-line checklist is forty-eight rows nobody rea
 **Nothing is built in.** Every search has its own ritual and a fixed list would be wrong
 for all of them, so a new account has no lines. `seed_stage_templates` offers six boring
 ones and skips any stage that already has something, so it is safe to offer twice.
+
+---
+
+## 2026-09-11 — search_me moves into Postgres, and gets OR semantics
+
+The old implementation loaded every role, highlight, note and project into Node and
+counted substrings. It was honest about one thing — no extensions — and wrong about two.
+It read the whole of somebody's career history on every call, and it could only find words
+spelled exactly as typed. "managing engineers" missed "managed three engineers", which is
+the difference between a resume that cites your own material and one that reports you have
+none.
+
+`english` is a built-in text search configuration, not an extension, so the promise in
+invariant five survives: `DATABASE_URL` is still the only variable.
+
+**OR, not AND.** `websearch_to_tsquery` ANDs its terms, so "kubernetes cost savings" would
+return nothing unless one record held all three. That is a recall regression on the tool
+whose whole job is finding evidence. The query is built instead by lexing the search text
+and joining the lexemes with `|`; ts_rank_cd then ranks a record covering two terms above
+one covering one, which is the behaviour people expect from a search box.
+
+**Prefixes on words of four letters or more.** So "kubern" finds Kubernetes, while the "c"
+that `to_tsvector` makes of "C++" stays exact instead of matching half the database.
+
+**Expression indexes, not stored tsvector columns.** Prisma cannot model a tsvector, and an
+unmodelled column shows as schema drift forever. An expression index does not — verified:
+`prisma migrate diff --exit-code` reports no difference with all five in place. Two things
+fell out of building them. `array_to_string` is not marked IMMUTABLE so Postgres refuses it
+inside an index expression, hence the one-line `hired_words` wrapper the migration creates
+and the query uses. And on a small account the planner prefers the existing userId index
+anyway, which is correct; these earn their keep on the person with four hundred highlights.
+If the index expression and the query expression ever drift, the index goes unused and the
+search still returns the right answer — the right failure mode for an optimisation nothing
+verifies.
+
+## 2026-09-11 — The review queue: a stored blob that becomes a write
+
+`inbox_review` ends by asking about six things one at a time, which works only if you are
+at the conversation when it finishes. Anything you did not answer is gone. `Proposal` is
+the same six waiting on the dashboard.
+
+This is the only place in the app where something an assistant wrote is stored and later
+executed, so the rules are narrow on purpose:
+
+- **A closed set of five kinds**, each mapping to exactly one data-layer call. There is no
+  "run this tool" proposal and there should never be one. Adding a branch to `dispatch` is
+  adding a capability, and the comment says so.
+- **Validated twice** — when queued, so a malformed proposal is refused rather than sitting
+  there looking legitimate, and again on accept, because the world moves in between.
+- **userId comes from the session, never the payload.** A payload naming somebody else's
+  application fails its own lookup; the probe queues exactly that and asserts the other
+  account's job is untouched.
+- **Accepting is idempotent.** The row leaves PENDING in an `updateMany` guarded on its
+  current status *before* the work runs, so two clicks cannot log the same interview twice.
+  If the work then fails, the row goes back to PENDING carrying the reason — a proposal
+  that silently vanished is worse than one that says why it could not be done.
+
+A dismissal is kept rather than deleted. It is an answer, and `list_proposals` can tell an
+assistant later that this was already declined, which is the difference between a queue and
+a nag.

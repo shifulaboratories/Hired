@@ -643,151 +643,158 @@ export type SearchHit = {
   score: number;
 };
 
-function scoreText(haystack: string, terms: string[]) {
-  const lower = haystack.toLowerCase();
-  let score = 0;
-  for (const term of terms) {
-    let index = lower.indexOf(term);
-    while (index !== -1) {
-      score += 1;
-      index = lower.indexOf(term, index + term.length);
-    }
-  }
-  return score;
-}
+/**
+ * Ranked search across everything in one person's Me.
+ *
+ * This used to load every role, highlight, note and project into Node and
+ * count substrings. That was honest about one thing — it needed no extensions
+ * — and wrong about two. It read the whole of somebody's career history on
+ * every keystroke, and it could only find words spelled exactly as typed:
+ * "managing engineers" missed "managed three engineers", which is the
+ * difference between a resume that cites your own material and one that says
+ * you have none.
+ *
+ * Postgres full-text search fixes both and costs nothing to deploy. `english`
+ * is a built-in configuration, not an extension, so `DATABASE_URL` is still the
+ * only thing a self-hoster sets.
+ *
+ * Three decisions worth knowing:
+ *
+ * - **OR, not AND.** `websearch_to_tsquery` would AND the terms, so
+ *   "kubernetes cost savings" would return nothing unless one record held all
+ *   three. The query is built by lexing the search text and joining the
+ *   lexemes with `|`; ts_rank_cd then ranks a record covering three terms above
+ *   one covering a single term, which is the behaviour people actually expect.
+ * - **Prefixes on real words only.** Lexemes of four characters or more get
+ *   `:*`, so "kubern" finds Kubernetes. Shorter ones stay exact, because "c"
+ *   from "C++" as a prefix would match half the database.
+ * - **Weighting is a rank term, not a stored vector.** The WHERE clause uses
+ *   exactly the expression the GIN indexes are built on; the title-vs-body
+ *   weighting is computed afterwards, on the handful of rows that matched.
+ *   If those two expressions ever drift, the index simply goes unused and the
+ *   search still returns the right answer.
+ */
+export async function searchMe(userId: string, query: string, limit = 25): Promise<SearchHit[]> {
+  const text = query.trim();
+  if (text === "") return recentRoles(userId, limit);
 
-function excerptAround(haystack: string, terms: string[], radius = 180) {
-  const lower = haystack.toLowerCase();
-  let at = -1;
-  for (const term of terms) {
-    const index = lower.indexOf(term);
-    if (index !== -1 && (at === -1 || index < at)) at = index;
-  }
-  if (at === -1) return haystack.slice(0, radius * 2).trim();
-  const start = Math.max(0, at - radius / 2);
-  const slice = haystack.slice(start, start + radius * 2).trim();
-  return `${start > 0 ? "…" : ""}${slice}${start + radius * 2 < haystack.length ? "…" : ""}`;
+  const rows = await db.$queryRaw<
+    { kind: string; id: string; title: string; subtitle: string; score: number; excerpt: string }[]
+  >`
+    WITH q AS (
+      SELECT (
+        SELECT string_agg(
+                 CASE WHEN length(lexeme) >= 4
+                      THEN quote_literal(lexeme) || ':*'
+                      ELSE quote_literal(lexeme) END,
+                 ' | ')
+        FROM unnest(to_tsvector('english', ${text}))
+      )::tsquery AS tsq
+    ),
+    docs AS (
+      SELECT 'profile' AS kind, p.id AS id,
+             CASE WHEN coalesce(p."fullName", '') = '' THEN 'Profile' ELSE p."fullName" END AS title,
+             coalesce(p."headline", '') AS subtitle,
+             coalesce(p."fullName", '') || ' ' || coalesce(p."headline", '') AS head,
+             coalesce(p."fullName", '') || ' ' || coalesce(p."headline", '') || ' ' ||
+               coalesce(p."summary", '') || ' ' || coalesce(p."brainDump", '') AS body,
+             0::float8 AS boost
+      FROM "Profile" p WHERE p."userId" = ${userId}
+
+      UNION ALL
+      SELECT 'role', r.id,
+             r."title" || ' @ ' || r."company",
+             coalesce(r."startDate", '') || (CASE
+               WHEN r."isCurrent" THEN ' – Present'
+               WHEN coalesce(r."endDate", '') <> '' THEN ' – ' || r."endDate"
+               ELSE '' END),
+             coalesce(r."company", '') || ' ' || coalesce(r."title", ''),
+             coalesce(r."company", '') || ' ' || coalesce(r."title", '') || ' ' ||
+               coalesce(r."summary", '') || ' ' || coalesce(r."brainDump", '') || ' ' ||
+               hired_words(r."tags"),
+             0::float8
+      FROM "Role" r WHERE r."userId" = ${userId}
+
+      UNION ALL
+      SELECT 'highlight', h.id,
+             h."text",
+             coalesce(hr."title" || ' @ ' || hr."company", 'Unassigned'),
+             coalesce(h."text", ''),
+             coalesce(h."text", '') || ' ' || coalesce(h."impact", '') || ' ' ||
+               hired_words(h."tags"),
+             -- A highlight is already the polished version of something, and
+             -- strength is the person's own judgement of it. Worth a nudge, not
+             -- worth outranking a direct hit.
+             h."strength" * 0.05
+      FROM "Highlight" h LEFT JOIN "Role" hr ON hr.id = h."roleId"
+      WHERE h."userId" = ${userId} AND h."archived" = false
+
+      UNION ALL
+      SELECT 'note', n.id,
+             n."title",
+             array_to_string(n."tags", ', '),
+             coalesce(n."title", ''),
+             coalesce(n."title", '') || ' ' || coalesce(n."body", '') || ' ' ||
+               hired_words(n."tags"),
+             0::float8
+      FROM "Note" n WHERE n."userId" = ${userId}
+
+      UNION ALL
+      SELECT 'project', pr.id,
+             pr."name",
+             coalesce(pr."role", ''),
+             coalesce(pr."name", '') || ' ' || coalesce(pr."role", ''),
+             coalesce(pr."name", '') || ' ' || coalesce(pr."role", '') || ' ' ||
+               coalesce(pr."description", '') || ' ' || coalesce(pr."brainDump", '') || ' ' ||
+               hired_words(pr."tags"),
+             0::float8
+      FROM "Project" pr WHERE pr."userId" = ${userId}
+    )
+    SELECT d.kind, d.id, d.title, d.subtitle,
+           (ts_rank_cd(to_tsvector('english', d.head), q.tsq) * 3
+            + ts_rank_cd(to_tsvector('english', d.body), q.tsq)
+            + d.boost)::float8 AS score,
+           ts_headline('english', d.body, q.tsq,
+             'MaxFragments=1,MaxWords=44,MinWords=16,StartSel=~~,StopSel=~~,FragmentDelimiter= … ') AS excerpt
+    FROM docs d, q
+    WHERE q.tsq IS NOT NULL AND to_tsvector('english', d.body) @@ q.tsq
+    ORDER BY score DESC, d.title ASC
+    LIMIT ${Math.max(1, Math.trunc(limit))}
+  `;
+
+  return rows.map((row) => ({
+    kind: row.kind as SearchHit["kind"],
+    id: row.id,
+    title: row.title,
+    subtitle: row.subtitle,
+    // ts_headline has no way to mark a match with nothing, so it marks with a
+    // sentinel we strip. Plain text is what every caller of this wants.
+    excerpt: row.excerpt.replaceAll("~~", "").trim(),
+    score: row.score,
+  }));
 }
 
 /**
- * Ranked full-text search across everything in one user's Me. Deliberately
- * done in application code rather than Postgres FTS so it works identically on
- * a fresh database with zero extensions to configure.
+ * What comes back for an empty query: the roles, newest first.
+ *
+ * Not nothing, because the empty search is what an assistant sends when it is
+ * orienting itself — "what has this person done" — and a blank answer reads as
+ * an empty account.
  */
-export async function searchMe(userId: string, query: string, limit = 25): Promise<SearchHit[]> {
-  const terms = query
-    .toLowerCase()
-    .split(/\s+/)
-    .map((t) => t.replace(/[^a-z0-9+#.-]/g, ""))
-    .filter((t) => t.length > 1);
-
-  const [profile, roles, highlights, notes, projects] = await Promise.all([
-    getProfile(userId),
-    db.role.findMany({ where: { userId } }),
-    db.highlight.findMany({
-      where: { userId, archived: false },
-      include: { role: { select: { company: true, title: true } } },
-    }),
-    db.note.findMany({ where: { userId } }),
-    db.project.findMany({ where: { userId } }),
-  ]);
-
-  const hits: SearchHit[] = [];
-
-  if (terms.length === 0) {
-    for (const role of roles.slice(0, limit)) {
-      hits.push({
-        kind: "role",
-        id: role.id,
-        title: `${role.title} @ ${role.company}`,
-        subtitle: [role.startDate, role.isCurrent ? "Present" : role.endDate]
-          .filter(Boolean)
-          .join(" – "),
-        excerpt: role.background.slice(0, 240),
-        score: 1,
-      });
-    }
-    return hits;
-  }
-
-  const profileBlob = [profile.summary, profile.background, profile.headline].join("\n");
-  const profileScore = scoreText(profileBlob, terms);
-  if (profileScore > 0) {
-    hits.push({
-      kind: "profile",
-      id: profile.id,
-      title: profile.fullName || "Profile",
-      subtitle: profile.headline,
-      excerpt: excerptAround(profileBlob, terms),
-      score: profileScore,
-    });
-  }
-
-  for (const role of roles) {
-    const blob = [role.company, role.title, role.summary, role.background, role.tags.join(" ")].join(
-      "\n",
-    );
-    const score = scoreText(blob, terms) + scoreText(`${role.company} ${role.title}`, terms) * 3;
-    if (score > 0) {
-      hits.push({
-        kind: "role",
-        id: role.id,
-        title: `${role.title} @ ${role.company}`,
-        subtitle: [role.startDate, role.isCurrent ? "Present" : role.endDate]
-          .filter(Boolean)
-          .join(" – "),
-        excerpt: excerptAround(blob, terms),
-        score,
-      });
-    }
-  }
-
-  for (const h of highlights) {
-    const blob = [h.text, h.impact, h.tags.join(" ")].join("\n");
-    const score = scoreText(blob, terms) * 2 + h.strength * 0.1;
-    if (scoreText(blob, terms) > 0) {
-      hits.push({
-        kind: "highlight",
-        id: h.id,
-        title: h.text,
-        subtitle: h.role ? `${h.role.title} @ ${h.role.company}` : "Unassigned",
-        excerpt: h.impact,
-        score,
-      });
-    }
-  }
-
-  for (const n of notes) {
-    const blob = [n.title, n.body, n.tags.join(" ")].join("\n");
-    const score = scoreText(blob, terms);
-    if (score > 0) {
-      hits.push({
-        kind: "note",
-        id: n.id,
-        title: n.title,
-        subtitle: n.tags.join(", "),
-        excerpt: excerptAround(blob, terms),
-        score,
-      });
-    }
-  }
-
-  for (const p of projects) {
-    const blob = [p.name, p.role, p.description, p.background, p.tags.join(" ")].join("\n");
-    const score = scoreText(blob, terms);
-    if (score > 0) {
-      hits.push({
-        kind: "project",
-        id: p.id,
-        title: p.name,
-        subtitle: p.role,
-        excerpt: excerptAround(blob, terms),
-        score,
-      });
-    }
-  }
-
-  return hits.sort((a, b) => b.score - a.score).slice(0, limit);
+async function recentRoles(userId: string, limit: number): Promise<SearchHit[]> {
+  const roles = await db.role.findMany({
+    where: { userId },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+    take: Math.max(1, Math.trunc(limit)),
+  });
+  return roles.map((role) => ({
+    kind: "role" as const,
+    id: role.id,
+    title: `${role.title} @ ${role.company}`,
+    subtitle: [role.startDate, role.isCurrent ? "Present" : role.endDate].filter(Boolean).join(" – "),
+    excerpt: role.background.slice(0, 240),
+    score: 1,
+  }));
 }
 
 /** Everything in one payload — used to seed a resume and by `get_me_snapshot`. */

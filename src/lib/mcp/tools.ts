@@ -1,4 +1,12 @@
-import type { ActivityType, LetterKind, NoteKind, Stage, User, UserRole } from "@prisma/client";
+import type {
+  ActivityType,
+  LetterKind,
+  NoteKind,
+  ProposalStatus,
+  Stage,
+  User,
+  UserRole,
+} from "@prisma/client";
 import * as me from "@/lib/data/me";
 import { civilInstant } from "@/lib/time";
 import * as resumes from "@/lib/data/resumes";
@@ -6,6 +14,8 @@ import * as pipeline from "@/lib/data/pipeline";
 import * as offers from "@/lib/data/offers";
 import * as letters from "@/lib/data/letters";
 import * as stageTemplates from "@/lib/data/stage-templates";
+import * as proposals from "@/lib/data/proposals";
+import { PROPOSAL_KINDS } from "@/lib/data/proposals";
 import { LETTER_KINDS } from "@/lib/data/letters";
 import * as tags from "@/lib/data/tags";
 import type { TagKind } from "@prisma/client";
@@ -228,6 +238,9 @@ function truncationNotice(shown: number, total: number): string {
 /** The `limit` argument every capped list tool takes, worded the same way. */
 const limitArg = (fallback: number) =>
   num(`Max rows to return. Default ${fallback}, hard ceiling ${LIST_CEILING}. Prefer narrowing the filters.`);
+
+/** The three states a queued proposal can be in. Mirrored in tools/gen-tool-docs.mjs. */
+const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"] as const;
 
 const str = (description: string) => ({ type: "string", description });
 const num = (description: string) => ({ type: "number", description });
@@ -572,7 +585,7 @@ export const tools: McpTool[] = [
     name: "search_me",
     title: "Search Me",
     description:
-      "Ranked keyword search across everything the user has written about themselves: role backgrounds, achievement highlights, notes, projects and their profile. This is the FIRST tool to call when tailoring a resume or answering a question about their experience. Returns excerpts with the id and kind of each hit so you can fetch the full record.",
+      "Ranked full-text search across everything the user has written about themselves: role backgrounds, achievement highlights, notes, projects and their profile. This is the FIRST tool to call when tailoring a resume or answering a question about their experience. Words are matched by stem, so \"managing engineers\" finds \"managed three engineers\" and a partial word finds the whole one — search the language of the POSTING rather than guessing how they phrased it, and search two or three times with different words before concluding they have no evidence for something. Terms are ORed and ranked, so a record matching two of three comes back above one matching one; nothing is excluded for missing a word. Returns an excerpt centred on the match, with the id and kind of each hit so you can fetch the full record. An empty query returns their roles, newest first.",
     inputSchema: object(
       {
         query: str("Keywords to search for, e.g. 'kubernetes cost savings' or 'led a team'"),
@@ -2593,6 +2606,118 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (_args, ctx) => stageTemplates.seedStageTemplates(ctx.userId),
+  },
+  {
+    name: "propose_changes",
+    title: "Queue changes for them to approve",
+    description:
+      "Put suggested changes on the dashboard for the person to accept or dismiss later, instead of asking about each one now. This is what to use at the end of inbox_review, or any time you have read something and found several things the pipeline does not know — they are rarely at the conversation when you finish, and anything they did not answer is otherwise lost. Each proposal needs a `summary` in plain words, the `evidence` that produced it (quote the line from the email or the calendar entry — a proposal nobody can check is a proposal nobody should accept), and a `payload` carrying the arguments of the single call it becomes. Five kinds, each mapping to one act: LOG_ACTIVITY (applicationId or contactId, type, body, occurredAt), MOVE_STAGE (applicationId, stage, note, interviewRound, lossReasons), CREATE_TASK (title, detail, dueAt, applicationId), SET_FOLLOW_UP (applicationId, nextFollowUpAt), CREATE_CONTACT (name, email, title, relationship, applicationId). NOTHING IS WRITTEN when you call this — that happens when they accept. A malformed proposal is refused on its own and the rest are kept; the result lists both, so read `refused` back rather than assuming everything queued.",
+    inputSchema: object(
+      {
+        proposals: {
+          type: "array",
+          description: "The changes to queue, in the order you want them read",
+          items: object(
+            {
+              kind: { type: "string", enum: [...PROPOSAL_KINDS], description: "Which of the five acts this is" },
+              summary: str("One line, in their words: 'Log the recruiter screen on the 3rd', 'Move Northwind to Interviewing'"),
+              evidence: str("The line that produced it. Quote it rather than paraphrasing"),
+              source: str("Where it came from: 'inbox_review', 'calendar', 'their message'"),
+              application_id: str("The job this is about, for grouping the queue"),
+              contact_id: str("The person this is about, for grouping the queue"),
+              payload: {
+                type: "object",
+                description: "The arguments of the call this becomes. Keys as named in the description above",
+                additionalProperties: true,
+              },
+            },
+            ["kind", "summary", "payload"],
+          ),
+        },
+      },
+      ["proposals"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const raw = Array.isArray(args.proposals) ? (args.proposals as Json[]) : [];
+      return proposals.proposeChanges(
+        ctx.userId,
+        raw.map((item) => ({
+          kind: required(item, "kind") as (typeof PROPOSAL_KINDS)[number],
+          summary: required(item, "summary"),
+          evidence: s(item, "evidence"),
+          source: s(item, "source"),
+          applicationId: s(item, "application_id") ?? null,
+          contactId: s(item, "contact_id") ?? null,
+          payload: (item.payload ?? {}) as Record<string, unknown>,
+        })),
+      );
+    },
+  },
+  {
+    name: "list_proposals",
+    title: "What is waiting for a yes",
+    description:
+      "The changes queued for this person to approve, oldest first, each with its summary, evidence, the job or person it is about, and the payload it would apply. Call this before proposing anything so you do not queue the same suggestion twice, and when they ask 'what have you got for me'. Defaults to the pending ones; pass status to look at what they accepted or dismissed — a dismissed proposal is an answer, and proposing it again is how an assistant becomes annoying. Read-only.",
+    inputSchema: object({
+      status: { type: "string", enum: [...PROPOSAL_STATUSES], description: "PENDING (default), ACCEPTED or DISMISSED" },
+      application_id: str("Only the ones about this job"),
+      limit: limitArg(50),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      capped(
+        await proposals.listProposals(ctx.userId, {
+          status: enumArg(args, "status", PROPOSAL_STATUSES) as ProposalStatus | undefined,
+          applicationId: s(args, "application_id"),
+        }),
+        n(args, "limit"),
+        50,
+      ),
+  },
+  {
+    name: "accept_proposal",
+    title: "Apply a queued change",
+    description:
+      "Do what a queued proposal says — log the activity, move the stage, add the task, whatever it was. THIS WRITES. Only call it when the person has said yes to that specific proposal; queueing something and then accepting it yourself defeats the point of a queue. Returns what it did. If the world moved underneath it — the job was deleted, the stage is not a stage — nothing is written, the proposal goes back to waiting with the reason on it, and the error says why.",
+    inputSchema: object({ id: str("Proposal id, from list_proposals") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => proposals.acceptProposal(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "dismiss_proposal",
+    title: "Say no to a queued change",
+    description:
+      "Take a proposal off the queue without doing it. Nothing is written and nothing is deleted — the row stays as DISMISSED, which is how list_proposals can tell you later that this was already declined. Pass all true to clear everything still waiting, which is the 'I will do this myself' answer.",
+    inputSchema: object({
+      id: str("Proposal id. Omit when passing all"),
+      all: bool("Dismiss everything still waiting"),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      b(args, "all")
+        ? proposals.dismissAllProposals(ctx.userId)
+        : proposals.dismissProposal(ctx.userId, required(args, "id")),
   },
   {
     name: "list_tags",
@@ -5832,7 +5957,7 @@ If the research on file is thin, say so and offer to run research_company first.
     name: "inbox_review",
     title: "Inbox review: what moved in Gmail and Calendar",
     description:
-      "Go through the person's own Gmail and Google Calendar for every open application and every contact with a ping due, find what has happened that the pipeline does not know yet — a reply, a scheduled interview, a rejection, an offer — and propose the logging and stage changes that would bring the pipeline up to date. Nothing is written until they say so. Needs Gmail and Calendar connected under Settings → Connections.",
+      "Go through the person's own Gmail and Google Calendar for every open application and every contact with a ping due, find what has happened that the pipeline does not know yet — a reply, a scheduled interview, a rejection, an offer — and queue the logging and stage changes that would bring the pipeline up to date onto their dashboard, each with the line of evidence behind it. Nothing is written until they accept it. Needs Gmail and Calendar connected under Settings → Connections.",
     arguments: [
       { name: "days", description: "How far back to look. Default 7." },
     ],
@@ -5844,7 +5969,8 @@ Work in this order:
 3. For each open application, call list_correspondence with its applicationId and days=${args.days ?? "7"}. Where a thread looks like it changed something — a reply from the company, an interview invitation, a rejection, an offer, a take-home — call get_email_thread and read it rather than trusting the snippet.
 4. Call search_calendar for the same window forward ${args.days ?? "7"} days too, and note interviews or calls that are on the calendar but not on the pipeline.
 5. Tell me, application by application, what moved and quote the line that says so. Be specific about dates and numbers; never round a salary or a deadline.
-6. Then propose, as a list I can approve in one word each: the log_activity calls (type INTERVIEW, EMAIL_RECEIVED, REJECTION, OFFER as fits, with the date it happened), the move_application_stage calls, and any nextFollowUpAt that should change. Do NOT call any of them until I say yes.
+6. Then call propose_changes with one proposal per thing you found — LOG_ACTIVITY (type INTERVIEW, EMAIL_RECEIVED, REJECTION, OFFER as fits, with the date it happened), MOVE_STAGE, SET_FOLLOW_UP, CREATE_TASK or CREATE_CONTACT — quoting the line from the thread as the evidence on each. That queues them on my dashboard, where I can accept or dismiss them one at a time whenever I get to it. Call list_proposals first so you do not queue the same suggestion twice, and check the refused list in the result.
+7. Do NOT call accept_proposal. Nothing is written until I say so. Then tell me what you queued, and read back anything that was refused.
 
 Skip newsletters, job-board digests and anything automated that does not concern a specific application. If a thread involves a person who is not a contact yet, suggest create_contact with their name and address.`,
   },

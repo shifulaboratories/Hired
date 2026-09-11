@@ -86,6 +86,7 @@ model User {
   savedViews     SavedView[]
   tags           Tag[]
   stageTemplates StageTemplate[]
+  proposals      Proposal[]
   pipelineShare  PipelineShare?
   linkedAccounts LinkedAccount[]
 
@@ -846,6 +847,7 @@ model Application {
   /// the model.
   offers     Offer[]
   letters    Letter[]
+  proposals  Proposal[]
 
   @@index([userId, stage])
   @@index([userId, nextFollowUpAt])
@@ -954,6 +956,65 @@ model StageTemplate {
   tasks Task[]
 
   @@index([userId, stage])
+}
+
+/// What a proposal would do if accepted. A closed set on purpose: each one maps
+/// to exactly one data-layer call, and anything outside the list is not
+/// something an assistant can queue for later approval.
+enum ProposalKind {
+  LOG_ACTIVITY
+  MOVE_STAGE
+  CREATE_TASK
+  SET_FOLLOW_UP
+  CREATE_CONTACT
+}
+
+enum ProposalStatus {
+  PENDING
+  ACCEPTED
+  DISMISSED
+}
+
+/// Something an assistant thinks should happen, waiting for a yes.
+///
+/// The inbox review reads a week of mail and finds six things the pipeline does
+/// not know. Approving them in the conversation means being at the conversation;
+/// this is the same six waiting on the dashboard, each with the line of evidence
+/// that produced it, accepted or dismissed one at a time.
+///
+/// `payload` is the arguments of the one data call this becomes. It is written
+/// by an assistant, so it is validated on the way in AND on the way out, and
+/// every call it can turn into takes the owner's userId as its first argument —
+/// which is what stops a payload reaching another account.
+model Proposal {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      ProposalKind
+  /// What it would do, in plain words. Shown as the row.
+  summary   String
+  /// The line that produced it — a quote from the email, the calendar entry.
+  /// A proposal you cannot check is a proposal you should not accept.
+  evidence  String         @default("")
+  /// Where it came from: "inbox_review", "calendar", whatever proposed it.
+  source    String         @default("")
+  payload   Json
+  status    ProposalStatus @default(PENDING)
+  /// What happened when it was accepted, or why it could not be.
+  outcome   String         @default("")
+  decidedAt DateTime?
+
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  contactId     String?
+  contact       Contact?     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([applicationId])
+  @@index([contactId])
 }
 
 enum TagKind {
@@ -1076,6 +1137,7 @@ model Contact {
   updatedAt      DateTime         @default(now()) @updatedAt
   tasks          Task[]
   letters        Letter[]
+  proposals      Proposal[]
 
   @@index([userId])
   @@index([userId, updatedAt])
