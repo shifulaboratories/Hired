@@ -76,6 +76,7 @@ model User {
   certifications Certification[]
   notes          Note[]
   resumes        Resume[]
+  letters        Letter[]
   companies      Company[]
   applications   Application[]
   offers         Offer[]
@@ -636,9 +637,66 @@ model Resume {
 
   applications Application[]
   tasks        Task[]
+  letters      Letter[]
 
   @@index([userId])
   @@index([baseResumeId])
+}
+
+/// What a letter is for. The four that matter, plus two escape hatches.
+///
+/// Not free text, because the kind decides how a draft should read — a referral
+/// ask is short and asks for one thing, a thank-you is shorter and asks for
+/// nothing — and an assistant given a free-text label has to guess that.
+enum LetterKind {
+  COVER_LETTER
+  OUTREACH
+  REFERRAL_ASK
+  THANK_YOU
+  REPLY
+  OTHER
+}
+
+/// Everything you write that is not a resume.
+///
+/// A resume is a structured document with a schema the renderer depends on
+/// (src/lib/resume-schema.ts). A cover letter is prose, and forcing prose into
+/// that shape would break the contract for both. So letters are their own
+/// thing: a kind, a title and a body, with optional links to the application,
+/// the person and the resume they go with.
+///
+/// All three links are SET NULL rather than cascade. Destroying an application
+/// should not destroy the letter you wrote for it — that letter is a record of
+/// what you said, and it is yours.
+model Letter {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      LetterKind @default(COVER_LETTER)
+  title     String     @default("")
+  /// Plain prose. No schema, no sections — this is a thing a person sends.
+  body      String     @default("")
+  /// Who it is to, in their words: "Priya, engineering manager", "the team".
+  recipient String     @default("")
+
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  contactId     String?
+  contact       Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  /// The resume this goes out with, when it goes out with one.
+  resumeId      String?
+  resume        Resume?      @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+
+  /// Set when it was actually sent, which is different from written. Null
+  /// means a draft, and the list says so.
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([userId, kind])
+  @@index([applicationId])
+  @@index([contactId])
 }
 
 // ---------------------------------------------------------------------------
@@ -786,6 +844,7 @@ model Application {
   /// than a handful of columns. Offers carry no archivedAt of their own; see
   /// the model.
   offers     Offer[]
+  letters    Letter[]
 
   @@index([userId, stage])
   @@index([userId, nextFollowUpAt])
@@ -983,6 +1042,7 @@ model Contact {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @default(now()) @updatedAt
   tasks          Task[]
+  letters        Letter[]
 
   @@index([userId])
   @@index([userId, updatedAt])

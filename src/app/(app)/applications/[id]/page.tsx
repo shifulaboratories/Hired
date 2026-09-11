@@ -7,6 +7,7 @@ import { FadeIn } from "@/components/motion";
 import { applicationFieldValues, getApplication, listCompanies } from "@/lib/data/pipeline";
 import { listTags, tagsOfKind } from "@/lib/data/tags";
 import { offerForUi } from "@/lib/data/offers";
+import { letterForUi, listLetters } from "@/lib/data/letters";
 import { getResume, listResumeNames } from "@/lib/data/resumes";
 import { requireUser } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
@@ -27,6 +28,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
     { companyLogos },
     googleConnection,
     fieldValues,
+    letters,
   ] =
     await Promise.all([
       getApplication(user.id, id),
@@ -37,6 +39,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
       getSettings(),
       accountAccess(user.id),
       applicationFieldValues(user.id),
+      listLetters(user.id, { applicationId: id }),
     ]);
   if (!application) notFound();
 
@@ -89,6 +92,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
             relationship: contact.relationship,
           }))}
           offers={application.offers.map(offerForUi)}
+          letters={letters.map(letterForUi)}
           tasks={application.tasks.map((task) => ({
             id: task.id,
             title: task.title,

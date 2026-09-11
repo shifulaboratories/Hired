@@ -48,6 +48,9 @@ const SECTIONS = [
   { file: "resumes.mdx", first: "get_resume_format", last: "preview_resume_text",
     title: "Resumes", icon: "file-lines",
     blurb: "writing documents, previewing them, publishing, exporting." },
+  { file: "letters.mdx", first: "prep_letter", last: "delete_letter",
+    title: "Letters", icon: "envelope-open-text",
+    blurb: "everything you write that is not a resume: cover letters, cold outreach, referral asks, thank-yous, replies." },
   { file: "pipeline.mdx", first: "pipeline_stats", last: "set_column_widths",
     title: "Pipeline", icon: "list-check",
     blurb: "applications, stages, timeline, tasks, follow-ups, views, sharing, diagnosis." },
@@ -156,6 +159,8 @@ const COMPANY_MISSING = ["website", "industry", "location"];
 const CONTACT_MISSING = ["email", "tags"];
 const PIPELINE_VIEW_VALUES = ["board", "list", "calendar"];
 const COLUMN_LIST_VALUES = ["pipeline", "companies", "contacts"];
+// Mirrors LETTER_KINDS in src/lib/data/letters.ts, checked below.
+const LETTER_KINDS = ["COVER_LETTER", "OUTREACH", "REFERRAL_ASK", "THANK_YOU", "REPLY", "OTHER"];
 // Mirrors SYSTEM_EVENT_SOURCES in src/lib/data/system.ts, checked below.
 const SYSTEM_EVENT_SOURCES = [
   "stripe.webhook", "billing.sync", "email.send", "google.signin", "google.data",
@@ -199,6 +204,15 @@ for (const [name, values] of [
   }
 }
 {
+  // The letter kinds live in the data layer; tools.ts imports them.
+  const file = readFileSync(join(ROOT, "src", "lib", "data", "letters.ts"), "utf8");
+  const declared = /export const LETTER_KINDS = \[([\s\S]*?)\]/.exec(file);
+  const found = declared ? [...declared[1].matchAll(/"([A-Z_]+)"/g)].map((m) => m[1]) : [];
+  if (found.join(",") !== LETTER_KINDS.join(",")) {
+    throw new Error(`LETTER_KINDS changed in letters.ts (${found.join(", ")}) — update tools/gen-tool-docs.mjs`);
+  }
+}
+{
   // The list cap. Mirrored above so the argument tables can be generated without
   // importing TypeScript; checked here so raising it in tools.ts fails this run
   // instead of leaving every "hard ceiling 500" in the manual wrong.
@@ -219,7 +233,7 @@ for (const [name, values] of [
 }
 
 const scope = {
-  str, num, bool, strArray, object, limitArg, SYSTEM_EVENT_SOURCES,
+  str, num, bool, strArray, object, limitArg, SYSTEM_EVENT_SOURCES, LETTER_KINDS,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
   ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,
   COMPANY_MISSING, CONTACT_MISSING, PIPELINE_VIEW_VALUES, COLUMN_LIST_VALUES,

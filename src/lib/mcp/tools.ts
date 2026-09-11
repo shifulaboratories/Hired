@@ -1,9 +1,11 @@
-import type { ActivityType, NoteKind, Stage, User, UserRole } from "@prisma/client";
+import type { ActivityType, LetterKind, NoteKind, Stage, User, UserRole } from "@prisma/client";
 import * as me from "@/lib/data/me";
 import { civilInstant } from "@/lib/time";
 import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
 import * as offers from "@/lib/data/offers";
+import * as letters from "@/lib/data/letters";
+import { LETTER_KINDS } from "@/lib/data/letters";
 import * as tags from "@/lib/data/tags";
 import type { TagKind } from "@prisma/client";
 import * as views from "@/lib/data/views";
@@ -266,6 +268,28 @@ function required(args: Json, key: string): string {
     throw new Error(`Missing required string argument "${key}"`);
   }
   return value;
+}
+
+/** The letter fields, read the same way by create_letter and update_letter. */
+function letterInputFrom(args: Json): letters.LetterInput {
+  // An empty string detaches a link; undefined leaves it alone. `defined`
+  // cannot tell those apart, so the links are read by hand.
+  const link = (key: string) => {
+    const value = s(args, key);
+    return value === undefined ? undefined : value.trim() === "" ? null : value;
+  };
+  return {
+    ...defined({
+      kind: enumArg(args, "kind", LETTER_KINDS) as LetterKind | undefined,
+      title: s(args, "title"),
+      body: s(args, "body"),
+      recipient: s(args, "recipient"),
+      sentAt: s(args, "sent_at"),
+    }),
+    ...(link("application_id") === undefined ? {} : { applicationId: link("application_id") }),
+    ...(link("contact_id") === undefined ? {} : { contactId: link("contact_id") }),
+    ...(link("resume_id") === undefined ? {} : { resumeId: link("resume_id") }),
+  };
 }
 
 /**
@@ -2081,6 +2105,151 @@ export const tools: McpTool[] = [
   // -------------------------------------------------------------------------
   // PIPELINE
   // -------------------------------------------------------------------------
+  {
+    name: "prep_letter",
+    title: "Gather everything before writing a letter",
+    description:
+      "Call this FIRST whenever someone asks for a cover letter, a cold message, a referral ask, a thank-you or a reply. A good letter is built from five things that live five places apart, and this returns all of them in one read: the posting and the company research (`application`), who it is going to (`contact`), the resume it goes out with, `evidence` — the material from Me that actually matches this posting, ranked — and `priorLetters`, up to three of the same kind they have already written. Those last ones matter more than any instruction about tone: two letters somebody wrote themselves are the only reliable description of how they sound. `intent` says what this kind of letter is for, and `missing` names what is not on file — no posting, no research, no named recipient, nothing in Me that matched. Say the missing things out loud rather than writing around them, and never invent an achievement to fill a gap. Read-only, saves nothing.",
+    inputSchema: object({
+      kind: {
+        type: "string",
+        enum: [...LETTER_KINDS],
+        description: "What you are about to write. Defaults to COVER_LETTER",
+      },
+      application_id: str("The job this is about, for the posting, the research and the timeline"),
+      contact_id: str("The person it is going to, for their name and how they are known"),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      letters.letterContext(ctx.userId, {
+        kind: enumArg(args, "kind", LETTER_KINDS) as LetterKind | undefined,
+        applicationId: s(args, "application_id"),
+        contactId: s(args, "contact_id"),
+      }),
+  },
+  {
+    name: "create_letter",
+    title: "Save a letter",
+    description:
+      "Save a cover letter, a cold message, a referral ask, a thank-you or a reply. Call prep_letter first — a letter written without the posting, the evidence and their own earlier letters is the generic one everybody sends, and it is worse than nothing. The body is plain prose, in their voice, and every claim in it has to trace back to something in Me: never invent an employer, a date, a metric or a project. Links are optional but worth setting — application_id files it under the job, contact_id under the person, resume_id records which document it went out with. Leave sent_at unset while it is a draft; the list says which are still drafts. Returns the saved letter with its id.",
+    inputSchema: object(
+      {
+        kind: { type: "string", enum: [...LETTER_KINDS], description: "What this is. Defaults to COVER_LETTER" },
+        title: str("What to call it, e.g. 'Anthropic — Staff Engineer'"),
+        body: str("The letter itself, as prose. Paragraphs separated by blank lines"),
+        recipient: str("Who it is addressed to, in their words: 'Priya, engineering manager', 'the hiring team'"),
+        application_id: str("The job this is for"),
+        contact_id: str("The person it is going to"),
+        resume_id: str("The resume it goes out with"),
+        sent_at: str("The day it was actually sent, YYYY-MM-DD. Leave unset for a draft"),
+      },
+      ["body"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => letters.createLetter(ctx.userId, letterInputFrom(args)),
+  },
+  {
+    name: "list_letters",
+    title: "List letters",
+    description:
+      "Everything they have written that is not a resume, newest first, each with the job, person and resume it is attached to. Filter by kind, by application, by contact, by whether it is still a draft, or by a word in the text. A letter attached to an archived application does not appear, the same way that application's tasks and timeline do not. Use this to find something to reuse before writing from scratch, and to answer 'did I ever reply to them'. Read-only.",
+    inputSchema: object({
+      kind: { type: "string", enum: [...LETTER_KINDS], description: "Only this kind" },
+      application_id: str("Only letters filed under this job"),
+      contact_id: str("Only letters to this person"),
+      drafts_only: bool("Only the ones never marked sent"),
+      search: str("A word in the title, body or recipient"),
+      limit: limitArg(50),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      capped(
+        await letters.listLetters(ctx.userId, {
+          kind: enumArg(args, "kind", LETTER_KINDS) as LetterKind | undefined,
+          applicationId: s(args, "application_id"),
+          contactId: s(args, "contact_id"),
+          draftsOnly: b(args, "drafts_only"),
+          search: s(args, "search"),
+        }),
+        n(args, "limit"),
+        50,
+      ),
+  },
+  {
+    name: "get_letter",
+    title: "Read one letter",
+    description:
+      "The full text of one letter, with the job, person and resume it is attached to. Read this before updating one — update_letter REPLACES the body you send.",
+    inputSchema: object({ id: str("Letter id, from list_letters") }, ["id"]),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const letter = await letters.getLetter(ctx.userId, required(args, "id"));
+      if (!letter) throw new Error(`No letter with id ${required(args, "id")}`);
+      return letter;
+    },
+  },
+  {
+    name: "update_letter",
+    title: "Update a letter",
+    description:
+      "Change a saved letter. Only the fields you send change — but sending `body` REPLACES the whole body, so call get_letter first, edit what came back, and write it back whole. This is also how a draft becomes sent: set sent_at to the day it went. Send an empty string to a link to detach it.",
+    inputSchema: object(
+      {
+        id: str("Letter id"),
+        kind: { type: "string", enum: [...LETTER_KINDS], description: "Change what this is" },
+        title: str("What to call it"),
+        body: str("The whole letter. Replaces what is there"),
+        recipient: str("Who it is addressed to"),
+        application_id: str("The job this is for. Empty string detaches"),
+        contact_id: str("The person it is going to. Empty string detaches"),
+        resume_id: str("The resume it goes out with. Empty string detaches"),
+        sent_at: str("The day it was sent, YYYY-MM-DD. Empty string puts it back to a draft"),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      letters.updateLetter(ctx.userId, required(args, "id"), letterInputFrom(args)),
+  },
+  {
+    name: "delete_letter",
+    title: "Delete a letter",
+    description:
+      "Remove a letter for good. There is no archive for letters — this is gone, and what somebody said to an employer is not usually worth losing. Say what will go and get a plain yes first.",
+    inputSchema: object({ id: str("Letter id") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => letters.deleteLetter(ctx.userId, required(args, "id")),
+  },
   {
     name: "pipeline_stats",
     title: "Pipeline stats",
@@ -5365,6 +5534,44 @@ Work in this order:
 Bullets must lead with a strong verb, name the specific scope, and end in a measurable outcome pulled from the background.
 
 Finish with a gap report: which of the posting's requirements the resume evidences, which it half-covers, and which have nothing behind them. Never paper over the third list — it is what the person needs to see.`,
+  },
+  {
+    name: "write_letter",
+    title: "Write a letter",
+    description:
+      "Draft a cover letter, a cold message, a referral ask, a thank-you or a reply — gathering the posting, the evidence and their own earlier letters first, so it sounds like them and every claim in it is true.",
+    arguments: [
+      { name: "kind", description: "COVER_LETTER, OUTREACH, REFERRAL_ASK, THANK_YOU or REPLY. Defaults to a cover letter" },
+      { name: "application_id", description: "The job it is about" },
+      { name: "contact_id", description: "The person it is going to" },
+      { name: "notes", description: "Anything they want said, or the message being replied to" },
+    ],
+    build: (args) => `Write me a ${args.kind ?? "COVER_LETTER"}.
+
+<about application_id="${args.application_id ?? ""}" contact_id="${args.contact_id ?? ""}">
+${args.notes ?? "No extra notes."}
+</about>
+
+Work in this order:
+1. Call prep_letter with the kind and whichever ids I gave you. Read intent — it says what
+   this kind of letter is actually for — and read missing before you write a word.
+2. Read priorLetters properly. Those are letters I wrote myself, and they are the only
+   reliable description of how I sound. Match the length, the register and the rhythm. If
+   there are none, ask me how I want it to read rather than defaulting to cover-letter voice.
+3. Build the argument out of evidence only. Every specific claim — a number, a system, a
+   team size, an outcome — has to trace back to something that came back from Me. Never
+   invent an employer, a date, a metric or a project. Where the posting asks for something I
+   cannot evidence, leave it out and tell me afterwards.
+4. Use application.companyNotes and application.recentActivity for the part that is about
+   THEM. A letter that could have been sent to any employer is a letter nobody answers.
+5. Draft it. Short. No "I am writing to express my interest", no restating the resume, no
+   adjectives doing work a fact should do.
+6. Call create_letter to save it, with the kind, a title of "<Company> — <what it is>", the
+   recipient if I named one, and application_id and contact_id where I gave them. Leave
+   sent_at unset — it is a draft until I say otherwise.
+7. Tell me three things: what I am claiming and where each claim comes from, what the posting
+   asked for that I could not evidence, and anything from missing that would make the next
+   one better.`,
   },
   {
     name: "gap_report",

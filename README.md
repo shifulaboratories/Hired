@@ -13,6 +13,16 @@ just *talk* to it.
 - **Resumes** — tailored documents assembled from that material. Defaults to the Harvard
   OCS format; four other templates, live preview, real PDF export, and a shareable link for
   the application forms that want a URL instead of a file.
+- **Letters** — everything you write that is not a resume: cover letters, cold messages,
+  referral asks, thank-yous, replies. They live under Me, and on the job they were written
+  for. Each carries a kind, who it went to, whether it has actually been sent, and links to
+  the application, the person and the resume it went out with — so "what did I already say
+  to them" is one look rather than a search through your sent mail. The point is
+  `prep_letter`: before anything is drafted it gathers the posting, the company research,
+  the last few things on the timeline, the material from Me that actually matches, and up to
+  three letters of the same kind you have already written. That last one does most of the
+  work — two of your own letters describe how you sound better than any instruction about
+  tone.
 - **Pipeline** — stages, activity timeline, tasks, and follow-up dates that schedule
   themselves. A toolbar across the top picks the view — a drag-and-drop board, a sortable
   table, or a month calendar of everything that has a date on it — plus the cut and a search.
@@ -111,7 +121,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  135 tools any MCP client can call (168 if you're an admin). Claude, Claude Code, ChatGPT,
+  142 tools any MCP client can call (175 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -294,7 +304,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 135, or 168 if you're an admin.
+then tells you how many tools answered — 142, or 175 if you're an admin.
 
 That is a lot of tools, and spelled out in full they're around 45,000 tokens of context
 before you've said anything. If your client has tool search — Claude Code does, and has it
@@ -520,12 +530,12 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-135 tools. One hundred and twenty-seven of them are the data tools across the four areas, the
+142 tools. One hundred and thirty-three of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
-account; the other eight are the workflows below, published as tools as well as prompts,
+account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
 hands back a step-by-step plan that it then follows. Admins get 33 more — 32 data tools and
-a ninth workflow — and members never even see those in the tool list, so nobody is tempted
+a tenth workflow — and members never even see those in the tool list, so nobody is tempted
 by a permission they don't have.
 
 | Workflow | What it does |

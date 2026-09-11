@@ -58,6 +58,7 @@ import { CompanyChip } from "@/components/crm/company-chip";
 import { CompanyAvatar } from "@/components/pipeline/company-avatar";
 import { ValuePicker } from "@/components/pipeline/value-picker";
 import { OfferCard, type OfferValue } from "@/components/pipeline/offer-card";
+import { LettersPanel, type LetterRow } from "@/components/letters/letters-panel";
 import { PaperThumb } from "@/components/resume/paper-thumb";
 import { ResumePaper, type PaperSettings } from "@/components/resume/resume-paper";
 import type { ResumeDoc } from "@/lib/resume-schema";
@@ -138,6 +139,7 @@ export function ApplicationDetail({
   contacts,
   tasks,
   offers,
+  letters,
   resumes,
   tagOptions,
   lossOptions,
@@ -155,6 +157,8 @@ export function ApplicationDetail({
   tasks: Task[];
   /** Every version of the offer, newest first. Empty until one is recorded. */
   offers: OfferValue[];
+  /** What has been written to this employer, newest first. */
+  letters: LetterRow[];
   resumes: { id: string; name: string }[];
   /** Every source category on file, with usage counts. */
   tagOptions: TagOption[];
@@ -419,6 +423,12 @@ export function ApplicationDetail({
                 <span className="text-faint nums ml-1 text-[11px]">{activities.length}</span>
               )}
             </TabsTrigger>
+            <TabsTrigger value="letters">
+              Letters
+              {letters.length > 0 && (
+                <span className="text-faint nums ml-1 text-[11px]">{letters.length}</span>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="posting">Posting</TabsTrigger>
             <TabsTrigger value="notes">Notes</TabsTrigger>
           </TabsList>
@@ -458,6 +468,24 @@ export function ApplicationDetail({
               subject={{ kind: "application", id: application.id }}
               access={googleAccess}
             />
+          </TabsContent>
+
+          <TabsContent value="letters">
+            {/* Filed under this job, so everything written here carries the
+                application id without anybody picking it. The whole library
+                is on Me → Letters. */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-[15px]">Letters to {values.company}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <LettersPanel
+                  letters={letters}
+                  applicationId={application.id}
+                  emptyHint="Nothing written to them yet."
+                />
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="posting">
