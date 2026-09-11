@@ -73,7 +73,9 @@ export function weekdayIn(date: Date, timeZone: string): number {
   }).format(date);
   const order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const found = order.indexOf(name);
-  return found === -1 ? 1 : found + 1;
+  // 0, not 1. This gates the weekly mail, and 1 is Monday — the single value
+  // that sends. An unrecognised name should fail closed.
+  return found === -1 ? 0 : found + 1;
 }
 
 /** "2026-03-14" — the calendar day this instant falls on, in that zone. */

@@ -2403,7 +2403,7 @@ export const tools: McpTool[] = [
     description:
       "Every offer on file, newest first, each with the application and company it belongs to. Several rows for one application are its versions, not several offers — the first one recorded is the opening number and the newest is where it stands now. Pass application_id for one job's history, or live_only to drop the ones that came to nothing. For a side-by-side of what is actually on the table, compare_offers is the better tool; for arguing one of them, offer_briefing. Read-only.",
     inputSchema: object({
-      application_id: str("Only this application's offers, oldest to newest history included"),
+      application_id: str("Only this application's offers — every version of it, newest first"),
       live_only: bool("Drop offers whose application was lost. An accepted one stays — it is the one they took"),
       limit: limitArg(50),
     }),
@@ -2492,7 +2492,7 @@ export const tools: McpTool[] = [
     name: "offer_briefing",
     title: "Everything on file for one negotiation",
     description:
-      "Call this BEFORE helping somebody answer or negotiate an offer. It gathers in one read the four things that decide it and normally live four places apart: every version of the offer itself; `advertised`, which is what the POSTING claimed and is not what anybody offered; `saidDuringProcess`, the lines in their own timeline where money came up, each with the activity id so you can read the whole note; `pastPay`, what they have written in Me about what they have earned; and `competing`, the other offers on the table. `missing` names what is not on file that you would want — an unrecorded base, a vesting schedule for equity that has one, no deadline. Use the quotes as evidence and quote them back; never state a number that is not in this result, and never guess a market rate as though it came from their data. Read-only, saves nothing.",
+      "Call this BEFORE helping somebody answer or negotiate an offer. It gathers in one read the five things that decide it and normally live five places apart: every version of the offer itself; `advertised`, which is what the POSTING claimed and is not what anybody offered; `saidDuringProcess`, the lines in their own timeline where money came up, each with the activity id so you can read the whole note; `pastPay`, what they have written in Me about what they have earned; and `competing`, the other offers on the table. `missing` names what is not on file that you would want — an unrecorded base, a vesting schedule for equity that has one, no deadline. Use the quotes as evidence and quote them back; never state a number that is not in this result, and never guess a market rate as though it came from their data. Read-only, saves nothing.",
     inputSchema: object({ application_id: str("Which application to brief on") }, ["application_id"]),
     annotations: {
       readOnlyHint: true,
@@ -2529,13 +2529,13 @@ export const tools: McpTool[] = [
     name: "create_stage_template",
     title: "Add a line to a stage checklist",
     description:
-      "Say that reaching a stage should put a task on their list — 'send a thank-you' the day after every interview, 'check the posting is still up' a week after applying. The line fires ONCE PER APPLICATION, ever: going back a stage and forward again does not re-add what they already ticked off. It fires on future moves only and never retroactively, so adding a line does not put a task on forty existing jobs. dueInDays is counted from the move (0 is that day, 7 is a week later); leave it out and the task gets no due date at all, which is right for 'eventually'. Keep the title short and in the second person — it lands on a list beside things they wrote themselves.",
+      "Say that reaching a stage should put a task on their list — 'send a thank-you' the day after every interview, 'check the posting is still up' a week after applying. The line fires ONCE PER APPLICATION, ever: going back a stage and forward again does not re-add what they already ticked off. It fires on future moves only and never retroactively, so adding a line does not put a task on forty existing jobs. due_in_days is counted from the move (0 is that day, 7 is a week later); leave it out and the task gets no due date at all, which is right for 'eventually'. Keep the title short and in the second person — it lands on a list beside things they wrote themselves.",
     inputSchema: object(
       {
         stage: { type: "string", enum: STAGE_VALUES, description: "The stage a job has to reach for this to fire" },
         title: str("The task, e.g. 'Send a thank-you'"),
         detail: str("A line of context shown under it"),
-        dueInDays: num("Days from the move to the due date. 0 is that day. Omit for no due date"),
+        due_in_days: num("Days from the move to the due date. 0 is that day. Omit for no due date"),
       },
       ["stage", "title"],
     ),
@@ -2550,7 +2550,7 @@ export const tools: McpTool[] = [
         stage: required(args, "stage") as Stage,
         title: required(args, "title"),
         detail: s(args, "detail"),
-        dueInDays: n(args, "dueInDays"),
+        dueInDays: n(args, "due_in_days"),
       }),
   },
   {
@@ -2564,7 +2564,7 @@ export const tools: McpTool[] = [
         stage: { type: "string", enum: STAGE_VALUES, description: "Fire on this stage instead" },
         title: str("The task"),
         detail: str("A line of context shown under it"),
-        dueInDays: num("Days from the move to the due date"),
+        due_in_days: num("Days from the move to the due date"),
         enabled: bool("False parks the line without deleting it"),
       },
       ["id"],
@@ -2580,7 +2580,7 @@ export const tools: McpTool[] = [
         stage: enumArg(args, "stage", STAGE_VALUES) as Stage | undefined,
         title: s(args, "title"),
         detail: s(args, "detail"),
-        dueInDays: n(args, "dueInDays"),
+        dueInDays: n(args, "due_in_days"),
         enabled: b(args, "enabled"),
       }),
   },
@@ -4827,7 +4827,7 @@ export const tools: McpTool[] = [
     name: "export_everything",
     title: "Export the whole workspace",
     description:
-      "Every record this person owns, as one JSON document you can hand back to import_everything — Me, their resumes, their letters, the whole pipeline with its timeline, tasks, offers, tags and saved views. This is the answer to 'can I get my data out'. Four things are deliberately absent and the result names them: connection tokens and mail-account passwords (a backup file people email around must not carry a credential), published slugs (those are live public URLs), the review queue, and anything belonging to the instance rather than the person. `counts` says how many of each came out — read it back rather than claiming success blindly. A long search makes a big document; if it is too large to hand around, there is a Download everything button under Settings → Account that saves the same file straight from the browser. Read-only.",
+      "Every record this person owns, as one JSON document you can hand back to import_everything — Me, their resumes, their letters, the whole pipeline with its timeline, tasks, offers, tags and saved views. This is the answer to 'can I get my data out'. Five things are deliberately absent and the result names them: connection tokens and mail-account passwords (a backup file people email around must not carry a credential), published slugs (those are live public URLs), the review queue, anything belonging to the instance rather than the person, and their profile photo, which is a data URI that would dwarf the file. `counts` says how many of each came out — read it back rather than claiming success blindly. A long search makes a big document; if it is too large to hand around, there is a Download everything button under Settings → Account that saves the same file straight from the browser. Read-only.",
     inputSchema: object({
       counts_only: bool(
         "Return just the counts and what was excluded, with no records. Use it to check what a backup would contain",
@@ -5574,10 +5574,10 @@ export const tools: McpTool[] = [
     name: "admin_send_test_email",
     title: "Send a test email",
     description:
-      "Proves the Resend configuration actually delivers, and doubles as the way to look at what this instance's mail actually looks like. Returns the exact error if it does not send. `template` picks which of the three designs to send: `test` (the default, a short confirmation), `invite` (the real invitation email filled with placeholder material) or `waitlist` (the notice the owner gets when a stranger asks for access). The samples are marked [Sample] in the subject and their links go nowhere, so proofreading an invitation costs nobody a real invitation token.",
+      "Proves the Resend configuration actually delivers, and doubles as the way to look at what this instance's mail actually looks like. Returns the exact error if it does not send. `template` picks which of the five designs to send: `test` (the default, a short confirmation), `invite` (the real invitation email filled with placeholder material), `waitlist` (the notice the owner gets when a stranger asks for access), `digest` (the Monday summary) or `nudge` (the due-today mail). The samples are marked [Sample] in the subject and their links go nowhere, so proofreading an invitation costs nobody a real invitation token.",
     inputSchema: object({
       to: str("Where to send it. Defaults to your own address."),
-      template: str("Which email to send: test, invite or waitlist. Defaults to test."),
+      template: str("Which email to send: test, invite, waitlist, digest or nudge. Defaults to test."),
     }),
     annotations: {
       readOnlyHint: false,

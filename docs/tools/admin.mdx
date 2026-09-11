@@ -288,14 +288,14 @@ Set the Resend API key and the address invitations are sent from. Only the field
 
 _Send a test email_
 
-Proves the Resend configuration actually delivers, and doubles as the way to look at what this instance's mail actually looks like. Returns the exact error if it does not send. `template` picks which of the three designs to send: `test` (the default, a short confirmation), `invite` (the real invitation email filled with placeholder material) or `waitlist` (the notice the owner gets when a stranger asks for access). The samples are marked [Sample] in the subject and their links go nowhere, so proofreading an invitation costs nobody a real invitation token.
+Proves the Resend configuration actually delivers, and doubles as the way to look at what this instance's mail actually looks like. Returns the exact error if it does not send. `template` picks which of the five designs to send: `test` (the default, a short confirmation), `invite` (the real invitation email filled with placeholder material), `waitlist` (the notice the owner gets when a stranger asks for access), `digest` (the Monday summary) or `nudge` (the due-today mail). The samples are marked [Sample] in the subject and their links go nowhere, so proofreading an invitation costs nobody a real invitation token.
 
 **Admin only.** **Reaches outside this instance.**
 
 | Argument | Type | |
 | --- | --- | --- |
 | `to` | string | Where to send it. Defaults to your own address. |
-| `template` | string | Which email to send: test, invite or waitlist. Defaults to test. |
+| `template` | string | Which email to send: test, invite, waitlist, digest or nudge. Defaults to test. |
 
 ### `admin_get_microsoft_config`
 

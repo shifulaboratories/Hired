@@ -6357,3 +6357,66 @@ The weekly one fires on Monday in the reader's week. A Sunday-evening summary is
 Monday morning anyway, and Monday is when somebody can act on it. `weekdayIn` in
 `src/lib/time.ts` is ISO-numbered, Monday 1, because everything else weekday-shaped in this
 codebase is Monday-first and two conventions is one off-by-one waiting to happen.
+
+---
+
+## 2026-09-11 — What three adversarial reviewers found in the eleven features
+
+Typecheck, build and 309 probe assertions were all green when this pass started. It found
+twenty-three defects anyway. Recording the shapes, because they repeat.
+
+**The count in a comment is wrong more often than the code is.** `offers.ts` said three
+archive filters where there are five. `stage-templates.ts` said the starter set was four
+things where it is six. `export_everything` said four exclusions where the result names
+five. `offer_briefing` said "the four things" and then listed five. `letters.ts` claimed
+its archive filter was "the fourth, and the only one on a non-archivable model" when
+`Offer` spells five of its own and `Proposal` takes the identical shape. `CLAUDE.md` said
+`Offer` was the first model to hang off an archivable one without `archivedAt`, which
+`Activity` and `Task` had already been doing for a year. Every one of these was written by
+somebody who had just counted, and was wrong within a week. **Supersedes the offers entry
+above: there are five, not three.**
+
+**A versioned model breaks every read that assumes one row.** The bell and the calendar
+listed an offer deadline once per revision, so recording the improved number on the same
+week said "Answer Acme" twice, made `dueNow().total` wrong, and gave two notification rows
+the same React key. `compareOffers` had collapsed to newest-per-application from the start;
+the two deadline reads had not.
+
+**"Importing twice does nothing" is a property, and it has to be tested per model.** The
+import matched live rows only — which was itself a fix, for a restore attaching a job to a
+binned employer — and then wrote `archivedAt` through, so every archived application
+duplicated without limit on each re-run. The natural key is `(name, archived-or-live)` now.
+Two other keys were wrong in the same read: joined on a space, "Acme Data"+"Engineer" and
+"Acme"+"Data Engineer" collided, and offers keyed on `(applicationId, receivedAt)` dropped
+one of two versions recorded the same day — the exact shape the model exists to hold.
+
+**`|| "UTC"` is not the same as the stored zone.** `SERVER_ZONE` is `""`, meaning the host's
+clock, and it is what every account has until somebody sets one. The digest sweep defaulted
+an empty zone to UTC while `timeZoneOf` gave the content the host's, so on a box in Los
+Angeles the nudge went out at midnight describing a day computed in LA — and for eight hours
+of every day the stamp's civil day and the content's were different days. This is the exact
+failure `src/lib/time.ts` was written to remove, reintroduced by one `||`.
+
+**A report whose numbers count different units is a report nobody can read.** The sweep's
+`considered` counted people and `skipped` counted person-by-kind, so ten people subscribed
+to both returned 10 considered and 20 skipped — handed straight back to the scheduler that
+called the endpoint. One unit throughout, and `considered = sent + skipped + failed`.
+
+**Validate an enum where it enters, not where it lands.** A `MOVE_STAGE` proposal carrying
+`stage: "Interviewing"` passed the queue's validation, sat there looking legitimate, and
+turned into a raw Prisma validation error in front of somebody the moment they clicked
+accept. `transfer.ts` already had `enumOf` for exactly this.
+
+**The same string must mean the same thing in the form and over the connection.** The offer
+card's `toNumber` stripped everything but digits, so "215k" typed into the field was saved
+as 215 while the same string sent to `record_offer` was 215000. And `money()` accepted " ",
+"$" and "k" as a real zero — which on a comparison table reads as "they offered nothing"
+rather than "nobody said" — and read "€215.000" as 215, a 1000× error sitting next to
+correctly-parsed columns. It refuses the ambiguous separator now rather than guessing.
+
+**Stamping a quiet day shuts the day off.** The nudge stamped `lastNudgeOn` when nothing was
+due, to stop the hourly sweep rebuilding an empty answer. That meant a task created at nine
+and due today produced no nudge at all. A few indexed reads an hour is the cheaper mistake.
+
+**`weekdayIn` failed open on the one day that sends.** Its fallback for an unrecognised
+weekday name was 1, and 1 is Monday.

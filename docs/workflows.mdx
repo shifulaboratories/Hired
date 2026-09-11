@@ -1,5 +1,5 @@
 ---
-title: "The nine workflows"
+title: "The ten workflows"
 sidebarTitle: "Workflows"
 description: "Multi-step jobs that come with every connection. Every one arrives as an ordinary tool, and as a slash command too in the clients that render MCP prompts."
 icon: "list-ol"
@@ -179,15 +179,30 @@ This is the one that keeps the whole system current. Ten minutes on a Friday.
 
 ---
 
+## Write a letter
+
+`write_letter` · takes `kind`, `application_id`, `contact_id`, `notes`
+
+Drafts a cover letter, a cold message, a referral ask, a thank-you or a reply. It gathers
+before it writes: `prep_letter` returns the posting, the company research, the last few
+things on the timeline, the material in Me that matches, and up to three letters of the
+same kind you wrote yourself — which is what it matches for tone, because two of your own
+letters describe how you sound better than any instruction could. Every specific claim has
+to trace back to something in Me; what the posting asked for and you cannot evidence is
+left out and reported afterwards. Saves the result as a draft.
+
+---
+
 ## Bring the pipeline up to date from your inbox
 
 `inbox_review` · takes `days`
 
 Reads a week of your own mail and calendar — every open application, every
 contact with a ping due — and tells you what moved that the pipeline does not know yet:
-a reply, an interview on the calendar, a rejection, an offer. Then it proposes the
-`log_activity` and `move_application_stage` calls, one line each, and waits for a yes on
-each before writing anything. Needs a mail or calendar account connected under Settings →
+a reply, an interview on the calendar, a rejection, an offer. Then it queues what it found
+on your dashboard with `propose_changes` — one line each, with the sentence from the email
+that produced it — and you accept or dismiss them whenever you get to it. Nothing is
+written until you do. Needs a mail or calendar account connected under Settings →
 Connections; if none is, it says how rather than guessing at your mail.
 
 ---

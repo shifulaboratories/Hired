@@ -74,9 +74,11 @@ just *talk* to it.
   nothing on a quiet day, deliberately, so the one that matters never lands in the folder
   you stopped reading. Both are off until you turn them on in Settings → Account, no admin
   can turn one on for you, and every message says where the switch is. The app runs no
-  timers: an admin mints a token in Admin → Configuration and points their host's scheduler
-  at the address it produces, hourly, and the sweep works out who is due in their own time
-  zone.
+  timers: an admin puts a long random string of their own into **Digest sweep token** under
+  Admin → Configuration and points their host's scheduler at `/api/digest/` followed by it,
+  hourly, and the sweep works out who is due in their own time zone. Leave the token empty
+  and that address is off rather than open. Like every secret there it never reads back, so
+  keep a copy when you set it.
 - **You can take it all with you** — Settings → Account has a Download everything button
   that saves one JSON file holding every record you own: Me, your resumes, your letters,
   the whole pipeline with its timeline, tasks, offers, tags and saved views. Connection
@@ -468,12 +470,13 @@ won't let a caller omit.
 4. Save, then **Send test** to prove it works — if it fails you get Resend's exact reason,
    which is almost always an unverified domain.
 
-Three emails leave an instance: the invitation somebody gets when you add them, the notice you
-get when a stranger asks for access, and that test. They carry the instance name and the mark,
-and they follow the same near-monochrome palette as the app, dark theme included. **Send test**
-picks which one goes out, so you can read the invitation in your own inbox before anyone else
-gets it — the sample is the real design with placeholder details and a link that goes nowhere,
-so proofreading it costs nobody a real invitation.
+Five emails leave an instance: the invitation somebody gets when you add them, the notice you
+get when a stranger asks for access, the Monday summary and the due-today nudge for whoever
+asked for those, and that test. They carry the instance name and the mark, and they follow the
+same near-monochrome palette as the app, dark theme included. **Send test** picks which one
+goes out, so you can read the invitation in your own inbox before anyone else gets it — the
+sample is the real design with placeholder details and a link that goes nowhere, so
+proofreading it costs nobody a real invitation.
 
 You can do all of this by talking to Claude instead: *"is email set up? configure Resend with
 this key, then send me the invitation email so I can see it."*
@@ -588,8 +591,9 @@ by a permission they don't have.
 | **Weekly pipeline review** | What's stalled, who needs chasing, what to do next — with the follow-up messages drafted. |
 | **Research a company into the CRM** | Gathers what's known, works out what's missing, and writes it back to their record without flattening what was already there. |
 | **Prepare for an interview** | Pulls the posting, the timeline, the company research, the people involved and your own evidence into one prep sheet. |
+| **Write a letter** | Gathers the posting, your evidence and the letters you have already written, then drafts a cover letter, a cold message, a referral ask, a thank-you or a reply in your own voice. |
 | **Log what happened this week** | You ramble; it files everything to the right role, application, or note. |
-| **Bring the pipeline up to date from your inbox** | Reads a week of your mail and calendar, tells you what moved, and proposes what to log — nothing is written until you say yes. |
+| **Bring the pipeline up to date from your inbox** | Reads a week of your mail and calendar, tells you what moved, and queues what to log on your dashboard — nothing is written until you accept it. |
 | **Invite and onboard someone** *(admin)* | Invites a person, hands you the link if email isn't set up, and drafts the message to send them. |
 
 Every client is instructed never to invent experience, employers, dates, or metrics. If there's
@@ -616,7 +620,7 @@ box in Claude's apps, which wants a folder rather than a loose file. They're ser
 `skills/` directory of the instance you're running, so what you install is byte-for-byte what
 it has.
 
-### The four areas
+### The five areas
 
 **Me** — `search_me`, `get_me_snapshot`, roles with unlimited backgrounds
 (`append_role_background` adds without overwriting), reusable highlights, notes and standing
@@ -640,8 +644,16 @@ tailored from, so `compare_resumes` can say exactly what a variant changed — b
 dropped, reworded — and `list_resumes` carries each resume's track record: how many
 applications it went out with, how many reached an interview, how many reached an offer.
 
+**Letters** — `prep_letter` first, always: it gathers the posting, the company research, the
+last few things on the timeline, the material in Me that matches, and up to three letters of
+the same kind you have already written, which is what a draft matches for tone. Then
+`create_letter` saves it, and `list_letters` / `get_letter` / `update_letter` /
+`delete_letter` are the rest. Filter by kind, by job, by person, or by whether it is still a
+draft.
+
 **Pipeline** — `capture_job_posting` turns a posting URL into a tracked application in one
-move, company and description included. Then applications and stages, an activity timeline,
+move, company and description included. `capture_job_postings` does the same for a morning
+of open tabs, and will not put the same role on the board twice. Then applications and stages, an activity timeline,
 tasks — `list_tasks`, `create_task`, `update_task`, `complete_task`, `delete_task`, each
 task about at most one thing and that thing being an application, a company, a person, a
 resume, a role in Me, a note, or nothing at all —
@@ -654,6 +666,13 @@ how much each view shows before you open anything, `get_column_widths` /
 `set_column_widths` are the same idea for how wide each table column is, and
 `list_field_values` says which locations and work modes you already use, so a new application
 does not become the third spelling of Remote.
+
+What somebody actually offered is its own record: `record_offer` writes a new version every
+time, `compare_offers` puts the live ones side by side and refuses to convert currencies, and
+`offer_briefing` gathers everything that bears on one negotiation. `list_stage_templates` and
+its four siblings are the checklist a stage move fires. `propose_changes` queues suggestions
+for you to accept on the dashboard rather than asking about each one in the chat, and
+`list_proposals` / `accept_proposal` / `dismiss_proposal` are the rest of that.
 
 **CRM** — `list_companies` / `get_company` / `create_company` / `update_company` /
 `delete_company` for the companies you're talking to, and `get_contact` / `update_contact` /
@@ -679,7 +698,10 @@ takes names or ids: names fold case and are created only when nothing matches.
 the wiring itself, so "add this to my work laptop" and "kill the one I pasted in a chat by
 mistake" are things you can just say. Listing never returns tokens — creating and rotating
 do, because that is the point of them. `set_profile_photo` takes a link or a file and sets
-the picture described below.
+the picture described below. `get_digest_settings` / `set_digest_settings` turn the two
+emails on and off, `preview_digest` builds either one without sending, and
+`export_everything` / `import_everything` take the whole workspace out as one file and put
+it back.
 
 **Admin** *(admins only)* — `admin_list_users`, `admin_invite_user`, `admin_set_user_role`,
 `admin_set_user_active`, `admin_delete_user`, `admin_instance_stats`, plus

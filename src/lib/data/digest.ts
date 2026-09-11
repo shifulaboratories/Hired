@@ -142,7 +142,8 @@ export async function weeklyContent(userId: string): Promise<DigestContent> {
   if (moves.length > 0) {
     sections.push({
       heading: "What moved",
-      lines: moves.slice(0, 8).map((entry) => `${entry.title}${entry.company ? "" : ""}`),
+      // The company is already folded into the title by listSchedule.
+      lines: moves.slice(0, 8).map((entry) => entry.title),
     });
   }
 
@@ -294,7 +295,10 @@ export async function sendDigest(
   const wanted = kind === "weekly" ? user.profile?.weeklyDigest : user.profile?.dailyNudge;
   if (!wanted) return { sent: false, kind, reason: "They have not asked for this one" };
 
-  const zone = user.profile?.timeZone || "UTC";
+  // As in the sweep: the stored zone verbatim, so "" means the host's clock
+  // rather than UTC and the stamp lands on the same civil day the content was
+  // built for.
+  const zone = user.profile?.timeZone ?? "";
   const today = civilDay(now, zone);
   const already = kind === "weekly" ? user.profile?.lastDigestOn : user.profile?.lastNudgeOn;
   if (!options?.force && already === today) {
@@ -306,9 +310,10 @@ export async function sendDigest(
   // today" every day is a daily mail people filter, and then the one that
   // mattered lands in the same folder.
   if (content.empty && !options?.force) {
-    // Stamped anyway: nothing was owed today, and the sweep should not keep
-    // rebuilding the same empty answer every hour until midnight.
-    await stamp(userId, kind, today);
+    // NOT stamped. Stamping shut the whole day off: an 8am sweep finding
+    // nothing due meant a task created at nine and due today produced no nudge
+    // at all. Rebuilding an empty answer costs a few indexed reads an hour;
+    // missing the one thing somebody asked to be reminded of costs the feature.
     return { sent: false, kind, reason: "Nothing was due" };
   }
 
@@ -338,10 +343,19 @@ async function stamp(userId: string, kind: DigestKind, day: string) {
   });
 }
 
+/**
+ * All four numbers count MESSAGES, not people.
+ *
+ * `considered` was a count of profiles while `skipped` counted profile-by-kind,
+ * so ten people subscribed to both, on a quiet morning, reported 10 considered
+ * and 20 skipped — a report handed straight back to whatever scheduler called
+ * the endpoint. One unit throughout: considered = sent + skipped + failed.
+ */
 export type SweepReport = {
   considered: number;
   sent: number;
   skipped: number;
+  failed: number;
   problems: string[];
 };
 
@@ -360,7 +374,13 @@ export type SweepReport = {
 export async function runDigestSweep(now = new Date()): Promise<SweepReport> {
   const settings = await getSettings();
   if (!emailIsConfigured(settings)) {
-    return { considered: 0, sent: 0, skipped: 0, problems: ["Email is not configured"] };
+    return {
+      considered: 0,
+      sent: 0,
+      skipped: 0,
+      failed: 0,
+      problems: ["Email is not configured"],
+    };
   }
 
   const profiles = await db.profile.findMany({
@@ -377,14 +397,23 @@ export async function runDigestSweep(now = new Date()): Promise<SweepReport> {
     },
   });
 
-  const report: SweepReport = { considered: profiles.length, sent: 0, skipped: 0, problems: [] };
+  const report: SweepReport = { considered: 0, sent: 0, skipped: 0, failed: 0, problems: [] };
 
   for (const profile of profiles) {
+    const wants = (profile.weeklyDigest ? 1 : 0) + (profile.dailyNudge ? 1 : 0);
+    report.considered += wants;
     if (!profile.user.isActive) {
-      report.skipped += 1;
+      report.skipped += wants;
       continue;
     }
-    const zone = profile.timeZone || "UTC";
+    // The profile's zone verbatim, empty string included. "" is SERVER_ZONE —
+    // the host's clock — and it is what every account has until somebody sets
+    // one, and what timeZoneOf hands to everything that builds the content.
+    // Defaulting to "UTC" here instead meant the sweep decided "their 8am" in
+    // UTC while the mail described a day computed in the host's zone: on a box
+    // in Los Angeles the nudge went out at midnight, and for eight hours of
+    // every day the stamp's civil day and the content's were different days.
+    const zone = profile.timeZone;
     const here = clockIn(now, zone);
     const today = civilDay(now, zone);
 
@@ -394,11 +423,15 @@ export async function runDigestSweep(now = new Date()): Promise<SweepReport> {
 
     for (const kind of ["nudge", "weekly"] as const) {
       const wanted = kind === "weekly" ? profile.weeklyDigest : profile.dailyNudge;
+      // A message they never asked for is not a message this sweep considered,
+      // so it is not one it skipped either. Counted out before anything else,
+      // which is what keeps considered = sent + skipped + failed true.
+      if (!wanted) continue;
       const already = kind === "weekly" ? profile.lastDigestOn : profile.lastNudgeOn;
       // Monday, in their week. A Sunday-evening summary is read on Monday
       // morning anyway, and Monday is when somebody can act on it.
       const rightDay = kind === "weekly" ? weekdayIn(now, zone) === 1 : true;
-      if (!wanted || !reached || !rightDay || already === today) {
+      if (!reached || !rightDay || already === today) {
         report.skipped += 1;
         continue;
       }
@@ -407,6 +440,7 @@ export async function runDigestSweep(now = new Date()): Promise<SweepReport> {
         if (outcome.sent) report.sent += 1;
         else report.skipped += 1;
       } catch (error) {
+        report.failed += 1;
         report.problems.push(
           `${kind} for one account: ${error instanceof Error ? error.message : "failed"}`,
         );

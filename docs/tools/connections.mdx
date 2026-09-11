@@ -42,10 +42,11 @@ anything first, deliberately. Run it with `dry_run` first on any file you did no
 write, and read the report back.
 
 <Warning>
-  Four things are not in the file, and the export names them: connection tokens and
-  mail-account passwords, published `/r` and `/p` slugs, the review queue, and anything
-  belonging to the instance rather than the person. A backup people email around must not
-  carry a credential or a live public URL.
+  Five things are not in the file, and the export names them: connection tokens and
+  mail-account passwords, published `/r` and `/p` slugs, the review queue, anything
+  belonging to the instance rather than the person, and the profile photo, which is a data
+  URI that would dwarf everything else. A backup people email around must not carry a
+  credential or a live public URL.
 </Warning>
 
 <Warning>
@@ -115,7 +116,7 @@ Actually send the weekly summary or the daily nudge to this person's own address
 
 _Export the whole workspace_
 
-Every record this person owns, as one JSON document you can hand back to import_everything — Me, their resumes, their letters, the whole pipeline with its timeline, tasks, offers, tags and saved views. This is the answer to 'can I get my data out'. Four things are deliberately absent and the result names them: connection tokens and mail-account passwords (a backup file people email around must not carry a credential), published slugs (those are live public URLs), the review queue, and anything belonging to the instance rather than the person. `counts` says how many of each came out — read it back rather than claiming success blindly. A long search makes a big document; if it is too large to hand around, there is a Download everything button under Settings → Account that saves the same file straight from the browser. Read-only.
+Every record this person owns, as one JSON document you can hand back to import_everything — Me, their resumes, their letters, the whole pipeline with its timeline, tasks, offers, tags and saved views. This is the answer to 'can I get my data out'. Five things are deliberately absent and the result names them: connection tokens and mail-account passwords (a backup file people email around must not carry a credential), published slugs (those are live public URLs), the review queue, anything belonging to the instance rather than the person, and their profile photo, which is a data URI that would dwarf the file. `counts` says how many of each came out — read it back rather than claiming success blindly. A long search makes a big document; if it is too large to hand around, there is a Download everything button under Settings → Account that saves the same file straight from the browser. Read-only.
 
 | Argument | Type | |
 | --- | --- | --- |

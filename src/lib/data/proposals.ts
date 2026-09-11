@@ -1,4 +1,4 @@
-import { ProposalKind, ProposalStatus, Prisma, type ActivityType, type Stage } from "@prisma/client";
+import { ActivityType, ProposalKind, ProposalStatus, Stage, type Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import * as pipeline from "@/lib/data/pipeline";
 
@@ -81,12 +81,25 @@ function complain(kind: ProposalKind, payload: Payload): string | null {
       const hasParent = Boolean(str(payload, "applicationId")) !== Boolean(str(payload, "contactId"));
       if (!hasParent) return "log_activity needs exactly one of applicationId or contactId";
       if (!str(payload, "body")) return "log_activity needs a body";
+      const type = str(payload, "type");
+      if (type && !(Object.values(ActivityType) as string[]).includes(type)) {
+        return `log_activity's type must be one of ${Object.values(ActivityType).join(", ")}`;
+      }
       return null;
     }
-    case "MOVE_STAGE":
+    case "MOVE_STAGE": {
       if (!str(payload, "applicationId")) return "move_stage needs an applicationId";
-      if (!str(payload, "stage")) return "move_stage needs a stage";
+      const stage = str(payload, "stage");
+      if (!stage) return "move_stage needs a stage";
+      // Checked against the enum, not just for emptiness. A stage of
+      // "Interviewing" queued fine, sat in the queue looking legitimate, and
+      // turned into a raw Prisma validation error in front of somebody the
+      // moment they clicked accept.
+      if (!(Object.values(Stage) as string[]).includes(stage)) {
+        return `move_stage needs one of ${Object.values(Stage).join(", ")}, not "${stage}"`;
+      }
       return null;
+    }
     case "CREATE_TASK":
       return str(payload, "title") ? null : "create_task needs a title";
     case "SET_FOLLOW_UP":

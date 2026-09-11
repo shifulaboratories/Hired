@@ -88,7 +88,7 @@ export async function deleteStageTemplate(userId: string, id: string) {
 /**
  * A starting set, for somebody who does not want to design one.
  *
- * Deliberately short and deliberately boring — the four things that actually
+ * Deliberately short and deliberately boring — the six things that actually
  * get forgotten. Skips any stage where lines already exist rather than adding
  * duplicates, and reports what it did.
  */
@@ -205,18 +205,31 @@ export async function applyStageTemplates(
   return made;
 }
 
-/** How many live applications each line has already fired for. */
+/**
+ * How many LIVE applications each line has already fired for.
+ *
+ * Both halves of that sentence were wrong before: it counted tasks rather than
+ * distinct jobs, which only coincided because of the per-application dedupe,
+ * and it counted the ones whose application is in the bin, so archiving three
+ * of five jobs still reported five.
+ */
 export async function stageTemplateUsage(userId: string): Promise<Map<string, number>> {
-  const rows = await db.task.groupBy({
-    by: ["stageTemplateId"],
-    where: { userId, stageTemplateId: { not: null } },
-    _count: { _all: true },
+  const rows = await db.task.findMany({
+    where: {
+      userId,
+      stageTemplateId: { not: null },
+      application: { archivedAt: null },
+    },
+    select: { stageTemplateId: true, applicationId: true },
   });
-  const out = new Map<string, number>();
+  const seen = new Map<string, Set<string>>();
   for (const row of rows) {
-    if (row.stageTemplateId) out.set(row.stageTemplateId, row._count._all);
+    if (!row.stageTemplateId || !row.applicationId) continue;
+    const jobs = seen.get(row.stageTemplateId) ?? new Set<string>();
+    jobs.add(row.applicationId);
+    seen.set(row.stageTemplateId, jobs);
   }
-  return out;
+  return new Map([...seen].map(([id, jobs]) => [id, jobs.size]));
 }
 
 export type { StageTemplate };

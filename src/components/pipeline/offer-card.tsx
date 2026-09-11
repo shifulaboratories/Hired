@@ -93,11 +93,21 @@ function daysUntil(value: string): number | null {
   return Math.ceil((due.getTime() - Date.now()) / 86_400_000);
 }
 
-/** Whole units, and an empty field means zero rather than a failed parse. */
+/**
+ * Whole units, and an empty field means zero rather than a failed parse.
+ *
+ * "215k" means the same thing here as it does over a connection, where the data
+ * layer has always read it. Stripping everything but digits turned it into 215
+ * — a base a thousand times too small, saved without a murmur into the row a
+ * comparison table is built from.
+ */
 function toNumber(value: string): number {
-  const clean = value.replace(/[^0-9.]/g, "");
+  const raw = value.trim().toLowerCase();
+  const k = /k\s*$/.test(raw);
+  const clean = raw.replace(/[^0-9.]/g, "");
   const parsed = Number(clean);
-  return Number.isFinite(parsed) ? Math.round(parsed) : 0;
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.round(k ? parsed * 1000 : parsed);
 }
 
 function totalOf(draft: Draft) {

@@ -143,11 +143,16 @@ export async function createLetter(userId: string, input: LetterInput) {
 /**
  * Letters, newest first.
  *
- * The archive filter here is the fourth in the codebase that has to be spelled
- * out by hand, and the only one on a model that is not itself archivable: a
- * letter attached to a binned application leaves the lists with it, the same way
- * that application's tasks and timeline do. Unattached letters are always
- * listed — there is nothing for them to be archived with.
+ * The archive filter here is one more that has to be spelled out by hand, on a
+ * model that is not itself archivable: a letter attached to a binned
+ * application leaves the lists with it, the same way that application's tasks
+ * and timeline do. `Proposal` takes the same shape, and `Offer` spells five of
+ * its own. Unattached letters are always listed — there is nothing for them to
+ * be archived with.
+ *
+ * `getLetter` deliberately does NOT filter, the convention offers.ts states for
+ * its two writes: reading a letter attached to a job you have since binned is a
+ * repair, and the id can only have come from somewhere that already showed it.
  */
 export async function listLetters(
   userId: string,

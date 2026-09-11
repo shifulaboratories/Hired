@@ -7,8 +7,12 @@ icon: "list-check"
 
 The stage values, in order:
 
-`WISHLIST` · `APPLIED` · `SCREEN` · `INTERVIEW` · `FINAL` · `OFFER` · `ACCEPTED` ·
-`REJECTED` · `WITHDRAWN` · `GHOSTED`
+`WISHLIST` · `APPLIED` · `INTERVIEWING` · `OFFER` · `ACCEPTED` · `LOST`
+
+Six, and that is deliberate. A recruiter screen, a technical round and a final were three
+columns for one thing — talking to them — and which one a given employer's process belonged
+in was a guess that changed by employer. They are one `INTERVIEWING` stage, and how deep it
+got is `interviewRound`, a number you pass to `move_application_stage`.
 
 The activity types:
 
@@ -16,9 +20,11 @@ The activity types:
 `FOLLOW_UP` · `APPLIED` · `OFFER` · `REJECTION` · `REFERRAL` · `OUTREACH`
 
 <Note>
-  Use `GHOSTED` rather than `REJECTED` when nobody ever replied. The funnel counts a
-  rejection as a decision against the person and a ghosting as a non-response, and the
-  advice that falls out of those is different.
+  Everything that did not work out is `LOST`, and **why** is a LOSS tag you pass as
+  `lossReasons` — "Rejected", "Ghosted", "Withdrew", "Declined their offer", or the
+  person's own words. Say which. The funnel counts a decision against somebody and a
+  non-response differently, and the advice that falls out of those is different; silence is
+  the most common ending, and filing it as a rejection makes the funnel lie.
 </Note>
 
 Three tools answer "what is due", and the difference matters: `list_follow_ups` is what is
@@ -117,7 +123,7 @@ Every offer on file, newest first, each with the application and company it belo
 
 | Argument | Type | |
 | --- | --- | --- |
-| `application_id` | string | Only this application's offers, oldest to newest history included |
+| `application_id` | string | Only this application's offers — every version of it, newest first |
 | `live_only` | boolean | Drop offers whose application was lost. An accepted one stays — it is the one they took |
 | `limit` | number | Max rows to return. Default 50, hard ceiling 500. Prefer narrowing the filters. |
 
@@ -170,7 +176,7 @@ Every live offer side by side: one column per job, holding the newest version of
 
 _Everything on file for one negotiation_
 
-Call this BEFORE helping somebody answer or negotiate an offer. It gathers in one read the four things that decide it and normally live four places apart: every version of the offer itself; `advertised`, which is what the POSTING claimed and is not what anybody offered; `saidDuringProcess`, the lines in their own timeline where money came up, each with the activity id so you can read the whole note; `pastPay`, what they have written in Me about what they have earned; and `competing`, the other offers on the table. `missing` names what is not on file that you would want — an unrecorded base, a vesting schedule for equity that has one, no deadline. Use the quotes as evidence and quote them back; never state a number that is not in this result, and never guess a market rate as though it came from their data. Read-only, saves nothing.
+Call this BEFORE helping somebody answer or negotiate an offer. It gathers in one read the five things that decide it and normally live five places apart: every version of the offer itself; `advertised`, which is what the POSTING claimed and is not what anybody offered; `saidDuringProcess`, the lines in their own timeline where money came up, each with the activity id so you can read the whole note; `pastPay`, what they have written in Me about what they have earned; and `competing`, the other offers on the table. `missing` names what is not on file that you would want — an unrecorded base, a vesting schedule for equity that has one, no deadline. Use the quotes as evidence and quote them back; never state a number that is not in this result, and never guess a market rate as though it came from their data. Read-only, saves nothing.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -190,14 +196,14 @@ What this person has said should happen when a job reaches a stage. Each line ca
 
 _Add a line to a stage checklist_
 
-Say that reaching a stage should put a task on their list — 'send a thank-you' the day after every interview, 'check the posting is still up' a week after applying. The line fires ONCE PER APPLICATION, ever: going back a stage and forward again does not re-add what they already ticked off. It fires on future moves only and never retroactively, so adding a line does not put a task on forty existing jobs. dueInDays is counted from the move (0 is that day, 7 is a week later); leave it out and the task gets no due date at all, which is right for 'eventually'. Keep the title short and in the second person — it lands on a list beside things they wrote themselves.
+Say that reaching a stage should put a task on their list — 'send a thank-you' the day after every interview, 'check the posting is still up' a week after applying. The line fires ONCE PER APPLICATION, ever: going back a stage and forward again does not re-add what they already ticked off. It fires on future moves only and never retroactively, so adding a line does not put a task on forty existing jobs. due_in_days is counted from the move (0 is that day, 7 is a week later); leave it out and the task gets no due date at all, which is right for 'eventually'. Keep the title short and in the second person — it lands on a list beside things they wrote themselves.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `stage` | enum | **required** — The stage a job has to reach for this to fire  `WISHLIST` · `APPLIED` · `INTERVIEWING` · `OFFER` · `ACCEPTED` · `LOST` |
 | `title` | string | **required** — The task, e.g. 'Send a thank-you' |
 | `detail` | string | A line of context shown under it |
-| `dueInDays` | number | Days from the move to the due date. 0 is that day. Omit for no due date |
+| `due_in_days` | number | Days from the move to the due date. 0 is that day. Omit for no due date |
 
 ### `update_stage_template`
 
@@ -213,7 +219,7 @@ Edit one line — reword it, move it to a different stage, change when it comes 
 | `stage` | enum | Fire on this stage instead  `WISHLIST` · `APPLIED` · `INTERVIEWING` · `OFFER` · `ACCEPTED` · `LOST` |
 | `title` | string | The task |
 | `detail` | string | A line of context shown under it |
-| `dueInDays` | number | Days from the move to the due date |
+| `due_in_days` | number | Days from the move to the due date |
 | `enabled` | boolean | False parks the line without deleting it |
 
 ### `delete_stage_template`

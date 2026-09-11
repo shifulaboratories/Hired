@@ -26,7 +26,7 @@ import { tagKey } from "@/lib/data/tags";
  * without a warning screen, and it is the one people actually want: a restore,
  * not a replacement.
  *
- * Four things are deliberately NOT in the file, and the export says so:
+ * Five things are deliberately NOT in the file, and the export says so:
  *
  * - **Connections and linked accounts.** An MCP connection URL is a credential
  *   with full read and write over the workspace, and a mail account carries an
@@ -39,6 +39,8 @@ import { tagKey } from "@/lib/data/tags";
  * - **Instance-level rows** — accounts, invitations, settings, the audit log.
  *   Those belong to the instance rather than to a person, and no export written
  *   for one account should be able to carry them.
+ * - **The profile photo**, for a duller reason: it is a data URI that would
+ *   dwarf the rest of the file, and nobody restores a picture from a backup.
  */
 
 /**
@@ -183,15 +185,35 @@ export type ImportReport = {
   problems: string[];
 };
 
+/**
+ * A natural key from several fields.
+ *
+ * Joined on a NUL, not a space. "Acme Data" + "Engineer" and "Acme" + "Data
+ * Engineer" produce the same string on a space, so the second of the two is
+ * counted as already present and never created. `captureJobPostings` in
+ * pipeline.ts picked this separator for the same reason.
+ */
 const key = (...parts: (string | null | undefined)[]) =>
-  parts.map((part) => (part ?? "").trim().toLowerCase()).join(" ");
+  parts.map((part) => (part ?? "").trim().toLowerCase()).join("\u0000");
 
 type Row = Record<string, unknown>;
 
 const s = (row: Row, name: string): string =>
   typeof row[name] === "string" ? (row[name] as string) : "";
-const int = (row: Row, name: string, fallback = 0): number =>
-  typeof row[name] === "number" ? (row[name] as number) : fallback;
+/**
+ * A whole number from the file, clamped to what the column holds.
+ *
+ * Unbounded, a hand-edited amount above the Int ceiling threw out of the middle
+ * of `importWorkspace` and took the accumulated `problems` report with it. The
+ * data recovers on a re-run because the matching is additive; the report does
+ * not, and the report is the only thing anybody reads.
+ */
+const MAX_INT = 2_147_483_647;
+const int = (row: Row, name: string, fallback = 0): number => {
+  const value = row[name];
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(-MAX_INT, Math.min(MAX_INT, Math.round(value)));
+};
 const bool = (row: Row, name: string, fallback = false): boolean =>
   typeof row[name] === "boolean" ? (row[name] as boolean) : fallback;
 const strings = (row: Row, name: string): string[] =>
@@ -227,6 +249,15 @@ function maybeEnum<T extends Record<string, string>>(values: T, value: string): 
   const upper = value.trim().toUpperCase();
   return (Object.values(values) as string[]).includes(upper) ? (upper as T[keyof T]) : null;
 }
+
+/**
+ * Whether a row is in the bin, as a key part.
+ *
+ * A restored job and a binned one of the same name are two different records —
+ * `Company.archiveKey` exists so the database agrees — so the natural key has
+ * to tell them apart or one of them swallows the other.
+ */
+const binned = (archivedAt: Date | null) => (archivedAt ? "archived" : "live");
 
 /** A placeholder id a dry run hands out. Never reaches the database. */
 const isDry = (id: string | null | undefined) => Boolean(id?.startsWith("dry:"));
@@ -562,10 +593,18 @@ export async function importWorkspace(
     }
   }
 
-  const liveCompanies = await db.company.findMany({ where: { userId, archivedAt: null } });
-  const companyByName = new Map(liveCompanies.map((company) => [key(company.name), company.id]));
+  // Archived rows are matched too, keyed by their archived state, so a second
+  // import of the same file finds the archived copy it wrote the first time
+  // rather than writing another. Matching only live rows was the first fix and
+  // it was half of one: it stopped a restore attaching a job to a binned
+  // employer, and left every archived row duplicating without limit on a
+  // re-import. `binned` is what keeps the two apart.
+  const allCompanies = await db.company.findMany({ where: { userId } });
+  const companyByName = new Map(
+    allCompanies.map((company) => [key(company.name, binned(company.archivedAt)), company.id]),
+  );
   for (const row of rowsOf(doc, "companies")) {
-    const k = key(s(row, "name"));
+    const k = key(s(row, "name"), binned(date(row, "archivedAt")));
     const found = companyByName.get(k);
     if (found) {
       map.company.set(s(row, "id"), found);
@@ -583,16 +622,23 @@ export async function importWorkspace(
         name: s(row, "name"),
         website: s(row, "website"),
         notes: s(row, "notes"),
+        // The bin comes back as the bin. Without these two a restore puts
+        // everything somebody deleted back on the board, which the export's own
+        // comment promises it will not.
+        archivedAt: date(row, "archivedAt"),
+        archiveKey: s(row, "archiveKey"),
       },
     });
     companyByName.set(k, made.id);
     map.company.set(s(row, "id"), made.id);
   }
 
-  const liveContacts = await db.contact.findMany({ where: { userId, archivedAt: null } });
-  const contactByKey = new Map(liveContacts.map((row) => [key(row.name, row.email), row.id]));
+  const allContacts = await db.contact.findMany({ where: { userId } });
+  const contactByKey = new Map(
+    allContacts.map((row) => [key(row.name, row.email, binned(row.archivedAt)), row.id]),
+  );
   for (const row of rowsOf(doc, "contacts")) {
-    const k = key(s(row, "name"), s(row, "email"));
+    const k = key(s(row, "name"), s(row, "email"), binned(date(row, "archivedAt")));
     const found = contactByKey.get(k);
     if (found) {
       map.contact.set(s(row, "id"), found);
@@ -620,6 +666,7 @@ export async function importWorkspace(
         otherLinks: strings(row, "otherLinks"),
         notes: s(row, "notes"),
         nextFollowUpAt: date(row, "nextFollowUpAt"),
+        archivedAt: date(row, "archivedAt"),
       },
     });
     contactByKey.set(k, made.id);
@@ -631,33 +678,47 @@ export async function importWorkspace(
   // person has deleted — a row on the board whose company is not. The archived
   // copy stays where it is and the import adds a live one beside it, which is
   // what `Company.archiveKey` exists to allow.
-  const liveApplications = await db.application.findMany({
-    where: { userId, archivedAt: null },
+  const allApplications = await db.application.findMany({
+    where: { userId },
     include: { company: { select: { name: true } } },
   });
   const applicationByKey = new Map(
-    liveApplications.map((row) => [key(row.company.name, row.roleTitle), row.id]),
+    allApplications.map((row) => [
+      key(row.company.name, row.roleTitle, binned(row.archivedAt)),
+      row.id,
+    ]),
   );
   const companyNameOf = new Map(
     rowsOf(doc, "companies").map((row) => [s(row, "id"), s(row, "name")]),
   );
   for (const row of rowsOf(doc, "applications")) {
-    const k = key(companyNameOf.get(s(row, "companyId")) ?? "", s(row, "roleTitle"));
+    const k = key(
+      companyNameOf.get(s(row, "companyId")) ?? "",
+      s(row, "roleTitle"),
+      binned(date(row, "archivedAt")),
+    );
     const found = applicationByKey.get(k);
     if (found) {
       map.application.set(s(row, "id"), found);
       bump(skipped, "applications");
       continue;
     }
+    // The employer check runs on a dry run too. It sat below the early return
+    // once, so a file whose application named a company it did not carry was
+    // reported as one creation with no problems by the preview and as zero
+    // creations with a problem by the real thing — which defeats the only
+    // reason to preview.
+    const companyId = dryRun
+      ? (map.company.get(s(row, "companyId")) ?? null)
+      : real(map.company.get(s(row, "companyId")));
+    if (!companyId) {
+      problems.push(`Skipped "${s(row, "roleTitle")}": its employer is not in the file.`);
+      bump(skipped, "applications");
+      continue;
+    }
     bump(created, "applications");
     if (dryRun) {
       map.application.set(s(row, "id"), `dry:${k}`);
-      continue;
-    }
-    const companyId = real(map.company.get(s(row, "companyId")));
-    if (!companyId) {
-      problems.push(`Skipped "${s(row, "roleTitle")}": its employer is not in the file.`);
-      created.applications -= 1;
       continue;
     }
     const made = await db.application.create({
@@ -791,6 +852,9 @@ export async function importWorkspace(
       data: {
         userId,
         applicationId: real(applicationId),
+        // Exactly one parent, application first. addActivity refuses a row with
+        // both, so a file carrying one is already malformed; keeping the job is
+        // the better half to keep.
         contactId: applicationId ? null : real(contactId),
         type: enumOf(ActivityType, s(row, "type"), ActivityType.NOTE),
         body: s(row, "body"),
@@ -801,11 +865,16 @@ export async function importWorkspace(
     });
   }
 
+  // The due date is in the key. Without it three standalone "Update resume"
+  // tasks with three different dates collapse into one, because an unattached
+  // task contributes no parent id to distinguish them.
   const liveTasks = await db.task.findMany({ where: { userId } });
-  const taskKeys = new Set(liveTasks.map((row) => key(row.title, row.applicationId)));
+  const taskKey = (title: string, applicationId: string | null, dueAt: Date | null) =>
+    key(title, applicationId, dueAt ? dueAt.toISOString() : "");
+  const taskKeys = new Set(liveTasks.map((row) => taskKey(row.title, row.applicationId, row.dueAt)));
   for (const row of rowsOf(doc, "tasks")) {
     const applicationId = map.application.get(s(row, "applicationId")) ?? null;
-    const k = key(s(row, "title"), applicationId);
+    const k = taskKey(s(row, "title"), applicationId, date(row, "dueAt"));
     if (taskKeys.has(k)) {
       bump(skipped, "tasks");
       continue;
@@ -831,10 +900,29 @@ export async function importWorkspace(
     });
   }
 
+  // The amounts are part of the key, not just the instant. Two versions
+  // recorded on the same day — the opening number and the improved one, which
+  // is exactly the shape this model exists to hold — share a receivedAt once
+  // `toDate` has mapped both bare dates to 09:00, and one of them would be
+  // dropped on every round trip.
   const liveOffers = await db.offer.findMany({ where: { userId } });
-  const offerKeys = new Set(
-    liveOffers.map((row) => key(row.applicationId, row.receivedAt.toISOString())),
-  );
+  const offerKey = (row: {
+    applicationId: string;
+    receivedAt: Date;
+    baseAmount: number;
+    bonusAmount: number;
+    equityAmount: number;
+    signOnAmount: number;
+  }) =>
+    key(
+      row.applicationId,
+      row.receivedAt.toISOString(),
+      String(row.baseAmount),
+      String(row.bonusAmount),
+      String(row.equityAmount),
+      String(row.signOnAmount),
+    );
+  const offerKeys = new Set(liveOffers.map(offerKey));
   for (const row of rowsOf(doc, "offers")) {
     const applicationId = map.application.get(s(row, "applicationId"));
     if (!applicationId) {
@@ -842,7 +930,14 @@ export async function importWorkspace(
       continue;
     }
     const when = date(row, "receivedAt") ?? new Date(0);
-    const k = key(applicationId, when.toISOString());
+    const k = offerKey({
+      applicationId,
+      receivedAt: when,
+      baseAmount: int(row, "baseAmount"),
+      bonusAmount: int(row, "bonusAmount"),
+      equityAmount: int(row, "equityAmount"),
+      signOnAmount: int(row, "signOnAmount"),
+    });
     if (offerKeys.has(k)) {
       bump(skipped, "offers");
       continue;

@@ -70,7 +70,20 @@ function money(value: unknown, field: string): number | undefined {
   let n: number;
   if (typeof value === "number") n = value;
   else if (typeof value === "string") {
-    const clean = value.trim().toLowerCase().replace(/[$£€,\s]/g, "");
+    const raw = value.trim().toLowerCase();
+    // A string with no digit in it is not a figure. Without this, " ", "$" and
+    // "k" all reach Number("") and land as a real zero — which on a comparison
+    // table reads as "they offered nothing" rather than "nobody said".
+    if (!/\d/.test(raw)) throw new Error(`${field} is not a number: "${value}"`);
+    // "215.000" is two hundred and fifteen thousand in half of Europe and two
+    // hundred and fifteen everywhere else, and guessing wrong is a 1000× error
+    // sitting next to correctly-read columns. Refused rather than guessed.
+    if (/\d\.\d{3}(\D|$)/.test(raw)) {
+      throw new Error(
+        `${field} is ambiguous: "${value}" could be thousands or a decimal. Send it as digits, like 215000.`,
+      );
+    }
+    const clean = raw.replace(/[$£€,\s]/g, "");
     const k = clean.endsWith("k");
     const parsed = Number(k ? clean.slice(0, -1) : clean);
     if (!Number.isFinite(parsed)) throw new Error(`${field} is not a number: "${value}"`);
@@ -458,11 +471,11 @@ export type OfferBriefing = {
 /**
  * Everything on file that bears on one negotiation, in one call.
  *
- * Read-only, and it saves nothing. The point is that the four places this
+ * Read-only, and it saves nothing. The point is that the five places this
  * material lives — the offer rows, the posting's advertised range, what was
- * said in the timeline, and what the person has written about their own pay —
- * are four separate reads a person will not do at 9pm with a deadline on
- * Friday.
+ * said in the timeline, what the person has written about their own pay, and
+ * whatever else is on the table — are five separate reads a person will not do
+ * at 9pm with a deadline on Friday.
  */
 export async function offerBriefing(userId: string, applicationId: string): Promise<OfferBriefing> {
   const application = await liveApplication(userId, applicationId);
@@ -529,36 +542,61 @@ export async function offerBriefing(userId: string, applicationId: string): Prom
  * job. Same rule the follow-up queries take.
  */
 export async function offersDueBy(userId: string, cutoff: Date) {
-  return db.offer.findMany({
-    where: {
-      userId,
-      respondBy: { lte: cutoff },
-      application: { archivedAt: null, stage: { notIn: TERMINAL_STAGES } },
-    },
-    orderBy: { respondBy: "asc" },
-    include: {
-      application: {
-        select: { id: true, roleTitle: true, company: { select: { name: true } } },
+  return newestPerApplication(
+    await db.offer.findMany({
+      where: {
+        userId,
+        respondBy: { lte: cutoff },
+        application: { archivedAt: null, stage: { notIn: TERMINAL_STAGES } },
       },
-    },
-  });
+      orderBy: [{ receivedAt: "desc" }, { createdAt: "desc" }],
+      include: {
+        application: {
+          select: { id: true, roleTitle: true, company: { select: { name: true } } },
+        },
+      },
+    }),
+  ).sort((a, b) => (a.respondBy?.getTime() ?? 0) - (b.respondBy?.getTime() ?? 0));
 }
 
 /** The same rows in a window, for the calendar. Archive filter 5 of 5. */
 export async function offersDueBetween(userId: string, start: Date, end: Date) {
-  return db.offer.findMany({
-    where: {
-      userId,
-      respondBy: { gte: start, lte: end },
-      application: { archivedAt: null, stage: { notIn: TERMINAL_STAGES } },
-    },
-    orderBy: { respondBy: "asc" },
-    include: {
-      application: {
-        select: { id: true, stage: true, roleTitle: true, company: { select: { name: true } } },
+  return newestPerApplication(
+    await db.offer.findMany({
+      where: {
+        userId,
+        respondBy: { gte: start, lte: end },
+        application: { archivedAt: null, stage: { notIn: TERMINAL_STAGES } },
       },
-    },
-  });
+      orderBy: [{ receivedAt: "desc" }, { createdAt: "desc" }],
+      include: {
+        application: {
+          select: { id: true, stage: true, roleTitle: true, company: { select: { name: true } } },
+        },
+      },
+    }),
+  ).sort((a, b) => (a.respondBy?.getTime() ?? 0) - (b.respondBy?.getTime() ?? 0));
+}
+
+/**
+ * One row per application, the newest version of it.
+ *
+ * Both deadline reads need this and neither had it. An offer is VERSIONED by
+ * design, and a revision usually carries the same respond-by as the number it
+ * replaces — so the bell listed "Answer Acme" once per revision, the count said
+ * three things were due when two were, and the two rows shared a React key
+ * because the item id is the application's. compareOffers has collapsed this
+ * way from the start; these two now do the same.
+ */
+function newestPerApplication<T extends { applicationId: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const row of rows) {
+    if (seen.has(row.applicationId)) continue;
+    seen.add(row.applicationId);
+    out.push(row);
+  }
+  return out;
 }
 
 /**
