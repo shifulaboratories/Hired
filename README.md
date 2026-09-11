@@ -348,9 +348,9 @@ config already filled in with your URL, ready to copy.
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
 then tells you how many tools answered — 157, or 190 if you're an admin.
 
-That is a lot of tools, and spelled out in full they're around 45,000 tokens of context
+That is a lot of tools, and spelled out in full they're around 49,000 tokens of context
 before you've said anything. If your client has tool search — Claude Code does, and has it
-on by default — leave it on: it loads six of them up front, about 1,700 tokens, and looks
+on by default — leave it on: it loads six of them up front, about 1,600 tokens, and looks
 the rest up when they're needed. On a client without it you're paying the full amount every
 conversation, which works but is worth knowing.
 
