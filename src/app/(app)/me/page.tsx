@@ -22,6 +22,8 @@ import { ImportDialog } from "@/components/me/import-dialog";
 import { NewRoleDialog } from "@/components/me/new-role-dialog";
 import { NewResumeDialog } from "@/components/resume/new-resume-dialog";
 import { ResumesPanel } from "@/components/resume/resumes-panel";
+import { LettersPanel } from "@/components/letters/letters-panel";
+import { letterForUi, listLetters } from "@/lib/data/letters";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +38,7 @@ export const dynamic = "force-dynamic";
  * a join plus a rendered document per card, and nobody editing a role should
  * pay for that.
  */
-const TABS = ["roles", "profile", "notes", "extras", "resumes"] as const;
+const TABS = ["roles", "profile", "notes", "extras", "resumes", "letters"] as const;
 type Tab = (typeof TABS)[number];
 
 const HEADER: Record<Tab, string> = {
@@ -45,6 +47,7 @@ const HEADER: Record<Tab, string> = {
   notes: "Anything that belongs to no single job — and the standing rules Claude follows whenever it writes for you.",
   extras: "Education, projects, skills and certifications: the supporting material a resume draws on after the roles.",
   resumes: "One base resume, then a tailored variant per job. Ask Claude to build them from what is in Me — it will save them straight here.",
+  letters: "Cover letters, cold messages, referral asks and thank-yous. Ask Claude for one and it reads the posting, your own material and the letters you have already written before it drafts anything.",
 };
 
 export default async function MePage({
@@ -64,10 +67,11 @@ export default async function MePage({
 
   // The counts sit on the tab strip, so they are needed whichever panel is
   // showing. Counts rather than lists: the panel below loads what it renders.
-  const [roleCount, noteCount, resumeCount] = await Promise.all([
+  const [roleCount, noteCount, resumeCount, letterCount] = await Promise.all([
     db.role.count({ where: { userId: user.id } }),
     db.note.count({ where: { userId: user.id } }),
     db.resume.count({ where: { userId: user.id } }),
+    db.letter.count({ where: { userId: user.id } }),
   ]);
 
   const sortParam = one("sort");
@@ -121,6 +125,12 @@ export default async function MePage({
               <span className="text-muted-foreground ml-1 text-xs tabular-nums">{resumeCount}</span>
             </Link>
           </TabsTrigger>
+          <TabsTrigger value="letters" asChild>
+            <Link href="/me?tab=letters">
+              Letters
+              <span className="text-muted-foreground ml-1 text-xs tabular-nums">{letterCount}</span>
+            </Link>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value={active}>
@@ -136,9 +146,20 @@ export default async function MePage({
               hasMaterial={roleCount > 0}
             />
           )}
+          {active === "letters" && <LettersTab userId={user.id} />}
         </TabsContent>
       </Tabs>
     </PageShell>
+  );
+}
+
+async function LettersTab({ userId }: { userId: string }) {
+  const rows = await listLetters(userId);
+  return (
+    <LettersPanel
+      letters={rows.map(letterForUi)}
+      emptyHint="Nothing written yet."
+    />
   );
 }
 

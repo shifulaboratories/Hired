@@ -1,0 +1,139 @@
+---
+title: "Letter tools"
+sidebarTitle: "Letters"
+description: "Six tools over everything you write that is not a resume: cover letters, cold outreach, referral asks, thank-yous and replies."
+icon: "envelope-open-text"
+---
+
+A resume is a structured document. A letter is prose you send to a person, and the two
+are kept apart on purpose — a resume has a schema the renderer depends on, and a cover
+letter stuffed into it would break the contract for both.
+
+Letters carry a kind, a title, a recipient, the text itself, and optional links to the
+job, the person and the resume they go out with. Those links are how you find something
+again later: every letter you have ever sent to a company is one `list_letters` call away.
+
+## Gather before you write
+
+`prep_letter` is the tool that matters. A letter worth sending is built from five things
+that live five places apart:
+
+<CardGroup cols={2}>
+  <Card title="The posting and the research" icon="file-lines">
+    What they asked for, and whatever the person wrote down about the company.
+  </Card>
+  <Card title="What they have already been told" icon="clock-rotate-left">
+    The last few entries on the application's timeline, so a thank-you can name the
+    actual conversation.
+  </Card>
+  <Card title="Evidence from Me" icon="magnifying-glass">
+    The person's own material, ranked against this posting. Nothing in a letter should
+    come from anywhere else.
+  </Card>
+  <Card title="How they sound" icon="pen-nib">
+    Up to three letters of the same kind they have already written. Two of somebody's own
+    letters describe their voice better than any instruction about tone.
+  </Card>
+</CardGroup>
+
+It also returns `missing` — no posting on file, no research, no named recipient, nothing
+in Me that matched. Say those out loud rather than writing around them.
+
+<Warning>
+  Never invent an employer, a date, a metric or a project to make a letter read better.
+  If `prep_letter` came back with no evidence for a claim, the claim does not go in.
+</Warning>
+
+## Drafts and sent
+
+A letter with no `sent_at` is a draft, and `list_letters` can show only those. Setting the
+date is what turns it into a record of something that actually went out.
+
+Deleting a letter is final — there is no archive for them. A letter attached to an
+archived application drops out of the lists with it, and comes back when it is restored.
+
+### `prep_letter`
+
+_Gather everything before writing a letter_
+
+Call this FIRST whenever someone asks for a cover letter, a cold message, a referral ask, a thank-you or a reply. A good letter is built from five things that live five places apart, and this returns all of them in one read: the posting and the company research (`application`), who it is going to (`contact`), the resume it goes out with, `evidence` — the material from Me that actually matches this posting, ranked — and `priorLetters`, up to three of the same kind they have already written. Those last ones matter more than any instruction about tone: two letters somebody wrote themselves are the only reliable description of how they sound. `intent` says what this kind of letter is for, and `missing` names what is not on file — no posting, no research, no named recipient, nothing in Me that matched. Say the missing things out loud rather than writing around them, and never invent an achievement to fill a gap. Read-only, saves nothing.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `kind` | enum | What you are about to write. Defaults to COVER_LETTER  `COVER_LETTER` · `OUTREACH` · `REFERRAL_ASK` · `THANK_YOU` · `REPLY` · `OTHER` |
+| `application_id` | string | The job this is about, for the posting, the research and the timeline |
+| `contact_id` | string | The person it is going to, for their name and how they are known |
+
+### `create_letter`
+
+_Save a letter_
+
+Save a cover letter, a cold message, a referral ask, a thank-you or a reply. Call prep_letter first — a letter written without the posting, the evidence and their own earlier letters is the generic one everybody sends, and it is worse than nothing. The body is plain prose, in their voice, and every claim in it has to trace back to something in Me: never invent an employer, a date, a metric or a project. Links are optional but worth setting — application_id files it under the job, contact_id under the person, resume_id records which document it went out with. Leave sent_at unset while it is a draft; the list says which are still drafts. Returns the saved letter with its id.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `kind` | enum | What this is. Defaults to COVER_LETTER  `COVER_LETTER` · `OUTREACH` · `REFERRAL_ASK` · `THANK_YOU` · `REPLY` · `OTHER` |
+| `title` | string | What to call it, e.g. 'Anthropic — Staff Engineer' |
+| `body` | string | **required** — The letter itself, as prose. Paragraphs separated by blank lines |
+| `recipient` | string | Who it is addressed to, in their words: 'Priya, engineering manager', 'the hiring team' |
+| `application_id` | string | The job this is for |
+| `contact_id` | string | The person it is going to |
+| `resume_id` | string | The resume it goes out with |
+| `sent_at` | string | The day it was actually sent, YYYY-MM-DD. Leave unset for a draft |
+
+### `list_letters`
+
+_List letters_
+
+Everything they have written that is not a resume, newest first, each with the job, person and resume it is attached to. Filter by kind, by application, by contact, by whether it is still a draft, or by a word in the text. A letter attached to an archived application does not appear, the same way that application's tasks and timeline do not. Use this to find something to reuse before writing from scratch, and to answer 'did I ever reply to them'. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `kind` | enum | Only this kind  `COVER_LETTER` · `OUTREACH` · `REFERRAL_ASK` · `THANK_YOU` · `REPLY` · `OTHER` |
+| `application_id` | string | Only letters filed under this job |
+| `contact_id` | string | Only letters to this person |
+| `drafts_only` | boolean | Only the ones never marked sent |
+| `search` | string | A word in the title, body or recipient |
+| `limit` | number | Max rows to return. Default 50, hard ceiling 500. Prefer narrowing the filters. |
+
+### `get_letter`
+
+_Read one letter_
+
+The full text of one letter, with the job, person and resume it is attached to. Read this before updating one — update_letter REPLACES the body you send.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Letter id, from list_letters |
+
+### `update_letter`
+
+_Update a letter_
+
+Change a saved letter. Only the fields you send change — but sending `body` REPLACES the whole body, so call get_letter first, edit what came back, and write it back whole. This is also how a draft becomes sent: set sent_at to the day it went. Send an empty string to a link to detach it.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Letter id |
+| `kind` | enum | Change what this is  `COVER_LETTER` · `OUTREACH` · `REFERRAL_ASK` · `THANK_YOU` · `REPLY` · `OTHER` |
+| `title` | string | What to call it |
+| `body` | string | The whole letter. Replaces what is there |
+| `recipient` | string | Who it is addressed to |
+| `application_id` | string | The job this is for. Empty string detaches |
+| `contact_id` | string | The person it is going to. Empty string detaches |
+| `resume_id` | string | The resume it goes out with. Empty string detaches |
+| `sent_at` | string | The day it was sent, YYYY-MM-DD. Empty string puts it back to a draft |
+
+### `delete_letter`
+
+_Delete a letter_
+
+Remove a letter for good. There is no archive for letters — this is gone, and what somebody said to an employer is not usually worth losing. Say what will go and get a plain yes first.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Letter id |

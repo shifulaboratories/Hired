@@ -8,6 +8,7 @@ import * as me from "@/lib/data/me";
 import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
 import * as offers from "@/lib/data/offers";
+import * as letters from "@/lib/data/letters";
 import * as tags from "@/lib/data/tags";
 import { STAGE_LABEL } from "@/lib/data/pipeline";
 import * as views from "@/lib/data/views";
@@ -1128,6 +1129,35 @@ export async function updateApplicationAction(
 }
 
 /**
+ * Letters. Prose, so the body autosaves like everything else in this app —
+ * `update` is a patch and only rewrites what it is handed.
+ */
+export async function createLetterAction(input: letters.LetterInput) {
+  const user = await requireUser();
+  const letter = await letters.createLetter(user.id, input);
+  revalidateLetters(letter.applicationId);
+  return letter.id;
+}
+
+export async function updateLetterAction(id: string, patch: letters.LetterInput) {
+  const user = await requireUser();
+  const letter = await letters.updateLetter(user.id, id, patch);
+  revalidateLetters(letter.applicationId);
+}
+
+export async function deleteLetterAction(id: string) {
+  const user = await requireUser();
+  const existing = await letters.getLetter(user.id, id);
+  await letters.deleteLetter(user.id, id);
+  revalidateLetters(existing?.applicationId ?? null);
+}
+
+function revalidateLetters(applicationId: string | null) {
+  revalidatePath("/me");
+  if (applicationId) revalidatePath(`/applications/${applicationId}`);
+}
+
+/**
  * Offers are their own actions rather than fields on the application's autosave
  * bag, and that is on purpose: the bag REPLACES what it is given, and an offer
  * is a versioned record. Folding it in would mean every keystroke in the notes
@@ -1705,6 +1735,7 @@ export async function getApplicationForPanelAction(id: string) {
       dueAt: task.dueAt?.toISOString() ?? null,
     })),
     offers: application.offers.map(offers.offerForUi),
+    letters: (await letters.listLetters(user.id, { applicationId: id })).map(letters.letterForUi),
     resumes: resumeList.map((resume) => ({ id: resume.id, name: resume.name })),
     tagOptions: tagOptions.map(asOption),
     lossOptions: lossOptions.map(asOption),

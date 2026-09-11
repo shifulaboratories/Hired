@@ -6126,3 +6126,45 @@ storing zero — zero on a comparison table reads as "they offered nothing".
 precisely so the bell and the calendar can read it. It is the one date in this app that
 cannot be caught up on tomorrow, so it sorts first in the notifications list and the bell
 counts it.
+
+---
+
+## 2026-09-11 — Letters are their own model, not a kind of Resume
+
+The obvious move was a `kind` column on `Resume`. It does not survive contact with
+invariant four: `Resume.data` is a structured document whose shape the renderer, the
+templates, the PDF export, the print page, `preview_resume_text` and `compare_resumes` all
+depend on. Prose either gets stuffed into that shape or the shape stops being a contract.
+And a letter has no template, no accent, no margins and no page count, so five of a
+resume's ten columns would be dead on every row.
+
+So `Letter` is its own table: a kind, a title, a recipient, a body, and links to the
+application, the contact and the resume it goes out with. The three links are `SET NULL`
+rather than cascade — destroying an application must not destroy what you said to them.
+The probe asserts that: delete the job and the letter is still there, detached.
+
+**The feature is `prep_letter`, not `create_letter`.** Anyone can write a letter into a
+textarea. What is hard is that a good one is assembled from five things living five places
+apart — the posting, the company research, the last few entries on the timeline, the
+material in Me that actually matches, and how the person writes. `letterContext` returns
+all five in one read, plus `missing` naming what is not on file. The one that surprised me
+is `priorLetters`: three letters somebody wrote themselves describe their voice better than
+any instruction about tone ever will, and they were already in the database the moment the
+second letter existed.
+
+**`kind` is an enum, not free text.** The kind decides how the draft should read — a
+referral ask is short and asks for one thing, a thank-you is shorter and asks for nothing —
+and an assistant given a free-text label has to guess that. `LETTER_INTENT` says it out
+loud, and `prep_letter` returns it.
+
+**The fourth hand-spelled archive filter, on a model that is not archivable.** A letter
+filed under a binned application leaves the lists with it, the same way that application's
+tasks and timeline do, so `listLetters` carries
+`OR: [{ applicationId: null }, { application: { archivedAt: null } }]`. Unattached letters
+are always listed; there is nothing for them to be archived with. This is the first read of
+this shape in the codebase and the comment says so.
+
+**Where it lives in the UI.** The nav is four items on purpose, so Letters is a tab under
+Me beside Resumes, and the same component renders on an opened application filtered to that
+job. It is prose, so the editor autosaves like everything else — there is no document
+schema here and there should not be one.
