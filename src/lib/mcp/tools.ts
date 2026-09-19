@@ -33,6 +33,7 @@ import * as mailSweep from "@/lib/data/mail-sweep";
 import * as captureLink from "@/lib/data/capture-link";
 import * as linkedin from "@/lib/data/linkedin";
 import * as sample from "@/lib/data/sample";
+import * as attachments from "@/lib/data/attachments";
 import { DEFAULT_TEMPLATE, RESUME_TEMPLATES } from "@/lib/resume-templates";
 import { textDifferences } from "@/lib/resume-ats";
 import {
@@ -525,6 +526,18 @@ function importPayloadFrom(args: Json): Parameters<typeof me.importResume>[1] {
 /** What to do about a role already on file. Shared by both import tools. */
 function onExistingFrom(args: Json): { onExisting?: "merge" | "skip" } {
   return s(args, "on_existing") === "skip" ? { onExisting: "skip" } : {};
+}
+
+/** Whichever of the five subject ids the caller named. Zero and two are refused
+ * in the data layer, which is the one place that rule should live. */
+function attachmentSubjectFrom(args: Json) {
+  return defined({
+    applicationId: s(args, "application_id"),
+    offerId: s(args, "offer_id"),
+    letterId: s(args, "letter_id"),
+    contactId: s(args, "contact_id"),
+    companyId: s(args, "company_id"),
+  });
 }
 
 /** The archive's files, as they arrived. Nothing here reformats a CSV. */
@@ -2908,6 +2921,135 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) => offers.deleteOffer(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "attach_file",
+    title: "Keep a file against a job, a person or an offer",
+    description:
+      "Store a file in the workspace, hanging off exactly one thing: an application, an offer, a letter, a person or a company. This is where the signed offer letter goes, the take-home they submitted, the PDF a recruiter sent, the screenshot of a posting that has since come down. Pass exactly one of application_id, offer_id, letter_id, contact_id or company_id — a file with no home is bytes nobody can find later, so there is no way to store one loose. The bytes arrive one of two ways: `data_uri` when you are holding them, e.g. after reading a local file ('data:application/pdf;base64,…'), or `url` for an https link the server fetches for you, which is MUCH the cheaper of the two and the one to prefer when the file is already on the web. The default limit is 8MB a file and 250MB a workspace; over either, this refuses and says how much is in use. Only PDFs, images, plain text, markdown, CSV, JSON, zips and Word or Excel documents are accepted, and THE TYPE IS READ FROM THE FILE'S OWN FIRST BYTES rather than from what you called it. Attaching the same bytes twice is not a second copy: the file is matched on its checksum and you get the first row back with `reused` true, so re-running after a timeout is safe. Returns the file's id, its size, what is now in use, and a link to download it — the link opens in the browser they are already signed in to and is not public. IT NEVER RETURNS THE BYTES; use read_attachment for a text file you actually need to read. You cannot attach to something in the archive.",
+    inputSchema: object(
+      {
+        filename: str("What the file is called, e.g. 'northwind-offer-signed.pdf'"),
+        data_uri: str("The file inline: 'data:application/pdf;base64,…'. Use url instead where you can"),
+        url: str("An https link the server fetches. Cheaper than sending the bytes"),
+        caption: str("One line about what it is, in their words: 'the offer as signed'"),
+        application_id: str("The job it belongs to"),
+        offer_id: str("The offer it belongs to"),
+        letter_id: str("The letter it went out with"),
+        contact_id: str("The person it came from"),
+        company_id: str("The company it is about"),
+      },
+      ["filename"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) => {
+      const result = await attachments.createAttachment(ctx.userId, {
+        filename: required(args, "filename"),
+        ...defined({
+          dataUri: s(args, "data_uri"),
+          url: s(args, "url"),
+          caption: s(args, "caption"),
+          ...attachmentSubjectFrom(args),
+        }),
+      });
+      const url = `${ctx.baseUrl}/api/attachments/${result.attachment.id}`;
+      return withLinks({ ...result, url }, [
+        {
+          type: "resource_link",
+          uri: url,
+          name: result.attachment.filename,
+          description: `${Math.max(1, Math.round(result.attachment.size / 1000))}KB. Opens in the browser they are already signed in to.`,
+          mimeType: result.attachment.mimeType,
+        },
+      ]);
+    },
+  },
+  {
+    name: "list_attachments",
+    title: "List kept files",
+    description:
+      "Every file kept in this workspace, or just the ones hanging off one thing — pass application_id, offer_id, letter_id, contact_id or company_id to narrow it. Reach for this before attach_file when somebody says \"the offer letter\": it is probably already here. Returns the id, name, type, size, caption and what each is attached to, plus a download link for each; it never returns the bytes, so this is cheap to call on a workspace with two hundred files. Files whose job, person or company is in the archive are NOT listed — restore the record and they come back with it. Capped, and it says so when the list was cut off.",
+    inputSchema: object({
+      application_id: str("Only files on this job"),
+      offer_id: str("Only files on this offer"),
+      letter_id: str("Only files on this letter"),
+      contact_id: str("Only files on this person"),
+      company_id: str("Only files on this company"),
+      limit: limitArg(100),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const rows = await attachments.listAttachments(ctx.userId, {
+        ...attachmentSubjectFrom(args),
+        limit: n(args, "limit") ?? 100,
+      });
+      return capped(
+        rows.map((row) => ({ ...row, url: `${ctx.baseUrl}/api/attachments/${row.id}` })),
+        n(args, "limit"),
+        100,
+      );
+    },
+  },
+  {
+    name: "read_attachment",
+    title: "Read a kept file",
+    description:
+      "The TEXT of a kept file, for when you actually have to read one — a take-home brief they saved as markdown, a CSV of interview questions, a JSON export somebody sent. Only text files come back with text: a PDF, an image, a zip or a Word document returns `text` null and its download link instead, because there is no honest way to put a binary in a tool result and a base64 string of one is a context window somebody else paid for. Long files are cut and `truncated` says so. Read-only — this never changes the file or the record it hangs off.",
+    inputSchema: object(
+      {
+        id: str("Attachment id, from list_attachments"),
+        limit: num("How many characters of text to return. Default 40,000, which is the ceiling too"),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const result = await attachments.readAttachmentText(
+        ctx.userId,
+        required(args, "id"),
+        n(args, "limit"),
+      );
+      return {
+        ...result,
+        url: `${ctx.baseUrl}/api/attachments/${result.attachment.id}`,
+        note:
+          result.text === null
+            ? `${result.attachment.mimeType} is not something that can be read as text. The link opens it.`
+            : "",
+      };
+    },
+  },
+  {
+    name: "delete_attachment",
+    title: "Delete a kept file",
+    description:
+      "Remove one file for good. THERE IS NO ARCHIVE FOR A FILE — this destroys the bytes, and nothing else in the app has a second copy of them. Say which file, and what it was attached to, and get a plain yes first. Use it to free space when a workspace is at its limit, and say how much it got back. Deleting the job, person or company a file hangs off destroys it too, which is what makes a file impossible to orphan.",
+    inputSchema: object({ id: str("Attachment id, from list_attachments") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const done = await attachments.deleteAttachment(ctx.userId, required(args, "id"));
+      return { ...done, usage: await attachments.attachmentUsage(ctx.userId) };
+    },
   },
   {
     name: "compare_offers",

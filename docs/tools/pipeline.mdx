@@ -1,7 +1,7 @@
 ---
 title: "Pipeline tools"
 sidebarTitle: "Pipeline"
-description: "Eighty-eight tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
+description: "Ninety-two tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
 icon: "list-check"
 ---
 
@@ -239,6 +239,64 @@ Remove one recorded offer for good. There is no archive for offers — this is g
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Offer id, from list_offers |
+
+### `attach_file`
+
+_Keep a file against a job, a person or an offer_
+
+Store a file in the workspace, hanging off exactly one thing: an application, an offer, a letter, a person or a company. This is where the signed offer letter goes, the take-home they submitted, the PDF a recruiter sent, the screenshot of a posting that has since come down. Pass exactly one of application_id, offer_id, letter_id, contact_id or company_id — a file with no home is bytes nobody can find later, so there is no way to store one loose. The bytes arrive one of two ways: `data_uri` when you are holding them, e.g. after reading a local file ('data:application/pdf;base64,…'), or `url` for an https link the server fetches for you, which is MUCH the cheaper of the two and the one to prefer when the file is already on the web. The default limit is 8MB a file and 250MB a workspace; over either, this refuses and says how much is in use. Only PDFs, images, plain text, markdown, CSV, JSON, zips and Word or Excel documents are accepted, and THE TYPE IS READ FROM THE FILE'S OWN FIRST BYTES rather than from what you called it. Attaching the same bytes twice is not a second copy: the file is matched on its checksum and you get the first row back with `reused` true, so re-running after a timeout is safe. Returns the file's id, its size, what is now in use, and a link to download it — the link opens in the browser they are already signed in to and is not public. IT NEVER RETURNS THE BYTES; use read_attachment for a text file you actually need to read. You cannot attach to something in the archive.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `filename` | string | **required** — What the file is called, e.g. 'northwind-offer-signed.pdf' |
+| `data_uri` | string | The file inline: 'data:application/pdf;base64,…'. Use url instead where you can |
+| `url` | string | An https link the server fetches. Cheaper than sending the bytes |
+| `caption` | string | One line about what it is, in their words: 'the offer as signed' |
+| `application_id` | string | The job it belongs to |
+| `offer_id` | string | The offer it belongs to |
+| `letter_id` | string | The letter it went out with |
+| `contact_id` | string | The person it came from |
+| `company_id` | string | The company it is about |
+
+### `list_attachments`
+
+_List kept files_
+
+Every file kept in this workspace, or just the ones hanging off one thing — pass application_id, offer_id, letter_id, contact_id or company_id to narrow it. Reach for this before attach_file when somebody says "the offer letter": it is probably already here. Returns the id, name, type, size, caption and what each is attached to, plus a download link for each; it never returns the bytes, so this is cheap to call on a workspace with two hundred files. Files whose job, person or company is in the archive are NOT listed — restore the record and they come back with it. Capped, and it says so when the list was cut off.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_id` | string | Only files on this job |
+| `offer_id` | string | Only files on this offer |
+| `letter_id` | string | Only files on this letter |
+| `contact_id` | string | Only files on this person |
+| `company_id` | string | Only files on this company |
+| `limit` | number | Max rows to return. Default 100, hard ceiling 500. Prefer narrowing the filters. |
+
+### `read_attachment`
+
+_Read a kept file_
+
+The TEXT of a kept file, for when you actually have to read one — a take-home brief they saved as markdown, a CSV of interview questions, a JSON export somebody sent. Only text files come back with text: a PDF, an image, a zip or a Word document returns `text` null and its download link instead, because there is no honest way to put a binary in a tool result and a base64 string of one is a context window somebody else paid for. Long files are cut and `truncated` says so. Read-only — this never changes the file or the record it hangs off.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Attachment id, from list_attachments |
+| `limit` | number | How many characters of text to return. Default 40,000, which is the ceiling too |
+
+### `delete_attachment`
+
+_Delete a kept file_
+
+Remove one file for good. THERE IS NO ARCHIVE FOR A FILE — this destroys the bytes, and nothing else in the app has a second copy of them. Say which file, and what it was attached to, and get a plain yes first. Use it to free space when a workspace is at its limit, and say how much it got back. Deleting the job, person or company a file hangs off destroys it too, which is what makes a file impossible to orphan.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Attachment id, from list_attachments |
 
 ### `compare_offers`
 

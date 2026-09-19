@@ -116,6 +116,19 @@ just *talk* to it.
   jobs already on the board. Deleting a line leaves the tasks it already made alone —
   deleting a setting should not delete work you are part-way through. A new account has
   none; there is a starting set of six if you would rather not design your own.
+- **Somewhere to put the file** — the signed offer letter, the take-home you sent,
+  the PDF a recruiter mailed over, a screenshot of a posting that has since come
+  down. Files hang off exactly one thing — a job, an offer, a letter, a person or
+  a company — because a file with no home is bytes nobody can find later, and
+  deleting that thing takes its files with it. The bytes live in Postgres, which
+  is the same call the profile photo already made and the reason `DATABASE_URL`
+  is still the only variable: an object store would be a bucket, a region, a key
+  and a secret. So the caps are the design — 8MB a file and 250MB a workspace by
+  default, both settings an admin can raise — and the type is read from the file's
+  own first bytes rather than from what it was called. Attaching the same file
+  twice gives you the first one back rather than a second copy. The workspace
+  export deliberately does **not** carry the bytes; `pg_dump` is the backup that
+  does, and a file you email around cannot be 250MB.
 - **A sample search to look at** — the emptiest ten minutes in this app are the
   first ones, so `load_sample_workspace` writes a small, plausible search into an
   empty workspace: four employers, six jobs across every stage, five people
@@ -235,7 +248,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  203 tools any MCP client can call (236 if you're an admin). Claude, Claude Code, ChatGPT,
+  207 tools any MCP client can call (240 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -418,7 +431,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 203, or 236 if you're an admin.
+then tells you how many tools answered — 207, or 240 if you're an admin.
 
 Each connection can also be narrowed to one job, in the panel where you copy its URL:
 **Everything** (the default, and what every connection had before this existed), **Me,
@@ -654,7 +667,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-203 tools. One hundred and ninety-four of them are the data tools across the five areas, the
+207 tools. One hundred and ninety-eight of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it

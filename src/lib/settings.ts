@@ -48,6 +48,8 @@ export const SETTING_KEYS = {
   /// token: a secret that only ever caused mail to be sent must not silently
   /// become one that fetches URLs and reads mailboxes.
   sweepToken: "sweep_token",
+  attachmentMaxBytes: "attachment_max_bytes",
+  attachmentWorkspaceBytes: "attachment_workspace_bytes",
 } as const;
 
 export type InstanceSettings = {
@@ -110,6 +112,10 @@ export type InstanceSettings = {
    * rather than an env var, for the reason above.
    */
   sweepToken: string;
+  /** Bytes, one file. Every byte here is a byte in the database. */
+  attachmentMaxBytes: number;
+  /** Bytes, every file one person keeps. */
+  attachmentWorkspaceBytes: number;
 };
 
 /**
@@ -360,6 +366,26 @@ export const VARIABLES: VariableDef[] = [
     placeholder: "A long random string",
     fallback: "",
   },
+  {
+    key: SETTING_KEYS.attachmentMaxBytes,
+    field: "attachmentMaxBytes",
+    label: "Largest attachment",
+    help: "Bytes, for one file. 8MB by default — a signed offer letter is well under one, and every byte here is a byte in your database rather than in an object store this app deliberately does not have.",
+    kind: "text",
+    group: "Instance",
+    placeholder: "8000000",
+    fallback: "8000000",
+  },
+  {
+    key: SETTING_KEYS.attachmentWorkspaceBytes,
+    field: "attachmentWorkspaceBytes",
+    label: "Attachments per workspace",
+    help: "Bytes, across every file one person keeps. 250MB by default. At the cap, attaching refuses and says how much is in use so they can delete something.",
+    kind: "text",
+    group: "Instance",
+    placeholder: "250000000",
+    fallback: "250000000",
+  },
 ];
 
 const BY_KEY = new Map(VARIABLES.map((variable) => [variable.key, variable]));
@@ -412,6 +438,12 @@ export async function getSettings(): Promise<InstanceSettings> {
     stripePaymentLink: raw(SETTING_KEYS.stripePaymentLink),
     digestToken: raw(SETTING_KEYS.digestToken),
     sweepToken: raw(SETTING_KEYS.sweepToken),
+    attachmentMaxBytes: byteCap(raw(SETTING_KEYS.attachmentMaxBytes), 8_000_000, 100_000_000),
+    attachmentWorkspaceBytes: byteCap(
+      raw(SETTING_KEYS.attachmentWorkspaceBytes),
+      250_000_000,
+      50_000_000_000,
+    ),
   };
 }
 
@@ -424,6 +456,18 @@ export async function getSettings(): Promise<InstanceSettings> {
  * types "3650" gets ten years, one who types "banana" gets the default back,
  * and neither ends up with a bin that empties immediately.
  */
+/**
+ * A byte cap an admin typed, with a floor and a ceiling.
+ *
+ * Nonsense falls back to the default rather than to zero: a cap of zero would
+ * refuse every attachment with a message about a setting nobody meant to set.
+ */
+function byteCap(raw: string, fallback: number, ceiling: number): number {
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, ceiling);
+}
+
 export function retentionDays(raw: string): number {
   const parsed = Number.parseInt(raw, 10);
   if (Number.isNaN(parsed) || parsed < 0) return 30;

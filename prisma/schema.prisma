@@ -98,6 +98,7 @@ model User {
   companyWatches     CompanyWatch[]
   captureLink        CaptureLink?
   sampleLoad         SampleLoad?
+  attachments        Attachment[]
 
   @@index([role])
   @@index([stripeCustomerId])
@@ -820,6 +821,8 @@ model Letter {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
+  attachments Attachment[]
+
   @@index([userId])
   @@index([userId, kind])
   @@index([applicationId])
@@ -901,6 +904,7 @@ model Company {
   /// The public jobs boards being watched for this employer. Watches carry no
   /// archivedAt of their own; see the model.
   watches      CompanyWatch[]
+  attachments  Attachment[]
 
   @@unique([userId, name, archiveKey])
   @@index([userId])
@@ -987,21 +991,23 @@ model Application {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
-  activities Activity[]
-  contacts   Contact[]
-  tasks      Task[]
+  activities  Activity[]
+  contacts    Contact[]
+  tasks       Task[]
   /// Every version of what they offered. Almost always none, and more than one
   /// when it was revised — which is the whole reason this is a relation rather
   /// than a handful of columns. Offers carry no archivedAt of their own; see
   /// the model.
-  offers     Offer[]
+  offers      Offer[]
   /// Every round, in order. Interviews carry no archivedAt of their own; see
   /// the model.
-  interviews Interview[]
+  interviews  Interview[]
   /// Who put their name behind this one. Referrals carry no archivedAt either.
-  referrals  Referral[]
-  letters    Letter[]
-  proposals  Proposal[]
+  referrals   Referral[]
+  letters     Letter[]
+  proposals   Proposal[]
+  /// Files kept against this job. Attachments carry no archivedAt; see the model.
+  attachments Attachment[]
 
   @@index([userId, stage])
   @@index([userId, nextFollowUpAt])
@@ -1064,6 +1070,8 @@ model Offer {
   startsOn      DateTime?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+
+  attachments Attachment[]
 
   @@index([userId])
   @@index([applicationId])
@@ -1724,6 +1732,7 @@ model Contact {
   /// Times they put their name behind you.
   referrals      Referral[]
   proposals      Proposal[]
+  attachments    Attachment[]
 
   @@index([userId])
   @@index([userId, updatedAt])
@@ -2019,4 +2028,71 @@ model SampleLoad {
   /// it is looking at an older shape and say so rather than guessing.
   fixture  String   @default("")
   loadedAt DateTime @default(now())
+}
+
+/// A file somebody kept: the offer letter as signed, the take-home they
+/// submitted, the PDF a recruiter sent, a screenshot of a posting that has
+/// since come down.
+///
+/// THE BYTES ARE IN THIS ROW. An object store would mean a bucket, a region, a
+/// key and a secret, against a README that promises DATABASE_URL is the only
+/// variable — so this makes the same call Profile.photo made, one size up. The
+/// cost is real and is the thing to remember: a bytea lives in the row's TOAST
+/// table and is not read unless a query selects it, so EVERY read in
+/// src/lib/data/attachments.ts names its columns and NONE of them names `data`
+/// except the one that serves the download. A single findMany that forgets
+/// pulls the whole workspace's files into memory to count them.
+///
+/// EXACTLY ONE SUBJECT, ALWAYS. Five nullable foreign keys with at most one set
+/// is the shape Task already uses, but unlike a task an attachment must have
+/// one: a file with no home is bytes nobody can find, nobody deletes, and
+/// nothing cascades away. `attachmentSubject` in the data file enforces it on
+/// the way in.
+///
+/// No archivedAt. Like Offer and Letter, an attachment belongs to its subject
+/// and follows it — which means every read here that does not start from an
+/// already-filtered subject has to spell the archive filter itself. They are
+/// numbered at the line.
+model Attachment {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The file's own name, as it arrived. Shown in lists, and what a download is
+  /// called.
+  filename String
+  /// Read from the file's own first bytes where it has a magic number, never
+  /// trusted from the caller.
+  mimeType String @default("application/octet-stream")
+  /// Decoded length. Stored so a list, and the per-workspace total, can be
+  /// answered without reading a single byte.
+  size     Int    @default(0)
+  /// sha256 of the bytes, hex. Unique per owner: attaching the same file twice
+  /// is a mistake, not a version, and the second attempt returns the first row.
+  digest   String
+  /// One line about what it is, in the person's words. "The offer as signed."
+  caption  String @default("")
+  data     Bytes
+
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  offerId       String?
+  offer         Offer?       @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  letterId      String?
+  letter        Letter?      @relation(fields: [letterId], references: [id], onDelete: Cascade)
+  contactId     String?
+  contact       Contact?     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  companyId     String?
+  company       Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The only unique this needs, and it is what makes attaching idempotent.
+  @@unique([userId, digest])
+  @@index([userId, createdAt])
+  @@index([applicationId])
+  @@index([offerId])
+  @@index([letterId])
+  @@index([contactId])
+  @@index([companyId])
 }
