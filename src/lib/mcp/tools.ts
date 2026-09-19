@@ -1,5 +1,6 @@
 import type {
   ActivityType,
+  McpScope,
   TaskRepeat,
   LetterKind,
   NoteKind,
@@ -30,6 +31,14 @@ import * as wins from "@/lib/data/wins";
 import * as watch from "@/lib/data/watch";
 import * as mailSweep from "@/lib/data/mail-sweep";
 import * as captureLink from "@/lib/data/capture-link";
+import {
+  CORE_TOOLS,
+  SCOPE_VALUES,
+  SECTIONS,
+  scopeByKey,
+  scopeBlurb,
+  scopeLabel,
+} from "@/lib/mcp/scopes";
 import {
   INTERVIEW_FORMATS,
   INTERVIEW_OUTCOMES,
@@ -104,6 +113,8 @@ export type McpContext = {
   connectionId: string;
   /** What it was called at the time, which is what the change log stores. */
   connectionName: string;
+  /** What this connection is served. Tools read it only to describe themselves. */
+  scope: McpScope;
   /** Where this instance is reachable, for building invite links. */
   baseUrl: string;
 };
@@ -6123,7 +6134,7 @@ export const tools: McpTool[] = [
     name: "list_connections",
     title: "List AI connections",
     description:
-      "Every assistant wired to this workspace: what it is called, which client it was set up for, when it last called in and from what. Reach for it to answer 'which of these am I still using?' or before rotating something — the ids come back here. Tokens deliberately do not: they are credentials, they would sit in this transcript forever, and the only place a person needs to see one is the client they are pasting it into. `isThisOne` marks the connection you are calling through right now.",
+      "Every assistant wired to this workspace: what it is called, which client it was set up for, when it last called in and from what. Reach for it to answer 'which of these am I still using?' or before rotating something — the ids come back here. Tokens deliberately do not: they are credentials, they would sit in this transcript forever, and the only place a person needs to see one is the client they are pasting it into. `isThisOne` marks the connection you are calling through right now, and `scope` says what each one is SERVED — FULL is everything, and a narrowed one is offered fewer tools without being able to do less to the account. set_connection_scope changes it.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -6141,6 +6152,8 @@ export const tools: McpTool[] = [
         createdAt: row.createdAt,
         lastUsedAt: row.lastUsedAt,
         lastUsedFrom: guessClient(row.lastUsedFrom) || null,
+        scope: row.scope,
+        scopeLabel: scopeLabel(row.scope),
         isThisOne: row.id === ctx.connectionId,
       }));
     },
@@ -6196,6 +6209,30 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => {
       await connections.renameConnection(ctx.userId, required(args, "id"), required(args, "name"));
       return { id: required(args, "id"), renamed: true };
+    },
+  },
+  {
+    name: "set_connection_scope",
+    title: "Narrow what a connection is served",
+    description:
+      "Change which tools one client is offered. Four choices: `FULL` is everything, `WRITING` is Me, resumes and letters plus the four reads a document needs about the job it is aimed at, `PIPELINE` is the search — applications, people, the archive, mail and calendar — and `READONLY` is every tool on this server that writes nothing. Narrowing is a ROUTING AID, NOT A PERMISSION: the URL still resolves to the whole account, anybody who can sign in can widen it again, and it is never a reason to hand a connection URL to somebody you would not hand the account to. What it is good for is accuracy and cost — a client choosing between two hundred tools picks the wrong one more often than one choosing between sixty, and the wrong one here writes into somebody's career history. It takes effect on that client's next call, and a client that caches the tool list may need reconnecting to notice. Say which connection and which scope before you call it, because a narrowed client silently stops being able to do things its person may be in the middle of. Get the id from list_connections, which also says what each one is scoped to now.",
+    inputSchema: object(
+      {
+        id: str("Connection id, from list_connections"),
+        scope: { type: "string", enum: [...SCOPE_VALUES], description: "FULL, WRITING, PIPELINE or READONLY" },
+      },
+      ["id", "scope"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const scope = required(args, "scope") as McpScope;
+      await connections.setConnectionScope(ctx.userId, required(args, "id"), scope);
+      return { id: required(args, "id"), scope, label: scopeLabel(scope), serves: scopeBlurb(scope) };
     },
   },
   {
@@ -7390,9 +7427,15 @@ Then confirm what you filed and where, and ask me about anything that was ambigu
 
 export const promptsByName = new Map(prompts.map((prompt) => [prompt.name, prompt]));
 
-/** Same rule as tools: members never see the admin workflows. */
-export function promptsFor(user: { role: UserRole }): McpPrompt[] {
-  return isAdmin(user) ? prompts : prompts.filter((prompt) => !prompt.adminOnly);
+/**
+ * Same rule as tools: members never see the admin workflows, and a narrowed
+ * connection only sees the workflows whose every step it can actually take.
+ *
+ * Defined further down, once the scope tables exist — this shim keeps the
+ * export where callers expect it.
+ */
+export function promptsFor(user: { role: UserRole }, scope: McpScope = "FULL"): McpPrompt[] {
+  return promptsForScope(user, scope);
 }
 
 // ---------------------------------------------------------------------------
@@ -7535,8 +7578,138 @@ export function metaFor(name: string): Json | undefined {
 /** The data tools plus the workflow tools. Order matters only for display. */
 export const allTools: McpTool[] = [...tools, ...prompts.map(promptAsTool)];
 
-export function toolsFor(user: { role: UserRole }): McpTool[] {
-  return isAdmin(user) ? allTools : allTools.filter((tool) => !tool.adminOnly);
+export const toolsByName = new Map(allTools.map((tool) => [tool.name, tool]));
+
+// ---------------------------------------------------------------------------
+// Scopes: what one connection is SERVED
+// ---------------------------------------------------------------------------
+
+/**
+ * Which tool names belong to each scope, worked out once at module load.
+ *
+ * Per-request would mean walking two hundred tools on every `tools/list`, and
+ * the table is static, so it is built with the module: eight entries, one per
+ * scope per role.
+ *
+ * FULL is not computed from sections at all. It is defined as "exactly what
+ * this server served before scopes existed", which is the promise the migration
+ * makes, and the only way to keep that promise is to take the same code path.
+ */
+function namesInSections(keys: readonly string[]): Set<string> {
+  const names = new Set<string>();
+  for (const key of keys) {
+    const section = SECTIONS.find((candidate) => candidate.key === key);
+    if (!section) throw new Error(`scopes.ts names a section "${key}" that SECTIONS does not have`);
+    const from = tools.findIndex((tool) => tool.name === section.first);
+    const to = tools.findIndex((tool) => tool.name === section.last);
+    if (from < 0 || to < 0 || to < from) {
+      throw new Error(
+        `Section "${key}" runs ${section.first}..${section.last}, which is no longer a range in tools.ts`,
+      );
+    }
+    for (const tool of tools.slice(from, to + 1)) names.add(tool.name);
+  }
+  return names;
 }
 
-export const toolsByName = new Map(allTools.map((tool) => [tool.name, tool]));
+/**
+ * A workflow's membership is DERIVED, not declared: a prompt is served in a
+ * scope only when every tool its body names is served there.
+ *
+ * Declaring it would be a second list to keep right, and the failure mode is
+ * silent — a workflow that tells a client to call a tool it cannot see reads
+ * as the app being broken. Deriving it means adding a step to `tailor_resume`
+ * that needs a pipeline write simply moves it to FULL, with no edit anywhere.
+ */
+function workflowFits(prompt: McpPrompt, served: Set<string>): boolean {
+  // Build with empty arguments purely to read the body; nothing is executed.
+  let body: string;
+  try {
+    body = prompt.build({});
+  } catch {
+    // A workflow whose build refuses empty arguments cannot be inspected, so
+    // it is FULL-only rather than silently included.
+    return false;
+  }
+  const named = [...body.matchAll(/\b([a-z][a-z0-9_]{3,})\b/g)]
+    .map((match) => match[1])
+    .filter((word) => toolsByName.has(word));
+  return named.every((name) => served.has(name));
+}
+
+type ScopeTable = { tools: McpTool[]; prompts: McpPrompt[]; names: Set<string> };
+
+function buildScope(scopeKey: McpScope, admin: boolean): ScopeTable {
+  const roleTools = admin ? allTools : allTools.filter((tool) => !tool.adminOnly);
+  const rolePrompts = admin ? prompts : prompts.filter((prompt) => !prompt.adminOnly);
+
+  if (scopeKey === "FULL") {
+    return { tools: roleTools, prompts: rolePrompts, names: new Set(roleTools.map((t) => t.name)) };
+  }
+
+  const scope = scopeByKey.get(scopeKey);
+  if (!scope) throw new Error(`Unknown scope ${scopeKey}`);
+  const inSections = namesInSections(scope.sections);
+  const allowed = new Set<string>([...inSections, ...scope.extras, ...CORE_TOOLS]);
+
+  const served = roleTools.filter((tool) => {
+    // Admin tools are excluded from EVERY non-FULL scope, including for an
+    // admin and including READONLY. An admin's pipeline client has no business
+    // being offered admin_delete_user, and this is one line rather than a
+    // fifth scope.
+    if (tool.adminOnly) return false;
+    if (!allowed.has(tool.name)) return false;
+    if (scope.readOnly && tool.annotations.readOnlyHint !== true) return false;
+    return true;
+  });
+  const names = new Set(served.map((tool) => tool.name));
+
+  return {
+    tools: served,
+    prompts: rolePrompts.filter((prompt) => !prompt.adminOnly && workflowFits(prompt, names)),
+    names,
+  };
+}
+
+const SCOPE_TABLES = new Map<string, ScopeTable>();
+for (const scope of SCOPE_VALUES) {
+  for (const admin of [false, true]) {
+    SCOPE_TABLES.set(`${scope}:${admin}`, buildScope(scope, admin));
+  }
+}
+
+const tableFor = (user: { role: UserRole }, scope: McpScope): ScopeTable =>
+  SCOPE_TABLES.get(`${scope}:${isAdmin(user)}`) ?? SCOPE_TABLES.get(`FULL:${isAdmin(user)}`)!;
+
+export function toolsFor(user: { role: UserRole }, scope: McpScope = "FULL"): McpTool[] {
+  return tableFor(user, scope).tools;
+}
+
+function promptsForScope(user: { role: UserRole }, scope: McpScope): McpPrompt[] {
+  return tableFor(user, scope).prompts;
+}
+
+/**
+ * Why a tool is not served here, or null when it is.
+ *
+ * The sentence matters: a client that asked for something narrowed away should
+ * be able to say what happened and how its person widens it, rather than
+ * guessing that the app is broken.
+ */
+export function outOfScope(
+  name: string,
+  user: { role: UserRole },
+  scope: McpScope,
+): string | null {
+  const tool = toolsByName.get(name);
+  if (!tool) return `There is no tool called ${name}.`;
+  if (tool.adminOnly && !isAdmin(user)) {
+    return `${name} is an admin tool and this account is not an admin.`;
+  }
+  if (tableFor(user, scope).names.has(name)) return null;
+  return (
+    `${name} is not served on this connection, which is scoped to "${scopeLabel(scope)}" — ` +
+    `${scopeBlurb(scope)} Nothing is wrong: the account still has that tool. ` +
+    `They can widen this connection under Settings → Connections, or use a connection that is not narrowed.`
+  );
+}

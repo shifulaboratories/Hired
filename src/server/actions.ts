@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import type { ActivityType, NoteKind, Stage, TagKind, UserRole } from "@prisma/client";
+import type { ActivityType, McpScope, NoteKind, Stage, TagKind, UserRole } from "@prisma/client";
 import * as me from "@/lib/data/me";
 import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
@@ -236,6 +236,16 @@ export async function createConnectionAction(input: { name?: string; client?: st
 export async function renameConnectionAction(id: string, name: string) {
   const user = await requireUser();
   await connections.renameConnection(user.id, id, name);
+  revalidatePath("/settings");
+}
+
+/**
+ * Narrow or widen one connection. Not a permission — see the data layer — so
+ * this needs no confirmation beyond the select itself.
+ */
+export async function setConnectionScopeAction(id: string, scope: McpScope) {
+  const user = await requireUser();
+  await connections.setConnectionScope(user.id, id, scope);
   revalidatePath("/settings");
 }
 

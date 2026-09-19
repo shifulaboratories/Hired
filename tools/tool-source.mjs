@@ -103,6 +103,8 @@ const COLUMN_LIST_VALUES = ["pipeline", "companies", "contacts"];
 // src/lib/mcp/tools.ts. Both checked below.
 const PROPOSAL_KINDS = ["LOG_ACTIVITY", "MOVE_STAGE", "CREATE_TASK", "SET_FOLLOW_UP", "CREATE_CONTACT", "CREATE_APPLICATION"];
 const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"];
+// Mirrors SCOPE_VALUES in src/lib/mcp/scopes.ts, checked below.
+const SCOPE_VALUES = ["FULL", "WRITING", "PIPELINE", "READONLY"];
 const DIGEST_KINDS = ["weekly", "nudge", "wins"];
 // Mirrors LETTER_KINDS in src/lib/data/letters.ts, checked below.
 const LETTER_KINDS = ["COVER_LETTER", "OUTREACH", "REFERRAL_ASK", "THANK_YOU", "REPLY", "OTHER"];
@@ -168,6 +170,15 @@ for (const [name, values] of [
   }
 }
 {
+  // The four scopes live in src/lib/mcp/scopes.ts, which tools.ts imports.
+  const file = readFileSync(join(ROOT, "src", "lib", "mcp", "scopes.ts"), "utf8");
+  const declared = /export const SCOPE_VALUES = \[([\s\S]*?)\]/.exec(file);
+  const found = declared ? [...declared[1].matchAll(/"([A-Z_]+)"/g)].map((m) => m[1]) : [];
+  if (found.join(",") !== SCOPE_VALUES.join(",")) {
+    throw new Error(`SCOPE_VALUES changed in scopes.ts (${found.join(", ")}) — update tools/tool-source.mjs`);
+  }
+}
+{
   // The letter kinds live in the data layer; tools.ts imports them.
   const file = readFileSync(join(ROOT, "src", "lib", "data", "letters.ts"), "utf8");
   const declared = /export const LETTER_KINDS = \[([\s\S]*?)\]/.exec(file);
@@ -227,7 +238,7 @@ for (const [name, values] of [
 const scope = {
   str, num, bool, strArray, object, limitArg, SYSTEM_EVENT_SOURCES, LETTER_KINDS,
   INTERVIEW_FORMATS, INTERVIEW_OUTCOMES, QUESTION_KINDS, REFERRAL_STATUSES,
-  PROPOSAL_KINDS, PROPOSAL_STATUSES, DIGEST_KINDS,
+  PROPOSAL_KINDS, PROPOSAL_STATUSES, DIGEST_KINDS, SCOPE_VALUES,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
   ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,
   COMPANY_MISSING, CONTACT_MISSING, PIPELINE_VIEW_VALUES, COLUMN_LIST_VALUES,

@@ -34,8 +34,17 @@ import {
 } from "@/components/settings/accounts";
 import { cn } from "@/lib/utils";
 import { MCP_CLIENTS, clientName } from "@/lib/mcp/clients";
+import type { McpScope } from "@prisma/client";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SCOPES, scopeBlurb, scopeLabel } from "@/lib/mcp/scopes";
 import {
   createConnectionAction,
   deleteConnectionAction,
@@ -43,6 +52,7 @@ import {
   renameConnectionAction,
   revokeCaptureLinkAction,
   rotateConnectionAction,
+  setConnectionScopeAction,
   setMailSweepAction,
   testConnectionAction,
 } from "@/server/actions";
@@ -67,6 +77,8 @@ export type ConnectionRow = {
   name: string;
   client: string;
   token: string;
+  /** What this one is SERVED. Not a permission — see src/lib/mcp/scopes.ts. */
+  scope: McpScope;
   lastUsedAt: string | null;
   lastUsedFrom: string;
 };
@@ -280,6 +292,7 @@ function ConnectionSheet({
   const [renaming, setRenaming] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [client, setClient] = useState(connection.client);
+  const [scope, setScope] = useState<McpScope>(connection.scope);
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
   // Two transitions, not one: testing a connection and rotating its token are
   // different waits, and sharing a pending flag put a spinner on the Test
@@ -455,6 +468,50 @@ function ConnectionSheet({
             <p className="text-muted-foreground text-xs">
               This URL is a password for your account. Anyone holding it can read and write
               your career history, resumes and pipeline.
+            </p>
+          </div>
+
+          {/* One select, no new screen.
+              Narrowing is about ACCURACY first: an assistant choosing between
+              two hundred tools picks the wrong one more often than one choosing
+              between sixty, and the wrong one here writes into a career
+              history. It is deliberately not described as a permission, because
+              it is not one — the sentence underneath says so in those words. */}
+          <div className="space-y-1.5">
+            <Label htmlFor={`scope-${connection.id}`} className="text-[13px] font-semibold">
+              What this one is served
+            </Label>
+            <Select
+              value={scope}
+              onValueChange={(next) => {
+                const chosen = next as McpScope;
+                setScope(chosen);
+                startTransition(async () => {
+                  try {
+                    await setConnectionScopeAction(connection.id, chosen);
+                    toast.success(`Now served ${scopeLabel(chosen).toLowerCase()}`);
+                  } catch (error) {
+                    setScope(connection.scope);
+                    toast.error(error instanceof Error ? error.message : "Could not change that.");
+                  }
+                });
+              }}
+            >
+              <SelectTrigger id={`scope-${connection.id}`} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SCOPES.map((entry) => (
+                  <SelectItem key={entry.key} value={entry.key}>
+                    {entry.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              {scopeBlurb(scope)} This is not a permission — the URL still reaches the whole
+              account, and anybody who can sign in can widen it again. It narrows what the
+              assistant is offered, which is what makes it pick the right tool.
             </p>
           </div>
 

@@ -102,6 +102,32 @@ model User {
   @@index([stripeCustomerId])
 }
 
+/// What a connection is SERVED — not what it is allowed to do.
+///
+/// A scope narrows `tools/list`, `prompts/list` and the briefing so a client
+/// chooses between tools that belong to one job. It is NOT a security boundary:
+/// the token still resolves to the whole account, the refusal lives in the
+/// dispatcher rather than in the data layer, and anybody who can sign in can
+/// widen it again. Treat it as a routing aid with teeth, and never as a way to
+/// hand a connection URL to somebody you would not hand the account to.
+///
+/// FULL is a VALUE, not "no scope". It is stored, and it is the thing the
+/// byte-identical promise is about — do not make the column nullable later to
+/// mean "unset".
+enum McpScope {
+  /// Everything the caller's role allows. The default, and what every
+  /// connection that existed before scopes had.
+  FULL
+  /// Me, resumes and letters, plus the four reads a document needs about the
+  /// job it is aimed at.
+  WRITING
+  /// The search itself: applications, companies, people, the archive, and the
+  /// mail and calendar readers.
+  PIPELINE
+  /// Every tool on this server that writes nothing, in every area.
+  READONLY
+}
+
 /// A mailbox and calendar the app reads on a person's behalf: their Gmail,
 /// their Microsoft 365, or any provider that speaks IMAP and CalDAV.
 ///
@@ -177,14 +203,17 @@ model Session {
 /// on a laptop you lost doesn't disconnect the others, and `lastUsedAt` answers
 /// the only question anyone ever asks about a connector: is it actually working?
 model McpConnection {
-  id     String @id @default(cuid())
+  id     String   @id @default(cuid())
   userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// What the person called it, e.g. "Claude desktop".
   name   String
   /// Catalog id from src/lib/mcp/clients.ts — drives which setup card is shown.
-  client String @default("other")
-  token  String @unique
+  client String   @default("other")
+  token  String   @unique
+  /// Which subset of the tools this client is served. FULL is everything and is
+  /// the default, so adding this column changed nothing for anybody.
+  scope  McpScope @default(FULL)
 
   lastUsedAt   DateTime?
   /// User-agent of whatever last called in, trimmed. Purely informational.

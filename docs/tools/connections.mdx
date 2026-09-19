@@ -1,7 +1,7 @@
 ---
 title: "Account and connection tools"
 sidebarTitle: "Your account"
-description: "Twenty tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
+description: "Twenty-one tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
 icon: "plug"
 ---
 
@@ -212,7 +212,7 @@ Undo one row from list_changes. Only writes that replace a resume or a role can 
 
 _List AI connections_
 
-Every assistant wired to this workspace: what it is called, which client it was set up for, when it last called in and from what. Reach for it to answer 'which of these am I still using?' or before rotating something — the ids come back here. Tokens deliberately do not: they are credentials, they would sit in this transcript forever, and the only place a person needs to see one is the client they are pasting it into. `isThisOne` marks the connection you are calling through right now.
+Every assistant wired to this workspace: what it is called, which client it was set up for, when it last called in and from what. Reach for it to answer 'which of these am I still using?' or before rotating something — the ids come back here. Tokens deliberately do not: they are credentials, they would sit in this transcript forever, and the only place a person needs to see one is the client they are pasting it into. `isThisOne` marks the connection you are calling through right now, and `scope` says what each one is SERVED — FULL is everything, and a narrowed one is offered fewer tools without being able to do less to the account. set_connection_scope changes it.
 
 No arguments.
 
@@ -239,6 +239,19 @@ Change what a connection is called in the list. Names are for the person, not th
 | --- | --- | --- |
 | `id` | string | **required** — Connection id |
 | `name` | string | **required** — The new name |
+
+### `set_connection_scope`
+
+_Narrow what a connection is served_
+
+Change which tools one client is offered. Four choices: `FULL` is everything, `WRITING` is Me, resumes and letters plus the four reads a document needs about the job it is aimed at, `PIPELINE` is the search — applications, people, the archive, mail and calendar — and `READONLY` is every tool on this server that writes nothing. Narrowing is a ROUTING AID, NOT A PERMISSION: the URL still resolves to the whole account, anybody who can sign in can widen it again, and it is never a reason to hand a connection URL to somebody you would not hand the account to. What it is good for is accuracy and cost — a client choosing between two hundred tools picks the wrong one more often than one choosing between sixty, and the wrong one here writes into somebody's career history. It takes effect on that client's next call, and a client that caches the tool list may need reconnecting to notice. Say which connection and which scope before you call it, because a narrowed client silently stops being able to do things its person may be in the middle of. Get the id from list_connections, which also says what each one is scoped to now.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Connection id, from list_connections |
+| `scope` | enum | **required** — FULL, WRITING, PIPELINE or READONLY  `FULL` · `WRITING` · `PIPELINE` · `READONLY` |
 
 ### `rotate_connection`
 

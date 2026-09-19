@@ -152,6 +152,7 @@ export default async function SettingsPage({
                   name: connection.name,
                   client: connection.client,
                   token: connection.token,
+                  scope: connection.scope,
                   lastUsedAt: connection.lastUsedAt?.toISOString() ?? null,
                   lastUsedFrom: guessClient(connection.lastUsedFrom),
                 }))}

@@ -5,7 +5,7 @@ import {
 } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import type { Prisma, User, UserRole } from "@prisma/client";
+import type { McpScope, Prisma, User, UserRole } from "@prisma/client";
 import { db } from "@/lib/db";
 import { sweepArchive } from "@/lib/data/archive";
 import { sweepRevisions } from "@/lib/data/revisions";
@@ -467,7 +467,17 @@ const LAST_USED_RESOLUTION_MS = 60_000;
  * historic row the day somebody renamed a connection, and go blank the day they
  * deleted one. Same call AdminAudit makes about actorId.
  */
-export type McpCaller = { user: User; connectionId: string; connectionName: string };
+export type McpCaller = {
+  user: User;
+  connectionId: string;
+  connectionName: string;
+  /**
+   * What this connection is served. Re-read from the row on EVERY post — no
+   * cache, because the transport is stateless and that is what makes "narrow it
+   * now" take effect on the client's next call rather than after a restart.
+   */
+  scope: McpScope;
+};
 
 export async function userByMcpToken(
   token: string | null | undefined,
@@ -506,7 +516,7 @@ export async function userByMcpToken(
       .catch(() => {});
   }
 
-  return { user, connectionId: connection.id, connectionName: connection.name };
+  return { user, connectionId: connection.id, connectionName: connection.name, scope: connection.scope };
 }
 
 /** Every user starts with one connection so Settings is never an empty page. */

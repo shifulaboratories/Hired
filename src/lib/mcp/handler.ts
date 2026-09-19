@@ -1,4 +1,4 @@
-import type { User } from "@prisma/client";
+import type { McpScope, User } from "@prisma/client";
 import {
   metaFor,
   promptsFor,
@@ -9,9 +9,10 @@ import {
   toolsByName,
   type McpContext,
 } from "@/lib/mcp/tools";
+import { scopeBlurb, scopeLabel } from "@/lib/mcp/scopes";
 import { meIsEmpty, listGuardrails } from "@/lib/data/me";
 import { recordSystemEvent } from "@/lib/data/system";
-import { recordWrite } from "@/lib/data/revision-store";
+import { dispatchTool } from "@/lib/mcp/dispatch";
 import { isAdmin, type McpCaller } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
 
@@ -125,6 +126,84 @@ Never hand them a form or a list of fields to fill in; that is the thing they ca
 doing. Resumes, the application pipeline and the CRM are worth explaining once a role exists, and
 not before, because none of them do anything yet.`;
 
+const AREA_HEAD = `The areas:`;
+
+/**
+ * The briefing's tail, one entry per area, so a narrowed connection is told
+ * about what it was actually served.
+ *
+ * Split out of one template literal purely to make that possible. THE JOINED
+ * FULL TAIL MUST STAY BYTE-IDENTICAL to what this server sent before scopes
+ * existed — that is the promise the migration makes, and `AREAS` below is how
+ * it is kept: FULL takes that constant, not the join.
+ *
+ * `needs` names one tool the area is about. An area whose tool is not served on
+ * a connection is dropped from its briefing, because telling a client about a
+ * tool it cannot see is worse than saying nothing.
+ */
+const AREA_PARAGRAPHS: { key: string; needs: string; text: string }[] = [
+  { key: 'me', needs: 'search_me', text: `• ME — everything about them. Roles each hold an unlimited free-form "background" of raw
+  material, plus polished reusable bullets called highlights. There are also notes, projects,
+  education, skills and certifications. search_me is the fastest way in.` },
+  { key: 'resumes', needs: 'get_resume_format', text: `• RESUMES — documents assembled from that material. Call get_resume_format before writing one.
+  New resumes use the Harvard OCS format by default. Any of them can be published to a public
+  link with publish_resume, which is what to use when a form or a recruiter wants a URL.` },
+  { key: 'letters', needs: 'prep_letter', text: `• LETTERS — everything they write that is not a resume: cover letters, cold outreach, referral
+  asks, thank-yous, replies. prep_letter FIRST, always: it returns the posting, the company
+  research, the material in Me that matches, and up to three letters of the same kind they
+  wrote themselves, which is the only reliable description of how they sound.` },
+  { key: 'pipeline', needs: 'list_applications', text: `• PIPELINE — applications, stages, activity timeline, tasks and follow-up dates. Six stages:
+  wishlist, applied, interviewing, offer, accepted and lost. How deep an interview got is
+  interviewRound, a number; why something was lost is a LOSS tag. When the question is about a
+  stretch of time rather than one application — this week, last month, what is coming — reach for
+  list_schedule, which merges all three kinds of dated thing. Application.salaryRange is what the
+  POSTING advertised; what somebody actually offered is an Offer row, recorded with record_offer,
+  and every call writes a new VERSION rather than replacing the last. offer_briefing before
+  helping them answer one; compare_offers puts the live ones side by side and will not convert
+  currencies. A stage move can fire a checklist they own (list_stage_templates) and returns what
+  it added.` },
+  { key: 'review', needs: 'propose_changes', text: `• THE REVIEW QUEUE — propose_changes queues suggestions for them to accept or dismiss on their
+  dashboard instead of asking about each one now. That is what to do at the end of a long read
+  of their mail: they are rarely at the conversation when you finish. Nothing is written until
+  they accept. list_proposals first, so a dismissed suggestion is not offered twice.` },
+  { key: 'crm', needs: 'get_company', text: `• CRM — companies and the people at them, as records in their own right. get_company before
+  writing anything about a company, so you add to their research rather than replacing it. A
+  company's website field is their own domain and nothing else depends on it, but it is what puts
+  their logo on the pipeline, so set it whenever you learn it. People have timelines: when they
+  mention talking to someone — a call, a coffee, a reply — log_activity with contactId is how it
+  gets remembered, and update_contact's nextFollowUpAt is how "ping them in two weeks" actually
+  happens. list_follow_ups returns due people alongside due applications.` },
+  { key: 'accounts', needs: 'list_correspondence', text: `• MAIL AND CALENDAR — if they have connected an account (list_linked_accounts says: Google,
+  Microsoft 365, or any IMAP and CalDAV provider), list_correspondence returns the real threads
+  and meetings behind any contact, company, application or resume, read live across every
+  account and never stored here. Call it before saying where an application stands: the
+  pipeline's timeline only knows what was logged by hand. search_email and search_calendar
+  cover questions that are not about one record. Every one of these is read-only — nothing can
+  send, accept or delete. When nothing is connected, say how (Settings → Connections, or
+  connect_imap_account with an app password) rather than guessing at their mail.` },
+  { key: 'own', needs: 'export_everything', text: `• YOUR OWN DATA — export_everything hands back the whole workspace as one JSON file and
+  import_everything puts one back, additively and matched by name, so it never overwrites.
+  set_digest_settings turns on the emails this app sends — a Monday summary, a nudge on a day
+  something is due, and a monthly ask for one thing that went well — and ALL ARE OFF until
+  somebody asks in so many words.
+  Never offer to turn one on unprompted; preview_digest answers "what does my week look
+  like" without any mail leaving.` },
+  { key: 'watching', needs: 'watch_company_board', text: `• WATCHING THE OUTSIDE WORLD — watch_company_board follows one employer's Greenhouse, Lever or
+  Ashby board and queues every new matching role as a proposal; the FIRST look proposes nothing
+  by design. check_posting_live reports whether the page behind an application is still up, and
+  writes only that — it never moves a stage and never logs anything. run_mail_sweep reads the
+  mail that arrived from people already on their pipeline and queues what a rule can prove,
+  handing everything that needs a judgement back on a needsReading list. All three OFFER; none of
+  them writes. set_mail_sweep is off until somebody asks in so many words, like the emails.` },
+  { key: 'tags', needs: 'list_tags', text: `• TAGS cut across all of it. Where an application came from, a company's industry, size and
+  location, how you know a person, why an application was lost — every one of those is a tag
+  rather than a free-text field, and they are multi-select. Call list_tags before writing any of
+  them: passing a name that already exists matches it rather than creating a near-duplicate, and
+  the kinds are separate lists that never collide. "sources" on an application is the old
+  spelling of its tags and still works.` },
+];
+
+/** FULL's tail, verbatim. Never rebuilt from the paragraphs above. */
 const AREAS = `The areas:
 • ME — everything about them. Roles each hold an unlimited free-form "background" of raw
   material, plus polished reusable bullets called highlights. There are also notes, projects,
@@ -185,6 +264,19 @@ const AREAS = `The areas:
   them: passing a name that already exists matches it rather than creating a near-duplicate, and
   the kinds are separate lists that never collide. "sources" on an application is the old
   spelling of its tags and still works.`;
+
+/** A narrowed connection's tail: the head, then only the areas it can reach. */
+function areasFor(user: User, scope: McpScope): string {
+  if (scope === "FULL") return AREAS;
+  const served = new Set(toolsFor(user, scope).map((tool) => tool.name));
+  const kept = AREA_PARAGRAPHS.filter((area) => served.has(area.needs)).map((area) => area.text);
+  return [
+    AREA_HEAD,
+    ...kept,
+    `\nThis connection is scoped to "${scopeLabel(scope)}" — ${scopeBlurb(scope)} Tools outside it are not served here and are not missing from the account. If they need one, say which, and that they can widen this connection under Settings → Connections.`,
+  ].join("\n");
+}
+
 
 /**
  * The person's own rules, and the reason they are the first thing in the block.
@@ -260,7 +352,7 @@ line is also permanent.
 - Connection URLs are credentials with full read and write over this workspace. Never repeat one
   anywhere it will be stored.`;
 
-async function instructionsFor(user: User) {
+async function instructionsFor(user: User, scope: McpScope = "FULL") {
   // A failed lookup must not cost someone their briefing, so an unreachable
   // database falls back to the tour rather than telling an established user
   // their workspace is empty.
@@ -291,7 +383,7 @@ ${CRITICAL_RULES}`;
     );
   }
 
-  const tail = empty ? EMPTY_WORKSPACE : AREAS;
+  const tail = empty ? EMPTY_WORKSPACE : areasFor(user, scope);
 
   const admin = isAdmin(user)
     ? `\n\nYou are an ${user.role === "SUPER_ADMIN" ? "instance owner" : "admin"}, so the admin_* tools are
@@ -360,33 +452,6 @@ const INTERNAL_ERROR = -32603;
  */
 const HEADER_MISMATCH = -32020;
 const UNSUPPORTED_PROTOCOL_VERSION = -32022;
-
-/**
- * The id a call was about, for the change log, guessed from the arguments.
- *
- * Every tool here that touches one record names it `id`, or `<noun>_id` for the
- * ones that take two. That covers the writes worth logging an id for; anything
- * bulk, or anything that created something, logs an empty id and stays a line
- * for the eye rather than an undo point.
- *
- * Deliberately NOT a per-tool map. A map would be a second place to remember a
- * tool exists, which is exactly what driving this off the read-only hint avoids.
- */
-function subjectIdIn(args: Record<string, unknown>): string {
-  for (const key of [
-    "id",
-    "resume_id",
-    "role_id",
-    "application_id",
-    "interview_id",
-    "contact_id",
-    "company_id",
-  ]) {
-    const value = args[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return "";
-}
 
 function err(id: JsonRpcId, code: number, message: string, data?: unknown): JsonRpcResponse {
   return { jsonrpc: "2.0", id, error: { code, message, ...(data ? { data } : {}) } };
@@ -459,7 +524,7 @@ async function handleMessage(
           prompts: { listChanged: false },
         },
         serverInfo: SERVER_INFO,
-        instructions: await instructionsFor(ctx.user),
+        instructions: await instructionsFor(ctx.user, ctx.scope),
       }, era);
     }
 
@@ -484,7 +549,7 @@ async function handleMessage(
             tools: { listChanged: false },
             prompts: { listChanged: false },
           },
-          instructions: await instructionsFor(ctx.user),
+          instructions: await instructionsFor(ctx.user, ctx.scope),
         },
         era,
       );
@@ -500,7 +565,7 @@ async function handleMessage(
 
     case "tools/list":
       return cacheable(id, {
-        tools: toolsFor(ctx.user).map((tool) => {
+        tools: toolsFor(ctx.user, ctx.scope).map((tool) => {
           const meta = metaFor(tool.name);
           return {
             name: tool.name,
@@ -526,34 +591,20 @@ async function handleMessage(
       const name = typeof params.name === "string" ? params.name : "";
       const tool = toolsByName.get(name);
       if (!tool) return err(id, INVALID_PARAMS, `Unknown tool: ${name}`);
-      if (tool.adminOnly && !isAdmin(ctx.user)) {
-        return ok(id, {
-          content: [{ type: "text", text: "Error: that tool is only available to admins." }],
-          isError: true,
-        }, era);
-      }
       const args = (params.arguments ?? {}) as Record<string, unknown>;
       try {
-        const result = await tool.handler(args, ctx);
-        // The change log, written in ONE place for every tool that is not
-        // read-only. Driven off `annotations.readOnlyHint`, which every tool
-        // already declares, so a tool added next year is logged without anybody
-        // remembering to log it — which is the whole reason it is here and not
-        // at two hundred call sites in the data layer.
-        //
-        // Awaited, so a reply cannot outrun the row it describes, but never
-        // fatal: recordWrite swallows its own failures rather than turning a
-        // successful tool call into an error the model sees.
-        if (tool.annotations.readOnlyHint !== true) {
-          await recordWrite({
-            userId: ctx.userId,
-            connectionId: ctx.connectionId,
-            connectionName: ctx.connectionName,
-            tool: name,
-            summary: tool.title,
-            recordId: subjectIdIn(args),
-          });
+        // The admin check, the scope check and the change log all live in
+        // dispatchTool now, because the in-app assistant calls these same
+        // handlers and a check inside this case is a check that caller does not
+        // have.
+        const dispatched = await dispatchTool(name, args, ctx);
+        if (!dispatched.ok) {
+          return ok(id, {
+            content: [{ type: "text", text: `Error: ${dispatched.message}` }],
+            isError: true,
+          }, era);
         }
+        const result = dispatched.result;
         // Links ride alongside the JSON rather than replacing it: a client that
         // renders resource links gets something clickable, one that doesn't sees
         // exactly what it always saw.
@@ -585,7 +636,7 @@ async function handleMessage(
 
     case "prompts/list":
       return cacheable(id, {
-        prompts: promptsFor(ctx.user).map((prompt) => ({
+        prompts: promptsFor(ctx.user, ctx.scope).map((prompt) => ({
           name: prompt.name,
           title: prompt.title,
           description: prompt.description,
@@ -825,7 +876,7 @@ function decodeMcpName(value: string): string {
 
 /** Entry point shared by both MCP routes. */
 export async function handleMcpPost(request: Request, caller: McpCaller): Promise<Response> {
-  const { user, connectionId, connectionName } = caller;
+  const { user, connectionId, connectionName, scope } = caller;
 
   const url = new URL(request.url);
   const forwardedHost = request.headers.get("x-forwarded-host");
@@ -866,7 +917,7 @@ export async function handleMcpPost(request: Request, caller: McpCaller): Promis
     return jsonResponse(err(null, PARSE_ERROR, "Invalid JSON"), 400);
   }
 
-  const ctx: McpContext = { userId: user.id, user, connectionId, connectionName, baseUrl };
+  const ctx: McpContext = { userId: user.id, user, connectionId, connectionName, scope, baseUrl };
 
   const wantsSse = (request.headers.get("accept") ?? "").includes("text/event-stream");
   const messages = Array.isArray(body) ? (body as JsonRpcRequest[]) : [body as JsonRpcRequest];

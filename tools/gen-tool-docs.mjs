@@ -161,6 +161,29 @@ const COUNT_WORD = /^(description: ")[A-Za-z-]+( tools?\b)/m;
 let stale = 0;
 let cursor = 0;
 
+{
+  /**
+   * The manual's section boundaries live in src/lib/mcp/scopes.ts now, because
+   * the scopes are built from the same ranges. gen-tool-docs.mjs keeps only
+   * what is about pages — file, title, icon, blurb — and this checks that its
+   * first/last pairs still agree with the ones the app actually serves. Two
+   * copies of a range table is a drift waiting for a new tool to land in the
+   * wrong section AND the wrong scope at once.
+   */
+  const file = readFileSync(join(ROOT, "src", "lib", "mcp", "scopes.ts"), "utf8");
+  const block = /export const SECTIONS = \[([\s\S]*?)\] as const;/.exec(file);
+  const found = block
+    ? [...block[1].matchAll(/key: "(\w+)", first: "(\w+)", last: "(\w+)"/g)].map((m) => `${m[1]}:${m[2]}..${m[3]}`)
+    : [];
+  if (found.length === 0) throw new Error("Could not read SECTIONS out of src/lib/mcp/scopes.ts");
+  const mine = SECTIONS.map((section) => `${section.file.replace(".mdx", "")}:${section.first}..${section.last}`);
+  if (found.join("|") !== mine.join("|")) {
+    throw new Error(
+      `SECTIONS in scopes.ts and gen-tool-docs.mjs disagree.\n  scopes.ts:      ${found.join(", ")}\n  gen-tool-docs: ${mine.join(", ")}`,
+    );
+  }
+}
+
 for (const section of SECTIONS) {
   if (tools[cursor]?.name !== section.first) {
     throw new Error(`Expected ${section.file} to start at ${section.first}, found ${tools[cursor]?.name}`);
