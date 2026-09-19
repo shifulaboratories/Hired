@@ -140,6 +140,46 @@ export function ImportDialog({ hasResumes = false }: { hasResumes?: boolean }) {
     });
   };
 
+  /**
+   * A LinkedIn archive, unpacked in the browser.
+   *
+   * The zip never crosses MCP or a server action: five megabytes is 6.7MB of
+   * base64 in a JSON-RPC body, and the 4MB bodySizeLimit in next.config.ts is
+   * real. It is unpacked here and the same `translateLinkedInArchive` the tool
+   * calls fills the same `draft` state the paste path fills — one translation,
+   * two entry points, which is why it is a pure module.
+   */
+  const readArchiveFile = (file: File) => {
+    setPdfState("reading");
+    startTransition(async () => {
+      try {
+        const { unzipEntries, translateLinkedInArchive } = await import("@/lib/linkedin-archive");
+        const entries = await unzipEntries(new Uint8Array(await file.arrayBuffer()));
+        if (entries.length === 0) {
+          setPdfState("empty");
+          return;
+        }
+        const translated = translateLinkedInArchive(entries);
+        const roles = translated.payload.roles ?? [];
+        if (roles.length === 0 && !translated.payload.profile) {
+          setPdfState("empty");
+          return;
+        }
+        setDraft(translated.payload);
+        setSource("");
+        setWarnings(translated.report.problems);
+        setNotes([]);
+        setPdfState("idle");
+        const read = translated.report.read.reduce((total, row) => total + row.rows, 0);
+        toast.success(
+          `Read ${read} row${read === 1 ? "" : "s"} from ${translated.report.read.length} file${translated.report.read.length === 1 ? "" : "s"}`,
+        );
+      } catch {
+        setPdfState("failed");
+      }
+    });
+  };
+
   const read = () => {
     const body = text.trim();
     if (!body) return;
@@ -289,15 +329,20 @@ export function ImportDialog({ hasResumes = false }: { hasResumes?: boolean }) {
                   ) : (
                     <FileTextIcon />
                   )}
-                  {pdfState === "reading" ? "Reading…" : "Read a PDF"}
+                  {pdfState === "reading" ? "Reading…" : "Read a PDF or a LinkedIn zip"}
                   <input
                     type="file"
-                    accept="application/pdf,.pdf"
+                    accept="application/pdf,.pdf,application/zip,.zip"
                     className="sr-only"
                     onChange={(event) => {
                       const file = event.target.files?.[0];
                       event.target.value = "";
-                      if (file) readPdfFile(file);
+                      if (!file) return;
+                      // A LinkedIn export is CSV in a zip, which needs no
+                      // guessing at all — so it takes the structural path
+                      // rather than the heading-reading one.
+                      if (/\.zip$/i.test(file.name)) readArchiveFile(file);
+                      else readPdfFile(file);
                     }}
                   />
                 </label>
@@ -307,7 +352,7 @@ export function ImportDialog({ hasResumes = false }: { hasResumes?: boolean }) {
               id="import-text"
               value={text}
               onChange={(event) => setText(event.target.value)}
-              placeholder="Paste it here, or read a PDF above."
+              placeholder="Paste it here, or read a PDF above. A LinkedIn export works too — pick the zip."
               className="min-h-64 font-mono text-[12px]"
             />
             {/* Every one of these says what happened and what to do about it.

@@ -1,7 +1,7 @@
 ---
 title: "Me tools"
 sidebarTitle: "Me"
-description: "Twenty-five tools over roles, backgrounds, highlights, notes, standing rules, the four supporting collections, and importing a resume you already have."
+description: "Twenty-six tools over roles, backgrounds, highlights, notes, standing rules, the four supporting collections, and importing a resume you already have."
 icon: "user"
 ---
 
@@ -379,6 +379,20 @@ Turn an existing resume, LinkedIn export or any pasted career history into a fil
 | `certifications` | object[] | Certifications and licences. |
 | `on_existing` | string | What to do with a role already on file: 'merge' (default) adds the bullets it does not have and appends the new wording to its background; 'skip' leaves it completely untouched, which is what this tool used to do. Merging never edits or removes anything, so prefer it. |
 | `create_base_resume` | boolean | Also build a first draft resume from what was imported, named 'Base resume'. Offer this — it is usually why they pasted a resume. |
+
+### `import_linkedin_archive`
+
+_Import a LinkedIn data export_
+
+Fill in Me from LinkedIn's own data export — the zip you get from Settings → Data privacy → Get a copy of your data. Reach for this the moment someone says they have one: it is the only document in this product's world that does not have to be interpreted, so it is more accurate than pasting a resume and far more accurate than pasting a profile page. Unzip it yourself and pass the files that matter as `files`, each with its name and its text EXACTLY as the file has it, commas and quotes and all — do not reformat, summarise or tidy the CSV. The ones it reads are Profile.csv, Positions.csv, Education.csv, Skills.csv, Languages.csv, Certifications.csv, Projects.csv and Email Addresses.csv; pass whichever of those exist and it names any file it could not use rather than failing. Two more are read only if you ask: pass jobs true to turn Jobs/Job Applications.csv into applications on the board at APPLIED, and connections true to file people from Connections.csv — and only the ones whose Company already matches a company on file, capped at 200, because nobody wants eight hundred strangers in their CRM. Everything is ADDITIVE and re-import is safe, on exactly the same rules as import_resume: profile fields fill only where they are empty, a role already on file is not created twice, education is matched on school and degree, projects and certifications on name, and skills are unioned into the group they belong to. ROLES FROM AN ARCHIVE CARRY NO BULLETS, on purpose — LinkedIn's Description field is prose, and splitting it into highlights would manufacture achievement lines the person never wrote; the whole description lands in the role's background, where search_me can mine it and where they can see it is theirs. Run it with dry_run true first on any workspace that is not empty and read the report back: it is the same report the real import returns, and it comes from running the real import and rolling it back, so it cannot disagree. Returns what was read from each file with a ROW COUNT each — read those, because a count of zero on a file that should have rows means LinkedIn renamed a column — plus what was ignored, created, merged into and skipped. Report that; do not claim success blindly. Never edit what the archive says on the way in: no employer, title, date or metric that is not in the file.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `files` | object[] | **required** — The archive's CSV files. Names are matched on the basename, so 'Jobs/Job Applications.csv' is fine. |
+| `jobs` | boolean | Also create applications from Jobs/Job Applications.csv, at APPLIED with the date LinkedIn recorded. Default false — offer it, do not assume it |
+| `connections` | boolean | Also file people from Connections.csv whose Company is already a company on file. Default false. Capped at 200 |
+| `on_existing` | string | 'merge' (default) or 'skip', matching import_resume. Merge adds what a role does not already have; skip drops the whole entry |
+| `dry_run` | boolean | Do every lookup and no writes, and report the same numbers. Do this first whenever the workspace is not empty |
 
 ### `preview_resume_import`
 

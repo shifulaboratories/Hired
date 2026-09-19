@@ -31,6 +31,8 @@ import * as wins from "@/lib/data/wins";
 import * as watch from "@/lib/data/watch";
 import * as mailSweep from "@/lib/data/mail-sweep";
 import * as captureLink from "@/lib/data/capture-link";
+import * as linkedin from "@/lib/data/linkedin";
+import * as sample from "@/lib/data/sample";
 import { DEFAULT_TEMPLATE, RESUME_TEMPLATES } from "@/lib/resume-templates";
 import { textDifferences } from "@/lib/resume-ats";
 import {
@@ -523,6 +525,20 @@ function importPayloadFrom(args: Json): Parameters<typeof me.importResume>[1] {
 /** What to do about a role already on file. Shared by both import tools. */
 function onExistingFrom(args: Json): { onExisting?: "merge" | "skip" } {
   return s(args, "on_existing") === "skip" ? { onExisting: "skip" } : {};
+}
+
+/** The archive's files, as they arrived. Nothing here reformats a CSV. */
+function archiveFilesFrom(args: Json): { name: string; text: string }[] {
+  const files = args.files;
+  if (!Array.isArray(files)) throw new Error('Missing required argument "files"');
+  return files.map((entry, index) => {
+    const file = (entry ?? {}) as Record<string, unknown>;
+    const name = typeof file.name === "string" ? file.name.trim() : "";
+    const text = typeof file.text === "string" ? file.text : "";
+    if (!name) throw new Error(`files[${index}] has no name`);
+    if (!text) throw new Error(`files[${index}] (${name}) has no text`);
+    return { name, text };
+  });
 }
 
 /**
@@ -1608,6 +1624,54 @@ export const tools: McpTool[] = [
     },
   },
 
+  {
+    name: "import_linkedin_archive",
+    title: "Import a LinkedIn data export",
+    description:
+      "Fill in Me from LinkedIn's own data export — the zip you get from Settings → Data privacy → Get a copy of your data. Reach for this the moment someone says they have one: it is the only document in this product's world that does not have to be interpreted, so it is more accurate than pasting a resume and far more accurate than pasting a profile page. Unzip it yourself and pass the files that matter as `files`, each with its name and its text EXACTLY as the file has it, commas and quotes and all — do not reformat, summarise or tidy the CSV. The ones it reads are Profile.csv, Positions.csv, Education.csv, Skills.csv, Languages.csv, Certifications.csv, Projects.csv and Email Addresses.csv; pass whichever of those exist and it names any file it could not use rather than failing. Two more are read only if you ask: pass jobs true to turn Jobs/Job Applications.csv into applications on the board at APPLIED, and connections true to file people from Connections.csv — and only the ones whose Company already matches a company on file, capped at 200, because nobody wants eight hundred strangers in their CRM. Everything is ADDITIVE and re-import is safe, on exactly the same rules as import_resume: profile fields fill only where they are empty, a role already on file is not created twice, education is matched on school and degree, projects and certifications on name, and skills are unioned into the group they belong to. ROLES FROM AN ARCHIVE CARRY NO BULLETS, on purpose — LinkedIn's Description field is prose, and splitting it into highlights would manufacture achievement lines the person never wrote; the whole description lands in the role's background, where search_me can mine it and where they can see it is theirs. Run it with dry_run true first on any workspace that is not empty and read the report back: it is the same report the real import returns, and it comes from running the real import and rolling it back, so it cannot disagree. Returns what was read from each file with a ROW COUNT each — read those, because a count of zero on a file that should have rows means LinkedIn renamed a column — plus what was ignored, created, merged into and skipped. Report that; do not claim success blindly. Never edit what the archive says on the way in: no employer, title, date or metric that is not in the file.",
+    inputSchema: object(
+      {
+        files: {
+          type: "array",
+          description:
+            "The archive's CSV files. Names are matched on the basename, so 'Jobs/Job Applications.csv' is fine.",
+          items: object(
+            {
+              name: str("The file's name, e.g. 'Positions.csv'"),
+              text: str("The file's contents, verbatim, including the header row"),
+            },
+            ["name", "text"],
+          ),
+        },
+        jobs: bool(
+          "Also create applications from Jobs/Job Applications.csv, at APPLIED with the date LinkedIn recorded. Default false — offer it, do not assume it",
+        ),
+        connections: bool(
+          "Also file people from Connections.csv whose Company is already a company on file. Default false. Capped at 200",
+        ),
+        on_existing: str(
+          "'merge' (default) or 'skip', matching import_resume. Merge adds what a role does not already have; skip drops the whole entry",
+        ),
+        dry_run: bool(
+          "Do every lookup and no writes, and report the same numbers. Do this first whenever the workspace is not empty",
+        ),
+      },
+      ["files"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      linkedin.importLinkedInArchive(ctx.userId, archiveFilesFrom(args), {
+        ...onExistingFrom(args),
+        jobs: b(args, "jobs") ?? false,
+        connections: b(args, "connections") ?? false,
+        dryRun: b(args, "dry_run") ?? false,
+      }),
+  },
   {
     name: "preview_resume_import",
     title: "Preview what importing a resume would do",
@@ -6068,6 +6132,39 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) => onboarding.setupStatus(ctx.userId),
+  },
+  {
+    name: "load_sample_workspace",
+    title: "Fill an empty workspace with a sample search",
+    description:
+      "Write a small, plausible job search into this workspace so there is something to look at and something to practise on: four employers, six applications spread across wishlist, applied, interviewing, an offer and one that was lost, five people including a recruiter and an ex-colleague who works at two of them, four weeks of timeline, three tasks (one already overdue), two letters, a resume, and an offer that was revised a week later for eighteen thousand more — which is the thing worth showing, because it is why offers are rows here and not columns. Reach for this when somebody says the app looks empty, or when you are showing them how it works before they have anything real in it; it is a much better first minute than a tour of blank screens. Everything it writes is ORDINARY DATA written the ordinary way, so it moves, sorts, filters, exports and archives exactly like their own will. It refuses on a workspace that already has jobs, roles or highlights in it — a sample mixed into a real search is noise nobody can separate — so if they genuinely want it anyway, say what it will add and pass allow_anyway true. wipe_sample_workspace removes it afterwards, and removes only what this made: anything they have edited or added to is kept and named. Returns what was created and where to look first.",
+    inputSchema: object({
+      allow_anyway: bool(
+        "Load it even though this workspace already has real material in it. Say what it will add first",
+      ),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      sample.loadSampleWorkspace(ctx.userId, { allowAnyway: b(args, "allow_anyway") === true }),
+  },
+  {
+    name: "wipe_sample_workspace",
+    title: "Remove the sample search",
+    description:
+      "Take the sample back out. It removes ONLY what load_sample_workspace wrote, from a list recorded when it wrote it — and anything the person has since edited or added to is KEPT, named in the report, and left exactly where it is, because a sample that quietly deleted a note somebody wrote on it would be worse than no sample. A sample company still holding an application they kept stays too. This is permanent for what it does delete, so say roughly what is about to go and get a plain yes; there is no undo and nothing lands in the archive. Returns what was deleted, what was kept and WHY each survivor was kept, plus `complete`, which is false when anything is still held — a false there means the sample is not fully gone and the report names every piece, so read it back rather than reporting success. Call it again later and it picks up from where it stopped.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => sample.wipeSampleWorkspace(ctx.userId),
   },
   {
     name: "restart_tour",

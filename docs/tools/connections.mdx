@@ -1,7 +1,7 @@
 ---
 title: "Account and connection tools"
 sidebarTitle: "Your account"
-description: "Twenty-one tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
+description: "Twenty-three tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
 icon: "plug"
 ---
 
@@ -147,6 +147,26 @@ No arguments.
 _How far into setup this workspace is_
 
 Three things a workspace needs before it does anything: one job on the board, some career material in Me, and something connected over MCP. Returns which are done and what each is waiting for, plus `tourSeenAt` — when the person last went through the welcome tour in the web app, or null if they never have. Worth calling when someone new asks what to do first, or when a read comes back empty and you are deciding whether that is an empty account or a wrong query — an empty Me with nothing tracked is a workspace nobody has filled yet, not a failure. A null tourSeenAt is a strong hint you are talking to somebody who has not been shown around: explain things rather than assuming they know what a pipeline stage is.
+
+No arguments.
+
+### `load_sample_workspace`
+
+_Fill an empty workspace with a sample search_
+
+Write a small, plausible job search into this workspace so there is something to look at and something to practise on: four employers, six applications spread across wishlist, applied, interviewing, an offer and one that was lost, five people including a recruiter and an ex-colleague who works at two of them, four weeks of timeline, three tasks (one already overdue), two letters, a resume, and an offer that was revised a week later for eighteen thousand more — which is the thing worth showing, because it is why offers are rows here and not columns. Reach for this when somebody says the app looks empty, or when you are showing them how it works before they have anything real in it; it is a much better first minute than a tour of blank screens. Everything it writes is ORDINARY DATA written the ordinary way, so it moves, sorts, filters, exports and archives exactly like their own will. It refuses on a workspace that already has jobs, roles or highlights in it — a sample mixed into a real search is noise nobody can separate — so if they genuinely want it anyway, say what it will add and pass allow_anyway true. wipe_sample_workspace removes it afterwards, and removes only what this made: anything they have edited or added to is kept and named. Returns what was created and where to look first.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `allow_anyway` | boolean | Load it even though this workspace already has real material in it. Say what it will add first |
+
+### `wipe_sample_workspace`
+
+_Remove the sample search_
+
+Take the sample back out. It removes ONLY what load_sample_workspace wrote, from a list recorded when it wrote it — and anything the person has since edited or added to is KEPT, named in the report, and left exactly where it is, because a sample that quietly deleted a note somebody wrote on it would be worse than no sample. A sample company still holding an application they kept stays too. This is permanent for what it does delete, so say roughly what is about to go and get a plain yes; there is no undo and nothing lands in the archive. Returns what was deleted, what was kept and WHY each survivor was kept, plus `complete`, which is false when anything is still held — a false there means the sample is not fully gone and the report names every piece, so read it back rather than reporting success. Call it again later and it picks up from where it stopped.
+
+**Overwrites or deletes.**
 
 No arguments.
 

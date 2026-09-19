@@ -116,6 +116,27 @@ just *talk* to it.
   jobs already on the board. Deleting a line leaves the tasks it already made alone —
   deleting a setting should not delete work you are part-way through. A new account has
   none; there is a starting set of six if you would rather not design your own.
+- **A sample search to look at** — the emptiest ten minutes in this app are the
+  first ones, so `load_sample_workspace` writes a small, plausible search into an
+  empty workspace: four employers, six jobs across every stage, five people
+  including one who works at two of them, four weeks of timeline, an overdue task,
+  two letters, a resume, and an offer that was revised a week later for eighteen
+  thousand more — which is the thing worth showing, because it is why offers are
+  rows here rather than columns. It is ordinary data written the ordinary way, so
+  it drags, sorts, filters and exports exactly like yours will. `wipe_sample_workspace`
+  takes it back out, and takes out only what it put in: anything you edited or
+  added to is kept and named, because a sample that quietly deleted a note you
+  wrote on it would be worse than no sample.
+- **A LinkedIn export, read properly** — the zip from Settings → Data privacy is
+  CSV with column headers, which makes it the one document here that does not have
+  to be interpreted. Drop it into the import dialog, or hand the files to
+  `import_linkedin_archive`. It fills in your profile, every job with its dates and
+  its whole description, education, skills, languages, certifications and projects,
+  and optionally turns LinkedIn's own record of what you applied to into jobs on the
+  board. Roles from an archive carry **no** bullets on purpose: the Description
+  field is prose, and cutting it into "achievements" would manufacture lines you
+  never wrote. It is additive and safe to repeat, on the same rules the resume
+  import uses, and `dry_run` shows you the numbers before anything lands.
 - **Watch a company's board** — say "tell me when Stripe posts a staff engineer role" and
   it does. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON;
   hand it the board link or just the company's careers page and it follows an embedded
@@ -214,7 +235,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  200 tools any MCP client can call (233 if you're an admin). Claude, Claude Code, ChatGPT,
+  203 tools any MCP client can call (236 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -397,7 +418,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 200, or 233 if you're an admin.
+then tells you how many tools answered — 203, or 236 if you're an admin.
 
 Each connection can also be narrowed to one job, in the panel where you copy its URL:
 **Everything** (the default, and what every connection had before this existed), **Me,
@@ -633,7 +654,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-200 tools. One hundred and ninety-one of them are the data tools across the five areas, the
+203 tools. One hundred and ninety-four of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it

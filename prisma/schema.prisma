@@ -97,6 +97,7 @@ model User {
   referrals          Referral[]
   companyWatches     CompanyWatch[]
   captureLink        CaptureLink?
+  sampleLoad         SampleLoad?
 
   @@index([role])
   @@index([stripeCustomerId])
@@ -1992,4 +1993,30 @@ model CaptureLink {
   /// theirs. Same column and same reasoning as McpConnection.lastUsedFrom.
   lastUsedFrom String    @default("")
   createdAt    DateTime  @default(now())
+}
+
+/// The sample search, and exactly which rows it wrote.
+///
+/// One row per person, at most. Loading while one exists is refused rather than
+/// stacked: two overlapping loads make the wipe a guess, and the wipe being
+/// exact is the entire reason this table exists.
+///
+/// `rows` is a recorded MANIFEST rather than an `isSample` flag on nine content
+/// models. The flag would be nine columns every future read has to remember to
+/// ignore, and it would still be wrong the moment somebody duplicates a sample
+/// resume — the copy would carry the flag and be swept away with the original.
+/// A manifest is written once, read twice, and describes only what this made.
+model SampleLoad {
+  id       String   @id @default(cuid())
+  userId   String   @unique
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// [{ "model": "application", "id": "clx…", "stamp": "2026-09-19T09:00:00.000Z" }].
+  /// `stamp` is the row's updatedAt at the moment it was created; a row whose
+  /// stamp has MOVED has been edited by the person and is KEPT by the wipe.
+  /// Models with no updatedAt carry "" and are judged by their parent.
+  rows     Json
+  /// Which fixture was loaded, so a wipe written against a later one can tell
+  /// it is looking at an older shape and say so rather than guessing.
+  fixture  String   @default("")
+  loadedAt DateTime @default(now())
 }
