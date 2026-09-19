@@ -1,7 +1,7 @@
 ---
 title: "Admin tools"
 sidebarTitle: "Admin"
-description: "Thirty-two tools for running an instance: accounts, invitations, the waitlist, sign-in, email, billing, health and every stored setting."
+description: "Thirty-four tools for running an instance: accounts, invitations, the waitlist, sign-in, email, billing, health and every stored setting."
 icon: "shield-halved"
 ---
 
@@ -319,6 +319,31 @@ Set or clear the Microsoft Entra app registration members use to connect Outlook
 | --- | --- | --- |
 | `clientId` | string | The Application (client) ID. Empty string to turn the option off. |
 | `clientSecret` | string | A client secret value from Certificates & secrets. Omit to keep the current one. |
+
+### `admin_get_assistant_config`
+
+_Check the built-in assistant_
+
+Whether the chat built into this app is turned on, which model answers, the daily message cap, the tool scope it is served, and what it has cost in tokens over the last thirty days. The API key comes back masked. Empty key means the whole feature is off and the button is never rendered — which is the right setting for an instance whose people connect Claude or another MCP client instead, because that costs this instance nothing. The usage figures are counts and sums across the instance; there is deliberately no way for an admin to read anybody's conversation.
+
+**Admin only.**
+
+No arguments.
+
+### `admin_set_assistant_config`
+
+_Configure the built-in assistant_
+
+Turn the chat built into this app on or off and set what it costs. Only the fields you pass are changed. Pass an empty anthropicApiKey to turn it off completely — the button stops being rendered and nothing here calls out. dailyMessages is per person, counted in their own time zone, and 0 means no cap at all, which on a key somebody is paying for is a decision rather than a default. scope is the same four values a connection can be narrowed to and is the one real lever on what a turn costs; it is NOT a permission, because the assistant already runs as whoever is signed in.
+
+**Admin only.** **Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `anthropicApiKey` | string | Anthropic API key from console.anthropic.com, starts with sk-ant-. Empty turns the feature off. |
+| `model` | string | Which model answers. Default claude-opus-5. |
+| `dailyMessages` | number | Messages one person may send in a day. 0 means no cap. |
+| `scope` | enum | Which tools it is served: FULL, WRITING, PIPELINE or READONLY  `FULL` · `WRITING` · `PIPELINE` · `READONLY` |
 
 ### `admin_get_google_config`
 

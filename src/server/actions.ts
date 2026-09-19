@@ -26,6 +26,7 @@ import * as mailSweep from "@/lib/data/mail-sweep";
 import * as captureLink from "@/lib/data/capture-link";
 import * as outbound from "@/lib/data/outbound";
 import * as onboarding from "@/lib/data/onboarding";
+import * as assistant from "@/lib/data/assistant";
 import {
   authenticate,
   claimInstance,
@@ -2156,4 +2157,46 @@ export async function restartTourAction() {
   await onboarding.setTourSeen(user.id, false);
   // The tour mounts from the layout, which every screen renders.
   revalidatePath("/", "layout");
+}
+
+// --- the built-in assistant --------------------------------------------------
+
+/**
+ * The drawer's reads and its housekeeping. The CONVERSATION itself does not go
+ * through here — it streams from /api/assistant, because a server action
+ * returns once and this one has to render as it arrives.
+ *
+ * There are no MCP tools beside these four, deliberately: a transcript of a
+ * client talking to this app is not career content, and Claude Desktop's
+ * conversations are not in Hired either. Everything the assistant can DO was
+ * already callable from a conversation, because it calls those exact tools.
+ */
+export async function assistantThreadsAction() {
+  const user = await requireUser();
+  return assistant.listThreads(user.id);
+}
+
+export async function assistantThreadAction(id: string) {
+  const user = await requireUser();
+  const thread = await assistant.getThread(user.id, id);
+  if (!thread) return null;
+  return {
+    id: thread.id,
+    title: thread.title,
+    messages: thread.messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content as unknown[],
+    })),
+  };
+}
+
+export async function renameAssistantThreadAction(id: string, title: string) {
+  const user = await requireUser();
+  await assistant.renameThread(user.id, id, title);
+}
+
+export async function deleteAssistantThreadAction(id: string) {
+  const user = await requireUser();
+  await assistant.deleteThread(user.id, id);
 }

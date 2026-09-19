@@ -1,5 +1,7 @@
+import type { McpScope } from "@prisma/client";
 import { db } from "@/lib/db";
 import { recordAudit } from "@/lib/data/audit";
+import { SCOPE_VALUES } from "@/lib/mcp/scopes";
 
 /**
  * Instance-wide configuration, stored in the database rather than in env vars
@@ -17,6 +19,15 @@ import { recordAudit } from "@/lib/data/audit";
  * system.ts instead: the writes take the acting admin first, for the audit
  * trail rather than for isolation, and only admins can reach any of it.
  */
+
+/**
+ * What answers when nobody has said otherwise.
+ *
+ * Here rather than inside the assistant's own code because the Variables screen
+ * shows it as the placeholder and the fallback, and two copies of a model id is
+ * a model id that goes stale in one of them.
+ */
+export const DEFAULT_ASSISTANT_MODEL = "claude-opus-5";
 
 export const SETTING_KEYS = {
   instanceName: "instance_name",
@@ -51,6 +62,10 @@ export const SETTING_KEYS = {
   attachmentMaxBytes: "attachment_max_bytes",
   attachmentWorkspaceBytes: "attachment_workspace_bytes",
   outboundEnabled: "outbound_enabled",
+  assistantApiKey: "assistant_api_key",
+  assistantModel: "assistant_model",
+  assistantDailyMessages: "assistant_daily_messages",
+  assistantScope: "assistant_scope",
 } as const;
 
 export type InstanceSettings = {
@@ -123,6 +138,19 @@ export type InstanceSettings = {
    * on their own profile matters.
    */
   outboundEnabled: boolean;
+
+  /**
+   * The built-in assistant. Empty key means the app is exactly what it is
+   * without it, minus one button that is never rendered — and there is NO
+   * environment-variable fallback, deliberately: DATABASE_URL is the only
+   * variable, and that is a promise the README makes.
+   */
+  assistantApiKey: string;
+  assistantModel: string;
+  /** Messages one person may send in a day. 0 means no cap. */
+  assistantDailyMessages: number;
+  /** Which subset of the tools the assistant is served. The same four scopes. */
+  assistantScope: McpScope;
 };
 
 /**
@@ -132,7 +160,7 @@ export type InstanceSettings = {
  */
 export type VariableKind = "text" | "url" | "secret" | "toggle";
 
-export type VariableGroup = "Instance" | "Sign-in" | "Accounts" | "Email" | "Billing";
+export type VariableGroup = "Instance" | "Sign-in" | "Accounts" | "Email" | "Billing" | "Assistant";
 
 export type VariableDef = {
   key: string;
@@ -403,6 +431,46 @@ export const VARIABLES: VariableDef[] = [
     placeholder: "",
     fallback: "0",
   },
+  {
+    key: SETTING_KEYS.assistantApiKey,
+    field: "assistantApiKey",
+    label: "Anthropic API key",
+    help: "Turns on the assistant built into this app — a chat that talks to this instance's own tools, so a fresh deploy is conversational without connecting a second application. Empty means the button is never rendered and nothing here calls out. Billing is yours: get a key from console.anthropic.com. Connecting Claude or another MCP client instead costs this instance nothing, and is usually better.",
+    kind: "secret",
+    group: "Assistant",
+    placeholder: "sk-ant-…",
+    fallback: "",
+  },
+  {
+    key: SETTING_KEYS.assistantModel,
+    field: "assistantModel",
+    label: "Model",
+    help: "Which model answers. Leave it alone unless you have a reason.",
+    kind: "text",
+    group: "Assistant",
+    placeholder: DEFAULT_ASSISTANT_MODEL,
+    fallback: DEFAULT_ASSISTANT_MODEL,
+  },
+  {
+    key: SETTING_KEYS.assistantDailyMessages,
+    field: "assistantDailyMessages",
+    label: "Messages a day, each",
+    help: "How many messages one person may send in a day, counted in their own time zone. 0 means no cap at all, which on a key you are paying for is a decision rather than a default.",
+    kind: "text",
+    group: "Assistant",
+    placeholder: "50",
+    fallback: "50",
+  },
+  {
+    key: SETTING_KEYS.assistantScope,
+    field: "assistantScope",
+    label: "Tools it is served",
+    help: "FULL, WRITING, PIPELINE or READONLY — the same four a connection can be narrowed to. This is the one honest cost lever: the whole tool surface is roughly sixty thousand tokens of definitions on every turn, and WRITING is about a quarter of that. It is not a permission; the assistant runs as whoever is signed in.",
+    kind: "text",
+    group: "Assistant",
+    placeholder: "FULL",
+    fallback: "FULL",
+  },
 ];
 
 const BY_KEY = new Map(VARIABLES.map((variable) => [variable.key, variable]));
@@ -456,6 +524,10 @@ export async function getSettings(): Promise<InstanceSettings> {
     digestToken: raw(SETTING_KEYS.digestToken),
     sweepToken: raw(SETTING_KEYS.sweepToken),
     outboundEnabled: raw(SETTING_KEYS.outboundEnabled) === "1",
+    assistantApiKey: raw(SETTING_KEYS.assistantApiKey),
+    assistantModel: raw(SETTING_KEYS.assistantModel).trim() || DEFAULT_ASSISTANT_MODEL,
+    assistantDailyMessages: byteCap(raw(SETTING_KEYS.assistantDailyMessages), 50, 10_000),
+    assistantScope: readScope(raw(SETTING_KEYS.assistantScope)),
     attachmentMaxBytes: byteCap(raw(SETTING_KEYS.attachmentMaxBytes), 8_000_000, 100_000_000),
     attachmentWorkspaceBytes: byteCap(
       raw(SETTING_KEYS.attachmentWorkspaceBytes),
@@ -480,6 +552,19 @@ export async function getSettings(): Promise<InstanceSettings> {
  * Nonsense falls back to the default rather than to zero: a cap of zero would
  * refuse every attachment with a message about a setting nobody meant to set.
  */
+/**
+ * A stored scope, or FULL.
+ *
+ * Validated rather than cast: a typo saved through admin_set_variable would
+ * otherwise reach toolsFor() as a scope nothing matches, and the assistant
+ * would quietly be served an empty tool list — which looks like a broken model
+ * rather than like a bad setting.
+ */
+function readScope(value: string): McpScope {
+  const upper = value.trim().toUpperCase();
+  return (SCOPE_VALUES as readonly string[]).includes(upper) ? (upper as McpScope) : "FULL";
+}
+
 function byteCap(raw: string, fallback: number, ceiling: number): number {
   const parsed = Number.parseInt(raw, 10);
   if (Number.isNaN(parsed) || parsed <= 0) return fallback;
@@ -689,6 +774,14 @@ export async function deleteVariable(actor: Actor, key: string) {
   await recordAudit({ actor, action: "settings.change", detail });
 
   return { deleted: true, key, detail };
+}
+
+/**
+ * The assistant answers only when there is a key. Nothing falls back to an
+ * environment variable, ever — see the field's own comment.
+ */
+export function assistantIsConfigured(settings: InstanceSettings): boolean {
+  return settings.assistantApiKey.trim() !== "";
 }
 
 export function emailIsConfigured(settings: InstanceSettings) {

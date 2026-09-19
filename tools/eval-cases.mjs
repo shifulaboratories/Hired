@@ -389,6 +389,156 @@ export const CASES = [
     avoid: ["delete_connection"],
     why: "Rotating keeps the client working; deleting kills it.",
   },
+
+  // --- interviews: a round is a thing, not a free-text activity -------------
+  {
+    prompt: "I've got a system design round with Stripe on Tuesday at 2.",
+    expect: ["schedule_interview"],
+    avoid: ["log_activity", "create_task", "update_application"],
+    why: "A round is a record with a format and an outcome. Logged as an activity it has neither, which is the shape interviews had before they were first-class.",
+  },
+  {
+    prompt: "Did the onsite at Figma yesterday. Went well, they said two weeks.",
+    expect: ["record_interview_outcome", "schedule_interview"],
+    avoid: ["log_activity", "move_application_stage"],
+    why: "An interview that already happened has an outcome to record. Moving the stage on 'went well' is acting on a feeling.",
+  },
+  {
+    prompt: "They asked me how I'd design a rate limiter and what I'd do about a teammate who missed deadlines.",
+    expect: ["log_interview_questions"],
+    avoid: ["create_note", "append_role_background"],
+    why: "Questions are rows against a round, which is what makes question_bank work later. In a note they are prose nothing can read.",
+  },
+  {
+    prompt: "What kinds of things do people keep asking me in interviews?",
+    expect: ["question_bank"],
+    avoid: ["list_interviews", "search_me"],
+    why: "The bank is the aggregate across rounds. list_interviews returns the rounds and leaves the reading to you.",
+  },
+  {
+    prompt: "I'm interviewing at Vercel on Thursday, get me ready.",
+    expect: ["prep_interview", "prep_for_interview"],
+    avoid: ["get_application", "search_me"],
+    why: "Seven things decide an interview and they live seven places apart. The tool reads all of them; get_application reads one.",
+  },
+  {
+    prompt: "Dana said she'd put my name in at Figma.",
+    expect: ["record_referral"],
+    avoid: ["create_contact", "log_activity", "create_task"],
+    why: "A referral has a status that moves. Logged as an activity it cannot be chased.",
+  },
+
+  // --- the analyses: each answers a question the raw lists do not -----------
+  {
+    prompt: "Why do I keep getting to the final round and then losing?",
+    expect: ["loss_report"],
+    avoid: ["get_funnel", "pipeline_stats", "list_applications"],
+    why: "The funnel shows where they fall out; the loss report is the one that groups by REASON, which is what the question asks.",
+  },
+  {
+    prompt: "Which of my resumes actually gets replies?",
+    expect: ["resume_performance"],
+    avoid: ["list_resumes", "compare_resumes", "pipeline_stats"],
+    why: "list_resumes returns documents. The question is about what happened to the applications they were attached to.",
+  },
+  {
+    prompt: "What should I be learning? The same things keep coming up in jobs I don't get.",
+    expect: ["skills_gap"],
+    avoid: ["check_resume_fit", "gap_report", "search_me"],
+    why: "A learning list across every captured posting. check_resume_fit and gap_report answer 'does this resume fit THIS job', which is the other question.",
+  },
+  {
+    prompt: "Who should I get back in touch with?",
+    expect: ["contact_warmth"],
+    avoid: ["list_contacts", "list_relationships", "list_follow_ups"],
+    why: "list_relationships ranks by worth and leaves time out of it. Warmth is the one that discounts by silence, which is what 'get back in touch' means.",
+  },
+  {
+    prompt: "Morning. Where am I?",
+    expect: ["morning_brief"],
+    avoid: ["list_applications", "pipeline_stats", "list_schedule"],
+    why: "The one call to open a session with. Assembling it from four reads is the thing it exists to stop.",
+  },
+  {
+    prompt: "Is there anything half-finished or messy in here?",
+    expect: ["workspace_health"],
+    avoid: ["diagnose_search", "pipeline_stats"],
+    why: "diagnose_search is about whether search finds things; health is about the labels every other feature leans on.",
+  },
+  {
+    prompt: "Which companies have I not looked at in ages?",
+    expect: ["research_freshness"],
+    avoid: ["list_companies", "research_company"],
+    why: "Freshness is about the age of what is on file. Calling research_company here would go and research one before knowing which.",
+  },
+
+  // --- watching, cadence, undo ---------------------------------------------
+  {
+    prompt: "Let me know when Stripe posts another backend role.",
+    expect: ["watch_company_board"],
+    avoid: ["create_task", "snooze_follow_up", "research_company"],
+    why: "A task to check a careers page every week is the manual version of the thing being asked for.",
+  },
+  {
+    prompt: "Is the Ramp job still up?",
+    expect: ["check_posting_live"],
+    avoid: ["get_application", "capture_job_posting", "research_company"],
+    why: "The posting URL is already on file; this fetches it and says whether it is still there.",
+  },
+  {
+    prompt: "Chase anything that's been sitting in Applied for more than ten days.",
+    expect: ["set_stage_cadence"],
+    avoid: ["create_task", "create_stage_template", "list_applications"],
+    why: "A cadence is a standing rule. A task covers one application once, and a stage template fires on arrival rather than on age.",
+  },
+  {
+    prompt: "You just overwrote my whole background for that job. Put it back.",
+    expect: ["list_changes", "undo_change", "list_revisions", "restore_revision"],
+    avoid: ["update_role", "append_role_background"],
+    why: "The one case where writing again is the wrong instinct. Find the change, then undo it — writing back from memory invents what was lost.",
+  },
+
+  // --- capture: the file, the archive, the link ----------------------------
+  {
+    prompt: "I downloaded my data export from LinkedIn, it's a zip.",
+    expect: ["import_linkedin_archive"],
+    avoid: ["import_resume", "preview_resume_import"],
+    why: "An archive is connections and positions, not a resume. import_resume would throw away the contacts.",
+  },
+  {
+    prompt: "They emailed me the full job description as a PDF, keep it with the application.",
+    expect: ["attach_file"],
+    avoid: ["create_note", "capture_job_posting", "update_application"],
+    why: "A file is a file. Pasting it into the notes loses the original, which is the thing they asked to keep.",
+  },
+  {
+    prompt: "Will this resume survive an applicant tracking system?",
+    expect: ["preview_ats_text"],
+    avoid: ["preview_resume_text", "check_resume_fit", "export_resume_pdf"],
+    why: "preview_resume_text estimates length. The ATS question is about what a parser can read out of it.",
+  },
+  {
+    prompt: "Fill this thing with fake data so I can see what it looks like before I commit.",
+    expect: ["load_sample_workspace"],
+    avoid: ["create_application", "create_company", "import_everything"],
+    why: "The sample is marked and removable. Hand-made fake rows are indistinguishable from real ones a week later.",
+  },
+
+  // --- sending: the gate is the point --------------------------------------
+  {
+    prompt: "Write to the recruiter at Linear and send it.",
+    expect: ["draft_outbound_email", "prep_letter"],
+    avoid: ["send_outbound_email"],
+    why: "Nothing leaves this building without a person approving that exact text. send_outbound_email sends what is already approved, and reaching for it first is the failure this whole feature is shaped around.",
+  },
+
+  // --- after the search ----------------------------------------------------
+  {
+    prompt: "I shipped the billing migration this quarter and it cut our costs by about a third.",
+    expect: ["log_win", "append_role_background"],
+    avoid: ["update_role", "create_note", "create_highlights"],
+    why: "Additive, against the current role. update_role replaces the background, which is the misroute this whole file exists for.",
+  },
 ];
 
 /**
@@ -407,5 +557,9 @@ export const NO_TOOL_CASES = [
   {
     prompt: "What's the difference between a cover letter and a referral ask?",
     why: "A question about the concepts, answerable from the server instructions.",
+  },
+  {
+    prompt: "Should I take the job or not?",
+    why: "A decision that is theirs. compare_offers is right once they ask about the numbers, and a tool call here answers a question nobody asked.",
   },
 ];

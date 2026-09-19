@@ -6,6 +6,7 @@ import { dueNow } from "@/lib/data/schedule";
 import { WelcomeTour } from "@/components/onboarding/welcome-tour";
 import { ViewerZoneProvider } from "@/components/viewer-zone";
 import { hostZone } from "@/lib/time";
+import { getSettings, assistantIsConfigured } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -20,12 +21,17 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
 
-  const [due, profile] = await Promise.all([
+  const [due, profile, settings] = await Promise.all([
     dueNow(user.id),
     db.profile.findUnique({
       where: { userId: user.id },
       select: { photo: true, tourSeenAt: true, timeZone: true },
     }),
+    // One indexed read of a table with a couple of dozen rows, in the same
+    // Promise.all as the two that were already here — so it costs a navigation
+    // nothing, and the button it decides is never rendered on an instance that
+    // has no key, which is the state every instance starts in.
+    getSettings(),
   ]);
 
   // Flattened here rather than in the bell: the shell is a client component,
@@ -51,6 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <ViewerZoneProvider zone={zone} stored={stored}>
       <Shell
+        assistant={assistantIsConfigured(settings)}
         notices={notices}
         user={{
           name: user.name,

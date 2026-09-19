@@ -86,6 +86,7 @@ import * as connections from "@/lib/data/connections";
 import * as onboarding from "@/lib/data/onboarding";
 import * as accountsData from "@/lib/data/accounts";
 import * as schedule from "@/lib/data/schedule";
+import { instanceAssistantUsage } from "@/lib/data/assistant";
 import {
   getSettings,
   updateSettings,
@@ -93,6 +94,8 @@ import {
   billingIsConfigured,
   googleIsConfigured,
   microsoftIsConfigured,
+  assistantIsConfigured,
+  DEFAULT_ASSISTANT_MODEL,
   maskSecret,
   listVariables,
   setVariables,
@@ -7371,6 +7374,81 @@ export const tools: McpTool[] = [
     },
   },
   {
+    name: "admin_get_assistant_config",
+    title: "Check the built-in assistant",
+    description:
+      "Whether the chat built into this app is turned on, which model answers, the daily message cap, the tool scope it is served, and what it has cost in tokens over the last thirty days. The API key comes back masked. Empty key means the whole feature is off and the button is never rendered — which is the right setting for an instance whose people connect Claude or another MCP client instead, because that costs this instance nothing. The usage figures are counts and sums across the instance; there is deliberately no way for an admin to read anybody's conversation.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    adminOnly: true,
+    handler: async () => {
+      const settings = await getSettings();
+      const since = new Date(Date.now() - 30 * 86_400_000);
+      const usage = await instanceAssistantUsage(since);
+      return {
+        configured: assistantIsConfigured(settings),
+        anthropicApiKey: maskSecret(settings.assistantApiKey),
+        model: settings.assistantModel,
+        dailyMessages: settings.assistantDailyMessages,
+        scope: settings.assistantScope,
+        last30Days: usage,
+        help: "Billing is the instance owner's: the key is theirs and every message is charged to it. The scope is the honest cost lever — the full tool surface is most of the tokens on every turn, and WRITING is about a quarter of it. Turn it off by clearing the key with admin_set_assistant_config.",
+      };
+    },
+  },
+  {
+    name: "admin_set_assistant_config",
+    title: "Configure the built-in assistant",
+    description:
+      "Turn the chat built into this app on or off and set what it costs. Only the fields you pass are changed. Pass an empty anthropicApiKey to turn it off completely — the button stops being rendered and nothing here calls out. dailyMessages is per person, counted in their own time zone, and 0 means no cap at all, which on a key somebody is paying for is a decision rather than a default. scope is the same four values a connection can be narrowed to and is the one real lever on what a turn costs; it is NOT a permission, because the assistant already runs as whoever is signed in.",
+    inputSchema: object({
+      anthropicApiKey: str("Anthropic API key from console.anthropic.com, starts with sk-ant-. Empty turns the feature off."),
+      model: str(`Which model answers. Default ${DEFAULT_ASSISTANT_MODEL}.`),
+      dailyMessages: num("Messages one person may send in a day. 0 means no cap."),
+      scope: {
+        type: "string",
+        enum: [...SCOPE_VALUES],
+        description: "Which tools it is served: FULL, WRITING, PIPELINE or READONLY",
+      },
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    adminOnly: true,
+    handler: async (args, ctx) => {
+      const scope = s(args, "scope");
+      if (scope !== undefined && !(SCOPE_VALUES as readonly string[]).includes(scope)) {
+        throw new Error(`scope must be one of ${SCOPE_VALUES.join(", ")}.`);
+      }
+      const daily = n(args, "dailyMessages");
+      await updateSettings(
+        ctx.user,
+        defined({
+          assistantApiKey: s(args, "anthropicApiKey"),
+          assistantModel: s(args, "model"),
+          assistantDailyMessages: daily === undefined ? undefined : Math.max(0, Math.round(daily)),
+          assistantScope: scope as McpScope | undefined,
+        }),
+      );
+      const settings = await getSettings();
+      return {
+        configured: assistantIsConfigured(settings),
+        model: settings.assistantModel,
+        dailyMessages: settings.assistantDailyMessages,
+        scope: settings.assistantScope,
+        serves: scopeBlurb(settings.assistantScope),
+      };
+    },
+  },
+  {
     name: "admin_get_google_config",
     title: "Check Google sign-in",
     description:
@@ -8116,7 +8194,17 @@ function buildScope(scopeKey: McpScope, admin: boolean): ScopeTable {
   const inSections = namesInSections(scope.sections);
   const allowed = new Set<string>([...inSections, ...scope.extras, ...CORE_TOOLS]);
 
+  // allTools carries every workflow TWICE — once here as a tool, and once in
+  // `prompts`, because prompts are a client-optional surface and tools are not.
+  // A name filter cannot see that: no workflow is in a section or an extra, so
+  // the tool copy fell out of every narrowed scope and a WRITING connection got
+  // tailor_resume in prompts/list and nowhere else — invisible to exactly the
+  // clients the tool copy exists for. So they are set aside here and decided as
+  // workflows below, by the same workflowFits that decides the prompt.
+  const workflowNames = new Set(prompts.map((prompt) => prompt.name));
+
   const served = roleTools.filter((tool) => {
+    if (workflowNames.has(tool.name)) return false;
     // Admin tools are excluded from EVERY non-FULL scope, including for an
     // admin and including READONLY. An admin's pipeline client has no business
     // being offered admin_delete_user, and this is one line rather than a
@@ -8128,10 +8216,34 @@ function buildScope(scopeKey: McpScope, admin: boolean): ScopeTable {
   });
   const names = new Set(served.map((tool) => tool.name));
 
+  // A fixed point rather than one pass, because a workflow may name another —
+  // prep_for_interview ends by offering to run research_company. Judged against
+  // the tools alone, a workflow like that could never fit a narrowed scope even
+  // when everything it needs is served. So: start from the tools, add the
+  // workflows that fit, and go round again until nothing new fits. It
+  // terminates because the set only grows and is bounded by the array.
+  const reachable = new Set(names);
+  const fits: McpPrompt[] = [];
+  const candidates = rolePrompts.filter((prompt) => !prompt.adminOnly);
+  for (;;) {
+    const next = candidates.filter(
+      (prompt) => !reachable.has(prompt.name) && workflowFits(prompt, reachable),
+    );
+    if (next.length === 0) break;
+    for (const prompt of next) {
+      reachable.add(prompt.name);
+      fits.push(prompt);
+    }
+  }
+  // Back into the array's own order, so two scopes never disagree about it.
+  const fitNames = new Set(fits.map((prompt) => prompt.name));
+  fits.sort((a, b) => candidates.indexOf(a) - candidates.indexOf(b));
+
   return {
-    tools: served,
-    prompts: rolePrompts.filter((prompt) => !prompt.adminOnly && workflowFits(prompt, names)),
-    names,
+    // Appended rather than interleaved, which is the order FULL serves too.
+    tools: [...served, ...roleTools.filter((tool) => fitNames.has(tool.name))],
+    prompts: fits,
+    names: new Set([...names, ...fitNames]),
   };
 }
 

@@ -69,7 +69,22 @@ export const SCOPES = [
      * prep_letter and create_letter all take an applicationId somebody has to
      * look up first. get_company is already in ALWAYS_LOAD for the same reason.
      */
-    extras: ["list_applications", "get_application", "list_companies", "get_company"],
+    extras: [
+      "list_applications",
+      "get_application",
+      "list_companies",
+      "get_company",
+      // The undo path. These are filed under connections because that is where
+      // the change log lives, but they are about WRITES — and a scope whose
+      // whole job is writing roles and resumes, with no way back from an
+      // update_role that ate somebody's background, is the exact footgun they
+      // were built for. `--scope-audit` in tools/eval-tool-choice.mjs is what
+      // found them sitting in FULL alone.
+      "list_changes",
+      "list_revisions",
+      "restore_revision",
+      "undo_change",
+    ],
     readOnly: false,
     blurb:
       "Writes documents and the material behind them. Cannot move the pipeline, tag anybody or delete a company.",
@@ -81,9 +96,12 @@ export const SCOPES = [
     /**
      * list_resumes answers "which one did I send them" without opening the
      * resume tools; preview_digest is a pipeline read that happens to be filed
-     * on the account page.
+     * on the account page. The change log and undo_change are here for the
+     * same reason they are in WRITING: this scope writes, so it needs the way
+     * back. restore_revision is NOT — it puts a version of a resume or a role
+     * back, and neither is this scope's to touch.
      */
-    extras: ["list_resumes", "preview_digest"],
+    extras: ["list_resumes", "preview_digest", "list_changes", "list_revisions", "undo_change"],
     readOnly: false,
     blurb:
       "Runs the search: applications, offers, interviews, people, tasks, the archive, mail and calendar.",

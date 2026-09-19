@@ -352,7 +352,14 @@ line is also permanent.
 - Connection URLs are credentials with full read and write over this workspace. Never repeat one
   anywhere it will be stored.`;
 
-async function instructionsFor(user: User, scope: McpScope = "FULL") {
+/**
+ * The briefing a client gets on connect.
+ *
+ * Exported because the built-in assistant is a client: it sends this same text
+ * as its system prompt, so there is one description of this app's rules rather
+ * than a second one that drifts.
+ */
+export async function instructionsFor(user: User, scope: McpScope = "FULL") {
   // A failed lookup must not cost someone their briefing, so an unreachable
   // database falls back to the tour rather than telling an established user
   // their workspace is empty.

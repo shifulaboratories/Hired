@@ -263,7 +263,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  214 tools any MCP client can call (247 if you're an admin). Claude, Claude Code, ChatGPT,
+  214 tools any MCP client can call (249 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -446,7 +446,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 214, or 247 if you're an admin.
+then tells you how many tools answered — 214, or 249 if you're an admin.
 
 Each connection can also be narrowed to one job, in the panel where you copy its URL:
 **Everything** (the default, and what every connection had before this existed), **Me,
@@ -455,7 +455,10 @@ still reaches the whole account and you can widen it again in a click — it cha
 assistant is *offered*, which is what makes it pick the right tool. A client choosing
 between two hundred tools gets it wrong more often than one choosing between sixty, and the
 wrong one here writes into your career history. It costs less too: the writing scope is
-about a quarter of the context.
+about a quarter of the context. Whichever one you pick, it keeps the way back: a narrowed
+connection is still served the change log and **undo**, because a scope whose whole job is
+writing needs that more than a full one does. It cannot mint or widen a connection, though —
+that stays with **Everything**.
 
 That is a lot of tools, and spelled out in full they're around 65,000 tokens of context
 before you've said anything. If your client has tool search — Claude Code does, and has it
@@ -678,6 +681,35 @@ for a screen. Keys are lowercase letters, numbers and underscores.
 
 By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_variable`.
 
+### The assistant built in (optional)
+
+Everything above assumes you connect your own Claude, and that is still the better way: it
+costs this instance nothing and you get the client you already like. But an instance where
+nobody has connected anything is a web app with a conversational product thesis and no
+conversation in it, so there is a chat built in.
+
+Put an Anthropic API key in **Admin → Configuration → Assistant** and a small button appears
+next to the notifications bell on every screen. It opens a drawer beside your work — ask
+what has gone quiet, tell it what you did this week, have it tailor a resume to a posting.
+Leave the key empty and none of that is rendered: no button, no drawer, no call out.
+
+It is a client, not a feature. It runs as whoever is signed in, through exactly the tools an
+MCP connection is served, so there is nothing it can do that a conversation elsewhere
+cannot. The four acts that cannot be undone stop and wait for you to press a button, which
+is the same annotation every other client reads to decide the same thing.
+
+Two numbers are yours to set. **Messages a day, each** is per person, counted in their own
+time zone, and 0 means no cap at all — a decision rather than a default, on a key you are
+paying for. **Tools it is served** is the same four scopes a connection can be narrowed to,
+and it is the honest cost lever: the whole tool surface is most of the tokens on every turn,
+and the writing scope is about a quarter of it.
+
+**Admin → Configuration** shows what it has cost over the last thirty days: messages, tokens
+and how many people used it. Counts and sums only. There is no screen, and no tool, that
+lets an admin read anybody's conversation.
+
+By conversation: `admin_get_assistant_config`, `admin_set_assistant_config`.
+
 ---
 
 ## What your AI can do once it's connected
@@ -686,7 +718,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
-hands back a step-by-step plan that it then follows. Admins get 33 more — 32 data tools and
+hands back a step-by-step plan that it then follows. Admins get 35 more — 34 data tools and
 a tenth workflow — and members never even see those in the tool list, so nobody is tempted
 by a permission they don't have.
 

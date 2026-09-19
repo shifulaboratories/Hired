@@ -22,10 +22,20 @@
  *
  *   node tools/eval-tool-choice.mjs                 # everything
  *   node tools/eval-tool-choice.mjs --only=append   # cases whose prompt matches
- *   node tools/eval-tool-choice.mjs --admin         # as an admin (all 190 tools)
+ *   node tools/eval-tool-choice.mjs --admin         # as an admin (every tool)
+ *   node tools/eval-tool-choice.mjs --scope=WRITING # as a narrowed connection
+ *   node tools/eval-tool-choice.mjs --scope-audit   # what each scope serves, free
  *   node tools/eval-tool-choice.mjs --model=claude-sonnet-5
  *   node tools/eval-tool-choice.mjs --runs=3        # each case N times, majority
  *   node tools/eval-tool-choice.mjs --json=out.json
+ *
+ * `--scope=` is the one worth running twice. A narrowed connection is served a
+ * SMALLER tool array, and a description that only routes correctly because the
+ * right tool was the obvious one among two hundred may route differently among
+ * sixty — in both directions. A case whose answer is not served in that scope
+ * is skipped rather than failed, and the run says how many it skipped, because
+ * scoring `move_application_stage` against a WRITING connection would be
+ * measuring the scope rather than the description.
  *
  * With no credentials it prints what it would have done and exits 0 — loudly,
  * so a CI that ever does run it cannot read silence as a pass.
@@ -33,7 +43,12 @@
 
 import { writeFileSync } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
-import { tools as allTools, prompts as promptNames } from "./tool-source.mjs";
+import {
+  tools as allTools,
+  SCOPE_KEYS,
+  toolsForScope,
+  workflowsForScope,
+} from "./tool-source.mjs";
 import { CASES, NO_TOOL_CASES } from "./eval-cases.mjs";
 
 const argv = process.argv.slice(2);
@@ -48,6 +63,11 @@ const RUNS = Math.max(1, Number(flag("runs", "1")) || 1);
 const ONLY = flag("only");
 const AS_ADMIN = has("admin");
 const JSON_OUT = flag("json");
+const SCOPE = (flag("scope", "FULL") ?? "FULL").toUpperCase();
+if (!SCOPE_KEYS.includes(SCOPE)) {
+  console.error(`--scope must be one of ${SCOPE_KEYS.join(", ")}.`);
+  process.exit(2);
+}
 
 /**
  * The briefing every client gets on connect, trimmed to what routing depends on.
@@ -74,7 +94,7 @@ question about how this product works.`;
 
 /** The tool array as the API wants it — the same shape tools/list serves. */
 function toolsForApi() {
-  const usable = AS_ADMIN ? allTools : allTools.filter((tool) => !tool.adminOnly);
+  const usable = toolsForScope(SCOPE, { admin: AS_ADMIN });
   return usable.map((tool) => ({
     name: tool.name,
     description: tool.description,
@@ -89,7 +109,7 @@ function toolsForApi() {
  * would be measuring this script rather than the descriptions.
  */
 function workflowTools() {
-  return promptNames.map((name) => ({
+  return workflowsForScope(SCOPE, { admin: AS_ADMIN }).map((name) => ({
     name,
     description: `Workflow: ${name.replace(/_/g, " ")}. Returns a step-by-step plan that you then follow.`,
     input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
@@ -128,12 +148,78 @@ function majority(values) {
   return { value: best, agreement: most / values.length };
 }
 
+/** Every name this run's client can actually call, tools and workflows both. */
+const SERVED = new Set(API_TOOLS.map((tool) => tool.name));
+
+// A case that names a tool which does not exist can never pass and never says
+// why — it just reads as the model being wrong. Checked before anything is
+// spent, against the whole surface rather than this run's scope.
+{
+  const real = new Set([
+    ...allTools.map((tool) => tool.name),
+    ...workflowsForScope("FULL", { admin: true }),
+  ]);
+  const bad = [];
+  for (const testCase of [...CASES, ...NO_TOOL_CASES]) {
+    for (const name of [...(testCase.expect ?? []), ...(testCase.avoid ?? [])]) {
+      if (!real.has(name)) bad.push(`${name} — "${testCase.prompt}"`);
+    }
+  }
+  if (bad.length) {
+    console.error("eval-cases.mjs names tools that do not exist:");
+    for (const line of bad) console.error(`  ${line}`);
+    process.exit(2);
+  }
+}
+
+/**
+ * What each scope serves, printed. FREE — no network, no credentials, no money.
+ *
+ * The one thing no eval can measure: a tool that fell out of every narrowed
+ * scope is not a wrong answer, it is a tool nobody can reach unless their
+ * connection is FULL. That is a judgement about the section boundaries in
+ * scopes.ts rather than about a description, so this prints the evidence and
+ * leaves the judgement to a person.
+ */
+function printScopeAudit() {
+  const rows = SCOPE_KEYS.map((scope) => ({
+    scope,
+    tools: toolsForScope(scope).length,
+    workflows: workflowsForScope(scope).length,
+  }));
+  console.log("What each scope serves a member:\n");
+  for (const row of rows) {
+    console.log(`  ${row.scope.padEnd(9)} ${String(row.tools).padStart(3)} tools, ${row.workflows} workflows`);
+  }
+
+  const reachable = new Set();
+  for (const scope of SCOPE_KEYS) {
+    if (scope === "FULL") continue;
+    for (const tool of toolsForScope(scope)) reachable.add(tool.name);
+  }
+  const fullOnly = toolsForScope("FULL").filter((tool) => !reachable.has(tool.name));
+  console.log(`\n${fullOnly.length} member tools are served ONLY by FULL:`);
+  for (const tool of fullOnly) console.log(`  ${tool.name}`);
+  console.log("\nThat is not a bug by itself — a tool can belong nowhere narrower.");
+  console.log("It is a list to read when a scope feels thinner than its blurb promises.");
+}
+
 async function main() {
-  const cases = [
+  if (has("scope-audit")) {
+    printScopeAudit();
+    return;
+  }
+
+  const all = [
     ...CASES.map((c) => ({ ...c, noTool: false })),
     ...NO_TOOL_CASES.map((c) => ({ ...c, expect: [], noTool: true })),
-  ].filter((c) => {
-    if (c.adminOnly && !AS_ADMIN) return false;
+  ].filter((c) => !(c.adminOnly && !AS_ADMIN));
+  const TOTAL_CASES = all.length;
+
+  const cases = all.filter((c) => {
+    // A case whose answer is not served here is not a failure of anything this
+    // script measures. Skipped, and counted out loud below.
+    if (SCOPE !== "FULL" && !c.noTool && !(c.expect ?? []).some((n) => SERVED.has(n))) return false;
     if (!ONLY) return true;
     const needle = ONLY.toLowerCase();
     return (
@@ -143,8 +229,15 @@ async function main() {
     );
   });
 
+  const skipped = SCOPE === "FULL" ? 0 : TOTAL_CASES - cases.length;
   const calls = cases.length * RUNS;
-  console.log(`${API_TOOLS.length} tools, ${cases.length} cases, ${RUNS} run(s) — ${calls} API calls to ${MODEL}.`);
+  console.log(
+    `${API_TOOLS.length} tools (${SCOPE}${AS_ADMIN ? ", admin" : ""}), ${cases.length} cases, ` +
+      `${RUNS} run(s) — ${calls} API calls to ${MODEL}.`,
+  );
+  if (skipped > 0) {
+    console.log(`${skipped} case(s) skipped: the tool they expect is not served in ${SCOPE}.`);
+  }
   console.log("This spends real money. Roughly one cheap request per call, and the tool array is large.\n");
 
   // Credentials are not checked by looking for an env var: the SDK also reads a
@@ -152,6 +245,12 @@ async function main() {
   // ANTHROPIC_API_KEY happened to be unset would skip on a perfectly working
   // machine. So it tries, and treats only a real authentication failure as
   // "there are no credentials here".
+  if (cases.length === 0) {
+    console.log("Nothing to measure. This is NOT a pass.");
+    process.exitCode = 1;
+    return;
+  }
+
   const client = new Anthropic();
   try {
     await client.messages.create({
