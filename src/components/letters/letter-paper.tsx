@@ -1,4 +1,4 @@
-import { LETTER_LABEL } from "@/lib/data/letters";
+import { IS_CORRESPONDENCE, LETTER_LABEL } from "@/lib/letter-kinds";
 import type { LetterKind } from "@prisma/client";
 
 /**
@@ -41,6 +41,12 @@ export function LetterPaper({ kind, title, recipient, body, from, date }: Letter
   // A blank line is a paragraph break; a single newline is a line break inside
   // one. That is how people type into a textarea, so it is how this reads it.
   const paragraphs = body.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  // A LinkedIn About, a headline, a self-review and a brag doc are documents
+  // ABOUT the person rather than letters to anybody, so they get no date, no
+  // recipient line and no rule — a brag doc dated like a letter looks like a
+  // mistake. The letterhead stays: their name at the top of a LinkedIn About is
+  // right, and the contact block already drops every empty field.
+  const correspondence = IS_CORRESPONDENCE[kind];
 
   return (
     <article className="letter-paper">
@@ -66,6 +72,7 @@ export function LetterPaper({ kind, title, recipient, body, from, date }: Letter
         .letter-paper .letter-to { margin-top: 0.25in; }
         .letter-paper p { margin: 0 0 0.16in; orphans: 2; widows: 2; }
         .letter-paper .letter-subject { margin-top: 0.25in; font-weight: 600; }
+        .letter-paper .letter-heading { margin-top: 0.2in; margin-bottom: 0.2in; font-size: 13pt; font-weight: 600; }
       `}</style>
 
       <header>
@@ -75,13 +82,17 @@ export function LetterPaper({ kind, title, recipient, body, from, date }: Letter
 
       <hr className="letter-rule" />
 
-      {date && <div className="letter-date">{date}</div>}
-      {recipient && <p className="letter-to">{recipient},</p>}
+      {correspondence && date && <div className="letter-date">{date}</div>}
+      {correspondence && recipient && <p className="letter-to">{recipient},</p>}
       {/* The title is the person's own label for the draft ("Stripe cover
           letter"), which is a filing name rather than a subject line — so it
           only appears when there is no recipient to address, where a page with
-          nothing but body text reads as a fragment. */}
-      {!recipient && title && <p className="letter-subject">{title}</p>}
+          nothing but body text reads as a fragment. On the four self-facing
+          kinds it is the document's heading rather than a subject, and it is
+          always shown. */}
+      {(!correspondence || !recipient) && title && (
+        <p className={correspondence ? "letter-subject" : "letter-heading"}>{title}</p>
+      )}
 
       {paragraphs.map((paragraph, index) => (
         <p key={index}>

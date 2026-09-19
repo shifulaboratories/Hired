@@ -61,6 +61,7 @@ import {
   type ResumeSection,
   type SectionKind,
 } from "@/lib/resume-schema";
+import { RESUME_TEMPLATES, templateTakesPhoto } from "@/lib/resume-templates";
 import { PageMeasure } from "@/components/resume/page-measure";
 import { DragHandle, SortableList, SortableRow } from "@/components/resume/sortable-list";
 import { moveWithin } from "@/lib/resume-reorder";
@@ -1653,8 +1654,9 @@ function DesignPopover({
   hasPhoto: boolean;
 }) {
   // Harvard is a format, not a style: it does not take a photo, so the switch
-  // says so rather than doing nothing when flipped.
-  const templateTakesPhoto = meta.template !== "harvard";
+  // says so rather than doing nothing when flipped. Neither does the plain ATS
+  // one, for the same reason — and the catalogue is where that list lives now.
+  const takesPhoto = templateTakesPhoto(meta.template);
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -1670,11 +1672,11 @@ function DesignPopover({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="harvard">Harvard</SelectItem>
-              <SelectItem value="classic">Classic</SelectItem>
-              <SelectItem value="modern">Modern</SelectItem>
-              <SelectItem value="compact">Compact</SelectItem>
-              <SelectItem value="editorial">Editorial</SelectItem>
+              {RESUME_TEMPLATES.map((template) => (
+                <SelectItem key={template.key} value={template.key}>
+                  {template.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -1698,31 +1700,31 @@ function DesignPopover({
           <button
             type="button"
             role="switch"
-            aria-checked={meta.showPhoto && templateTakesPhoto}
-            disabled={!templateTakesPhoto || !hasPhoto}
+            aria-checked={meta.showPhoto && takesPhoto}
+            disabled={!takesPhoto || !hasPhoto}
             onClick={() => onChange("showPhoto", !meta.showPhoto)}
             className={cn(
               "flex w-full items-center justify-between gap-2 rounded-control border px-2.5 py-2 text-left text-[13px] transition-colors",
-              meta.showPhoto && templateTakesPhoto && hasPhoto
+              meta.showPhoto && takesPhoto && hasPhoto
                 ? "border-primary/50 bg-accent"
                 : "hover:bg-accent/60",
-              (!templateTakesPhoto || !hasPhoto) && "cursor-not-allowed opacity-60 hover:bg-transparent",
+              (!takesPhoto || !hasPhoto) && "cursor-not-allowed opacity-60 hover:bg-transparent",
             )}
           >
             <span className="flex items-center gap-2">
               <UserRoundIcon className="size-3.5 shrink-0" />
-              {meta.showPhoto && templateTakesPhoto && hasPhoto ? "Showing" : "Hidden"}
+              {meta.showPhoto && takesPhoto && hasPhoto ? "Showing" : "Hidden"}
             </span>
             <span
               className={cn(
                 "flex h-4 w-7 shrink-0 items-center rounded-full p-0.5 transition-colors",
-                meta.showPhoto && templateTakesPhoto && hasPhoto ? "bg-primary" : "bg-input",
+                meta.showPhoto && takesPhoto && hasPhoto ? "bg-primary" : "bg-input",
               )}
             >
               <span
                 className={cn(
                   "size-3 rounded-full bg-white transition-transform",
-                  meta.showPhoto && templateTakesPhoto && hasPhoto && "translate-x-3",
+                  meta.showPhoto && takesPhoto && hasPhoto && "translate-x-3",
                 )}
               />
             </span>
@@ -1736,7 +1738,7 @@ function DesignPopover({
                 </Link>{" "}
                 and every resume can use it.
               </>
-            ) : !templateTakesPhoto ? (
+            ) : !takesPhoto ? (
               "Harvard format doesn't take a photo. Switch template to use yours."
             ) : (
               "Your profile photo. Replace it once and every resume follows."

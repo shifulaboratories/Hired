@@ -149,6 +149,65 @@ export async function renderPdf(input: {
   }
 }
 
+/**
+ * The text a machine actually gets off this app's own printed page.
+ *
+ * Same browser, same guard, same cookie as renderPdf: it opens the print page,
+ * waits for the paper, and reads `innerText` back out of it. That is the whole
+ * value — `resumeToText` walks the DOCUMENT, and this walks the PAGE, so the
+ * difference between them is exactly what the rendering drops (a link whose
+ * address lives only in an href, a skills group with a name and no skills) and
+ * what it adds.
+ *
+ * Throws the same "No Chromium on this host" error renderPdf throws, and the
+ * caller is expected to carry on without it rather than fail.
+ */
+export async function readRenderedText(input: {
+  url: string;
+  sessionCookie: { name: string; value: string; domain: string; secure: boolean };
+  marker?: string;
+}): Promise<string> {
+  const executablePath = chromiumPath();
+  if (!executablePath) {
+    throw new Error(
+      "No Chromium on this host, so the server cannot read the printed page. The document half of this answer is still complete.",
+    );
+  }
+
+  let browser: Browser | null = null;
+  try {
+    browser = await chromium.launch({
+      executablePath,
+      args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+    });
+    const context = await browser.newContext();
+    await context.addCookies([
+      {
+        name: input.sessionCookie.name,
+        value: input.sessionCookie.value,
+        domain: input.sessionCookie.domain,
+        path: "/",
+        httpOnly: true,
+        secure: input.sessionCookie.secure,
+        sameSite: "Lax",
+      },
+    ]);
+
+    const page = await context.newPage();
+    const response = await page.goto(input.url, { waitUntil: "networkidle", timeout: 30_000 });
+    if (!response || !response.ok()) {
+      throw new Error(`The print page answered ${response?.status() ?? "nothing"}.`);
+    }
+    const marker = input.marker ?? ".resume-paper";
+    if ((await page.locator(marker).count()) === 0) {
+      throw new Error("The print page rendered no document.");
+    }
+    return (await page.locator(marker).first().innerText()).trim();
+  } finally {
+    await browser?.close().catch(() => {});
+  }
+}
+
 /** Count `/Type /Page` objects. Crude, but read off the real file. */
 function countPages(bytes: Buffer) {
   const matches = bytes.toString("latin1").match(/\/Type\s*\/Page[^s]/g);

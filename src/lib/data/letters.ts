@@ -2,7 +2,7 @@ import { LetterKind, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { pick } from "@/lib/data/patch";
 import { toDate } from "@/lib/data/pipeline";
-import { searchMe, timeZoneOf } from "@/lib/data/me";
+import { getProfile, searchMe, timeZoneOf } from "@/lib/data/me";
 
 /**
  * Everything you write that is not a resume.
@@ -23,38 +23,20 @@ import { searchMe, timeZoneOf } from "@/lib/data/me";
  * them is most of the work.
  */
 
-export const LETTER_KINDS = [
-  "COVER_LETTER",
-  "OUTREACH",
-  "REFERRAL_ASK",
-  "THANK_YOU",
-  "REPLY",
-  "OTHER",
-] as const satisfies readonly LetterKind[];
+/**
+ * The vocabulary lives in a pure module beside resume-text.ts, so a client
+ * component can import it without dragging Prisma into the browser bundle.
+ * Re-exported here because every existing importer says `@/lib/data/letters`.
+ */
+import { IS_CORRESPONDENCE, LETTER_INTENT } from "@/lib/letter-kinds";
 
-export const LETTER_LABEL: Record<LetterKind, string> = {
-  COVER_LETTER: "Cover letter",
-  OUTREACH: "Cold outreach",
-  REFERRAL_ASK: "Referral ask",
-  THANK_YOU: "Thank-you",
-  REPLY: "Reply",
-  OTHER: "Other",
-};
-
-/** What each kind is trying to do, for a drafter that has never met one. */
-export const LETTER_INTENT: Record<LetterKind, string> = {
-  COVER_LETTER:
-    "Three or four short paragraphs sent with an application. Says why this employer, what you have done that bears on this job, and nothing the resume already says twice.",
-  OUTREACH:
-    "A first message to somebody who has never heard of you — a hiring manager, an engineer on the team. Short enough to read on a phone, specific about why them, and asks for one small thing.",
-  REFERRAL_ASK:
-    "A message to somebody you already know, asking them to put you forward. Makes it easy to say yes: names the role, links the posting, and gives them two lines they can forward without editing.",
-  THANK_YOU:
-    "Sent within a day of an interview. Short. Names one thing from the conversation, closes one gap you noticed at the time, and asks nothing.",
-  REPLY:
-    "An answer to something they sent — a recruiter's first email, a rejection, a scheduling request. Matches their register and answers the actual question.",
-  OTHER: "Whatever it is. Keep it in their own voice.",
-};
+export {
+  IS_CORRESPONDENCE,
+  LETTER_INTENT,
+  LETTER_KINDS,
+  LETTER_LABEL,
+  LETTER_PLACEHOLDER,
+} from "@/lib/letter-kinds";
 
 export type LetterInput = {
   kind?: LetterKind;
@@ -238,6 +220,13 @@ export type LetterContext = {
   } | null;
   contact: { id: string; name: string; title: string; relationship: string; email: string } | null;
   resume: { id: string; name: string } | null;
+  /**
+   * Who they are, in their own words already. Unconditional rather than gated
+   * on kind: it is one indexed read on a unique column, and a document signed
+   * with the wrong name is worse than a query. For LINKEDIN_ABOUT and HEADLINE
+   * the existing headline and summary are the most useful input there is.
+   */
+  profile: { fullName: string; headline: string; summary: string };
   /** Material from Me that bears on this posting, ranked. */
   evidence: Awaited<ReturnType<typeof searchMe>>;
   /** Letters of the same kind already written, newest first. Their own voice. */
@@ -259,7 +248,7 @@ export type LetterContext = {
  */
 export async function letterContext(
   userId: string,
-  options: { kind?: LetterKind; applicationId?: string; contactId?: string },
+  options: { kind?: LetterKind; applicationId?: string; contactId?: string; topic?: string },
 ): Promise<LetterContext> {
   const kind = options.kind ?? "COVER_LETTER";
 
@@ -283,22 +272,32 @@ export async function letterContext(
     : null;
   if (options.contactId && !contact) throw new Error("No such contact");
 
-  // The posting is the best query there is for "what of mine matters here".
-  // Falling back to the role title alone still beats nothing.
-  const query = application
-    ? `${application.roleTitle} ${application.jobDescription}`.slice(0, 600)
-    : contact
-      ? `${contact.title} ${contact.relationship}`
-      : "";
+  // A topic first, because the four self-facing kinds have no application and
+  // would otherwise have no query at all. Then the posting, which is the best
+  // query there is for "what of mine matters here". Falling back to the role
+  // title alone still beats nothing.
+  const query = options.topic?.trim()
+    ? options.topic.trim().slice(0, 600)
+    : application
+      ? `${application.roleTitle} ${application.jobDescription}`.slice(0, 600)
+      : contact
+        ? `${contact.title} ${contact.relationship}`
+        : "";
 
-  const [evidence, priorLetters] = await Promise.all([
-    query.trim() ? searchMe(userId, query, 12) : Promise.resolve([]),
+  const [evidence, priorLetters, profile] = await Promise.all([
+    // Called UNCONDITIONALLY, including with an empty query, and that is the
+    // one line here that needed no code: searchMe answers "" with their roles,
+    // newest first, which is exactly the material a brag doc or a self-review
+    // is built from. It used to be guarded into returning nothing. Do not
+    // "fix" it back.
+    searchMe(userId, query, 12),
     db.letter.findMany({
       where: { userId, kind, body: { not: "" } },
       orderBy: { updatedAt: "desc" },
       take: 3,
       select: { id: true, title: true, body: true, kind: true },
     }),
+    getProfile(userId),
   ]);
 
   const missing: string[] = [];
@@ -310,9 +309,26 @@ export async function letterContext(
   if (application && !application.company.notes.trim()) {
     missing.push("No research on the company, so nothing to say about why them specifically.");
   }
-  if (!contact) missing.push("No named recipient, so this will have to open generically.");
+  // Gated on the kind: a brag doc has no recipient BY DESIGN, and reporting
+  // that as a gap trains an assistant to go and ask for one.
+  if (IS_CORRESPONDENCE[kind] && !contact) {
+    missing.push("No named recipient, so this will have to open generically.");
+  }
   if (evidence.length === 0) {
-    missing.push("Nothing in Me matched this posting. Ask before writing anything about their experience.");
+    missing.push(
+      IS_CORRESPONDENCE[kind]
+        ? "Nothing in Me matched this posting. Ask before writing anything about their experience."
+        : "Nothing on file for this. Ask what actually shipped rather than writing from the job title.",
+    );
+  }
+  if (
+    (kind === "LINKEDIN_ABOUT" || kind === "HEADLINE") &&
+    !profile.headline.trim() &&
+    !profile.summary.trim()
+  ) {
+    missing.push(
+      "No headline or summary on their profile, so there is no existing version to improve on — ask for the current one.",
+    );
   }
   if (priorLetters.length === 0) {
     missing.push("No earlier letter of this kind to take their voice from — ask how they want it to sound.");
@@ -338,6 +354,11 @@ export async function letterContext(
     },
     contact,
     resume: application?.resume ?? null,
+    profile: {
+      fullName: profile.fullName,
+      headline: profile.headline,
+      summary: profile.summary,
+    },
     evidence,
     priorLetters,
     missing,

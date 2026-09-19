@@ -31,6 +31,8 @@ import * as wins from "@/lib/data/wins";
 import * as watch from "@/lib/data/watch";
 import * as mailSweep from "@/lib/data/mail-sweep";
 import * as captureLink from "@/lib/data/capture-link";
+import { DEFAULT_TEMPLATE, RESUME_TEMPLATES } from "@/lib/resume-templates";
+import { textDifferences } from "@/lib/resume-ats";
 import {
   CORE_TOOLS,
   SCOPE_VALUES,
@@ -96,7 +98,7 @@ import { renderEmailTemplate, sendEmail } from "@/lib/email";
 import { isAdmin, createEphemeralSession, destroySession, SESSION_COOKIE } from "@/lib/auth";
 import { parseResumeDoc, RESUME_DOC_SHAPE } from "@/lib/resume-schema";
 import { diffResumeDocs } from "@/lib/resume-diff";
-import { renderPdf, pdfRenderingAvailable } from "@/lib/pdf";
+import { renderPdf, readRenderedText, pdfRenderingAvailable } from "@/lib/pdf";
 import { clientName, clientsById, guessClient } from "@/lib/mcp/clients";
 
 type Json = Record<string, unknown>;
@@ -1656,21 +1658,16 @@ export const tools: McpTool[] = [
     },
     handler: async (_args, ctx) => ({
       documentShape: RESUME_DOC_SHAPE,
-      defaultTemplate: "harvard",
-      templates: [
-        {
-          key: "harvard",
-          description:
-            "DEFAULT. The Harvard OCS format: Times-metric serif, everything one size, name and section headings centred over full-width rules, each entry two justified lines (organisation/location, then role/dates). Dense, black-and-white, maximally ATS-safe. Use this unless asked otherwise.",
-        },
-        { key: "classic", description: "Serif headings, centred header. Timeless, ATS-safe. Takes a photo, centred above the name." },
-        { key: "modern", description: "Sans-serif, accent rules, left-aligned header. Takes a photo, beside the name." },
-        { key: "compact", description: "Tight leading, two-column skills. Fits the most content. Takes a photo, beside the name." },
-        { key: "editorial", description: "Large display name, generous whitespace, magazine feel. Takes a photo, squared off beside the name." },
-      ],
+      defaultTemplate: DEFAULT_TEMPLATE,
+      // From the one catalogue, so the picker in the app and the list an
+      // assistant is handed cannot say different things.
+      templates: RESUME_TEMPLATES.map((template) => ({
+        key: template.key,
+        description: template.description,
+      })),
       fonts: ["serif", "inter", "mono"],
       defaults: {
-        template: "harvard",
+        template: DEFAULT_TEMPLATE,
         fontFamily: "serif",
         accent: "#000000",
         fontSize: 10,
@@ -2182,6 +2179,65 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => resumes.resumeFitReport(ctx.userId, required(args, "id")),
   },
   {
+    name: "preview_ats_text",
+    title: "See what a machine reads",
+    description:
+      "What a parser gets when it opens this resume, and what falls out on the way. Reach for it when somebody asks whether their resume is \"ATS-friendly\", before they upload one to a portal that will read it rather than a person, or when they are deciding whether to switch to the ats template. Returns `text` — the whole document flattened in reading order, which is what a well-behaved parser sees — and, where this instance has a headless browser, `rendered`: the same document read back off the actual printed page, so anything that exists only as a picture, a colour or a CSS decoration is simply missing from it. `differences` is the honest half: every line in one and not the other. It catches the real ones — a skills group with a name and no skills prints nothing but is in the text, a link whose label is on the page while its address is not, a section that is hidden. `checks` is a short list of flat, checkable facts, each with the reason it matters: is there an email, is there a phone, are the dates YYYY-MM, are the headings the conventional ones, does the document show a photo, and how many columns there are — one, always, because this app has no two-column template. `method` says how each verdict was reached; read it before quoting any of them. THERE IS NO SCORE, deliberately. No two applicant tracking systems parse alike, none of them publishes what it does, and a number here would be a number this app invented — the widely repeated claim that most resumes are auto-rejected by software is not sourced anywhere. Report the facts, say which of them you are unsure about, and let the person decide. Nothing is written and nothing is rewritten: this reads the document, it does not fix it. Use update_resume once they have agreed to a change.",
+    inputSchema: object(
+      {
+        id: str("Resume id"),
+        render: bool(
+          "Also read the text back off the printed page in a headless browser. On by default where one exists; pass false to skip the browser and get the document half instantly",
+        ),
+      },
+      ["id"],
+    ),
+    annotations: {
+      // Not read-only, for the same reason export_resume_pdf is not: rendering
+      // signs in as a short-lived Session row. The document is untouched.
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const base = await resumes.resumeAtsReport(ctx.userId, required(args, "id"));
+      const wantsRender = b(args, "render") ?? true;
+      if (!wantsRender || !pdfRenderingAvailable()) {
+        return {
+          ...base,
+          rendered: null,
+          differences: null,
+          note: wantsRender
+            ? "This instance has no headless browser, so only the document half was read. Every check above still holds; what is missing is the comparison against the printed page."
+            : "The printed page was not read, because render was false.",
+        };
+      }
+      const token = await createEphemeralSession(ctx.userId);
+      try {
+        const rendered = await readRenderedText({
+          url: `${ctx.baseUrl}/print/${required(args, "id")}`,
+          sessionCookie: {
+            name: SESSION_COOKIE,
+            value: token,
+            domain: new URL(ctx.baseUrl).hostname,
+            secure: ctx.baseUrl.startsWith("https:"),
+          },
+        });
+        return { ...base, rendered, differences: textDifferences(base.text, rendered), note: "" };
+      } catch (error) {
+        return {
+          ...base,
+          rendered: null,
+          differences: null,
+          note: `The printed page could not be read (${error instanceof Error ? error.message : "it failed"}), so only the document half is here.`,
+        };
+      } finally {
+        await destroySession(token);
+      }
+    },
+  },
+  {
     name: "preview_resume_text",
     title: "Preview a resume document as text",
     description:
@@ -2219,7 +2275,7 @@ export const tools: McpTool[] = [
     name: "prep_letter",
     title: "Gather everything before writing a letter",
     description:
-      "Call this FIRST whenever someone asks for a cover letter, a cold message, a referral ask, a thank-you or a reply. A good letter is built from five things that live five places apart, and this returns all of them in one read: the posting and the company research (`application`), who it is going to (`contact`), the resume it goes out with, `evidence` — the material from Me that actually matches this posting, ranked — and `priorLetters`, up to three of the same kind they have already written. Those last ones matter more than any instruction about tone: two letters somebody wrote themselves are the only reliable description of how they sound. `intent` says what this kind of letter is for, and `missing` names what is not on file — no posting, no research, no named recipient, nothing in Me that matched. Say the missing things out loud rather than writing around them, and never invent an achievement to fill a gap. Read-only, saves nothing.",
+      "Call this FIRST whenever someone asks for a cover letter, a cold message, a referral ask, a thank-you or a reply. A good letter is built from five things that live five places apart, and this returns all of them in one read: the posting and the company research (`application`), who it is going to (`contact`), the resume it goes out with, `evidence` — the material from Me that actually matches this posting, ranked — and `priorLetters`, up to three of the same kind they have already written. Those last ones matter more than any instruction about tone: two letters somebody wrote themselves are the only reliable description of how they sound. `intent` says what this kind of letter is for, and `missing` names what is not on file — no posting, no research, no named recipient, nothing in Me that matched. Say the missing things out loud rather than writing around them, and never invent an achievement to fill a gap. FOUR OF THE KINDS ARE NOT LETTERS TO ANYBODY — LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW and BRAG_DOC are documents about the person, so there is usually no application, no recipient and nothing in `missing` about either. For those, `profile` carries the headline and summary they have now, `evidence` falls back to their roles newest first when you give no `topic`, and `priorLetters` is the previous version of this same document — which on a brag doc is the record itself, and is the thing to add to rather than replace. Read-only, saves nothing.",
     inputSchema: object({
       kind: {
         type: "string",
@@ -2228,6 +2284,9 @@ export const tools: McpTool[] = [
       },
       application_id: str("The job this is about, for the posting, the research and the timeline"),
       contact_id: str("The person it is going to, for their name and how they are known"),
+      topic: str(
+        "What this is about, when it is not about a posting — \"the last six months\", \"the billing migration\", \"the two people I mentored\". Used to find the matching material in Me. Leave it out on a self-review or a brag doc and you get their roles, newest first, which is usually what you want",
+      ),
     }),
     annotations: {
       readOnlyHint: true,
@@ -2238,6 +2297,7 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) =>
       letters.letterContext(ctx.userId, {
         kind: enumArg(args, "kind", LETTER_KINDS) as LetterKind | undefined,
+        topic: s(args, "topic"),
         applicationId: s(args, "application_id"),
         contactId: s(args, "contact_id"),
       }),
@@ -2350,7 +2410,7 @@ export const tools: McpTool[] = [
     name: "export_letter_pdf",
     title: "Export a letter as a PDF",
     description:
-      "Render a letter to a real PDF on the server and return a download url. Reach for this when they are about to actually send one — a form wants a file, or they are attaching it to an email. The page carries their name and contact details from their profile as a letterhead, today's date in THEIR time zone, and the body as they wrote it; nothing is rewritten and nothing is added. The url opens in their browser, where they are already signed in, and is not a public link — a letter names people, and there is deliberately no way to publish one the way a resume can be published. If this instance has no headless browser the tool says so and hands back the print url instead, which produces the same document through the browser's own Save as PDF.",
+      "Render a letter to a real PDF on the server and return a download url. Reach for this when they are about to actually send one — a form wants a file, or they are attaching it to an email. The page carries their name and contact details from their profile as a letterhead, today's date in THEIR time zone, and the body as they wrote it; nothing is rewritten and nothing is added. The url opens in their browser, where they are already signed in, and is not a public link — a letter names people, and there is deliberately no way to publish one the way a resume can be published. If this instance has no headless browser the tool says so and hands back the print url instead, which produces the same document through the browser's own Save as PDF. A LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW or BRAG_DOC prints without the date and the recipient line, because none of them is addressed to anybody — and a headline is one line, so exporting one is almost never what somebody actually wants. Ask before you spend a page on it.",
     inputSchema: object({ id: str("Letter id") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -7185,9 +7245,9 @@ Finish with a gap report: which of the posting's requirements the resume evidenc
     name: "write_letter",
     title: "Write a letter",
     description:
-      "Draft a cover letter, a cold message, a referral ask, a thank-you or a reply — gathering the posting, the evidence and their own earlier letters first, so it sounds like them and every claim in it is true.",
+      "Draft anything they write that is not a resume — a cover letter, a cold message, a referral ask, a thank-you, a reply, or one of the four that are about them rather than to anybody: a LinkedIn About, a headline, a self-review, a brag doc. Gathers the posting, the evidence and their own earlier documents of the same kind first, so it sounds like them and every claim in it is true.",
     arguments: [
-      { name: "kind", description: "COVER_LETTER, OUTREACH, REFERRAL_ASK, THANK_YOU or REPLY. Defaults to a cover letter" },
+      { name: "kind", description: "COVER_LETTER, OUTREACH, REFERRAL_ASK, THANK_YOU, REPLY, LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW or BRAG_DOC. Defaults to a cover letter" },
       { name: "application_id", description: "The job it is about" },
       { name: "contact_id", description: "The person it is going to" },
       { name: "notes", description: "Anything they want said, or the message being replied to" },
@@ -7210,6 +7270,9 @@ Work in this order:
    cannot evidence, leave it out and tell me afterwards.
 4. Use application.companyNotes and application.recentActivity for the part that is about
    THEM. A letter that could have been sent to any employer is a letter nobody answers.
+   If this is a LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW or BRAG_DOC there is nobody to write
+   to — skip this step entirely and build it out of evidence and profile. Step 3 still
+   holds: nothing goes in that I did not do.
 5. Draft it. Short. No "I am writing to express my interest", no restating the resume, no
    adjectives doing work a fact should do.
 6. Call create_letter to save it, with the kind, a title of "<Company> — <what it is>", the

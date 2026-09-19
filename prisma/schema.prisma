@@ -758,6 +758,14 @@ model Resume {
 /// Not free text, because the kind decides how a draft should read — a referral
 /// ask is short and asks for one thing, a thank-you is shorter and asks for
 /// nothing — and an assistant given a free-text label has to guess that.
+/// What kind of thing this is. Ten values, and four of them are not letters:
+/// they have no recipient and no date, and LetterPaper prints them plain. See
+/// IS_CORRESPONDENCE in src/lib/letter-kinds.ts.
+///
+/// The four are appended after OTHER rather than slotted in beside their
+/// siblings on purpose: `ALTER TYPE ... ADD VALUE` appends, so a file whose
+/// order does not match the type's order in the database is a trap for whoever
+/// next reads either one. DISPLAY order is LETTER_LABEL's key order, not this.
 enum LetterKind {
   COVER_LETTER
   OUTREACH
@@ -765,6 +773,14 @@ enum LetterKind {
   THANK_YOU
   REPLY
   OTHER
+  /// The first-person paragraph at the top of a LinkedIn profile.
+  LINKEDIN_ABOUT
+  /// One line: under a name on LinkedIn, or at the top of a resume.
+  HEADLINE
+  /// What they write about themselves at a review, for the job they have.
+  SELF_REVIEW
+  /// A running private list of what they have done. Sent to nobody.
+  BRAG_DOC
 }
 
 /// Everything you write that is not a resume.

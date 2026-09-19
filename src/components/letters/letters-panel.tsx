@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { FileSignatureIcon, PlusIcon, PrinterIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import type { LetterKind } from "@prisma/client";
+import { LETTER_KINDS, LETTER_LABEL, LETTER_PLACEHOLDER } from "@/lib/letter-kinds";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -50,28 +51,7 @@ export type LetterRow = {
   contact: { id: string; name: string } | null;
 };
 
-export const LETTER_LABEL: Record<LetterKind, string> = {
-  COVER_LETTER: "Cover letter",
-  OUTREACH: "Cold outreach",
-  REFERRAL_ASK: "Referral ask",
-  THANK_YOU: "Thank-you",
-  REPLY: "Reply",
-  OTHER: "Other",
-};
 
-const KINDS = Object.keys(LETTER_LABEL) as LetterKind[];
-
-/** What each kind is for, as a placeholder. Shown empty, never saved. */
-const PLACEHOLDER: Record<LetterKind, string> = {
-  COVER_LETTER:
-    "Why this employer, what you have done that bears on this job, and nothing the resume already says.",
-  OUTREACH: "Short enough to read on a phone. Why them specifically, and one small ask.",
-  REFERRAL_ASK:
-    "Name the role, link the posting, and give them two lines they can forward without editing.",
-  THANK_YOU: "One thing from the conversation, one gap you noticed, and no ask.",
-  REPLY: "Answer the actual question they asked.",
-  OTHER: "",
-};
 
 export function LettersPanel({
   letters,
@@ -129,7 +109,7 @@ export function LettersPanel({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {KINDS.map((kind) => (
+            {LETTER_KINDS.map((kind) => (
               <DropdownMenuItem key={kind} onSelect={() => create(kind)}>
                 {LETTER_LABEL[kind]}
               </DropdownMenuItem>
@@ -319,7 +299,7 @@ function LetterEditor({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {KINDS.map((kind) => (
+              {LETTER_KINDS.map((kind) => (
                 <SelectItem key={kind} value={kind}>
                   {LETTER_LABEL[kind]}
                 </SelectItem>
@@ -343,7 +323,7 @@ function LetterEditor({
         <Textarea
           value={values.body}
           onChange={(event) => set({ body: event.target.value })}
-          placeholder={PLACEHOLDER[values.kind]}
+          placeholder={LETTER_PLACEHOLDER[values.kind]}
           className="min-h-72 leading-relaxed"
         />
       </div>

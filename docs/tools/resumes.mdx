@@ -1,7 +1,7 @@
 ---
 title: "Resume tools"
 sidebarTitle: "Resumes"
-description: "Eighteen tools for writing documents, checking their length before saving, comparing a tailored variant against its base, publishing them to a link and exporting real PDFs."
+description: "Nineteen tools for writing documents, checking their length before saving, comparing a tailored variant against its base, publishing them to a link and exporting real PDFs."
 icon: "file-lines"
 ---
 
@@ -243,6 +243,17 @@ Reach for this when a resume runs long and the question is what to cut. Returns 
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Resume id |
+
+### `preview_ats_text`
+
+_See what a machine reads_
+
+What a parser gets when it opens this resume, and what falls out on the way. Reach for it when somebody asks whether their resume is "ATS-friendly", before they upload one to a portal that will read it rather than a person, or when they are deciding whether to switch to the ats template. Returns `text` — the whole document flattened in reading order, which is what a well-behaved parser sees — and, where this instance has a headless browser, `rendered`: the same document read back off the actual printed page, so anything that exists only as a picture, a colour or a CSS decoration is simply missing from it. `differences` is the honest half: every line in one and not the other. It catches the real ones — a skills group with a name and no skills prints nothing but is in the text, a link whose label is on the page while its address is not, a section that is hidden. `checks` is a short list of flat, checkable facts, each with the reason it matters: is there an email, is there a phone, are the dates YYYY-MM, are the headings the conventional ones, does the document show a photo, and how many columns there are — one, always, because this app has no two-column template. `method` says how each verdict was reached; read it before quoting any of them. THERE IS NO SCORE, deliberately. No two applicant tracking systems parse alike, none of them publishes what it does, and a number here would be a number this app invented — the widely repeated claim that most resumes are auto-rejected by software is not sourced anywhere. Report the facts, say which of them you are unsure about, and let the person decide. Nothing is written and nothing is rewritten: this reads the document, it does not fix it. Use update_resume once they have agreed to a change.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Resume id |
+| `render` | boolean | Also read the text back off the printed page in a headless browser. On by default where one exists; pass false to skip the browser and get the document half instantly |
 
 ### `preview_resume_text`
 

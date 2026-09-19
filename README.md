@@ -14,11 +14,21 @@ just *talk* to it.
   matters, because the alternative is a resume that says you have no evidence for
   something you spent two years doing.
 - **Resumes** — tailored documents assembled from that material. Defaults to the Harvard
-  OCS format; four other templates, live preview, real PDF export, and a shareable link for
-  the application forms that want a URL instead of a file.
+  OCS format; five other templates, live preview, real PDF export, and a shareable link for
+  the application forms that want a URL instead of a file. One of the five is **Plain
+  (ATS)**: one column, black, no photo, and every link printed as its address rather than as
+  a word with the address hidden in the markup — which is the only thing on a resume a text
+  extractor genuinely cannot see. `preview_ats_text` shows you what a machine reads, what
+  falls out between the document and the printed page, and a short list of flat checks with
+  the reason each one matters. There is deliberately no score: no two applicant tracking
+  systems parse alike, none of them publishes what it does, and a number would be one this
+  app invented.
 - **Letters** — everything you write that is not a resume: cover letters, cold messages,
-  referral asks, thank-yous, replies. They live under Me, and on the job they were written
-  for. Each carries a kind, who it went to, whether it has actually been sent, and links to
+  referral asks, thank-yous, replies — and four that are about you rather than to anybody: a
+  LinkedIn About, a headline, a self-review and a brag doc. Those four print without a date
+  or a recipient, because neither belongs on them, and `prep_letter` answers them from your
+  own roles rather than from a posting it does not have. They live under Me, and on the job
+  they were written for. Each carries a kind, who it went to, whether it has actually been sent, and links to
   the application, the person and the resume it went out with — so "what did I already say
   to them" is one look rather than a search through your sent mail. The point is
   `prep_letter`: before anything is drafted it gathers the posting, the company research,
@@ -204,7 +214,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  199 tools any MCP client can call (232 if you're an admin). Claude, Claude Code, ChatGPT,
+  200 tools any MCP client can call (233 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -387,7 +397,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 199, or 232 if you're an admin.
+then tells you how many tools answered — 200, or 233 if you're an admin.
 
 Each connection can also be narrowed to one job, in the panel where you copy its URL:
 **Everything** (the default, and what every connection had before this existed), **Me,
@@ -623,7 +633,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-199 tools. One hundred and ninety of them are the data tools across the five areas, the
+200 tools. One hundred and ninety-one of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
@@ -639,7 +649,7 @@ by a permission they don't have.
 | **Weekly pipeline review** | What's stalled, who needs chasing, what to do next — with the follow-up messages drafted. |
 | **Research a company into the CRM** | Gathers what's known, works out what's missing, and writes it back to their record without flattening what was already there. |
 | **Prepare for an interview** | Pulls the posting, the timeline, the company research, the people involved and your own evidence into one prep sheet. |
-| **Write a letter** | Gathers the posting, your evidence and the letters you have already written, then drafts a cover letter, a cold message, a referral ask, a thank-you or a reply in your own voice. |
+| **Write a letter** | Gathers the posting, your evidence and the documents of the same kind you have already written, then drafts one in your own voice: a cover letter, a cold message, a referral ask, a thank-you, a reply, a LinkedIn About, a headline, a self-review or a brag doc. |
 | **Log what happened this week** | You ramble; it files everything to the right role, application, or note. |
 | **Bring the pipeline up to date from your inbox** | Reads a week of your mail and calendar, tells you what moved, and queues what to log on your dashboard — nothing is written until you accept it. |
 | **Invite and onboard someone** *(admin)* | Invites a person, hands you the link if email isn't set up, and drafts the message to send them. |

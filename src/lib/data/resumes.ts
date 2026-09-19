@@ -17,7 +17,8 @@ import { reorderDoc, type ReorderInput } from "@/lib/resume-reorder";
 // re-imported resume, and so the editor can ask it in the browser about the
 // bullet being typed: is there anything of this person's behind this?
 import { backingFor, type EvidenceSource } from "@/lib/resume-evidence";
-import { LINES_PER_PAGE } from "@/lib/resume-text";
+import { LINES_PER_PAGE, resumeToText } from "@/lib/resume-text";
+import { atsReport } from "@/lib/resume-ats";
 
 // Rendering helpers live in resume-text.ts (client-safe); re-exported so server
 // callers can keep reaching them through this module.
@@ -378,6 +379,32 @@ export async function resumeFitReport(userId: string, id: string) {
     fontSize: resume.fontSize,
     lineHeight: resume.lineHeight,
     pageMargin: resume.pageMargin,
+  };
+}
+
+/**
+ * What a parser gets out of this resume, and what falls out on the way.
+ *
+ * The text half is `resumeToText`, which walks the DOCUMENT rather than reading
+ * the rendered page — so it is what a well-behaved parser would see if one
+ * existed, not a re-extraction of a PDF. The tool adds the rendered half where
+ * this instance has a browser; this function deliberately has no browser in it,
+ * so the answer is never nothing.
+ */
+export async function resumeAtsReport(userId: string, id: string) {
+  const resume = await db.resume.findFirst({ where: { id, userId } });
+  if (!resume) throw new Error(`No resume with id ${id}`);
+  const doc = parseResumeDoc(resume.data);
+  const text = resumeToText(doc);
+  return {
+    resume: {
+      id: resume.id,
+      name: resume.name,
+      template: resume.template,
+      showPhoto: resume.showPhoto,
+    },
+    text,
+    report: atsReport(doc, { template: resume.template, showPhoto: resume.showPhoto }, text),
   };
 }
 

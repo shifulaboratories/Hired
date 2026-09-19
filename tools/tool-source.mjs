@@ -107,7 +107,10 @@ const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"];
 const SCOPE_VALUES = ["FULL", "WRITING", "PIPELINE", "READONLY"];
 const DIGEST_KINDS = ["weekly", "nudge", "wins"];
 // Mirrors LETTER_KINDS in src/lib/data/letters.ts, checked below.
-const LETTER_KINDS = ["COVER_LETTER", "OUTREACH", "REFERRAL_ASK", "THANK_YOU", "REPLY", "OTHER"];
+const LETTER_KINDS = [
+  "COVER_LETTER", "OUTREACH", "REFERRAL_ASK", "THANK_YOU", "REPLY",
+  "LINKEDIN_ABOUT", "HEADLINE", "SELF_REVIEW", "BRAG_DOC", "OTHER",
+];
 // Mirrors the three in src/lib/data/interviews.ts, all checked below.
 const INTERVIEW_FORMATS = ["PHONE", "VIDEO", "ONSITE", "TAKE_HOME", "PAIRING", "PANEL", "OTHER"];
 const INTERVIEW_OUTCOMES = ["SCHEDULED", "HELD", "PASSED", "REJECTED", "CANCELLED", "NO_SHOW"];
@@ -179,12 +182,15 @@ for (const [name, values] of [
   }
 }
 {
-  // The letter kinds live in the data layer; tools.ts imports them.
-  const file = readFileSync(join(ROOT, "src", "lib", "data", "letters.ts"), "utf8");
-  const declared = /export const LETTER_KINDS = \[([\s\S]*?)\]/.exec(file);
-  const found = declared ? [...declared[1].matchAll(/"([A-Z_]+)"/g)].map((m) => m[1]) : [];
+  // The letter kinds live in a pure module beside resume-text.ts; letters.ts
+  // re-exports them and tools.ts imports them from there. Read the LABEL map
+  // rather than the KINDS array: KINDS is derived from it, and the map is the
+  // thing TypeScript checks for exhaustiveness.
+  const file = readFileSync(join(ROOT, "src", "lib", "letter-kinds.ts"), "utf8");
+  const declared = /export const LETTER_LABEL: Record<LetterKind, string> = \{([\s\S]*?)\n\};/.exec(file);
+  const found = declared ? [...declared[1].matchAll(/^ {2}([A-Z_]+):/gm)].map((m) => m[1]) : [];
   if (found.join(",") !== LETTER_KINDS.join(",")) {
-    throw new Error(`LETTER_KINDS changed in letters.ts (${found.join(", ")}) — update tools/tool-source.mjs`);
+    throw new Error(`LETTER_LABEL changed in letter-kinds.ts (${found.join(", ")}) — update tools/tool-source.mjs`);
   }
 }
 {
