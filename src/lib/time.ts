@@ -196,6 +196,34 @@ export function atHourInDays(
 }
 
 /** How many calendar days apart two instants are, on the reader's calendar. */
+/**
+ * `monthsAhead` calendar months from an instant, at `hour`, where the reader is.
+ *
+ * CLAMPS rather than rolling over: the 31st plus one month is the 28th of
+ * February, not the 3rd of March. Rolling over is how a monthly task set on the
+ * 31st drifts forward a day every short month until it is a different date
+ * entirely.
+ *
+ * Built the way everything else here is — read the parts, build the instant back
+ * — rather than by adding milliseconds, because a month is not a fixed number of
+ * them and neither is a day across a DST boundary.
+ */
+export function atHourInMonths(
+  timeZone: string,
+  monthsAhead: number,
+  hour: number,
+  from: Date,
+): Date {
+  const parts = partsOf(from, timeZone);
+  const total = parts.year * 12 + (parts.month - 1) + monthsAhead;
+  const year = Math.floor(total / 12);
+  const month = (total % 12) + 1;
+  // The last day of the target month, so the 31st lands on the 28th rather than
+  // rolling into the next one.
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return instantAt(timeZone, year, month, Math.min(parts.day, lastDay), hour, 0, 0, 0);
+}
+
 export function daysBetween(from: Date, to: Date, timeZone: string): number {
   const a = partsOf(from, timeZone);
   const b = partsOf(to, timeZone);
@@ -280,4 +308,28 @@ export function isValidTimeZone(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * A date argument, as an instant.
+ *
+ * A bare "2026-03-14" is a CIVIL date — somebody picked a day off a calendar,
+ * or an assistant repeated one back — and `new Date` reads it as UTC midnight,
+ * which is the 13th for everyone west of Greenwich. It lands at 9am in their
+ * own zone instead: the same hour every date this app sets itself uses, so a
+ * follow-up picked by hand behaves exactly like one the app worked out. Values
+ * that already carry a time are instants and pass through untouched.
+ */
+export function toDate(
+  timeZone: string,
+  value: Date | string | null | undefined,
+): Date | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  if (typeof value === "string") {
+    const civil = civilInstant(timeZone, value, 9);
+    if (civil) return civil;
+  }
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
 }

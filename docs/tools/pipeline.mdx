@@ -1,7 +1,7 @@
 ---
 title: "Pipeline tools"
 sidebarTitle: "Pipeline"
-description: "Seventy-four tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
+description: "Eighty-two tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
 icon: "list-check"
 ---
 
@@ -341,6 +341,112 @@ Every question ever recorded, across every interview, grouped and ranked. This i
 | `search` | string | Only questions whose words contain this |
 | `min_times_asked` | number | Only questions asked at least this many times. Default 1. |
 | `limit` | number | How many distinct questions to return. Default 100, ceiling 300. |
+
+### `list_stage_cadences`
+
+_How long after a move a follow-up is armed for_
+
+The chase clock, per stage. Every time an application moves, its follow-up date is set a number of days out — seven after applying, four while interviewing, two on an offer — and this says what those numbers are for this person and whether they set them or inherited them. Reach for it before set_stage_cadence so you can say what is changing, and when somebody asks why a follow-up appeared on a date they did not pick. `source` is the field to read: 'default' means no row exists and the built-in is being used, 'yours' means they set that number, and 'off' means they deliberately turned that stage's chasing off, which is not the same thing as never having said. ACCEPTED and LOST are absent on purpose — a terminal move clears the follow-up date outright, so a cadence on one could never fire. Read-only.
+
+No arguments.
+
+### `set_stage_cadence`
+
+_Change how soon a stage chases_
+
+Set how many days after landing in a stage the follow-up date is armed for. Reach for it when somebody says they are chasing too soon, too late, or not at all — 'stop nagging me about wishlist rows' is `stage: WISHLIST, days: null`, and 'give applications a fortnight' is `stage: APPLIED, days: 14`. THREE MEANINGS FOR ONE ARGUMENT, and they are all different: a NUMBER stores that many days; `days: null` stores 'arm nothing for this stage', which is a decision; and LEAVING days OUT deletes their setting and goes back to the built-in, which is how you undo. Say which of the three you are doing before you do it. This changes future moves only — no date already on the board is touched, and if they want one of those moved, that is update_application. A date somebody set by hand for a specific day is never overwritten by a move either, whatever the cadence says. ACCEPTED and LOST are refused by name: a terminal move clears the date outright, so a cadence on one would be a setting that lies.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `stage` | enum | **required** — Which stage's clock to change  `WISHLIST` · `APPLIED` · `INTERVIEWING` · `OFFER` |
+| `days` | number | Days from the move to the follow-up, 0 to 365. Send null to arm nothing for this stage. Omit it entirely to delete the setting and go back to the built-in. |
+| `revert` | boolean | Delete the setting and go back to the built-in. The same as omitting days. |
+
+### `list_referrals`
+
+_Who vouched for you where_
+
+Every referral on file, with where it stands and whether it came to anything. Reach for it when somebody asks who has put them forward, who they are still waiting on, or who they owe a thank-you — and reach for list_relationships instead when the question is who is worth talking to at all, because that one covers everybody in the CRM and this one covers only the people who actually asked on your behalf. `converted` is DERIVED from the application's own stage and timeline, not stored, so it cannot disagree with the funnel. `thanksOwed` is the list that matters: it converted and nobody has said thank you, which is the most expensive unclosed loop in a search and is invisible in every other record this app keeps. `waitingDays` counts from the last time the STATUS moved, not from the last edit, so fixing a typo in the notes does not reset the clock. Referrals from an archived person are excluded; one whose application was archived stays, because who put you forward is a fact about the person. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `contact_id` | string | Only referrals from this person |
+| `application_id` | string | Only referrals for this job |
+| `company_id` | string | Only referrals at this employer |
+| `status` | enum | Only referrals in this state  `ASKED` · `AGREED` · `SUBMITTED` · `DECLINED` · `NO_ANSWER` |
+| `thanks_owed` | boolean | Only the ones that converted and were never acknowledged |
+| `waiting_for_days` | number | Only ones still ASKED or AGREED and older than this many days |
+| `limit` | number | Max rows to return. Default 100, hard ceiling 500. Prefer narrowing the filters. |
+
+### `record_referral`
+
+_Record that somebody put their name behind you_
+
+Log a referral — you asked somebody to refer you, or they offered. Reach for it the moment the ask is made, not when it lands: 'waiting on three people' is only a question this app can answer if the asks are on file. The person is a contact id from list_contacts; create_contact them first if they are not on file yet, because somebody who refers you is worth keeping long after this job. The application is optional and often comes later — 'do you know anyone at Stripe' is asked before anybody applies — and passing one fills in the employer for you. Status starts at ASKED. When it converts, a thank-you task appears on their list automatically, once, the first time the application reaches interviewing or beyond; that is the point of recording it.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `contact_id` | string | **required** — Who vouched for you, from list_contacts |
+| `application_id` | string | The job, if there is one yet |
+| `company_id` | string | The employer. Filled in from the application when you pass one. |
+| `status` | enum | Where it stands. Defaults to ASKED.  `ASKED` · `AGREED` · `SUBMITTED` · `DECLINED` · `NO_ANSWER` |
+| `asked_on` | string | When you asked, YYYY-MM-DD. Defaults to today. |
+| `notes` | string | What you asked for and what they said, in your own words |
+
+### `update_referral`
+
+_Move a referral along, or mark it thanked_
+
+Change where a referral stands, attach the application once there is one, or record that you have thanked them. Only the fields you send change. Moving the STATUS restarts the waiting clock, which is what 'you asked three weeks ago' counts from — so move it when something actually happened, and edit the notes when nothing did. `thanked: true` stamps today and takes it off the thanks-owed list; that is the field the whole model exists for, so do not set it because a thank-you was drafted, only because one was sent.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Referral id, from list_referrals |
+| `status` | enum | Where it stands now. Moving this restarts the waiting clock.  `ASKED` · `AGREED` · `SUBMITTED` · `DECLINED` · `NO_ANSWER` |
+| `application_id` | string | Attach the job, now that there is one. An empty string detaches it. |
+| `company_id` | string | The employer. An empty string detaches it. |
+| `contact_id` | string | Correct who vouched |
+| `asked_on` | string | When you asked, YYYY-MM-DD |
+| `notes` | string | Replaces the notes |
+| `thanked` | boolean | True stamps today as when you thanked them; false clears it |
+
+### `delete_referral`
+
+_Remove a referral_
+
+Delete a referral for good. There is no archive for these. What is lost is the record that a named person put their reputation behind you, which is usually worth keeping even when the job went nowhere — prefer update_referral with a status of DECLINED or NO_ANSWER. Say what will go and get a plain yes first.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Referral id |
+
+### `referral_review`
+
+_Who you owe a thank-you, and who has gone quiet_
+
+The two questions the referral record exists to answer, in one read. `thanksOwed` is anybody whose referral converted and who has never been thanked — work through it first, because it costs one message and it is the difference between a person who refers you once and a person who refers you for the rest of your career. `waiting` is asks that are still ASKED or AGREED and have sat for a while, longest first, so a nudge goes to the right person; a nudge is one line and is not a second ask. `byStatus` counts the whole set and carries a line on what each state means for what to do next. Reach for this in a weekly review, and after any week with several applications. Read-only, saves nothing: update_referral is what records that you acted.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `waiting_for_days` | number | How long counts as waiting. Default 10. |
+
+### `log_win`
+
+_Put something that went well into Me_
+
+Append one thing that went well to their current role's background, under a dated heading. THIS IS THE TOOL FOR AFTER THE SEARCH IS OVER, and it is the one that makes the next one possible: Me stops growing the day somebody accepts an offer, and two years later the next search starts from a role with an empty background that nobody can reconstruct from memory. Reach for it whenever they mention something they did — a project that shipped, a number that moved, something somebody thanked them for — whether or not they asked you to record it; offer, do not assume. Write what they said, in their words, with whatever number they gave. DO NOT polish it into a resume bullet and do not invent an impact figure: a highlight is a deliberate distillation and mine_role_background is what does that, later, with them in the room. If nothing in Me is marked as the current role this refuses and says so — and when there is an accepted application it names the employer, so the next move is to add the role rather than to give up.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `text` | string | **required** — What went well, in their words. One or two sentences is right. |
+| `role_id` | string | Which role it belongs to. Defaults to whichever is marked current. |
+| `occurred_on` | string | When it happened, YYYY-MM-DD. Only decides which month it files under. |
 
 ### `list_stage_templates`
 
@@ -859,7 +965,7 @@ To-dos, each with a due date and — at most — one thing it is about: an appli
 
 _Create a task_
 
-Add a to-do, with a due date and — at most — one thing it is about. A task can hang off an application, a company, a person, a resume, a role in Me, or a note; pass the id of whichever ONE it concerns, and none of them for a task that is about nothing in particular. Passing two is refused rather than guessed at. Attaching it matters: the task shows on that record's own screen, and it goes with it if the record is ever deleted. `detail` is the room for what the task actually involves, which the title should not have to carry. Ids that are not this person's, or are in the archive, are refused.
+Add a to-do, with a due date and — at most — one thing it is about. A task can hang off an application, a company, a person, a resume, a role in Me, or a note; pass the id of whichever ONE it concerns, and none of them for a task that is about nothing in particular. Passing two is refused rather than guessed at. Attaching it matters: the task shows on that record's own screen, and it goes with it if the record is ever deleted. `detail` is the room for what the task actually involves, which the title should not have to carry. Ids that are not this person's, or are in the archive, are refused. Pass repeat_unit to make it come back: completing it creates the NEXT one and only the next one, so a month of ignored instances never materialises thirty rows the day somebody catches up. The date is stepped from the first instance's, so 'every Monday' stays on a Monday however late it is ticked off.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -872,12 +978,15 @@ Add a to-do, with a due date and — at most — one thing it is about. A task c
 | `resumeId` | string | Or to a resume |
 | `roleId` | string | Or to a role in Me |
 | `noteId` | string | Or to a note |
+| `repeat_unit` | enum | Make it repeat. Completing it then creates the next one. Send an empty string to stop a series.  `DAY` · `WEEK` · `MONTH` |
+| `repeat_every` | number | How many units between instances. 1 unless you say otherwise. |
+| `repeat_until` | string | The last day the series may produce an instance, YYYY-MM-DD. Omit to run until stopped. |
 
 ### `complete_task`
 
 _Complete or reopen a task_
 
-Mark a task done, or reopen it with done: false.
+Mark a task done, or reopen it with done: false. When the task repeats, completing it also creates the NEXT instance and returns it as `next` — one, never one per missed week. Reopening and completing again does not make a second: the new instance points back at the one that made it, so the duplicate is refused rather than written.
 
 **Overwrites or deletes.**
 
@@ -890,7 +999,7 @@ Mark a task done, or reopen it with done: false.
 
 _Update a task_
 
-Reword a task, move its due date, or hook it to something different. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for any of the subject ids to unhook it. Setting one subject CLEARS the others, because a task is about at most one thing — so moving a task from an application to a person is one call with contactId, not two. Use complete_task to tick it off; done is not settable here.
+Reword a task, move its due date, or hook it to something different. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for any of the subject ids to unhook it. Setting one subject CLEARS the others, because a task is about at most one thing — so moving a task from an application to a person is one call with contactId, not two. Use complete_task to tick it off; done is not settable here. THE TRAP with repeats: moving this instance's due date moves THIS instance, not the series, because every future date is stepped from the first one. Sending repeat_unit as an empty string stops the series, and completing the task is then the end of it — which is the whole off switch and is on the row somebody is already looking at.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -904,6 +1013,9 @@ Reword a task, move its due date, or hook it to something different. Only the fi
 | `resumeId` | string | Or to a resume |
 | `roleId` | string | Or to a role in Me |
 | `noteId` | string | Or to a note |
+| `repeat_unit` | enum | Make it repeat. Completing it then creates the next one. Send an empty string to stop a series.  `DAY` · `WEEK` · `MONTH` |
+| `repeat_every` | number | How many units between instances. 1 unless you say otherwise. |
+| `repeat_until` | string | The last day the series may produce an instance, YYYY-MM-DD. Omit to run until stopped. |
 
 ### `delete_task`
 

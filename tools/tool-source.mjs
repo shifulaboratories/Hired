@@ -103,7 +103,7 @@ const COLUMN_LIST_VALUES = ["pipeline", "companies", "contacts"];
 // src/lib/mcp/tools.ts. Both checked below.
 const PROPOSAL_KINDS = ["LOG_ACTIVITY", "MOVE_STAGE", "CREATE_TASK", "SET_FOLLOW_UP", "CREATE_CONTACT"];
 const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"];
-const DIGEST_KINDS = ["weekly", "nudge"];
+const DIGEST_KINDS = ["weekly", "nudge", "wins"];
 // Mirrors LETTER_KINDS in src/lib/data/letters.ts, checked below.
 const LETTER_KINDS = ["COVER_LETTER", "OUTREACH", "REFERRAL_ASK", "THANK_YOU", "REPLY", "OTHER"];
 // Mirrors the three in src/lib/data/interviews.ts, all checked below.
@@ -112,6 +112,8 @@ const INTERVIEW_OUTCOMES = ["SCHEDULED", "HELD", "PASSED", "REJECTED", "CANCELLE
 const QUESTION_KINDS = [
   "BEHAVIOURAL", "TECHNICAL", "SYSTEM_DESIGN", "ROLE", "CULTURE", "COMPENSATION", "MINE", "OTHER",
 ];
+// Mirrors REFERRAL_STATUSES in src/lib/data/referrals.ts, checked below.
+const REFERRAL_STATUSES = ["ASKED", "AGREED", "SUBMITTED", "DECLINED", "NO_ANSWER"];
 // Mirrors SYSTEM_EVENT_SOURCES in src/lib/data/system.ts, checked below.
 const SYSTEM_EVENT_SOURCES = [
   "stripe.webhook", "billing.sync", "email.send", "google.signin", "google.data",
@@ -176,6 +178,17 @@ for (const [name, values] of [
 }
 {
   // The three interview enums live in the data layer; tools.ts imports them.
+  const referralFile = readFileSync(join(ROOT, "src", "lib", "data", "referrals.ts"), "utf8");
+  const declaredReferrals = /export const REFERRAL_STATUSES = \[([\s\S]*?)\]/.exec(referralFile);
+  const foundReferrals = declaredReferrals
+    ? [...declaredReferrals[1].matchAll(/"([A-Z_]+)"/g)].map((m) => m[1])
+    : [];
+  if (foundReferrals.join(",") !== REFERRAL_STATUSES.join(",")) {
+    throw new Error(
+      `REFERRAL_STATUSES changed in referrals.ts (${foundReferrals.join(", ")}) — update tools/tool-source.mjs`,
+    );
+  }
+
   const file = readFileSync(join(ROOT, "src", "lib", "data", "interviews.ts"), "utf8");
   for (const [name, values] of [
     ["INTERVIEW_FORMATS", INTERVIEW_FORMATS],
@@ -213,7 +226,7 @@ for (const [name, values] of [
 
 const scope = {
   str, num, bool, strArray, object, limitArg, SYSTEM_EVENT_SOURCES, LETTER_KINDS,
-  INTERVIEW_FORMATS, INTERVIEW_OUTCOMES, QUESTION_KINDS,
+  INTERVIEW_FORMATS, INTERVIEW_OUTCOMES, QUESTION_KINDS, REFERRAL_STATUSES,
   PROPOSAL_KINDS, PROPOSAL_STATUSES, DIGEST_KINDS,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
   ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,

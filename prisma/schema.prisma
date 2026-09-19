@@ -93,6 +93,8 @@ model User {
   linkedAccounts     LinkedAccount[]
   revisions          Revision[]
   writeLogs          WriteLog[]
+  stageCadences      StageCadence[]
+  referrals          Referral[]
 
   @@index([role])
   @@index([stripeCustomerId])
@@ -474,6 +476,20 @@ model Profile {
   /// have email configured; neither is a setting an admin can set for you.
   weeklyDigest Boolean  @default(false)
   dailyNudge   Boolean  @default(false)
+  /// The third promise, and the only one addressed to somebody who is NOT
+  /// searching: once a month, name one thing that went well so it lands in Me
+  /// while you still remember it. Off until asked, like the other two, and
+  /// normally turned on at the moment the other two are turned off — a weekly
+  /// summary of an empty pipeline is the mail people filter.
+  winsNudge    Boolean  @default(false)
+  /// The civil day it was last sent, in their zone. Same shape and same reason
+  /// as lastDigestOn: the question the sweep asks is "have they had this
+  /// month's yet", and that is a question about their calendar.
+  lastWinsOn   String   @default("")
+  /// How many of these have gone out since anything last landed in Me. At three
+  /// it stops sending: a mail somebody has ignored three times is a mail they
+  /// have declined. Logging a win, or switching it off and on, resets it.
+  winsQuiet    Int      @default(0)
   /// The hour, in THEIR zone, both are sent at. 0-23.
   digestHour   Int      @default(8)
   /// The civil day each was last sent, in their zone, as YYYY-MM-DD. A day
@@ -815,6 +831,7 @@ model Company {
   /// a typo everywhere at once, and no way to ask "who else is fintech".
   tags         CompanyTag[]
   tasks        Task[]
+  referrals    Referral[]
 
   @@unique([userId, name, archiveKey])
   @@index([userId])
@@ -892,6 +909,8 @@ model Application {
   /// Every round, in order. Interviews carry no archivedAt of their own; see
   /// the model.
   interviews Interview[]
+  /// Who put their name behind this one. Referrals carry no archivedAt either.
+  referrals  Referral[]
   letters    Letter[]
   proposals  Proposal[]
 
@@ -1246,6 +1265,130 @@ model Proposal {
   @@index([contactId])
 }
 
+/// How long after a job lands in a stage its follow-up date is set for.
+///
+/// A sibling of StageTemplate rather than a column on it, and the three reasons
+/// are worth having in one place. A checklist line fires ONCE per application
+/// ever; a cadence re-arms on EVERY move, which is the opposite rule and does
+/// not belong on the same row. A stage has many checklist lines and exactly one
+/// cadence, so hanging the number off a line means deciding which of three lines
+/// owns it. And the built-in numbers have always applied to accounts with no
+/// checklist at all, so moving them onto StageTemplate would take the cadence
+/// away from everybody who never wrote one.
+///
+/// ACCEPTED and LOST never get a row: a terminal move clears the follow-up date
+/// outright, so a cadence on one could never fire. setStageCadence refuses them
+/// rather than storing a setting that lies.
+model StageCadence {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stage     Stage
+  /// Days from the move to the follow-up date, which lands at 9am where the
+  /// person is. 0 means "chase the same day".
+  ///
+  /// Null is NOT the same as having no row, and this is the thing to get right:
+  /// null means this stage deliberately arms NOTHING, which is what somebody
+  /// means by "I don't chase wishlist rows"; no row at all means "use the
+  /// built-in default". Deleting the row is how you go back to the default.
+  days      Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One cadence per stage per person. This is the whole integrity story.
+  @@unique([userId, stage])
+  @@index([userId])
+}
+
+/// How often a task comes back. Three units, because a search has weekly rituals
+/// and monthly ones and nothing in between that anybody asks for. A count of
+/// units lives beside this in Task.repeatEvery, so "every other Tuesday" is
+/// 2 WEEK rather than a fourth enum value.
+enum TaskRepeat {
+  DAY
+  WEEK
+  MONTH
+}
+
+/// Where a referral stands, in the order it moves through.
+///
+/// NO_ANSWER is not DECLINED, and the difference is the one the LOSS tags
+/// already draw between a rejection and a ghosting: a no is a decision about
+/// you, silence is the absence of one, and what you do next is different.
+enum ReferralStatus {
+  /// You asked. Nothing has come back.
+  ASKED
+  /// They said yes. Nothing has landed with the employer yet.
+  AGREED
+  /// It is in — your name went forward, the resume was passed, the intro made.
+  SUBMITTED
+  /// They said no, or could not.
+  DECLINED
+  /// Nobody ever answered.
+  NO_ANSWER
+}
+
+/// Who vouched for you where, and whether it came to anything.
+///
+/// Its own model rather than an ActivityType.REFERRAL row, for the two reasons a
+/// timeline entry cannot cover. It has a STATUS that moves — asked, agreed,
+/// submitted — and the current value of a status stored as prose is whatever the
+/// newest note happens to say, which no query can read. And it is a join: one
+/// person refers you to three places and one job is referred by two people,
+/// which Contact.applicationId cannot hold for exactly the reason ContactCompany
+/// exists.
+///
+/// WHETHER IT CONVERTED IS NOT A COLUMN. It is derived the way listRelationships
+/// derives it — did the application ever reach INTERVIEWING or beyond. A stored
+/// boolean would be a third place that can disagree with the funnel.
+///
+/// No archivedAt. Like Offer, Activity and Task, a referral follows its parents
+/// in and out of the archive through THEIR columns — and it has three of them.
+/// The cost is the one offers.ts names: every read spells the parent filters
+/// itself, and nothing in the toolchain catches a miss.
+model Referral {
+  id            String         @id @default(cuid())
+  /// Denormalised, like Offer, Interview, Activity and Task, so every query in
+  /// src/lib/data/ filters on it directly.
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Who vouched. Required: a referral with no referrer is a note.
+  contactId     String
+  contact       Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  /// The job, once there is one. Null is normal and is not an error — "do you
+  /// know anyone at Stripe" is asked before anybody applies. SET NULL rather
+  /// than cascade: destroying a job must not destroy the record that somebody
+  /// put their name behind you.
+  applicationId String?
+  application   Application?   @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  /// The employer. Kept even when there is an application, because "who has put
+  /// me forward where" survives the application being archived out from under it.
+  companyId     String?
+  company       Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  status        ReferralStatus @default(ASKED)
+  askedOn       DateTime       @default(now())
+  /// When the status last actually moved, which is what "waiting three weeks"
+  /// counts from. Not updatedAt: fixing a typo in the notes is not news.
+  statusOn      DateTime       @default(now())
+  /// What you asked for and what they said, in your own words.
+  notes         String         @default("")
+  /// When you thanked them; null until you have. This is the point of the model.
+  /// A referral that converted and was never acknowledged is the most expensive
+  /// unclosed loop in a search, and it is invisible in every other record here.
+  thankedAt     DateTime?
+  /// The nudge task this referral's conversion created. No relation and no
+  /// foreign key, the same call Interview.activityId makes. It is also the
+  /// dedupe: a conversion that finds a task already here makes no second one.
+  thankTaskId   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([userId, status])
+  @@index([contactId])
+  @@index([applicationId])
+  @@index([companyId])
+}
+
 /// What something looked like before it was replaced.
 ///
 /// `update_resume` and `update_role` replace what you send — that is their
@@ -1479,6 +1622,8 @@ model Contact {
   letters        Letter[]
   /// Rooms they were in. The join is explicit; see InterviewInterviewer.
   interviews     InterviewInterviewer[]
+  /// Times they put their name behind you.
+  referrals      Referral[]
   proposals      Proposal[]
 
   @@index([userId])
@@ -1588,7 +1733,30 @@ model Task {
   /// a task you are already doing is not a setting.
   stageTemplateId String?
   stageTemplate   StageTemplate? @relation(fields: [stageTemplateId], references: [id], onDelete: SetNull)
-  createdAt       DateTime       @default(now())
+
+  /// How often this comes back. NULL is the normal case — a task happens once.
+  /// Set it and completing the task creates the next one; clear it and
+  /// completing the task is the end of the series. That is the whole off
+  /// switch, and it is deliberately on the row somebody is already looking at
+  /// rather than in a table they would have to be shown.
+  repeatUnit   TaskRepeat?
+  /// How many units between instances. 1 unless somebody said otherwise.
+  /// Meaningless, and never read, while repeatUnit is null.
+  repeatEvery  Int         @default(1)
+  /// The last day this series may produce an instance. Null means it runs until
+  /// somebody stops it, which is what people mean by "every Monday".
+  repeatUntil  DateTime?
+  /// The due date of the FIRST instance, which every later due date is stepped
+  /// from. Stepping from the anchor rather than from the last due date is what
+  /// keeps "every Monday" on a Monday after somebody ticks one off three weeks
+  /// late — step from the anchor, land on the first occurrence after now.
+  repeatAnchor DateTime?
+  /// The instance this one was made from. No relation and no foreign key,
+  /// deliberately. It is also the dedupe: a completion that finds a task already
+  /// pointing back at it makes nothing, so complete, reopen and complete again
+  /// cannot produce two. Same shape as the checklist dedupe on stageTemplateId.
+  repeatFrom   String?
+  createdAt    DateTime    @default(now())
 
   @@index([userId, done, dueAt])
   @@index([applicationId, stageTemplateId])

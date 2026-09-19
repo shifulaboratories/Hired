@@ -3,7 +3,7 @@ import { dueNow, listSchedule } from "@/lib/data/schedule";
 import { diagnoseSearch, listApplications, pipelineStats, STAGE_LABEL } from "@/lib/data/pipeline";
 import { timeZoneOf } from "@/lib/data/me";
 import { civilDay, clockIn, weekdayIn } from "@/lib/time";
-import { digestEmail, nudgeEmail, sendEmail } from "@/lib/email";
+import { digestEmail, nudgeEmail, sendEmail, winsEmail } from "@/lib/email";
 import { getSettings, emailIsConfigured } from "@/lib/settings";
 
 /**
@@ -28,7 +28,23 @@ import { getSettings, emailIsConfigured } from "@/lib/settings";
  *   points their platform's scheduler at /api/digest/<token> and this runs.
  */
 
-export type DigestKind = "weekly" | "nudge";
+/**
+ * The three messages this app can send a member.
+ *
+ * "wins" is the third and the only one addressed to somebody who is NOT
+ * searching: once a month, name one thing that went well so it lands in Me
+ * while you still remember it. It is normally turned on at the moment the
+ * other two are turned off, which is the day an offer is accepted.
+ */
+export type DigestKind = "weekly" | "nudge" | "wins";
+
+/** Unanswered monthly mails after which it stops sending. Three is a decline. */
+const WINS_GIVE_UP_AFTER = 3;
+
+/** The last day of a civil month, so the wins mail lands at the end of one. */
+function lastDayOfMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
 
 export type DigestContent = {
   kind: DigestKind;
@@ -192,15 +208,23 @@ export async function weeklyContent(userId: string): Promise<DigestContent> {
 }
 
 export async function digestContent(userId: string, kind: DigestKind) {
-  return kind === "nudge" ? nudgeContent(userId) : weeklyContent(userId);
+  if (kind === "nudge") return nudgeContent(userId);
+  // Imported lazily so the cycle stays type-only: wins.ts takes DigestContent
+  // from here, and a value import in both directions is a real one.
+  if (kind === "wins") return (await import("@/lib/data/wins")).winsContent(userId);
+  return weeklyContent(userId);
 }
 
 export type DigestPreferences = {
   weeklyDigest: boolean;
   dailyNudge: boolean;
+  winsNudge: boolean;
   digestHour: number;
   lastDigestOn: string;
   lastNudgeOn: string;
+  lastWinsOn: string;
+  /** How many wins mails have gone unanswered. At three it stops sending. */
+  winsQuiet: number;
   /** Whether the instance can send at all. A switch that cannot work is a lie. */
   emailConfigured: boolean;
 };
@@ -212,9 +236,12 @@ export async function getDigestPreferences(userId: string): Promise<DigestPrefer
       select: {
         weeklyDigest: true,
         dailyNudge: true,
+        winsNudge: true,
         digestHour: true,
         lastDigestOn: true,
         lastNudgeOn: true,
+        lastWinsOn: true,
+        winsQuiet: true,
       },
     }),
     getSettings(),
@@ -222,20 +249,40 @@ export async function getDigestPreferences(userId: string): Promise<DigestPrefer
   return {
     weeklyDigest: profile?.weeklyDigest ?? false,
     dailyNudge: profile?.dailyNudge ?? false,
+    winsNudge: profile?.winsNudge ?? false,
     digestHour: profile?.digestHour ?? 8,
     lastDigestOn: profile?.lastDigestOn ?? "",
     lastNudgeOn: profile?.lastNudgeOn ?? "",
+    lastWinsOn: profile?.lastWinsOn ?? "",
+    winsQuiet: profile?.winsQuiet ?? 0,
     emailConfigured: emailIsConfigured(settings),
   };
 }
 
 export async function setDigestPreferences(
   userId: string,
-  patch: { weeklyDigest?: boolean; dailyNudge?: boolean; digestHour?: number },
+  patch: {
+    weeklyDigest?: boolean;
+    dailyNudge?: boolean;
+    winsNudge?: boolean;
+    digestHour?: number;
+  },
 ) {
-  const data: { weeklyDigest?: boolean; dailyNudge?: boolean; digestHour?: number } = {};
+  const data: {
+    weeklyDigest?: boolean;
+    dailyNudge?: boolean;
+    winsNudge?: boolean;
+    digestHour?: number;
+    winsQuiet?: number;
+  } = {};
   if (patch.weeklyDigest !== undefined) data.weeklyDigest = patch.weeklyDigest;
   if (patch.dailyNudge !== undefined) data.dailyNudge = patch.dailyNudge;
+  if (patch.winsNudge !== undefined) {
+    data.winsNudge = patch.winsNudge;
+    // Switching it on — or off and on — is a fresh answer to the question the
+    // give-up counter was asking, so the count starts again.
+    data.winsQuiet = 0;
+  }
   if (patch.digestHour !== undefined) {
     const hour = Math.trunc(patch.digestHour);
     if (!Number.isFinite(hour) || hour < 0 || hour > 23) {
@@ -278,8 +325,10 @@ export async function sendDigest(
             timeZone: true,
             weeklyDigest: true,
             dailyNudge: true,
+            winsNudge: true,
             lastDigestOn: true,
             lastNudgeOn: true,
+            lastWinsOn: true,
           },
         },
       },
@@ -292,7 +341,12 @@ export async function sendDigest(
     return { sent: false, kind, reason: "Email is not configured on this instance" };
   }
 
-  const wanted = kind === "weekly" ? user.profile?.weeklyDigest : user.profile?.dailyNudge;
+  const wanted =
+    kind === "weekly"
+      ? user.profile?.weeklyDigest
+      : kind === "wins"
+        ? user.profile?.winsNudge
+        : user.profile?.dailyNudge;
   if (!wanted) return { sent: false, kind, reason: "They have not asked for this one" };
 
   // As in the sweep: the stored zone verbatim, so "" means the host's clock
@@ -300,7 +354,12 @@ export async function sendDigest(
   // built for.
   const zone = user.profile?.timeZone ?? "";
   const today = civilDay(now, zone);
-  const already = kind === "weekly" ? user.profile?.lastDigestOn : user.profile?.lastNudgeOn;
+  const already =
+    kind === "weekly"
+      ? user.profile?.lastDigestOn
+      : kind === "wins"
+        ? user.profile?.lastWinsOn
+        : user.profile?.lastNudgeOn;
   if (!options?.force && already === today) {
     return { sent: false, kind, reason: "Already sent today" };
   }
@@ -318,10 +377,14 @@ export async function sendDigest(
   }
 
   const base = (settings.publicUrl || "").replace(/\/$/, "");
-  const message =
-    kind === "nudge"
-      ? nudgeEmail({ instanceName: settings.instanceName, name: user.name, content, appUrl: base })
-      : digestEmail({ instanceName: settings.instanceName, name: user.name, content, appUrl: base });
+  const shell =
+    kind === "nudge" ? nudgeEmail : kind === "wins" ? winsEmail : digestEmail;
+  const message = shell({
+    instanceName: settings.instanceName,
+    name: user.name,
+    content,
+    appUrl: base,
+  });
 
   const result = await sendEmail({
     to: user.email,
@@ -339,7 +402,15 @@ export async function sendDigest(
 async function stamp(userId: string, kind: DigestKind, day: string) {
   await db.profile.updateMany({
     where: { userId },
-    data: kind === "weekly" ? { lastDigestOn: day } : { lastNudgeOn: day },
+    data:
+      kind === "weekly"
+        ? { lastDigestOn: day }
+        : kind === "wins"
+          ? // The quiet counter goes up on the way out, not on the way in: a
+            // mail somebody has ignored three times is a mail they have
+            // declined, and logWin resets it the moment they answer one.
+            { lastWinsOn: day, winsQuiet: { increment: 1 } }
+          : { lastNudgeOn: day },
   });
 }
 
@@ -384,15 +455,18 @@ export async function runDigestSweep(now = new Date()): Promise<SweepReport> {
   }
 
   const profiles = await db.profile.findMany({
-    where: { OR: [{ weeklyDigest: true }, { dailyNudge: true }] },
+    where: { OR: [{ weeklyDigest: true }, { dailyNudge: true }, { winsNudge: true }] },
     select: {
       userId: true,
       timeZone: true,
       digestHour: true,
       weeklyDigest: true,
       dailyNudge: true,
+      winsNudge: true,
       lastDigestOn: true,
       lastNudgeOn: true,
+      lastWinsOn: true,
+      winsQuiet: true,
       user: { select: { isActive: true } },
     },
   });
@@ -400,7 +474,8 @@ export async function runDigestSweep(now = new Date()): Promise<SweepReport> {
   const report: SweepReport = { considered: 0, sent: 0, skipped: 0, failed: 0, problems: [] };
 
   for (const profile of profiles) {
-    const wants = (profile.weeklyDigest ? 1 : 0) + (profile.dailyNudge ? 1 : 0);
+    const wants =
+      (profile.weeklyDigest ? 1 : 0) + (profile.dailyNudge ? 1 : 0) + (profile.winsNudge ? 1 : 0);
     report.considered += wants;
     if (!profile.user.isActive) {
       report.skipped += wants;
@@ -421,17 +496,37 @@ export async function runDigestSweep(now = new Date()): Promise<SweepReport> {
     // missed 08:00 should still deliver at 09:00 rather than skip the day.
     const reached = here.hour >= profile.digestHour;
 
-    for (const kind of ["nudge", "weekly"] as const) {
-      const wanted = kind === "weekly" ? profile.weeklyDigest : profile.dailyNudge;
+    for (const kind of ["nudge", "weekly", "wins"] as const) {
+      const wanted =
+        kind === "weekly"
+          ? profile.weeklyDigest
+          : kind === "wins"
+            ? profile.winsNudge
+            : profile.dailyNudge;
       // A message they never asked for is not a message this sweep considered,
       // so it is not one it skipped either. Counted out before anything else,
       // which is what keeps considered = sent + skipped + failed true.
       if (!wanted) continue;
-      const already = kind === "weekly" ? profile.lastDigestOn : profile.lastNudgeOn;
+      const already =
+        kind === "weekly"
+          ? profile.lastDigestOn
+          : kind === "wins"
+            ? profile.lastWinsOn
+            : profile.lastNudgeOn;
       // Monday, in their week. A Sunday-evening summary is read on Monday
-      // morning anyway, and Monday is when somebody can act on it.
-      const rightDay = kind === "weekly" ? weekdayIn(now, zone) === 1 : true;
-      if (!reached || !rightDay || already === today) {
+      // morning anyway, and Monday is when somebody can act on it. The wins
+      // mail asks a question about a month, so it goes on the last day of one —
+      // "tell me about September" lands badly on the 3rd of September.
+      const rightDay =
+        kind === "weekly"
+          ? weekdayIn(now, zone) === 1
+          : kind === "wins"
+            ? here.day === lastDayOfMonth(here.year, here.month)
+            : true;
+      // Three unanswered is a decline. Logging a win, or switching the setting
+      // off and on, resets the count.
+      const declined = kind === "wins" && profile.winsQuiet >= WINS_GIVE_UP_AFTER;
+      if (!reached || !rightDay || declined || already === today) {
         report.skipped += 1;
         continue;
       }

@@ -1,5 +1,6 @@
 import type {
   ActivityType,
+  TaskRepeat,
   LetterKind,
   NoteKind,
   ProposalStatus,
@@ -22,6 +23,10 @@ import { LETTER_KINDS } from "@/lib/data/letters";
 import * as analytics from "@/lib/data/analytics";
 import * as interviews from "@/lib/data/interviews";
 import * as revisions from "@/lib/data/revisions";
+import * as stageCadence from "@/lib/data/stage-cadence";
+import * as referrals from "@/lib/data/referrals";
+import { REFERRAL_STATUSES } from "@/lib/data/referrals";
+import * as wins from "@/lib/data/wins";
 import {
   INTERVIEW_FORMATS,
   INTERVIEW_OUTCOMES,
@@ -252,7 +257,7 @@ const limitArg = (fallback: number) =>
   num(`Max rows to return. Default ${fallback}, hard ceiling ${LIST_CEILING}. Prefer narrowing the filters.`);
 
 /** The two messages this app can send. Mirrored in tools/gen-tool-docs.mjs. */
-const DIGEST_KINDS = ["weekly", "nudge"] as const;
+const DIGEST_KINDS = ["weekly", "nudge", "wins"] as const;
 
 /** The three states a queued proposal can be in. Mirrored in tools/gen-tool-docs.mjs. */
 const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"] as const;
@@ -297,6 +302,27 @@ function required(args: Json, key: string): string {
     throw new Error(`Missing required string argument "${key}"`);
   }
   return value;
+}
+
+/**
+ * The three recurrence arguments, read the same way by create_task and
+ * update_task.
+ *
+ * An EMPTY STRING for repeat_unit means "stop this series", which is a decision,
+ * and is distinct from omitting it, which leaves the series alone. `s()`
+ * collapses neither, so the raw value is read.
+ */
+function repeatFrom(args: Json): {
+  repeatUnit?: TaskRepeat | null;
+  repeatEvery?: number;
+  repeatUntil?: string;
+} {
+  const raw = args.repeat_unit;
+  return defined({
+    repeatUnit: raw === undefined ? undefined : raw === "" ? null : (raw as TaskRepeat),
+    repeatEvery: n(args, "repeat_every"),
+    repeatUntil: s(args, "repeat_until"),
+  });
 }
 
 /** The interview fields, read the same way by schedule_interview and update_interview. */
@@ -2979,6 +3005,242 @@ export const tools: McpTool[] = [
       ),
   },
   {
+    name: "list_stage_cadences",
+    title: "How long after a move a follow-up is armed for",
+    description:
+      "The chase clock, per stage. Every time an application moves, its follow-up date is set a number of days out — seven after applying, four while interviewing, two on an offer — and this says what those numbers are for this person and whether they set them or inherited them. Reach for it before set_stage_cadence so you can say what is changing, and when somebody asks why a follow-up appeared on a date they did not pick. `source` is the field to read: 'default' means no row exists and the built-in is being used, 'yours' means they set that number, and 'off' means they deliberately turned that stage's chasing off, which is not the same thing as never having said. ACCEPTED and LOST are absent on purpose — a terminal move clears the follow-up date outright, so a cadence on one could never fire. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => stageCadence.listStageCadences(ctx.userId),
+  },
+  {
+    name: "set_stage_cadence",
+    title: "Change how soon a stage chases",
+    description:
+      "Set how many days after landing in a stage the follow-up date is armed for. Reach for it when somebody says they are chasing too soon, too late, or not at all — 'stop nagging me about wishlist rows' is `stage: WISHLIST, days: null`, and 'give applications a fortnight' is `stage: APPLIED, days: 14`. THREE MEANINGS FOR ONE ARGUMENT, and they are all different: a NUMBER stores that many days; `days: null` stores 'arm nothing for this stage', which is a decision; and LEAVING days OUT deletes their setting and goes back to the built-in, which is how you undo. Say which of the three you are doing before you do it. This changes future moves only — no date already on the board is touched, and if they want one of those moved, that is update_application. A date somebody set by hand for a specific day is never overwritten by a move either, whatever the cadence says. ACCEPTED and LOST are refused by name: a terminal move clears the date outright, so a cadence on one would be a setting that lies.",
+    inputSchema: object(
+      {
+        stage: {
+          type: "string",
+          enum: ["WISHLIST", "APPLIED", "INTERVIEWING", "OFFER"],
+          description: "Which stage's clock to change",
+        },
+        days: num(
+          "Days from the move to the follow-up, 0 to 365. Send null to arm nothing for this stage. Omit it entirely to delete the setting and go back to the built-in.",
+        ),
+        revert: bool("Delete the setting and go back to the built-in. The same as omitting days."),
+      },
+      ["stage"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const stage = required(args, "stage") as Stage;
+      // `null` and "absent" mean different things here, and `n()` collapses
+      // them, so the raw argument is read rather than the helper's answer.
+      const raw = args.days;
+      const days =
+        b(args, "revert") || raw === undefined
+          ? undefined
+          : raw === null
+            ? null
+            : typeof raw === "number"
+              ? raw
+              : undefined;
+      return stageCadence.setStageCadence(ctx.userId, stage, days);
+    },
+  },
+  {
+    name: "list_referrals",
+    title: "Who vouched for you where",
+    description:
+      "Every referral on file, with where it stands and whether it came to anything. Reach for it when somebody asks who has put them forward, who they are still waiting on, or who they owe a thank-you — and reach for list_relationships instead when the question is who is worth talking to at all, because that one covers everybody in the CRM and this one covers only the people who actually asked on your behalf. `converted` is DERIVED from the application's own stage and timeline, not stored, so it cannot disagree with the funnel. `thanksOwed` is the list that matters: it converted and nobody has said thank you, which is the most expensive unclosed loop in a search and is invisible in every other record this app keeps. `waitingDays` counts from the last time the STATUS moved, not from the last edit, so fixing a typo in the notes does not reset the clock. Referrals from an archived person are excluded; one whose application was archived stays, because who put you forward is a fact about the person. Read-only.",
+    inputSchema: object({
+      contact_id: str("Only referrals from this person"),
+      application_id: str("Only referrals for this job"),
+      company_id: str("Only referrals at this employer"),
+      status: {
+        type: "string",
+        enum: [...REFERRAL_STATUSES],
+        description: "Only referrals in this state",
+      },
+      thanks_owed: bool("Only the ones that converted and were never acknowledged"),
+      waiting_for_days: num("Only ones still ASKED or AGREED and older than this many days"),
+      limit: limitArg(100),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      capped(
+        await referrals.listReferrals(
+          ctx.userId,
+          defined({
+            contactId: s(args, "contact_id"),
+            applicationId: s(args, "application_id"),
+            companyId: s(args, "company_id"),
+            status: s(args, "status") as never,
+            thanksOwed: b(args, "thanks_owed"),
+            waitingForDays: n(args, "waiting_for_days"),
+            limit: n(args, "limit"),
+          }),
+        ),
+        n(args, "limit"),
+        100,
+      ),
+  },
+  {
+    name: "record_referral",
+    title: "Record that somebody put their name behind you",
+    description:
+      "Log a referral — you asked somebody to refer you, or they offered. Reach for it the moment the ask is made, not when it lands: 'waiting on three people' is only a question this app can answer if the asks are on file. The person is a contact id from list_contacts; create_contact them first if they are not on file yet, because somebody who refers you is worth keeping long after this job. The application is optional and often comes later — 'do you know anyone at Stripe' is asked before anybody applies — and passing one fills in the employer for you. Status starts at ASKED. When it converts, a thank-you task appears on their list automatically, once, the first time the application reaches interviewing or beyond; that is the point of recording it.",
+    inputSchema: object(
+      {
+        contact_id: str("Who vouched for you, from list_contacts"),
+        application_id: str("The job, if there is one yet"),
+        company_id: str("The employer. Filled in from the application when you pass one."),
+        status: {
+          type: "string",
+          enum: [...REFERRAL_STATUSES],
+          description: "Where it stands. Defaults to ASKED.",
+        },
+        asked_on: str("When you asked, YYYY-MM-DD. Defaults to today."),
+        notes: str("What you asked for and what they said, in your own words"),
+      },
+      ["contact_id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      referrals.createReferral(ctx.userId, {
+        contactId: required(args, "contact_id"),
+        applicationId: s(args, "application_id"),
+        companyId: s(args, "company_id"),
+        status: s(args, "status") as never,
+        askedOn: s(args, "asked_on"),
+        notes: s(args, "notes"),
+      }),
+  },
+  {
+    name: "update_referral",
+    title: "Move a referral along, or mark it thanked",
+    description:
+      "Change where a referral stands, attach the application once there is one, or record that you have thanked them. Only the fields you send change. Moving the STATUS restarts the waiting clock, which is what 'you asked three weeks ago' counts from — so move it when something actually happened, and edit the notes when nothing did. `thanked: true` stamps today and takes it off the thanks-owed list; that is the field the whole model exists for, so do not set it because a thank-you was drafted, only because one was sent.",
+    inputSchema: object(
+      {
+        id: str("Referral id, from list_referrals"),
+        status: {
+          type: "string",
+          enum: [...REFERRAL_STATUSES],
+          description: "Where it stands now. Moving this restarts the waiting clock.",
+        },
+        application_id: str("Attach the job, now that there is one. An empty string detaches it."),
+        company_id: str("The employer. An empty string detaches it."),
+        contact_id: str("Correct who vouched"),
+        asked_on: str("When you asked, YYYY-MM-DD"),
+        notes: str("Replaces the notes"),
+        thanked: bool("True stamps today as when you thanked them; false clears it"),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      referrals.updateReferral(ctx.userId, required(args, "id"), {
+        contactId: s(args, "contact_id"),
+        applicationId: s(args, "application_id"),
+        companyId: s(args, "company_id"),
+        status: s(args, "status") as never,
+        askedOn: s(args, "asked_on"),
+        notes: s(args, "notes"),
+        thanked: b(args, "thanked"),
+      }),
+  },
+  {
+    name: "delete_referral",
+    title: "Remove a referral",
+    description:
+      "Delete a referral for good. There is no archive for these. What is lost is the record that a named person put their reputation behind you, which is usually worth keeping even when the job went nowhere — prefer update_referral with a status of DECLINED or NO_ANSWER. Say what will go and get a plain yes first.",
+    inputSchema: object({ id: str("Referral id") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => referrals.deleteReferral(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "referral_review",
+    title: "Who you owe a thank-you, and who has gone quiet",
+    description:
+      "The two questions the referral record exists to answer, in one read. `thanksOwed` is anybody whose referral converted and who has never been thanked — work through it first, because it costs one message and it is the difference between a person who refers you once and a person who refers you for the rest of your career. `waiting` is asks that are still ASKED or AGREED and have sat for a while, longest first, so a nudge goes to the right person; a nudge is one line and is not a second ask. `byStatus` counts the whole set and carries a line on what each state means for what to do next. Reach for this in a weekly review, and after any week with several applications. Read-only, saves nothing: update_referral is what records that you acted.",
+    inputSchema: object({
+      waiting_for_days: num("How long counts as waiting. Default 10."),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      referrals.referralReview(ctx.userId, defined({ waitingForDays: n(args, "waiting_for_days") })),
+  },
+  {
+    name: "log_win",
+    title: "Put something that went well into Me",
+    description:
+      "Append one thing that went well to their current role's background, under a dated heading. THIS IS THE TOOL FOR AFTER THE SEARCH IS OVER, and it is the one that makes the next one possible: Me stops growing the day somebody accepts an offer, and two years later the next search starts from a role with an empty background that nobody can reconstruct from memory. Reach for it whenever they mention something they did — a project that shipped, a number that moved, something somebody thanked them for — whether or not they asked you to record it; offer, do not assume. Write what they said, in their words, with whatever number they gave. DO NOT polish it into a resume bullet and do not invent an impact figure: a highlight is a deliberate distillation and mine_role_background is what does that, later, with them in the room. If nothing in Me is marked as the current role this refuses and says so — and when there is an accepted application it names the employer, so the next move is to add the role rather than to give up.",
+    inputSchema: object(
+      {
+        text: str("What went well, in their words. One or two sentences is right."),
+        role_id: str("Which role it belongs to. Defaults to whichever is marked current."),
+        occurred_on: str("When it happened, YYYY-MM-DD. Only decides which month it files under."),
+      },
+      ["text"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const result = await wins.logWin(ctx.userId, {
+        text: required(args, "text"),
+        roleId: s(args, "role_id"),
+        occurredOn: s(args, "occurred_on"),
+      });
+      return {
+        roleId: result.target.roleId,
+        role: `${result.target.title} at ${result.target.company}`,
+        heading: result.heading,
+        backgroundChars: result.role.background.length,
+      };
+    },
+  },
+  {
     name: "list_stage_templates",
     title: "List the stage checklists",
     description:
@@ -4062,7 +4324,7 @@ export const tools: McpTool[] = [
     name: "create_task",
     title: "Create a task",
     description:
-      "Add a to-do, with a due date and — at most — one thing it is about. A task can hang off an application, a company, a person, a resume, a role in Me, or a note; pass the id of whichever ONE it concerns, and none of them for a task that is about nothing in particular. Passing two is refused rather than guessed at. Attaching it matters: the task shows on that record's own screen, and it goes with it if the record is ever deleted. `detail` is the room for what the task actually involves, which the title should not have to carry. Ids that are not this person's, or are in the archive, are refused.",
+      "Add a to-do, with a due date and — at most — one thing it is about. A task can hang off an application, a company, a person, a resume, a role in Me, or a note; pass the id of whichever ONE it concerns, and none of them for a task that is about nothing in particular. Passing two is refused rather than guessed at. Attaching it matters: the task shows on that record's own screen, and it goes with it if the record is ever deleted. `detail` is the room for what the task actually involves, which the title should not have to carry. Ids that are not this person's, or are in the archive, are refused. Pass repeat_unit to make it come back: completing it creates the NEXT one and only the next one, so a month of ignored instances never materialises thirty rows the day somebody catches up. The date is stepped from the first instance's, so 'every Monday' stays on a Monday however late it is ticked off.",
     inputSchema: object(
       {
         title: str("What needs doing"),
@@ -4074,6 +4336,14 @@ export const tools: McpTool[] = [
         resumeId: str("Or to a resume"),
         roleId: str("Or to a role in Me"),
         noteId: str("Or to a note"),
+        repeat_unit: {
+          type: "string",
+          enum: ["DAY", "WEEK", "MONTH"],
+          description:
+            "Make it repeat. Completing it then creates the next one. Send an empty string to stop a series.",
+        },
+        repeat_every: num("How many units between instances. 1 unless you say otherwise."),
+        repeat_until: str("The last day the series may produce an instance, YYYY-MM-DD. Omit to run until stopped."),
       },
       ["title"],
     ),
@@ -4095,13 +4365,15 @@ export const tools: McpTool[] = [
           resumeId: s(args, "resumeId"),
           roleId: s(args, "roleId"),
           noteId: s(args, "noteId"),
+          ...repeatFrom(args),
         }),
       }),
   },
   {
     name: "complete_task",
     title: "Complete or reopen a task",
-    description: "Mark a task done, or reopen it with done: false.",
+    description:
+      "Mark a task done, or reopen it with done: false. When the task repeats, completing it also creates the NEXT instance and returns it as `next` — one, never one per missed week. Reopening and completing again does not make a second: the new instance points back at the one that made it, so the duplicate is refused rather than written.",
     inputSchema: object({ id: str("Task id"), done: bool("Default true") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -4115,7 +4387,7 @@ export const tools: McpTool[] = [
     name: "update_task",
     title: "Update a task",
     description:
-      "Reword a task, move its due date, or hook it to something different. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for any of the subject ids to unhook it. Setting one subject CLEARS the others, because a task is about at most one thing — so moving a task from an application to a person is one call with contactId, not two. Use complete_task to tick it off; done is not settable here.",
+      "Reword a task, move its due date, or hook it to something different. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for any of the subject ids to unhook it. Setting one subject CLEARS the others, because a task is about at most one thing — so moving a task from an application to a person is one call with contactId, not two. Use complete_task to tick it off; done is not settable here. THE TRAP with repeats: moving this instance's due date moves THIS instance, not the series, because every future date is stepped from the first one. Sending repeat_unit as an empty string stops the series, and completing the task is then the end of it — which is the whole off switch and is on the row somebody is already looking at.",
     inputSchema: object(
       {
         id: str("Task id"),
@@ -4128,6 +4400,14 @@ export const tools: McpTool[] = [
         resumeId: str("Or to a resume"),
         roleId: str("Or to a role in Me"),
         noteId: str("Or to a note"),
+        repeat_unit: {
+          type: "string",
+          enum: ["DAY", "WEEK", "MONTH"],
+          description:
+            "Make it repeat. Completing it then creates the next one. Send an empty string to stop a series.",
+        },
+        repeat_every: num("How many units between instances. 1 unless you say otherwise."),
+        repeat_until: str("The last day the series may produce an instance, YYYY-MM-DD. Omit to run until stopped."),
       },
       ["id"],
     ),
@@ -4151,6 +4431,7 @@ export const tools: McpTool[] = [
           resumeId: s(args, "resumeId"),
           roleId: s(args, "roleId"),
           noteId: s(args, "noteId"),
+          ...repeatFrom(args),
         }),
       ),
   },
@@ -5353,11 +5634,14 @@ export const tools: McpTool[] = [
     name: "set_digest_settings",
     title: "Turn the weekly summary or the daily nudge on or off",
     description:
-      "Both are OFF until somebody asks for them, and this is the only thing that turns them on. The weekly one goes out on a Monday morning and says where the search stands, what moved, what is coming and the one thing worth fixing. The daily one arrives only on a day something is actually due — an offer to answer, a company to chase, a task — and sends nothing on a quiet day, on purpose, so the one that matters does not land in a folder nobody reads. `hour` is in their own time zone. Only offer this when somebody asks for mail; nobody wants to be signed up for email by an assistant.",
+      "All three are OFF until somebody asks, and this is the only thing that turns them on. The weekly one goes out on a Monday morning and says where the search stands. The daily one arrives only on a day something is actually due, and sends nothing on a quiet day, on purpose, so the one that matters does not land in a folder nobody reads. The MONTHLY one is the odd one out and the one worth offering at the right moment: it arrives on the last day of the month and asks for one thing that went well, so Me keeps growing after the search is over — offer it the day somebody accepts an offer, which is the day the other two should come off. It stops sending after three unanswered, because a mail ignored three times is a mail somebody has declined; logging a win, or switching it off and on, starts the count again. `hour` is in their own time zone. Only offer any of this when somebody asks for mail; nobody wants to be signed up for email by an assistant.",
     inputSchema: object({
       weekly: bool("The Monday summary"),
       daily: bool("The due-today nudge. Only sends on a day something is due"),
-      hour: num("What hour both go out at, 0-23, in their own zone. Default 8"),
+      monthly_wins: bool(
+        "The end-of-month ask for one thing that went well. For after the search, not during it.",
+      ),
+      hour: num("What hour they go out at, 0-23, in their own zone. Default 8"),
     }),
     annotations: {
       readOnlyHint: false,
@@ -5369,6 +5653,7 @@ export const tools: McpTool[] = [
       digest.setDigestPreferences(ctx.userId, {
         weeklyDigest: b(args, "weekly"),
         dailyNudge: b(args, "daily"),
+        winsNudge: b(args, "monthly_wins"),
         digestHour: n(args, "hour"),
       }),
   },
@@ -5376,12 +5661,13 @@ export const tools: McpTool[] = [
     name: "preview_digest",
     title: "See what a digest would say",
     description:
-      "Build the weekly summary or the due-today nudge and return it WITHOUT sending anything. This is the useful one in a conversation: it is the same read the mail is made from, so 'what does my week look like' and 'what is due today' are answered without anybody's inbox being involved. Returns the subject, the opening line and the sections. `empty` true on a nudge means nothing is due, which is why no mail would go out.",
+      "Build the weekly summary, the due-today nudge or the monthly wins ask and return it WITHOUT sending anything. This is the useful one in a conversation: it is the same read the mail is made from, so 'what does my week look like' and 'what is due today' are answered without anybody's inbox being involved. Returns the subject, the opening line and the sections. `empty` true on a nudge means nothing is due, and on a wins ask means there is no current role for a win to land on — which is why no mail would go out in either case.",
     inputSchema: object({
       kind: {
         type: "string",
         enum: [...DIGEST_KINDS],
-        description: "weekly (the Monday summary) or nudge (what is due today). Default weekly",
+        description:
+          "weekly (the Monday summary), nudge (what is due today) or wins (the end-of-month ask). Default weekly.",
       },
     }),
     annotations: {
@@ -5402,7 +5688,11 @@ export const tools: McpTool[] = [
     description:
       "Actually send the weekly summary or the daily nudge to this person's own address, immediately, ignoring the schedule and the once-a-day guard. It does NOT ignore the opt-in: somebody who has not turned that message on gets nothing and the result says so. Use it to show someone what they signed up for, or when they ask for their week by mail. For reading it here, preview_digest is the tool — this one puts a message in an inbox.",
     inputSchema: object({
-      kind: { type: "string", enum: [...DIGEST_KINDS], description: "weekly or nudge. Default weekly" },
+      kind: {
+        type: "string",
+        enum: [...DIGEST_KINDS],
+        description: "weekly, nudge or wins. Default weekly.",
+      },
     }),
     annotations: {
       readOnlyHint: false,
