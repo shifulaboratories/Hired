@@ -6420,3 +6420,176 @@ and due today produced no nudge at all. A few indexed reads an hour is the cheap
 
 **`weekdayIn` failed open on the one day that sends.** Its fallback for an unrecognised
 weekday name was 1, and 1 is Monday.
+
+## 2026-09-19 — Thirty ideas, and the calls that shaped them
+
+One session, six groups, and the constraint that drove every decision below: MCP first,
+and as few new clicks as the feature can survive on. Most of what follows is a note about
+a thing that did not work rather than a description of what shipped; the code says what
+shipped.
+
+**A tool list is not a feature list, and neither is a screen count.** The instruction was
+"build all thirty, prioritise MCP, don't add too many clicks". Reading that literally would
+have produced thirty new screens. What it actually asked for is thirty new *capabilities*
+reachable by conversation, of which only the ones a person has to look at got a screen —
+and those folded into screens that already existed rather than into new routes. The only
+new top-level surface in the whole session is one button beside the notifications bell.
+
+**Six analyses, not six dashboards.** `loss_report`, `resume_performance`, `skills_gap`,
+`contact_warmth`, `research_freshness` and `workspace_health` each answer a question the
+raw lists already contained but nobody could see. They are tools with no screen, which is
+the right shape: the answer is a paragraph somebody wants read to them, not a chart they
+want to stare at. `morning_brief` is the same argument at the other end — one call instead
+of four, with ids attached so the next call needs no lookup.
+
+**An interview is a record, not an activity.** Rounds were `Activity` rows of type
+`INTERVIEW` with free-text bodies, which is what the working agreement parked. Unparking it
+meant a format, an outcome and questions that survive the round — and `question_bank`,
+which is the whole reason: nobody remembers what they were asked three companies ago, and
+the aggregate is worth more than any single row.
+
+**Undo is a copy taken on the way past, not a log read backwards.** `update_resume` and
+`update_role` replace, the descriptions have always said so, and people kept losing work
+anyway. A change log that only *records* what happened cannot put it back. So the two
+replacing writes take a version on the way through, coalesced within ten minutes per
+author, and `undo_change` restores from that. The coalescing is the sharp edge and the
+description has to say it: undoing one edit can take somebody back past three, so the tool
+reports `restorePointAt` and is told to get a yes first.
+
+**Watching a board is polling, and polling is a sweep, not a request.** Everything in this
+group — board watches, dead postings, the mail sweep — runs from `/api/sweep/<token>`,
+outside the app, for the same reason digests do: the transport is stateless and a cron
+inside a Next server is a thing that stops working the day it gets a second replica.
+Two-strike before a posting is called dead, twenty hours apart, because one failed fetch is
+a network, not a closed job.
+
+**A scope is not a permission, and the blurb has to say so.** Narrowing a connection
+changes what a client is *offered*. The token still reaches the whole account. That is a
+worse security story than it sounds like and a much better routing story: a client choosing
+among sixty tools picks right more often than one choosing among two hundred, and the wrong
+pick here writes into somebody's career history. Filed as a cost-and-accuracy lever, said
+plainly in the copy, never described as access control.
+
+**Attachment bytes live in Postgres, with `SET STORAGE EXTERNAL`.** Object storage would
+be a second required environment variable, which the README promises there isn't. The
+column is verified `attstorage = 'e'` so a 4MB PDF is not compressed twice, and the caps
+are settings rather than constants.
+
+**The paste-a-file path found two real bugs before a person did.** `sniffType` returning
+null fell back to the *declared* type, so an executable declared `application/pdf` was
+stored as a PDF; the declared type is now trusted only for textual formats. And a base64
+regex matched `"just some words"`, which a length-and-padding check now rejects.
+
+## 2026-09-19 — One message leaves the building, and every guardrail is a refusal
+
+**`approveOutbound` has no MCP tool, and never will.** The whole feature is shaped around
+one rule: nothing leaves this instance without a person approving that exact text. A tool
+that approves is a tool an assistant can call, and then the rule is decoration. So drafting
+is a tool, cancelling is a tool, sending what is already approved is a tool, and the
+approval itself is a button in a browser. The eval has a case for it, because the obvious
+misroute is reaching straight for `send_outbound_email`.
+
+**Google's client comment says "read-only, with ONE exception that is not in this file".**
+Sending needs a send scope, and a reader who finds that in `accounts/google.ts` should not
+have to discover the exception by grep. It lives in `accounts/send.ts` alone.
+
+**`disconnectAccount` refuses while Outbound rows exist.** A sent record that outlives its
+mailbox is evidence; a sent record whose mailbox was deleted underneath it is a mystery.
+
+## 2026-09-19 — The assistant is a client, not a feature
+
+**It runs through `dispatchTool`, exactly like an MCP connection.** That is the entire
+design and the reason rule zero is satisfied by construction: there is no capability in
+`src/lib/assistant/run.ts` that a conversation elsewhere does not have, because every act
+it performs is a tool call through the same door, resolved to the same user, logged the
+same way. The file's own comment says what it must never grow — a way to read or write
+anything that is not a tool.
+
+**The system prompt is `instructionsFor(user, scope)` plus two sentences.** Writing a
+second briefing would have meant two descriptions of this app's rules, drifting. So
+`instructionsFor` is exported from `handler.ts` and the assistant sends the same bytes a
+connected client gets, with `cache_control: { type: "ephemeral" }` on it because the tool
+definitions are most of the request.
+
+**`MAX_STEPS = 12` is a constant, not a setting.** Tuning a tool-loop depth is configuring
+a bug. If twelve is not enough the shape of the turn is wrong.
+
+**The budget-spent path has to actually ask.** The first version appended "you have used
+all your tool calls, answer with what you have" to the transcript and then yielded `done`
+without calling the model — so the nudge sat in the database and the person got silence
+after a tool result. It makes one final call with no tools now.
+
+**The approval gate is checked over the whole batch, before anything runs.** Stopping
+halfway through a batch loses the results of the tools that already ran: the run ends
+there, and the next POST rebuilds from the stored transcript, which has an assistant
+message whose tool_use blocks have no results. The API rejects that transcript outright. So
+the gate is `calls.find(gated)` before the loop, and a second irreversible act in the same
+batch comes back refused rather than run — one click approved one thing.
+
+**Saying no is an answer, and walking away has to be one too.** The confirm pane's "Leave
+it" first just cleared the dialog — which left the transcript ending on an assistant message
+whose tool_use had no result, and the API rejects that outright. The next thing the person
+typed, possibly days later, would have failed with an error about tool_use ids. So "Leave
+it" posts a real refusal the model can respond to, and a run that finds a dangling call at
+the start of a turn settles it before appending anything. Guarding one path would have left
+every other way of walking away — closing the drawer, closing the tab — still broken.
+
+**A tool result is not a message somebody sent.** The daily cap counted every user-role row,
+and tool results ride in user-role messages, so one question with five tool calls cost six
+of somebody's fifty. Results are stored as `"tool"` and the loop's out-of-budget nudge as
+`"system"`; both read back as user messages, and the cap counts `"user"` alone. Also why
+approving is exempt from the cap entirely: crossing it between asking and clicking would
+strand an irreversible act somebody had already agreed to.
+
+**Nothing falls back to an environment variable.** No key means the button is never
+rendered. Not disabled with an explanation — *not rendered*: an instance whose people
+connect their own client should look exactly as it did before this landed.
+
+**An admin sees the bill, never the words.** `instanceAssistantUsage` is the one function
+in `assistant.ts` without a leading userId, and it counts rows and sums integers. There is
+deliberately no function that would let an admin read a conversation, and no tool that
+lists somebody else's threads. A transcript is a client's, not career content — which is
+also why there is no `list_assistant_threads` for the person themselves.
+
+## 2026-09-19 — What the eval's own audit found
+
+**`--scope-audit` is free, and it found two real defects the paid run never would.**
+Printing what each scope serves is not a measurement of anything a model does, so it costs
+nothing and can be run on every change. It caught both of these:
+
+**A narrowed connection got its workflows as prompts and nowhere else.** `allTools` carries
+every workflow twice — once as a prompt, once as a tool — precisely because prompt support
+is optional in MCP clients and tool support is not. But no workflow is in a section or an
+extra, so the tool copy fell out of every non-FULL scope: a WRITING connection on a client
+with no prompts had no workflows at all. `buildScope` now decides them as workflows and
+publishes both forms.
+
+**A workflow that names another workflow could never fit a narrowed scope.**
+`prep_for_interview` ends by offering to run `research_company`, and `workflowFits` judged
+it against the served *tools* alone, in which no workflow appears. Fixed with a fixed point
+rather than a second pass: start from the tools, add the workflows that fit, go round again
+until nothing new fits. It terminates because the set only grows.
+
+**The undo path was FULL-only, which is exactly backwards.** `list_changes`,
+`list_revisions`, `restore_revision` and `undo_change` are filed under connections because
+that is where the change log lives. So a WRITING connection — a scope whose entire job is
+writing roles and resumes — had no way back from an `update_role` that ate somebody's
+background, while a FULL one did. They are extras on both writing scopes now. Connection
+management stays FULL-only on purpose: a narrowed connection must not be able to mint or
+widen one.
+
+**`toolsForScope` in `tools/tool-source.mjs` is a deliberate duplicate with a real check.**
+The eval cannot import TypeScript, so the scope tables are rebuilt from the text of
+`scopes.ts` — which is why that file's header insists both literals stay plain data. The
+duplicate is only safe because the scopes probe asserts all eight tables (four scopes ×
+member/admin) match the real ones exactly, names and order both.
+
+**Scanning the prompt's whole source emptied every scope.** The mirror's `workflowFits`
+first read the entire entry, description included — and a description that merely *mentions*
+a tool ("the same thing gap_report does") is prose about it, not a step that calls it. It
+reads from `build:` onward now, which is what the TypeScript side sees.
+
+**A case naming a tool that does not exist can never pass and never says why.** It just
+reads as the model being wrong. The eval validates every `expect` and `avoid` against the
+real surface before it spends anything, and that caught `set_follow_up` — a tool this app
+has never had — in a case written the same afternoon.

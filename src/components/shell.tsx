@@ -17,6 +17,7 @@ import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   SearchIcon,
+  SparklesIcon,
   SettingsIcon,
   ShieldIcon,
 } from "lucide-react";
@@ -43,6 +44,7 @@ import {
 } from "@/components/ui/dialog";
 import { HiredMark } from "@/components/hired-mark";
 import { Notifications, type Notice } from "@/components/notifications";
+import { AssistantDrawer } from "@/components/assistant/assistant-drawer";
 import { UserAvatar } from "@/components/user-avatar";
 import { logoutAction } from "@/server/actions";
 import { MANUAL_URL } from "@/lib/links";
@@ -100,10 +102,18 @@ export function Shell({
   children,
   notices,
   user,
+  assistant,
 }: {
   children: React.ReactNode;
   notices: Notice[];
   user: ShellUser;
+  /**
+   * Whether an admin has put an API key in. False is the default and means the
+   * button below is never rendered — an instance whose people connect their own
+   * client should look exactly as it did before this feature landed, and a
+   * disabled control that explains itself is still a control they did not want.
+   */
+  assistant: boolean;
 }) {
   const canAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
   const pathname = usePathname();
@@ -112,6 +122,7 @@ export function Shell({
   // implementation for every screen: a row opts in by tagging its link.
   const { showHelp, setShowHelp } = useKeyboardNav();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [openBranches, setOpenBranches] = useState<string[]>([]);
 
@@ -378,6 +389,19 @@ export function Shell({
             >
               <SearchIcon />
             </Button>
+            {/* One button, beside the bell. Not a nav item: this is something
+                you ask while looking at a screen, not a place you go. */}
+            {assistant && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-9"
+                onClick={() => setAskOpen(true)}
+                aria-label="Ask the assistant"
+              >
+                <SparklesIcon />
+              </Button>
+            )}
             <Notifications items={notices} />
             <ProfileMenu user={user} canAdmin={canAdmin} />
           </div>
@@ -400,6 +424,8 @@ export function Shell({
       </div>
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+
+      {assistant && <AssistantDrawer open={askOpen} onOpenChange={setAskOpen} />}
 
       <Dialog open={showHelp} onOpenChange={setShowHelp}>
         <DialogContent className="max-w-sm">

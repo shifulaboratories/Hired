@@ -58,6 +58,7 @@ import { CompanyChip } from "@/components/crm/company-chip";
 import { CompanyAvatar } from "@/components/pipeline/company-avatar";
 import { ValuePicker } from "@/components/pipeline/value-picker";
 import { OfferCard, type OfferValue } from "@/components/pipeline/offer-card";
+import { InterviewsPanel, type InterviewValue } from "@/components/pipeline/interviews-panel";
 import { LettersPanel, type LetterRow } from "@/components/letters/letters-panel";
 import { PaperThumb } from "@/components/resume/paper-thumb";
 import { ResumePaper, type PaperSettings } from "@/components/resume/resume-paper";
@@ -96,6 +97,14 @@ type Application = {
   /** Why it ended, as LOSS tags. Only shown when LOST. */
   lossTags: TagValue[];
   jobUrl: string;
+  /**
+   * What the last look at the posting found, written by check_posting_live and
+   * by nothing else. Only GONE and UNCLEAR are shown — a green tick on
+   * something that is working is noise.
+   */
+  postingStatus?: string;
+  postingNote?: string;
+  postingGoneSince?: string | null;
   jobDescription: string;
   location: string;
   workMode: string;
@@ -139,6 +148,7 @@ export function ApplicationDetail({
   contacts,
   tasks,
   offers,
+  interviews,
   letters,
   resumes,
   tagOptions,
@@ -157,6 +167,7 @@ export function ApplicationDetail({
   tasks: Task[];
   /** Every version of the offer, newest first. Empty until one is recorded. */
   offers: OfferValue[];
+  interviews: InterviewValue[];
   /** What has been written to this employer, newest first. */
   letters: LetterRow[];
   resumes: { id: string; name: string }[];
@@ -425,6 +436,12 @@ export function ApplicationDetail({
                 <span className="text-faint nums ml-1 text-[11px]">{activities.length}</span>
               )}
             </TabsTrigger>
+            <TabsTrigger value="interviews">
+              Interviews
+              {interviews.length > 0 && (
+                <span className="text-faint nums ml-1 text-[11px]">{interviews.length}</span>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="letters">
               Letters
               {letters.length > 0 && (
@@ -470,6 +487,22 @@ export function ApplicationDetail({
               subject={{ kind: "application", id: application.id }}
               access={googleAccess}
             />
+          </TabsContent>
+
+          <TabsContent value="interviews">
+            {/* The rounds, and what was asked in each. The questions are the
+                point: everything else here is scaffolding for getting them
+                written down while somebody still remembers them, which is the
+                hour afterwards and never again. question_bank is what reads
+                them back across every job. */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-[15px]">Rounds at {values.company}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <InterviewsPanel applicationId={application.id} interviews={interviews} />
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="letters">
@@ -692,6 +725,17 @@ export function ApplicationDetail({
                   onChange={(event) => set({ jobUrl: event.target.value })}
                   placeholder="https://…"
                 />
+                {(application.postingStatus === "GONE" || application.postingStatus === "UNCLEAR") && (
+                  <p className="text-faint text-[12px]">
+                    {application.postingStatus === "GONE"
+                      ? `Posting came down${application.postingNote ? ` — ${application.postingNote}` : ""}${
+                          application.postingGoneSince
+                            ? `, first seen ${relativeDay(application.postingGoneSince, zone)}`
+                            : ""
+                        }.`
+                      : application.postingNote}
+                  </p>
+                )}
               </div>
 
             </CardContent>

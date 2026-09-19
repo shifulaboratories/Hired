@@ -3,9 +3,10 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FileSignatureIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { FileSignatureIcon, PlusIcon, PrinterIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import type { LetterKind } from "@prisma/client";
+import { LETTER_KINDS, LETTER_LABEL, LETTER_PLACEHOLDER } from "@/lib/letter-kinds";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -50,28 +51,7 @@ export type LetterRow = {
   contact: { id: string; name: string } | null;
 };
 
-export const LETTER_LABEL: Record<LetterKind, string> = {
-  COVER_LETTER: "Cover letter",
-  OUTREACH: "Cold outreach",
-  REFERRAL_ASK: "Referral ask",
-  THANK_YOU: "Thank-you",
-  REPLY: "Reply",
-  OTHER: "Other",
-};
 
-const KINDS = Object.keys(LETTER_LABEL) as LetterKind[];
-
-/** What each kind is for, as a placeholder. Shown empty, never saved. */
-const PLACEHOLDER: Record<LetterKind, string> = {
-  COVER_LETTER:
-    "Why this employer, what you have done that bears on this job, and nothing the resume already says.",
-  OUTREACH: "Short enough to read on a phone. Why them specifically, and one small ask.",
-  REFERRAL_ASK:
-    "Name the role, link the posting, and give them two lines they can forward without editing.",
-  THANK_YOU: "One thing from the conversation, one gap you noticed, and no ask.",
-  REPLY: "Answer the actual question they asked.",
-  OTHER: "",
-};
 
 export function LettersPanel({
   letters,
@@ -129,7 +109,7 @@ export function LettersPanel({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {KINDS.map((kind) => (
+            {LETTER_KINDS.map((kind) => (
               <DropdownMenuItem key={kind} onSelect={() => create(kind)}>
                 {LETTER_LABEL[kind]}
               </DropdownMenuItem>
@@ -255,16 +235,41 @@ function LetterEditor({
     <div className="min-w-0 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <SaveIndicator state={save.state} />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-faint hover:text-destructive"
-          onClick={onDelete}
-          disabled={busy}
-          aria-label="Delete this letter"
-        >
-          <Trash2Icon />
-        </Button>
+        <div className="flex items-center gap-1">
+          {/* The print page rather than /api/letters/[id]/pdf, which is what the
+              resume editor links to when the host has a Chromium. That editor
+              is rendered by a server page and is handed the answer; this panel
+              is inside a client component two levels down, so knowing it would
+              mean threading a boolean through the application detail for one
+              icon. The print page works on every host and its own button says
+              "Save as PDF", so the worst case is one extra keystroke. The
+              server-rendered file is a tool call away — export_letter_pdf. */}
+          <Button
+            asChild
+            variant="ghost"
+            size="icon-sm"
+            className="text-faint hover:text-foreground"
+          >
+            <a
+              href={`/print/letter/${letter.id}`}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Print this letter or save it as a PDF"
+            >
+              <PrinterIcon />
+            </a>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-faint hover:text-destructive"
+            onClick={onDelete}
+            disabled={busy}
+            aria-label="Delete this letter"
+          >
+            <Trash2Icon />
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 @min-[34rem]:grid-cols-2">
@@ -294,7 +299,7 @@ function LetterEditor({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {KINDS.map((kind) => (
+              {LETTER_KINDS.map((kind) => (
                 <SelectItem key={kind} value={kind}>
                   {LETTER_LABEL[kind]}
                 </SelectItem>
@@ -318,7 +323,7 @@ function LetterEditor({
         <Textarea
           value={values.body}
           onChange={(event) => set({ body: event.target.value })}
-          placeholder={PLACEHOLDER[values.kind]}
+          placeholder={LETTER_PLACEHOLDER[values.kind]}
           className="min-h-72 leading-relaxed"
         />
       </div>

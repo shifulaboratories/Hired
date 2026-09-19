@@ -21,14 +21,10 @@ import { createResumeAction } from "@/server/actions";
 import { PaperThumb } from "@/components/resume/paper-thumb";
 import { ResumePaper } from "@/components/resume/resume-paper";
 import { parseResumeDoc } from "@/lib/resume-schema";
+import { DEFAULT_TEMPLATE, RESUME_TEMPLATES } from "@/lib/resume-templates";
 
-const TEMPLATES = [
-  { key: "harvard", name: "Harvard", hint: "The OCS standard. Recruiter-proof." },
-  { key: "classic", name: "Classic", hint: "Centred header, ruled sections" },
-  { key: "modern", name: "Modern", hint: "Left-aligned, accent bars" },
-  { key: "compact", name: "Compact", hint: "Tight leading, fits more" },
-  { key: "editorial", name: "Editorial", hint: "Big name, lots of air" },
-];
+// From the one catalogue. This was the fourth hand-kept copy of the same list.
+const TEMPLATES = RESUME_TEMPLATES;
 
 /**
  * One canned document, rendered through the real ResumePaper for each template
@@ -106,7 +102,7 @@ export function NewResumeDialog({ hasMaterial }: { hasMaterial: boolean }) {
     name: "",
     targetRole: "",
     targetCompany: "",
-    template: "harvard",
+    template: DEFAULT_TEMPLATE,
     accent: ACCENTS[0],
     seedFromMe: true,
   });

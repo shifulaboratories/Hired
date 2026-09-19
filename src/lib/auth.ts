@@ -5,9 +5,10 @@ import {
 } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import type { Prisma, User, UserRole } from "@prisma/client";
+import type { McpScope, Prisma, User, UserRole } from "@prisma/client";
 import { db } from "@/lib/db";
 import { sweepArchive } from "@/lib/data/archive";
+import { sweepRevisions } from "@/lib/data/revisions";
 import { getSettings } from "@/lib/settings";
 import { baseUrlFrom } from "@/lib/request-url";
 
@@ -187,6 +188,19 @@ function generateSessionToken() {
 
 export function generateInviteToken() {
   return randomBytes(24).toString("hex");
+}
+
+/**
+ * The capture link's token. Same shape as an MCP token, different prefix, so a
+ * glance at a string says which credential it is and the endpoint can refuse a
+ * connection token pasted into the capture address.
+ *
+ * Here rather than beside the data layer that uses it because this file is
+ * where this codebase mints tokens, and a fourth one somewhere else is how
+ * conventions rot.
+ */
+export function generateCaptureToken() {
+  return `cap_${randomBytes(24).toString("hex")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -447,7 +461,23 @@ const LAST_USED_RESOLUTION_MS = 60_000;
  * connections has to know which one it is speaking through — that is what lets
  * "disconnect the old laptop" refuse to cut the wire it is standing on.
  */
-export type McpCaller = { user: User; connectionId: string };
+/**
+ * `connectionName` rides along because the change log stores the name as it was
+ * at the time: a log that resolved the name at read time would relabel every
+ * historic row the day somebody renamed a connection, and go blank the day they
+ * deleted one. Same call AdminAudit makes about actorId.
+ */
+export type McpCaller = {
+  user: User;
+  connectionId: string;
+  connectionName: string;
+  /**
+   * What this connection is served. Re-read from the row on EVERY post — no
+   * cache, because the transport is stateless and that is what makes "narrow it
+   * now" take effect on the client's next call rather than after a restart.
+   */
+  scope: McpScope;
+};
 
 export async function userByMcpToken(
   token: string | null | undefined,
@@ -473,6 +503,8 @@ export async function userByMcpToken(
     // nobody restarts still clears its archive. Never let bookkeeping fail a
     // real request.
     void sweepArchive().catch(() => {});
+    // The version store's sweep rides the same throttle, for the same reason.
+    void sweepRevisions().catch(() => {});
     void db.mcpConnection
       .update({
         where: { id: connection.id },
@@ -484,7 +516,7 @@ export async function userByMcpToken(
       .catch(() => {});
   }
 
-  return { user, connectionId: connection.id };
+  return { user, connectionId: connection.id, connectionName: connection.name, scope: connection.scope };
 }
 
 /** Every user starts with one connection so Settings is never an empty page. */

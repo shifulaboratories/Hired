@@ -67,6 +67,7 @@ const EXCLUDED = [
   "the review queue — a proposal is a question, not a record",
   "instance-level rows: accounts, invitations, settings, the audit log",
   "your profile photo — a data URI nobody restores from a backup, and it would dwarf the file",
+  "attachments — the files you have kept; their bytes would dwarf this document, and pg_dump is the backup that carries them",
 ];
 
 /** Columns stripped on the way out, wherever they appear. */

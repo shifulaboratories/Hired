@@ -72,6 +72,7 @@ const KIND_TONE: Record<ScheduleKind, string> = {
   TASK: "var(--primary)",
   ACTIVITY: "var(--stage-3)",
   MEETING: "var(--stage-interview)",
+  INTERVIEW: "var(--stage-interview)",
   OFFER: "var(--stage-offer)",
 };
 
@@ -80,6 +81,7 @@ const KIND_LABEL: Record<ScheduleKind, string> = {
   TASK: "Task due",
   ACTIVITY: "Logged",
   MEETING: "On your calendar",
+  INTERVIEW: "Interview",
   OFFER: "Answer an offer by",
 };
 

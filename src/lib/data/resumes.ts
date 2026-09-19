@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Prisma, Stage } from "@prisma/client";
 import { db } from "@/lib/db";
 import { pick } from "@/lib/data/patch";
+import { snapshot, APP_AUTHOR, type WriteAuthor } from "@/lib/data/revision-store";
 import {
   blankSection,
   emptyResumeDoc,
@@ -16,7 +17,8 @@ import { reorderDoc, type ReorderInput } from "@/lib/resume-reorder";
 // re-imported resume, and so the editor can ask it in the browser about the
 // bullet being typed: is there anything of this person's behind this?
 import { backingFor, type EvidenceSource } from "@/lib/resume-evidence";
-import { LINES_PER_PAGE } from "@/lib/resume-text";
+import { LINES_PER_PAGE, resumeToText } from "@/lib/resume-text";
+import { atsReport } from "@/lib/resume-ats";
 
 // Rendering helpers live in resume-text.ts (client-safe); re-exported so server
 // callers can keep reaching them through this module.
@@ -247,6 +249,16 @@ export async function updateResume(
   userId: string,
   id: string,
   patch: ResumeMeta & { data?: unknown },
+  /**
+   * Who is writing, for the version store. Defaults to the person at a
+   * keyboard, which is what every server action is.
+   *
+   * The snapshot is taken HERE rather than in a caller because this is the one
+   * place the document is replaced — the MCP tool and the editor's autosave
+   * both arrive through it — and a future writer cannot forget a copy that is
+   * taken on the only path.
+   */
+  author: WriteAuthor = APP_AUTHOR,
 ) {
   // slug / visibility / publishedAt are deliberately absent: publishing goes
   // through publishResume, which allocates an unguessable slug and keeps the
@@ -261,6 +273,26 @@ export async function updateResume(
     if (!current) throw new Error(`No resume with id ${id}`);
     return current;
   }
+
+  // Only when the DOCUMENT is being replaced. Changing a font or a name is one
+  // click to put back and is not worth a copy of a 40KB document.
+  if (patch.data !== undefined) {
+    const before = await db.resume.findFirst({
+      where: { id, userId },
+      select: { name: true, data: true },
+    });
+    if (before) {
+      await snapshot(
+        userId,
+        "RESUME",
+        id,
+        { name: before.name, doc: before.data },
+        before.name,
+        author,
+      );
+    }
+  }
+
   const { count } = await db.resume.updateMany({ where: { id, userId }, data });
   if (count === 0) throw new Error(`No resume with id ${id}`);
   return db.resume.findFirstOrThrow({ where: { id, userId } });
@@ -347,6 +379,32 @@ export async function resumeFitReport(userId: string, id: string) {
     fontSize: resume.fontSize,
     lineHeight: resume.lineHeight,
     pageMargin: resume.pageMargin,
+  };
+}
+
+/**
+ * What a parser gets out of this resume, and what falls out on the way.
+ *
+ * The text half is `resumeToText`, which walks the DOCUMENT rather than reading
+ * the rendered page — so it is what a well-behaved parser would see if one
+ * existed, not a re-extraction of a PDF. The tool adds the rendered half where
+ * this instance has a browser; this function deliberately has no browser in it,
+ * so the answer is never nothing.
+ */
+export async function resumeAtsReport(userId: string, id: string) {
+  const resume = await db.resume.findFirst({ where: { id, userId } });
+  if (!resume) throw new Error(`No resume with id ${id}`);
+  const doc = parseResumeDoc(resume.data);
+  const text = resumeToText(doc);
+  return {
+    resume: {
+      id: resume.id,
+      name: resume.name,
+      template: resume.template,
+      showPhoto: resume.showPhoto,
+    },
+    text,
+    report: atsReport(doc, { template: resume.template, showPhoto: resume.showPhoto }, text),
   };
 }
 

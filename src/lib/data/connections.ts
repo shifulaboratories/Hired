@@ -1,3 +1,4 @@
+import type { McpScope } from "@prisma/client";
 import { db } from "@/lib/db";
 import { generateMcpToken } from "@/lib/auth";
 import { clientsById } from "@/lib/mcp/clients";
@@ -24,7 +25,7 @@ export async function listConnections(userId: string) {
 
 export async function createConnection(
   userId: string,
-  input: { name?: string; client?: string } = {},
+  input: { name?: string; client?: string; scope?: McpScope } = {},
 ) {
   const count = await db.mcpConnection.count({ where: { userId } });
   if (count >= MAX_PER_USER) {
@@ -37,9 +38,22 @@ export async function createConnection(
       userId,
       name: cleanName(input.name ?? "", clientsById.get(client)?.name ?? "New connection"),
       client,
+      scope: input.scope ?? "FULL",
       token: generateMcpToken(),
     },
   });
+}
+
+/**
+ * Narrow or widen what one connection is served.
+ *
+ * Not a permission: the token still resolves to the whole account, and this
+ * only changes which tools the client is offered. It takes effect on that
+ * client's next call, because the transport re-reads the row every time.
+ */
+export async function setConnectionScope(userId: string, id: string, scope: McpScope) {
+  const { count } = await db.mcpConnection.updateMany({ where: { id, userId }, data: { scope } });
+  if (count === 0) throw new Error("No connection with that id.");
 }
 
 export async function renameConnection(userId: string, id: string, name: string) {

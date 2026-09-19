@@ -472,6 +472,20 @@ export function nudgeEmail(input: {
   return digestShell({ ...input, cta: "Open today", path: "/" });
 }
 
+/**
+ * The monthly one, and the only mail here addressed to somebody who is NOT
+ * searching. It points at Me rather than at the board, because the ask is to
+ * write one sentence down rather than to go and look at anything.
+ */
+export function winsEmail(input: {
+  instanceName: string;
+  name: string;
+  content: { subject: string; intro: string; sections: { heading: string; lines: string[] }[] };
+  appUrl: string;
+}) {
+  return digestShell({ ...input, cta: "Open Me", path: "/me" });
+}
+
 function digestShell(input: {
   instanceName: string;
   name: string;

@@ -48,6 +48,9 @@ export const SYSTEM_EVENT_SOURCES = [
   "microsoft.data",
   "mcp.tool",
   "mcp.origin",
+  /// One line per message a member sent from their own mailbox. The provider,
+  /// and nothing else — never the recipient, the subject or the body.
+  "outbound.send",
   "app",
 ] as const;
 

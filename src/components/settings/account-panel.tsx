@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { PhotoField } from "@/components/settings/photo-field";
 import { DigestPanel } from "@/components/settings/digest-panel";
+import { OutboundPanel, type OutboundPanelProps } from "@/components/settings/outbound-panel";
 import {
   changeOwnPasswordAction,
   logoutAction,
@@ -38,7 +39,9 @@ export function AccountPanel({
   user,
   googleReady,
   digest,
+  outbound,
 }: {
+  outbound: OutboundPanelProps;
   digest: {
     weeklyDigest: boolean;
     dailyNudge: boolean;
@@ -173,6 +176,10 @@ export function AccountPanel({
         <Separator />
 
         <DigestPanel initial={digest} />
+
+        <Separator />
+
+        <OutboundPanel initial={outbound} />
 
         <Separator />
 

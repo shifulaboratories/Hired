@@ -32,6 +32,9 @@ import {
   microsoftIsConfigured,
 } from "@/lib/settings";
 import { listLinkedAccounts } from "@/lib/data/accounts";
+import { getMailSweep } from "@/lib/data/mail-sweep";
+import { getCaptureLink } from "@/lib/data/capture-link";
+import { getOutboundSettings } from "@/lib/data/outbound";
 import { listStageTemplates, stageTemplateUsage } from "@/lib/data/stage-templates";
 import { isGoogleRefusal, refusalMessage } from "@/lib/google";
 
@@ -70,12 +73,15 @@ export default async function SettingsPage({
 
   // Nobody should ever land here with nothing to copy.
   await ensureDefaultConnection(user.id);
-  const [connections, profile, skills, settings, linkedAccounts] = await Promise.all([
+  const [connections, profile, skills, settings, linkedAccounts, sweep, capture, outboundSettings] = await Promise.all([
     listConnections(user.id),
     getProfile(user.id),
     listSkills(),
     getSettings(),
     listLinkedAccounts(user.id),
+    getMailSweep(user.id),
+    getCaptureLink(user.id, baseUrl),
+    getOutboundSettings(user.id),
   ]);
 
   // What the consent screen came back with, as a fixed code — never text from
@@ -148,6 +154,7 @@ export default async function SettingsPage({
                   name: connection.name,
                   client: connection.client,
                   token: connection.token,
+                  scope: connection.scope,
                   lastUsedAt: connection.lastUsedAt?.toISOString() ?? null,
                   lastUsedFrom: guessClient(connection.lastUsedFrom),
                 }))}
@@ -173,6 +180,21 @@ export default async function SettingsPage({
                   googleReady: googleIsConfigured(settings),
                   microsoftReady: microsoftIsConfigured(settings),
                   notice: accountNotice,
+                  sweep: {
+                    on: sweep.on,
+                    lastRunAt: sweep.lastRunAt?.toISOString() ?? null,
+                    note: sweep.note,
+                    mailConnected: sweep.mailConnected,
+                    calendarConnected: sweep.calendarConnected,
+                  },
+                }}
+                captureLink={{
+                  exists: capture.exists,
+                  url: capture.url,
+                  bookmarklet: capture.bookmarklet,
+                  captured: capture.captured,
+                  lastUsedAt: capture.lastUsedAt?.toISOString() ?? null,
+                  note: capture.note,
                 }}
               />
             </FadeIn>
@@ -224,6 +246,13 @@ export default async function SettingsPage({
                 dailyNudge: profile.dailyNudge,
                 digestHour: profile.digestHour,
                 emailConfigured: emailIsConfigured(settings),
+              }}
+              outbound={{
+                instanceEnabled: outboundSettings.instanceEnabled,
+                dailyLimit: outboundSettings.dailyLimit,
+                approval: outboundSettings.approval,
+                accounts: outboundSettings.accounts.length,
+                sentToday: outboundSettings.sentToday,
               }}
             />
           </FadeIn>

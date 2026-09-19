@@ -14,11 +14,21 @@ just *talk* to it.
   matters, because the alternative is a resume that says you have no evidence for
   something you spent two years doing.
 - **Resumes** — tailored documents assembled from that material. Defaults to the Harvard
-  OCS format; four other templates, live preview, real PDF export, and a shareable link for
-  the application forms that want a URL instead of a file.
+  OCS format; five other templates, live preview, real PDF export, and a shareable link for
+  the application forms that want a URL instead of a file. One of the five is **Plain
+  (ATS)**: one column, black, no photo, and every link printed as its address rather than as
+  a word with the address hidden in the markup — which is the only thing on a resume a text
+  extractor genuinely cannot see. `preview_ats_text` shows you what a machine reads, what
+  falls out between the document and the printed page, and a short list of flat checks with
+  the reason each one matters. There is deliberately no score: no two applicant tracking
+  systems parse alike, none of them publishes what it does, and a number would be one this
+  app invented.
 - **Letters** — everything you write that is not a resume: cover letters, cold messages,
-  referral asks, thank-yous, replies. They live under Me, and on the job they were written
-  for. Each carries a kind, who it went to, whether it has actually been sent, and links to
+  referral asks, thank-yous, replies — and four that are about you rather than to anybody: a
+  LinkedIn About, a headline, a self-review and a brag doc. Those four print without a date
+  or a recipient, because neither belongs on them, and `prep_letter` answers them from your
+  own roles rather than from a posting it does not have. They live under Me, and on the job
+  they were written for. Each carries a kind, who it went to, whether it has actually been sent, and links to
   the application, the person and the resume it went out with — so "what did I already say
   to them" is one look rather than a search through your sent mail. The point is
   `prep_letter`: before anything is drafted it gathers the posting, the company research,
@@ -92,10 +102,10 @@ just *talk* to it.
   pipeline does not know. Answering them in the chat works only if you are at the chat, and
   anything you did not answer is gone. It can queue them instead: they wait on Today, one
   line each, with the sentence from the email that produced it printed underneath, and you
-  accept or dismiss them whenever you get to it. Five things can be queued — log it, move
-  the stage, add a task, change the follow-up date, add a person — and nothing is written
-  until you say yes. A dismissal is an answer too, so it stays on file and a good assistant
-  will not propose it again.
+  accept or dismiss them whenever you get to it. Six things can be queued — log it, move
+  the stage, add a task, change the follow-up date, add a person, add a job to the board —
+  and nothing is written until you say yes. A dismissal is an answer too, so it stays on
+  file and a good assistant will not propose it again.
 - **Stage checklists** — the things you always mean to do and never do. Say once that
   reaching Applied should add "check the posting is still up" in a week, or that every
   interview should put "send a thank-you" on tomorrow's list, and it happens on its own
@@ -106,6 +116,94 @@ just *talk* to it.
   jobs already on the board. Deleting a line leaves the tasks it already made alone —
   deleting a setting should not delete work you are part-way through. A new account has
   none; there is a starting set of six if you would rather not design your own.
+- **One message can leave** — off, and a long way off. Two emails have always
+  gone to you and nothing else has ever left this app; a follow-up is the one
+  exception, and it is mostly made of refusals. It sends **from your own
+  mailbox**, never as the instance, so it arrives from you and lands in your Sent
+  folder — a chase that reaches a recruiter from a tool's address is worse than
+  no chase. It can only be addressed to somebody **already on your pipeline**:
+  the address is read off their record and there is no way to give it one, which
+  is what stops an assistant mailing forty strangers. It drafts first, always,
+  and out of the box every message waits on your dashboard for you to press Send
+  — **no assistant can make that click**. Three separate switches have to be on:
+  the instance's, yours, and a Google or Microsoft mailbox reconnected with
+  permission to send. Turning yours on is also setting a daily number, because
+  there is no state where sending is on and the limit is undefined. You can hand
+  over the click if you want to, and the copy beside that switch says plainly
+  what you are handing over.
+- **Somewhere to put the file** — the signed offer letter, the take-home you sent,
+  the PDF a recruiter mailed over, a screenshot of a posting that has since come
+  down. Files hang off exactly one thing — a job, an offer, a letter, a person or
+  a company — because a file with no home is bytes nobody can find later, and
+  deleting that thing takes its files with it. The bytes live in Postgres, which
+  is the same call the profile photo already made and the reason `DATABASE_URL`
+  is still the only variable: an object store would be a bucket, a region, a key
+  and a secret. So the caps are the design — 8MB a file and 250MB a workspace by
+  default, both settings an admin can raise — and the type is read from the file's
+  own first bytes rather than from what it was called. Attaching the same file
+  twice gives you the first one back rather than a second copy. The workspace
+  export deliberately does **not** carry the bytes; `pg_dump` is the backup that
+  does, and a file you email around cannot be 250MB.
+- **A sample search to look at** — the emptiest ten minutes in this app are the
+  first ones, so `load_sample_workspace` writes a small, plausible search into an
+  empty workspace: four employers, six jobs across every stage, five people
+  including one who works at two of them, four weeks of timeline, an overdue task,
+  two letters, a resume, and an offer that was revised a week later for eighteen
+  thousand more — which is the thing worth showing, because it is why offers are
+  rows here rather than columns. It is ordinary data written the ordinary way, so
+  it drags, sorts, filters and exports exactly like yours will. `wipe_sample_workspace`
+  takes it back out, and takes out only what it put in: anything you edited or
+  added to is kept and named, because a sample that quietly deleted a note you
+  wrote on it would be worse than no sample.
+- **A LinkedIn export, read properly** — the zip from Settings → Data privacy is
+  CSV with column headers, which makes it the one document here that does not have
+  to be interpreted. Drop it into the import dialog, or hand the files to
+  `import_linkedin_archive`. It fills in your profile, every job with its dates and
+  its whole description, education, skills, languages, certifications and projects,
+  and optionally turns LinkedIn's own record of what you applied to into jobs on the
+  board. Roles from an archive carry **no** bullets on purpose: the Description
+  field is prose, and cutting it into "achievements" would manufacture lines you
+  never wrote. It is additive and safe to repeat, on the same rules the resume
+  import uses, and `dry_run` shows you the numbers before anything lands.
+- **Watch a company's board** — say "tell me when Stripe posts a staff engineer role" and
+  it does. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON;
+  hand it the board link or just the company's careers page and it follows an embedded
+  board through to the real one. Anything else — Workday, SmartRecruiters, a hand-built
+  careers page — is refused by name rather than half-supported, because diffing a page that
+  renders its jobs in JavaScript puts invented roles in a queue whose whole value is that
+  its rows can be trusted. The first look proposes nothing: it records what is up today as
+  already seen, because a watch on a six-hundred-role board is otherwise six hundred rows
+  to read. After that every new matching role arrives in the review queue with the posting
+  already read into it, and accepting is what puts it on the wishlist.
+- **Postings that came down** — a 404 on a job you applied for is the cheapest strong signal
+  in a search that the role was filled or pulled, and it usually happens weeks before
+  anybody writes to say so. The check fetches the posting and writes what the host said onto
+  the application. It never moves a stage and never logs anything to the timeline: a page
+  coming down is a fact about the advert, and a robot's fetch must not make a silent
+  application look like it had been chased. Gone takes two looks a day apart that both came
+  back 404, so one bad night at a CDN never tells you a live application is dead.
+- **Your own mail, swept** — off until you ask, in Settings → Connections. On, the app reads
+  what arrives from the companies and people already on your pipeline and queues what a rule
+  can prove: the message to log, somebody new at a tracked employer to add, and — with a
+  calendar connected — a booked meeting that means an application has reached interviewing.
+  It deliberately does not read what a message *means*. A rejection, an offer and a
+  take-home come back on a list to read instead, because a rule that read "unfortunately"
+  as a rejection would put "you have been rejected" in front of somebody who was only being
+  apologised to. Nothing is written to the pipeline; every finding waits for a yes.
+- **Capture a job from your phone** — Settings → Connections can mint one narrow link that
+  does exactly one thing: turn a posting URL into an application. Drag it to a bookmark bar
+  or make it an iOS Shortcut, tap it on a posting, and the job lands on your wishlist
+  without opening the app. It is not a connection URL — it cannot read anything and it can
+  do nothing else — but it is still a password, it is capped at thirty captures an hour, and
+  you can rotate or revoke it on its own. No account has one until somebody asks for it.
+- **The background schedule** — all three of those run when a scheduler asks them to, which
+  keeps the app itself free of timers. An admin puts a long random string into **Background
+  sweep token** under Admin → Configuration and points the host's scheduler at `/api/sweep/`
+  followed by it. `?only=boards`, `?only=postings` and `?only=mail` run one at a time, since
+  the three want different cadences and a self-hoster wanting three crons should not need
+  three tokens. Leave the token empty and that address is off rather than open. It is
+  deliberately not the digest token: a secret that only ever caused mail to be sent should
+  not silently become one that fetches URLs and reads mailboxes.
 - **Nothing is deleted by accident** — pressing Delete on a company, a person or an
   application puts it in an archive rather than destroying it. It leaves every list, board,
   picker, filter and count immediately, and waits thirty days — an instance setting, or zero
@@ -165,7 +263,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  157 tools any MCP client can call (190 if you're an admin). Claude, Claude Code, ChatGPT,
+  214 tools any MCP client can call (249 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -348,9 +446,21 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 157, or 190 if you're an admin.
+then tells you how many tools answered — 214, or 249 if you're an admin.
 
-That is a lot of tools, and spelled out in full they're around 49,000 tokens of context
+Each connection can also be narrowed to one job, in the panel where you copy its URL:
+**Everything** (the default, and what every connection had before this existed), **Me,
+resumes and letters**, **The search**, or **Read-only**. It is not a permission — the URL
+still reaches the whole account and you can widen it again in a click — it changes what the
+assistant is *offered*, which is what makes it pick the right tool. A client choosing
+between two hundred tools gets it wrong more often than one choosing between sixty, and the
+wrong one here writes into your career history. It costs less too: the writing scope is
+about a quarter of the context. Whichever one you pick, it keeps the way back: a narrowed
+connection is still served the change log and **undo**, because a scope whose whole job is
+writing needs that more than a full one does. It cannot mint or widen a connection, though —
+that stays with **Everything**.
+
+That is a lot of tools, and spelled out in full they're around 65,000 tokens of context
 before you've said anything. If your client has tool search — Claude Code does, and has it
 on by default — leave it on: it loads six of them up front, about 1,600 tokens, and looks
 the rest up when they're needed. On a client without it you're paying the full amount every
@@ -571,15 +681,44 @@ for a screen. Keys are lowercase letters, numbers and underscores.
 
 By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_variable`.
 
+### The assistant built in (optional)
+
+Everything above assumes you connect your own Claude, and that is still the better way: it
+costs this instance nothing and you get the client you already like. But an instance where
+nobody has connected anything is a web app with a conversational product thesis and no
+conversation in it, so there is a chat built in.
+
+Put an Anthropic API key in **Admin → Configuration → Assistant** and a small button appears
+next to the notifications bell on every screen. It opens a drawer beside your work — ask
+what has gone quiet, tell it what you did this week, have it tailor a resume to a posting.
+Leave the key empty and none of that is rendered: no button, no drawer, no call out.
+
+It is a client, not a feature. It runs as whoever is signed in, through exactly the tools an
+MCP connection is served, so there is nothing it can do that a conversation elsewhere
+cannot. The four acts that cannot be undone stop and wait for you to press a button, which
+is the same annotation every other client reads to decide the same thing.
+
+Two numbers are yours to set. **Messages a day, each** is per person, counted in their own
+time zone, and 0 means no cap at all — a decision rather than a default, on a key you are
+paying for. **Tools it is served** is the same four scopes a connection can be narrowed to,
+and it is the honest cost lever: the whole tool surface is most of the tokens on every turn,
+and the writing scope is about a quarter of it.
+
+**Admin → Configuration** shows what it has cost over the last thirty days: messages, tokens
+and how many people used it. Counts and sums only. There is no screen, and no tool, that
+lets an admin read anybody's conversation.
+
+By conversation: `admin_get_assistant_config`, `admin_set_assistant_config`.
+
 ---
 
 ## What your AI can do once it's connected
 
-157 tools. One hundred and forty-eight of them are the data tools across the five areas, the
+214 tools. Two hundred and five of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
-hands back a step-by-step plan that it then follows. Admins get 33 more — 32 data tools and
+hands back a step-by-step plan that it then follows. Admins get 35 more — 34 data tools and
 a tenth workflow — and members never even see those in the tool list, so nobody is tempted
 by a permission they don't have.
 
@@ -591,7 +730,7 @@ by a permission they don't have.
 | **Weekly pipeline review** | What's stalled, who needs chasing, what to do next — with the follow-up messages drafted. |
 | **Research a company into the CRM** | Gathers what's known, works out what's missing, and writes it back to their record without flattening what was already there. |
 | **Prepare for an interview** | Pulls the posting, the timeline, the company research, the people involved and your own evidence into one prep sheet. |
-| **Write a letter** | Gathers the posting, your evidence and the letters you have already written, then drafts a cover letter, a cold message, a referral ask, a thank-you or a reply in your own voice. |
+| **Write a letter** | Gathers the posting, your evidence and the documents of the same kind you have already written, then drafts one in your own voice: a cover letter, a cold message, a referral ask, a thank-you, a reply, a LinkedIn About, a headline, a self-review or a brag doc. |
 | **Log what happened this week** | You ramble; it files everything to the right role, application, or note. |
 | **Bring the pipeline up to date from your inbox** | Reads a week of your mail and calendar, tells you what moved, and queues what to log on your dashboard — nothing is written until you accept it. |
 | **Invite and onboard someone** *(admin)* | Invites a person, hands you the link if email isn't set up, and drafts the message to send them. |

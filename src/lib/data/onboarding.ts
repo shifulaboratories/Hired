@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { sampleStatus, type SampleStatus } from "@/lib/data/sample";
 
 /**
  * How far into their first ten minutes somebody is.
@@ -25,10 +26,12 @@ export type SetupStatus = {
   outstanding: boolean;
   /** When they last finished or skipped the tour. Null means never. */
   tourSeenAt: Date | null;
+  /** Whether the sample search is loaded, so nothing offers it twice. */
+  sample: SampleStatus;
 };
 
 export async function setupStatus(userId: string): Promise<SetupStatus> {
-  const [connection, role, highlight, application, profile] = await Promise.all([
+  const [connection, role, highlight, application, profile, sample] = await Promise.all([
     // lastUsedAt, never the existence of a row: ensureDefaultConnection runs
     // from bootstrap, from sign-in and from every Settings render, so counting
     // rows reports every workspace that has ever existed as connected.
@@ -42,6 +45,7 @@ export async function setupStatus(userId: string): Promise<SetupStatus> {
     // setup strip asks whether you have started, not whether you ever did.
     db.application.findFirst({ where: { userId, archivedAt: null }, select: { id: true } }),
     db.profile.findUnique({ where: { userId }, select: { tourSeenAt: true } }),
+    sampleStatus(userId),
   ]);
 
   // Easiest first. Connecting an assistant is the most powerful step and the
@@ -74,6 +78,7 @@ export async function setupStatus(userId: string): Promise<SetupStatus> {
     // Today screen permanently. It still shows while the strip is up for
     // another reason, which is where it belongs: beside the two that matter.
     outstanding: steps.some((step) => step.key !== "connect" && !step.done),
+    sample,
     tourSeenAt: profile?.tourSeenAt ?? null,
   };
 }

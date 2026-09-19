@@ -64,34 +64,72 @@ model User {
   invitedBy   User?   @relation("UserInvites", fields: [invitedById], references: [id], onDelete: SetNull)
   invitees    User[]  @relation("UserInvites")
 
-  sessions       Session[]
-  mcpConnections McpConnection[]
-  sentInvites    Invite[]        @relation("InviteSender")
-  profile        Profile?
-  roles          Role[]
-  highlights     Highlight[]
-  education      Education[]
-  projects       Project[]
-  skillGroups    SkillGroup[]
-  certifications Certification[]
-  notes          Note[]
-  resumes        Resume[]
-  letters        Letter[]
-  companies      Company[]
-  applications   Application[]
-  offers         Offer[]
-  contacts       Contact[]
-  activities     Activity[]
-  tasks          Task[]
-  savedViews     SavedView[]
-  tags           Tag[]
-  stageTemplates StageTemplate[]
-  proposals      Proposal[]
-  pipelineShares PipelineShare[]
-  linkedAccounts LinkedAccount[]
+  sessions           Session[]
+  mcpConnections     McpConnection[]
+  sentInvites        Invite[]            @relation("InviteSender")
+  profile            Profile?
+  roles              Role[]
+  highlights         Highlight[]
+  education          Education[]
+  projects           Project[]
+  skillGroups        SkillGroup[]
+  certifications     Certification[]
+  notes              Note[]
+  resumes            Resume[]
+  letters            Letter[]
+  companies          Company[]
+  applications       Application[]
+  offers             Offer[]
+  contacts           Contact[]
+  activities         Activity[]
+  tasks              Task[]
+  savedViews         SavedView[]
+  tags               Tag[]
+  stageTemplates     StageTemplate[]
+  interviews         Interview[]
+  interviewQuestions InterviewQuestion[]
+  proposals          Proposal[]
+  pipelineShares     PipelineShare[]
+  linkedAccounts     LinkedAccount[]
+  revisions          Revision[]
+  writeLogs          WriteLog[]
+  stageCadences      StageCadence[]
+  referrals          Referral[]
+  companyWatches     CompanyWatch[]
+  captureLink        CaptureLink?
+  sampleLoad         SampleLoad?
+  attachments        Attachment[]
+  outbound           Outbound[]
+  assistantThreads   AssistantThread[]
 
   @@index([role])
   @@index([stripeCustomerId])
+}
+
+/// What a connection is SERVED — not what it is allowed to do.
+///
+/// A scope narrows `tools/list`, `prompts/list` and the briefing so a client
+/// chooses between tools that belong to one job. It is NOT a security boundary:
+/// the token still resolves to the whole account, the refusal lives in the
+/// dispatcher rather than in the data layer, and anybody who can sign in can
+/// widen it again. Treat it as a routing aid with teeth, and never as a way to
+/// hand a connection URL to somebody you would not hand the account to.
+///
+/// FULL is a VALUE, not "no scope". It is stored, and it is the thing the
+/// byte-identical promise is about — do not make the column nullable later to
+/// mean "unset".
+enum McpScope {
+  /// Everything the caller's role allows. The default, and what every
+  /// connection that existed before scopes had.
+  FULL
+  /// Me, resumes and letters, plus the four reads a document needs about the
+  /// job it is aimed at.
+  WRITING
+  /// The search itself: applications, companies, people, the archive, and the
+  /// mail and calendar readers.
+  PIPELINE
+  /// Every tool on this server that writes nothing, in every area.
+  READONLY
 }
 
 /// A mailbox and calendar the app reads on a person's behalf: their Gmail,
@@ -142,6 +180,8 @@ model LinkedAccount {
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
+  outbound Outbound[]
+
   @@unique([userId, provider, email])
   @@index([userId])
 }
@@ -169,14 +209,17 @@ model Session {
 /// on a laptop you lost doesn't disconnect the others, and `lastUsedAt` answers
 /// the only question anyone ever asks about a connector: is it actually working?
 model McpConnection {
-  id     String @id @default(cuid())
+  id     String   @id @default(cuid())
   userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// What the person called it, e.g. "Claude desktop".
   name   String
   /// Catalog id from src/lib/mcp/clients.ts — drives which setup card is shown.
-  client String @default("other")
-  token  String @unique
+  client String   @default("other")
+  token  String   @unique
+  /// Which subset of the tools this client is served. FULL is everything and is
+  /// the default, so adding this column changed nothing for anybody.
+  scope  McpScope @default(FULL)
 
   lastUsedAt   DateTime?
   /// User-agent of whatever last called in, trimmed. Purely informational.
@@ -468,17 +511,62 @@ model Profile {
   /// the weekly one is a summary you read on a Monday, the daily one only
   /// arrives on a day something is actually due. Both need the instance to
   /// have email configured; neither is a setting an admin can set for you.
-  weeklyDigest Boolean  @default(false)
-  dailyNudge   Boolean  @default(false)
+  weeklyDigest Boolean @default(false)
+  dailyNudge   Boolean @default(false)
+  /// The third promise, and the only one addressed to somebody who is NOT
+  /// searching: once a month, name one thing that went well so it lands in Me
+  /// while you still remember it. Off until asked, like the other two, and
+  /// normally turned on at the moment the other two are turned off — a weekly
+  /// summary of an empty pipeline is the mail people filter.
+  winsNudge    Boolean @default(false)
+  /// The civil day it was last sent, in their zone. Same shape and same reason
+  /// as lastDigestOn: the question the sweep asks is "have they had this
+  /// month's yet", and that is a question about their calendar.
+  lastWinsOn   String  @default("")
+  /// How many of these have gone out since anything last landed in Me. At three
+  /// it stops sending: a mail somebody has ignored three times is a mail they
+  /// have declined. Logging a win, or switching it off and on, resets it.
+  winsQuiet    Int     @default(0)
   /// The hour, in THEIR zone, both are sent at. 0-23.
-  digestHour   Int      @default(8)
+  digestHour   Int     @default(8)
   /// The civil day each was last sent, in their zone, as YYYY-MM-DD. A day
   /// string rather than a timestamp because the question the sweep asks is
   /// "have they had today's yet", and that is a question about their calendar.
   /// It is also what makes the sweep safe to run every hour, or twice.
-  lastDigestOn String   @default("")
-  lastNudgeOn  String   @default("")
-  updatedAt    DateTime @updatedAt
+  lastDigestOn String  @default("")
+  lastNudgeOn  String  @default("")
+
+  /// Inbound, and off until somebody turns it on — the same promise the three
+  /// digest switches make. It reads the mailboxes already connected under
+  /// Settings → Connections and files proposals; it writes nothing to the
+  /// pipeline, ever. No admin can turn it on for somebody else.
+  mailSweep      Boolean   @default(false)
+  /// The instant of the newest message this sweep has already accounted for.
+  /// A timestamp rather than a civil day, because unlike a digest the question
+  /// is not "have they had today's" but "what is new since", and the window it
+  /// asks the provider for is derived from it.
+  mailSweptAt    DateTime?
+  /// When the sweep last ran at all, successfully or not. What throttles it to
+  /// once an hour however often the endpoint is hit.
+  mailSweptRunAt DateTime?
+  /// Why the last run was short, in a sentence: a provider refused, or the
+  /// window hit the fifty-thread ceiling. Empty when it was clean.
+  mailSweepNote  String    @default("")
+
+  /// Outbound mail, and the number that turns it on. ZERO MEANS THIS APP WILL
+  /// NOT SEND ON THEIR BEHALF AT ALL, which is what every account has until
+  /// they say otherwise; any other value is both the switch and the daily
+  /// ceiling, so there is no state where sending is on and the limit is
+  /// undefined. Set only from Settings by the person themselves — no admin can
+  /// set it, and no MCP tool can, which is the point.
+  outboundDailyLimit Int    @default(0)
+  /// "each" (default): every message waits for a click in the app before it can
+  /// be sent, and NO TOOL CAN MAKE THAT CLICK. "trusted": a connected assistant
+  /// may send within the daily limit without one. The copy beside this in
+  /// Settings says exactly what the second one gives away.
+  outboundApproval   String @default("each")
+
+  updatedAt DateTime @updatedAt
 }
 
 model Role {
@@ -689,6 +777,14 @@ model Resume {
 /// Not free text, because the kind decides how a draft should read — a referral
 /// ask is short and asks for one thing, a thank-you is shorter and asks for
 /// nothing — and an assistant given a free-text label has to guess that.
+/// What kind of thing this is. Ten values, and four of them are not letters:
+/// they have no recipient and no date, and LetterPaper prints them plain. See
+/// IS_CORRESPONDENCE in src/lib/letter-kinds.ts.
+///
+/// The four are appended after OTHER rather than slotted in beside their
+/// siblings on purpose: `ALTER TYPE ... ADD VALUE` appends, so a file whose
+/// order does not match the type's order in the database is a trap for whoever
+/// next reads either one. DISPLAY order is LETTER_LABEL's key order, not this.
 enum LetterKind {
   COVER_LETTER
   OUTREACH
@@ -696,6 +792,14 @@ enum LetterKind {
   THANK_YOU
   REPLY
   OTHER
+  /// The first-person paragraph at the top of a LinkedIn profile.
+  LINKEDIN_ABOUT
+  /// One line: under a name on LinkedIn, or at the top of a resume.
+  HEADLINE
+  /// What they write about themselves at a review, for the job they have.
+  SELF_REVIEW
+  /// A running private list of what they have done. Sent to nobody.
+  BRAG_DOC
 }
 
 /// Everything you write that is not a resume.
@@ -733,6 +837,9 @@ model Letter {
   sentAt    DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+
+  attachments Attachment[]
+  outbound    Outbound[]
 
   @@index([userId])
   @@index([userId, kind])
@@ -811,6 +918,11 @@ model Company {
   /// a typo everywhere at once, and no way to ask "who else is fintech".
   tags         CompanyTag[]
   tasks        Task[]
+  referrals    Referral[]
+  /// The public jobs boards being watched for this employer. Watches carry no
+  /// archivedAt of their own; see the model.
+  watches      CompanyWatch[]
+  attachments  Attachment[]
 
   @@unique([userId, name, archiveKey])
   @@index([userId])
@@ -819,28 +931,48 @@ model Company {
 }
 
 model Application {
-  id             String           @id @default(cuid())
-  userId         String
-  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  companyId      String
-  company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  roleTitle      String
-  stage          Stage            @default(WISHLIST)
+  id               String           @id @default(cuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId        String
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roleTitle        String
+  stage            Stage            @default(WISHLIST)
   /// Which round of interviews this is on, counting from 1. Zero means nobody
   /// has said — which is most of them, and is why the board shows nothing for
   /// it. It is not cleared when an application ends: an offer that came after
   /// four rounds, and a rejection that came after four rounds, are both facts
   /// about how far it got, and the funnel reads exactly this column to build
   /// its rungs.
-  interviewRound Int              @default(0)
+  interviewRound   Int              @default(0)
   /// What that round was called, when it had a name worth keeping — "Phone
   /// screen", "Take-home", "Onsite". Optional, and only ever meaningful while
   /// INTERVIEWING. The three stages this replaced left their names here.
-  roundLabel     String           @default("")
-  jobUrl         String           @default("")
-  jobDescription String           @default("")
-  location       String           @default("")
-  workMode       String           @default("")
+  roundLabel       String           @default("")
+  jobUrl           String           @default("")
+  /// What the last look at `jobUrl` found. Written by the liveness check and by
+  /// nothing else. It NEVER drives `stage`: a posting coming down is a fact
+  /// about the advert, and deciding what that means about the application is
+  /// the person's to make. Nothing writes an Activity for it either — an
+  /// activity would reset quietDays, and a robot's fetch must not make a silent
+  /// application look like it had been chased.
+  postingStatus    PostingStatus    @default(UNKNOWN)
+  /// When the posting was last fetched, whatever the answer was. The sweep's
+  /// cursor — it works through the applications looked at longest ago.
+  postingCheckedAt DateTime?
+  /// The first look that came back gone. Cleared the moment one comes back
+  /// live, so a blip that resolves leaves nothing behind for anyone to read.
+  postingGoneSince DateTime?
+  /// Consecutive looks that came back gone. GONE needs two, at least twenty
+  /// hours apart. A host that would not answer does not increment this.
+  postingMisses    Int              @default(0)
+  /// What the host actually said, in a few words: "404", "answered 200 but the
+  /// page no longer names a role", "redirected to acme.com/careers". Shown
+  /// under the posting link, so it has to read as a sentence to a person.
+  postingNote      String           @default("")
+  jobDescription   String           @default("")
+  location         String           @default("")
+  workMode         String           @default("")
   /// What the POSTING said, in the posting's own words — "$210k – $260k",
   /// "competitive", or nothing at all. Written by capture_job_posting out of
   /// the listing's structured data, and by whoever typed it.
@@ -851,46 +983,56 @@ model Application {
   /// Offer, ever — salaryFloor() guesses a number to SORT by, where being wrong
   /// costs a row position; the same guess inside a comparison table costs a
   /// decision.
-  salaryRange    String           @default("")
+  salaryRange      String           @default("")
   /// Where this one came from, and anything else worth labelling it with.
   /// Rows the person owns rather than free strings, so a label can be renamed,
   /// recoloured and — the point — deleted. The data layer flattens the join
   /// rows back to { id, name, color } before anything else sees them.
-  tags           ApplicationTag[]
-  notes          String           @default("")
-  appliedAt      DateTime?
-  nextFollowUpAt DateTime?
-  closedAt       DateTime?
+  tags             ApplicationTag[]
+  notes            String           @default("")
+  appliedAt        DateTime?
+  nextFollowUpAt   DateTime?
+  closedAt         DateTime?
   /// Null means live. See Company.archivedAt. Its timeline and its tasks follow
   /// it in and out through this column rather than carrying their own, so a
   /// restore brings the whole thread back with no extra bookkeeping.
-  archivedAt     DateTime?
+  archivedAt       DateTime?
   /// The id of the company whose archiving swept this application in. Null when
   /// it was archived on its own — which is the difference that stops restoring
   /// a company from dragging back an application you had already binned
   /// separately. No relation and no foreign key: the company can be destroyed
   /// first, and a dangling breadcrumb is harmless.
-  archivedWith   String?
-  resumeId       String?
-  resume         Resume?          @relation(fields: [resumeId], references: [id], onDelete: SetNull)
-  sortOrder      Int              @default(0)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  archivedWith     String?
+  resumeId         String?
+  resume           Resume?          @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  sortOrder        Int              @default(0)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
-  activities Activity[]
-  contacts   Contact[]
-  tasks      Task[]
+  activities  Activity[]
+  contacts    Contact[]
+  tasks       Task[]
   /// Every version of what they offered. Almost always none, and more than one
   /// when it was revised — which is the whole reason this is a relation rather
   /// than a handful of columns. Offers carry no archivedAt of their own; see
   /// the model.
-  offers     Offer[]
-  letters    Letter[]
-  proposals  Proposal[]
+  offers      Offer[]
+  /// Every round, in order. Interviews carry no archivedAt of their own; see
+  /// the model.
+  interviews  Interview[]
+  /// Who put their name behind this one. Referrals carry no archivedAt either.
+  referrals   Referral[]
+  letters     Letter[]
+  proposals   Proposal[]
+  /// Files kept against this job. Attachments carry no archivedAt; see the model.
+  attachments Attachment[]
+  outbound    Outbound[]
 
   @@index([userId, stage])
   @@index([userId, nextFollowUpAt])
   @@index([userId, archivedAt])
+  /// The liveness sweep's ordering: the posting looked at longest ago, first.
+  @@index([postingCheckedAt])
 }
 
 /// What someone actually offered, as numbers you can compare.
@@ -948,6 +1090,8 @@ model Offer {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
+  attachments Attachment[]
+
   @@index([userId])
   @@index([applicationId])
   @@index([userId, respondBy])
@@ -974,6 +1118,189 @@ model Offer {
 ///
 /// Materialised by moveApplicationStage. Editing a template never touches the
 /// tasks it has already made: those are work in progress, not a setting.
+/// What a round actually was. Not how it went — that is `outcome`.
+enum InterviewFormat {
+  PHONE
+  VIDEO
+  ONSITE
+  TAKE_HOME
+  PAIRING
+  PANEL
+  OTHER
+}
+
+/// Where a round got to, as one lifecycle rather than a status column and a
+/// verdict column. Two columns is two places to disagree, which is the argument
+/// Offer already made for having no status at all.
+///
+/// SCHEDULED is the future. HELD means it happened and nobody has said yet —
+/// which is where most rounds sit for a week. CANCELLED and NO_SHOW are kept
+/// apart because they are different signals: one of them is about them.
+enum InterviewOutcome {
+  SCHEDULED
+  HELD
+  PASSED
+  REJECTED
+  CANCELLED
+  NO_SHOW
+}
+
+/// What a question was about. A fixed taxonomy rather than a seventh TagKind: a
+/// tag is a label a PERSON owns, renames and deletes, and these are the kinds of
+/// question that exist whoever is asking. The same call ActivityType and
+/// LetterKind already make.
+///
+/// MINE is a question you asked THEM. It lives here rather than in a model of
+/// its own because "which of my questions landed" is the same question as
+/// "which of my answers landed", asked from the other side of the table.
+enum QuestionKind {
+  BEHAVIOURAL
+  TECHNICAL
+  SYSTEM_DESIGN
+  ROLE
+  CULTURE
+  COMPENSATION
+  MINE
+  OTHER
+}
+
+/// A round of interviews, as a record rather than a sentence in a timeline.
+///
+/// It does NOT replace the INTERVIEW activity. src/lib/data/resumes.ts counts
+/// those rows to prove a resume got somebody into a room, and the dashboard's
+/// one-line logger writes them; both would go quiet if they stopped existing.
+/// Instead an interview OWNS one — `activityId` — written when the outcome is
+/// recorded and rewritten rather than duplicated when it changes. One writer,
+/// one row: the timeline is a rendering of this record, not a second one.
+///
+/// Application.interviewRound survives as the high-water mark the funnel is
+/// built out of. This model never lowers it; see recordInterviewOutcome.
+///
+/// No archivedAt. Like offers, activities and tasks, an interview follows its
+/// application in and out of the archive through ITS column. The cost is the
+/// same and is worse by one level: every read here that does not start from an
+/// already-filtered application spells `application: { archivedAt: null }`
+/// itself. src/lib/data/interviews.ts numbers each of them.
+model Interview {
+  id              String           @id @default(cuid())
+  /// Denormalised so every query filters on it directly, the same shape Offer,
+  /// Activity and Task use. This is what keeps tenant isolation a compile-time
+  /// property rather than a join somebody has to remember.
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applicationId   String
+  application     Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  /// Which round this is, counting from 1. Seeded from the application's own
+  /// interviewRound when nobody says, so a search that recorded rounds by hand
+  /// before this model existed carries on counting rather than restarting.
+  round           Int              @default(1)
+  /// What it was called: "Phone screen", "Take-home", "Onsite loop". Empty is
+  /// normal, and the UI prints "Round 2" for those.
+  label           String           @default("")
+  format          InterviewFormat  @default(VIDEO)
+  outcome         InterviewOutcome @default(SCHEDULED)
+  /// When it is, or was. Null means somebody recorded a round after the fact and
+  /// never said which day — which is common and is not an error.
+  scheduledAt     DateTime?
+  /// Minutes. 0 means nobody said, which is different from a zero-length
+  /// interview and is why it is not nullable.
+  durationMins    Int              @default(0)
+  /// Where, or the joining link. One field, because "Zoom", a Meet URL and
+  /// "their office, 4th floor" are the same answer to the same question.
+  location        String           @default("")
+  /// What you wrote BEFORE: what to say, what to ask, what to avoid.
+  prep            String           @default("")
+  /// What you thought AFTER, in your own words. The questions are rows; this is
+  /// the feeling, which no row holds.
+  debrief         String           @default("")
+  /// The provider's own event id, when this came off a calendar. It is the
+  /// dedupe key: a second sweep must not queue the same meeting twice. Empty for
+  /// one recorded by hand.
+  calendarEventId String           @default("")
+  /// The one timeline row this interview owns. No relation and no foreign key,
+  /// deliberately — the same call Application.archivedWith makes. Somebody can
+  /// delete the activity from the timeline, and a dangling breadcrumb is
+  /// harmless: the writer re-reads it and writes a fresh one if it is gone.
+  activityId      String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  interviewers InterviewInterviewer[]
+  questions    InterviewQuestion[]
+
+  @@index([userId])
+  @@index([applicationId, round])
+  @@index([userId, scheduledAt])
+  @@index([userId, calendarEventId])
+}
+
+/// Who was in the room. Explicit rather than Prisma's implicit many-to-many, for
+/// the reason ApplicationTag and ContactCompany already give: an implicit
+/// table's name and its "A"/"B" columns are a convention of Prisma's rather than
+/// a contract, and the migrations here are hand-written SQL.
+///
+/// Not a String[] of ids: Task's own comment settles that argument — an id array
+/// has no referential integrity, so deleting a contact leaves a name nothing can
+/// resolve, forever.
+model InterviewInterviewer {
+  interviewId String
+  interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  contactId   String
+  contact     Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@id([interviewId, contactId])
+  @@index([contactId])
+}
+
+/// One question asked in one interview, and what you said.
+///
+/// A row rather than a JSON column on Interview, and the reason is the bank:
+/// "what gets asked repeatedly" is a GROUP BY across every interview ever, and a
+/// JSON array can only answer it by reading a whole career into memory and
+/// counting in TypeScript — which is the shape search_me was in before it became
+/// Postgres FTS. Rows also give a question a stable id to correct, and a
+/// normalised key to group on.
+///
+/// No archivedAt, and one level further removed than Offer: it follows its
+/// interview, which follows its application. EVERY read here spells
+/// `interview: { application: { archivedAt: null } }` by hand.
+model InterviewQuestion {
+  id          String       @id @default(cuid())
+  /// Denormalised, like Offer.userId, so no read has to join two levels up to
+  /// stay inside one tenant.
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interviewId String
+  interview   Interview    @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  kind        QuestionKind @default(BEHAVIOURAL)
+  /// What they asked, as close to the interviewer's own words as it can be
+  /// remembered. The bank groups by these words, so a paraphrase becomes a
+  /// second entry for the same question — a cost worth stating in the tool
+  /// description rather than trying to fix with fuzzy matching.
+  question    String
+  /// lower(trim(question)) with punctuation dropped and runs of whitespace
+  /// collapsed. Case-insensitive grouping is the whole point, and Prisma cannot
+  /// express a functional index — the same workaround Tag.key uses.
+  key         String
+  /// What they ACTUALLY said. Not an improved version: the bank's value is
+  /// knowing which real answers led somewhere.
+  answer      String       @default("")
+  /// Their own verdict on the answer, 1 (fumbled it) to 5 (nailed it). 0 means
+  /// nobody said, which is different from a 1 and is why it is not nullable.
+  confidence  Int          @default(0)
+  /// What they wish they had said. This is the field that turns a bad round into
+  /// preparation for the next one.
+  better      String       @default("")
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([userId, key])
+  @@index([interviewId, sortOrder])
+  @@index([userId, kind])
+}
+
 model StageTemplate {
   id        String   @id @default(cuid())
   userId    String
@@ -1006,6 +1333,14 @@ enum ProposalKind {
   CREATE_TASK
   SET_FOLLOW_UP
   CREATE_CONTACT
+  /// A role found on a watched board that is not on the pipeline yet.
+  ///
+  /// Its payload is the posting ALREADY PARSED — employer, title, url,
+  /// description, location — and never a URL to go and fetch on accept. That is
+  /// the point: the other five kinds are pure database writes, and a sixth that
+  /// made the server fetch a third-party URL at the moment somebody clicked
+  /// Accept would give this queue a property none of the rest of it has.
+  CREATE_APPLICATION
 }
 
 enum ProposalStatus {
@@ -1054,6 +1389,241 @@ model Proposal {
   @@index([userId, status])
   @@index([applicationId])
   @@index([contactId])
+}
+
+/// How long after a job lands in a stage its follow-up date is set for.
+///
+/// A sibling of StageTemplate rather than a column on it, and the three reasons
+/// are worth having in one place. A checklist line fires ONCE per application
+/// ever; a cadence re-arms on EVERY move, which is the opposite rule and does
+/// not belong on the same row. A stage has many checklist lines and exactly one
+/// cadence, so hanging the number off a line means deciding which of three lines
+/// owns it. And the built-in numbers have always applied to accounts with no
+/// checklist at all, so moving them onto StageTemplate would take the cadence
+/// away from everybody who never wrote one.
+///
+/// ACCEPTED and LOST never get a row: a terminal move clears the follow-up date
+/// outright, so a cadence on one could never fire. setStageCadence refuses them
+/// rather than storing a setting that lies.
+model StageCadence {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stage     Stage
+  /// Days from the move to the follow-up date, which lands at 9am where the
+  /// person is. 0 means "chase the same day".
+  ///
+  /// Null is NOT the same as having no row, and this is the thing to get right:
+  /// null means this stage deliberately arms NOTHING, which is what somebody
+  /// means by "I don't chase wishlist rows"; no row at all means "use the
+  /// built-in default". Deleting the row is how you go back to the default.
+  days      Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One cadence per stage per person. This is the whole integrity story.
+  @@unique([userId, stage])
+  @@index([userId])
+}
+
+/// How often a task comes back. Three units, because a search has weekly rituals
+/// and monthly ones and nothing in between that anybody asks for. A count of
+/// units lives beside this in Task.repeatEvery, so "every other Tuesday" is
+/// 2 WEEK rather than a fourth enum value.
+enum TaskRepeat {
+  DAY
+  WEEK
+  MONTH
+}
+
+/// Where a referral stands, in the order it moves through.
+///
+/// NO_ANSWER is not DECLINED, and the difference is the one the LOSS tags
+/// already draw between a rejection and a ghosting: a no is a decision about
+/// you, silence is the absence of one, and what you do next is different.
+enum ReferralStatus {
+  /// You asked. Nothing has come back.
+  ASKED
+  /// They said yes. Nothing has landed with the employer yet.
+  AGREED
+  /// It is in — your name went forward, the resume was passed, the intro made.
+  SUBMITTED
+  /// They said no, or could not.
+  DECLINED
+  /// Nobody ever answered.
+  NO_ANSWER
+}
+
+/// Who vouched for you where, and whether it came to anything.
+///
+/// Its own model rather than an ActivityType.REFERRAL row, for the two reasons a
+/// timeline entry cannot cover. It has a STATUS that moves — asked, agreed,
+/// submitted — and the current value of a status stored as prose is whatever the
+/// newest note happens to say, which no query can read. And it is a join: one
+/// person refers you to three places and one job is referred by two people,
+/// which Contact.applicationId cannot hold for exactly the reason ContactCompany
+/// exists.
+///
+/// WHETHER IT CONVERTED IS NOT A COLUMN. It is derived the way listRelationships
+/// derives it — did the application ever reach INTERVIEWING or beyond. A stored
+/// boolean would be a third place that can disagree with the funnel.
+///
+/// No archivedAt. Like Offer, Activity and Task, a referral follows its parents
+/// in and out of the archive through THEIR columns — and it has three of them.
+/// The cost is the one offers.ts names: every read spells the parent filters
+/// itself, and nothing in the toolchain catches a miss.
+model Referral {
+  id            String         @id @default(cuid())
+  /// Denormalised, like Offer, Interview, Activity and Task, so every query in
+  /// src/lib/data/ filters on it directly.
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Who vouched. Required: a referral with no referrer is a note.
+  contactId     String
+  contact       Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  /// The job, once there is one. Null is normal and is not an error — "do you
+  /// know anyone at Stripe" is asked before anybody applies. SET NULL rather
+  /// than cascade: destroying a job must not destroy the record that somebody
+  /// put their name behind you.
+  applicationId String?
+  application   Application?   @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  /// The employer. Kept even when there is an application, because "who has put
+  /// me forward where" survives the application being archived out from under it.
+  companyId     String?
+  company       Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  status        ReferralStatus @default(ASKED)
+  askedOn       DateTime       @default(now())
+  /// When the status last actually moved, which is what "waiting three weeks"
+  /// counts from. Not updatedAt: fixing a typo in the notes is not news.
+  statusOn      DateTime       @default(now())
+  /// What you asked for and what they said, in your own words.
+  notes         String         @default("")
+  /// When you thanked them; null until you have. This is the point of the model.
+  /// A referral that converted and was never acknowledged is the most expensive
+  /// unclosed loop in a search, and it is invisible in every other record here.
+  thankedAt     DateTime?
+  /// The nudge task this referral's conversion created. No relation and no
+  /// foreign key, the same call Interview.activityId makes. It is also the
+  /// dedupe: a conversion that finds a task already here makes no second one.
+  thankTaskId   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([userId, status])
+  @@index([contactId])
+  @@index([applicationId])
+  @@index([companyId])
+}
+
+/// What something looked like before it was replaced.
+///
+/// `update_resume` and `update_role` replace what you send — that is their
+/// contract and their whole hazard, and `append_role_background` exists because
+/// assistants kept overwriting people's notes with `update_role`. This is the
+/// copy taken on the way past.
+///
+/// BEFORE images, never after. To put something back you need the state you are
+/// going back to, so the newest row for a record IS the restore point and the
+/// current state stays where it belongs, in the record. A record nobody has ever
+/// overwritten costs nothing here.
+///
+/// One table for both kinds rather than two, because the cap, the retention
+/// sweep, the "newest at or before this instant" lookup and the join from
+/// WriteLog are the same code for each. `data` therefore means two shapes,
+/// discriminated by `kind`, the way Proposal.payload does — and like that column
+/// it is validated on the way OUT as well as in, because a blob in a database
+/// becomes a write the moment somebody restores it.
+///
+/// Append-only. Nothing updates a row here; the cap and the sweep delete them.
+model Revision {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind           RevisionKind
+  /// The Resume or Role this is a copy of. Deliberately NOT a foreign key:
+  /// deleting a resume destroys it for good, and a dangling revision the sweep
+  /// clears later is cheaper than a cascade nobody expected. Nothing restores to
+  /// a record that is gone — restoreRevision re-reads it first.
+  recordId       String
+  /// Resume: { name, doc } — the document only, never the template, the font or
+  /// the published slug. Role: exactly the ROLE_COLUMNS of src/lib/data/me.ts,
+  /// so a restore is `updateRole(userId, id, snapshot)` and `pick()` narrows it.
+  data           Json
+  /// A line for the list: the resume's name, or the role's title at the company.
+  label          String       @default("")
+  /// "mcp" or "app". With connectionId it is the author, and two different
+  /// authors never coalesce into one revision.
+  writtenBy      String       @default("app")
+  /// The MCP connection that caused it, or "" for a save from the app's own
+  /// screens. A plain column and not a relation, the same call AdminAudit makes
+  /// about actorId: a record that empties itself when the thing it describes is
+  /// deleted cannot answer the question it exists for.
+  connectionId   String       @default("")
+  /// What that connection was called at the time, for the same reason.
+  connectionName String       @default("")
+  /// The tool that caused it, or "" when the app's own editor saved it.
+  tool           String       @default("")
+  createdAt      DateTime     @default(now())
+
+  /// The cap's query, the restore-point lookup and the sweep all read this
+  /// order. It is the only index this table needs.
+  @@index([userId, kind, recordId, createdAt])
+  /// The age sweep, which walks by date across every kind.
+  @@index([userId, createdAt])
+}
+
+enum RevisionKind {
+  RESUME
+  ROLE
+}
+
+/// What each assistant changed, and when.
+///
+/// AdminAudit answers "who suspended this account". SystemEvent answers "is the
+/// instance working". This answers the question a person asks about their own
+/// workspace: what did the thing I connected actually do to my career history.
+///
+/// Written in ONE place — the tools/call case in src/lib/mcp/handler.ts — for
+/// every tool whose annotations say it is not read-only. Nothing in the data
+/// layer knows this table exists, which is the point: a log that has to be
+/// remembered at two hundred call sites is a log that is wrong at forty of them.
+///
+/// MCP only. A save from this app's own screens is not a row here; the person
+/// was there. Versions ARE kept for both paths — see Revision — so a change made
+/// in the editor is still recoverable, just not listed here.
+///
+/// It stores a subject and a sentence, never an operation's arguments: the
+/// argument to update_resume is an entire document, and a log that carried it
+/// would be a second unswept copy of the revision store.
+///
+/// There is no link to a Revision. Undo asks for the newest Revision for this
+/// row's (kind, recordId) at or before its createdAt, which is exactly "the
+/// state before this write" and stays right when a revision was coalesced away.
+model WriteLog {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The MCP connection this arrived on. A plain column, not a relation, so the
+  /// row survives the connection being deleted.
+  connectionId   String   @default("")
+  /// What that connection was called at the time.
+  connectionName String   @default("")
+  /// The tool that ran, e.g. "update_resume".
+  tool           String
+  /// What it touched: "resume", "role", "application", … or "other" when the
+  /// tool's name carries no noun this knows. Only "resume" and "role" are ever
+  /// undoable; everything else is a line for the eye.
+  kind           String   @default("other")
+  /// The id of the thing touched, or "" when the tool touched several or none.
+  recordId       String   @default("")
+  /// One line, already human. Never the call's arguments.
+  summary        String
+  createdAt      DateTime @default(now())
+
+  /// The list, newest first, optionally filtered by connection.
+  @@index([userId, createdAt])
+  /// The per-record history, and undo's lookup of its own row.
+  @@index([userId, kind, recordId, createdAt])
 }
 
 enum TagKind {
@@ -1135,28 +1705,28 @@ model ContactTag {
 }
 
 model Contact {
-  id             String           @id @default(cuid())
+  id             String                 @id @default(cuid())
   userId         String
-  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   name           String
-  title          String           @default("")
-  email          String           @default("")
-  phone          String           @default("")
-  relationship   String           @default("")
+  title          String                 @default("")
+  email          String                 @default("")
+  phone          String                 @default("")
+  relationship   String                 @default("")
   /// Where to find them. Named columns for the platforms people actually ask
   /// for by name, so a tool can say "their LinkedIn" and mean one field —
   /// same shape as Profile, which settled this argument already.
-  linkedin       String           @default("")
-  twitter        String           @default("")
-  instagram      String           @default("")
-  github         String           @default("")
-  website        String           @default("")
+  linkedin       String                 @default("")
+  twitter        String                 @default("")
+  instagram      String                 @default("")
+  github         String                 @default("")
+  website        String                 @default("")
   /// Everything else someone is reachable at: Bluesky, Mastodon, a Substack,
   /// a personal page. A list rather than five more columns, because the tail
   /// of "other means of social media" has no end and none of it needs a name
   /// of its own to be openable.
-  otherLinks     String[]         @default([])
-  notes          String           @default("")
+  otherLinks     String[]               @default([])
+  notes          String                 @default("")
   /// When to next get in touch — the date that keeps a relationship warm.
   nextFollowUpAt DateTime?
   /// Everywhere they represent. A person is a founder at one company, an
@@ -1165,18 +1735,24 @@ model Contact {
   /// flattens the join rows to { id, name, website } under the same name.
   companies      ContactCompany[]
   applicationId  String?
-  application    Application?     @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  application    Application?           @relation(fields: [applicationId], references: [id], onDelete: SetNull)
   activities     Activity[]
   /// How this person is filed: "recruiter", "warm intro", "ex-colleague".
   tags           ContactTag[]
   /// Null means live. See Company.archivedAt. Their timeline follows them in
   /// and out through this one column rather than carrying its own.
   archivedAt     DateTime?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @default(now()) @updatedAt
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @default(now()) @updatedAt
   tasks          Task[]
   letters        Letter[]
+  /// Rooms they were in. The join is explicit; see InterviewInterviewer.
+  interviews     InterviewInterviewer[]
+  /// Times they put their name behind you.
+  referrals      Referral[]
   proposals      Proposal[]
+  attachments    Attachment[]
+  outbound       Outbound[]
 
   @@index([userId])
   @@index([userId, updatedAt])
@@ -1285,7 +1861,30 @@ model Task {
   /// a task you are already doing is not a setting.
   stageTemplateId String?
   stageTemplate   StageTemplate? @relation(fields: [stageTemplateId], references: [id], onDelete: SetNull)
-  createdAt       DateTime       @default(now())
+
+  /// How often this comes back. NULL is the normal case — a task happens once.
+  /// Set it and completing the task creates the next one; clear it and
+  /// completing the task is the end of the series. That is the whole off
+  /// switch, and it is deliberately on the row somebody is already looking at
+  /// rather than in a table they would have to be shown.
+  repeatUnit   TaskRepeat?
+  /// How many units between instances. 1 unless somebody said otherwise.
+  /// Meaningless, and never read, while repeatUnit is null.
+  repeatEvery  Int         @default(1)
+  /// The last day this series may produce an instance. Null means it runs until
+  /// somebody stops it, which is what people mean by "every Monday".
+  repeatUntil  DateTime?
+  /// The due date of the FIRST instance, which every later due date is stepped
+  /// from. Stepping from the anchor rather than from the last due date is what
+  /// keeps "every Monday" on a Monday after somebody ticks one off three weeks
+  /// late — step from the anchor, land on the first occurrence after now.
+  repeatAnchor DateTime?
+  /// The instance this one was made from. No relation and no foreign key,
+  /// deliberately. It is also the dedupe: a completion that finds a task already
+  /// pointing back at it makes nothing, so complete, reopen and complete again
+  /// cannot produce two. Same shape as the checklist dedupe on stageTemplateId.
+  repeatFrom   String?
+  createdAt    DateTime    @default(now())
 
   @@index([userId, done, dueAt])
   @@index([applicationId, stageTemplateId])
@@ -1294,4 +1893,375 @@ model Task {
   @@index([resumeId])
   @@index([roleId])
   @@index([noteId])
+}
+
+/// What the last look at an application's posting URL found.
+enum PostingStatus {
+  /// Nothing has looked, or there is no link to look at.
+  UNKNOWN
+  /// The page answered and still names a role.
+  LIVE
+  /// Two looks a day apart both came back 404 or 410. One never is enough.
+  GONE
+  /// Something changed and it is not clear what: a 200 with no role on the
+  /// page, or a redirect away from the posting. Never treated as gone — a
+  /// client-rendered board answers exactly like this whether the job exists or
+  /// not.
+  UNCLEAR
+  /// The host would not answer — a timeout, a 403, a rate limit. Says nothing
+  /// about the role, and deliberately does not count towards GONE.
+  UNREACHABLE
+}
+
+/// Which public board feed a watch reads. Three, because these are the three
+/// that publish one: a URL built from a constant host and the company's own
+/// slug, with no key and no crawling. Anything else is refused when the watch
+/// is created rather than half-supported afterwards.
+enum BoardProvider {
+  GREENHOUSE
+  LEVER
+  ASHBY
+}
+
+/// A company's public jobs board, watched for roles worth applying for.
+///
+/// One row per board per person. What it finds becomes a CREATE_APPLICATION
+/// proposal in the review queue — never an application — so a watch cannot put
+/// anything on the pipeline without a yes.
+///
+/// No `archivedAt` of its own. Like Offer and Letter, it belongs to an
+/// archivable model and follows Company in and out through ITS column. The cost
+/// is the same one src/lib/data/offers.ts spells out: every read here that does
+/// not start from an already-filtered company has to write
+/// `company: { archivedAt: null }` by hand, and nothing in the toolchain
+/// catches one that forgets. There are FOUR, each numbered at the line in
+/// src/lib/data/watch.ts.
+model CompanyWatch {
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  provider  BoardProvider
+  /// The company's own slug on that provider — "acme" in jobs.lever.co/acme.
+  /// Stored rather than re-derived per run, because the feed URL is built from
+  /// the data layer's constants plus this string: there is no URL from a third
+  /// party for the sweep to follow, which is the whole safety argument.
+  slug      String
+  /// The board page a person would open. For the link on the company card only
+  /// — the sweep never fetches it.
+  boardUrl  String        @default("")
+
+  /// A role's title has to contain ANY of these, case-insensitively. Empty
+  /// means every role, which on a six-hundred-role board is a filter nobody
+  /// wants and is why the tool says so.
+  titleTerms    String[] @default([])
+  /// The same against the posting's location and workplace type together, so
+  /// "remote" matches a Lever workplaceType and an Ashby location alike.
+  locationTerms String[] @default([])
+
+  /// Feed ids this watch has already decided about and will never propose
+  /// again: everything that was on the board the first time it looked, plus
+  /// everything proposed since. Pruned on every run to the ids the board still
+  /// lists, so the array is bounded by the size of the board rather than by
+  /// time. A role that drops off and comes back is a new role, which is right.
+  seenIds  String[] @default([])
+  /// Running total, for the one line on the company card.
+  proposed Int      @default(0)
+  enabled  Boolean  @default(true)
+
+  lastCheckedAt DateTime?
+  /// The last time this watch actually found something. Null on a watch that
+  /// has never matched, which usually means the filters are too narrow.
+  lastFoundAt   DateTime?
+  /// Non-empty when the last look failed. A watch that has been failing quietly
+  /// for a month is the failure mode this column exists to make visible.
+  lastError     String    @default("")
+  lastErrorAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One watch per board per person. Keyed on the board rather than on the
+  /// company, so watching the same board twice through two company rows is
+  /// impossible rather than merely discouraged.
+  @@unique([userId, provider, slug])
+  @@index([userId])
+  @@index([companyId])
+  /// The sweep's ordering: the watch looked at longest ago, first.
+  @@index([enabled, lastCheckedAt])
+}
+
+/// The URL that turns a job posting into an application from a phone.
+///
+/// One per person, and a credential like McpConnection and Session rather than
+/// a field on Profile — it is minted, shown once in Settings, rotated when it
+/// leaks and revoked when it is not wanted, and those verbs belong to a row of
+/// its own. Unlike a connection URL it grants exactly one act, and cannot read
+/// anything at all.
+model CaptureLink {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// "cap_" plus 24 random bytes, the same shape as an MCP token. Unique so the
+  /// database itself refuses a collision, and the endpoint is a lookup on this
+  /// column rather than a comparison — there is no fixed secret here to compare
+  /// in constant time, which is the same reason /api/mcp/[token] does not.
+  token  String @unique
+
+  /// A fixed window rather than a sliding one: cheap, and precise enough for a
+  /// limit whose job is to stop a leaked token being used as a fetch engine.
+  windowStartedAt DateTime @default(now())
+  windowCount     Int      @default(0)
+
+  /// How many postings this link has ever captured, for the line in Settings.
+  captured     Int       @default(0)
+  lastUsedAt   DateTime?
+  /// User-agent of whatever last used it, trimmed. Purely informational, and
+  /// the only way somebody notices a link being used from a device that is not
+  /// theirs. Same column and same reasoning as McpConnection.lastUsedFrom.
+  lastUsedFrom String    @default("")
+  createdAt    DateTime  @default(now())
+}
+
+/// The sample search, and exactly which rows it wrote.
+///
+/// One row per person, at most. Loading while one exists is refused rather than
+/// stacked: two overlapping loads make the wipe a guess, and the wipe being
+/// exact is the entire reason this table exists.
+///
+/// `rows` is a recorded MANIFEST rather than an `isSample` flag on nine content
+/// models. The flag would be nine columns every future read has to remember to
+/// ignore, and it would still be wrong the moment somebody duplicates a sample
+/// resume — the copy would carry the flag and be swept away with the original.
+/// A manifest is written once, read twice, and describes only what this made.
+model SampleLoad {
+  id       String   @id @default(cuid())
+  userId   String   @unique
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// [{ "model": "application", "id": "clx…", "stamp": "2026-09-19T09:00:00.000Z" }].
+  /// `stamp` is the row's updatedAt at the moment it was created; a row whose
+  /// stamp has MOVED has been edited by the person and is KEPT by the wipe.
+  /// Models with no updatedAt carry "" and are judged by their parent.
+  rows     Json
+  /// Which fixture was loaded, so a wipe written against a later one can tell
+  /// it is looking at an older shape and say so rather than guessing.
+  fixture  String   @default("")
+  loadedAt DateTime @default(now())
+}
+
+/// A file somebody kept: the offer letter as signed, the take-home they
+/// submitted, the PDF a recruiter sent, a screenshot of a posting that has
+/// since come down.
+///
+/// THE BYTES ARE IN THIS ROW. An object store would mean a bucket, a region, a
+/// key and a secret, against a README that promises DATABASE_URL is the only
+/// variable — so this makes the same call Profile.photo made, one size up. The
+/// cost is real and is the thing to remember: a bytea lives in the row's TOAST
+/// table and is not read unless a query selects it, so EVERY read in
+/// src/lib/data/attachments.ts names its columns and NONE of them names `data`
+/// except the one that serves the download. A single findMany that forgets
+/// pulls the whole workspace's files into memory to count them.
+///
+/// EXACTLY ONE SUBJECT, ALWAYS. Five nullable foreign keys with at most one set
+/// is the shape Task already uses, but unlike a task an attachment must have
+/// one: a file with no home is bytes nobody can find, nobody deletes, and
+/// nothing cascades away. `attachmentSubject` in the data file enforces it on
+/// the way in.
+///
+/// No archivedAt. Like Offer and Letter, an attachment belongs to its subject
+/// and follows it — which means every read here that does not start from an
+/// already-filtered subject has to spell the archive filter itself. They are
+/// numbered at the line.
+model Attachment {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The file's own name, as it arrived. Shown in lists, and what a download is
+  /// called.
+  filename String
+  /// Read from the file's own first bytes where it has a magic number, never
+  /// trusted from the caller.
+  mimeType String @default("application/octet-stream")
+  /// Decoded length. Stored so a list, and the per-workspace total, can be
+  /// answered without reading a single byte.
+  size     Int    @default(0)
+  /// sha256 of the bytes, hex. Unique per owner: attaching the same file twice
+  /// is a mistake, not a version, and the second attempt returns the first row.
+  digest   String
+  /// One line about what it is, in the person's words. "The offer as signed."
+  caption  String @default("")
+  data     Bytes
+
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  offerId       String?
+  offer         Offer?       @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  letterId      String?
+  letter        Letter?      @relation(fields: [letterId], references: [id], onDelete: Cascade)
+  contactId     String?
+  contact       Contact?     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  companyId     String?
+  company       Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The only unique this needs, and it is what makes attaching idempotent.
+  @@unique([userId, digest])
+  @@index([userId, createdAt])
+  @@index([applicationId])
+  @@index([offerId])
+  @@index([letterId])
+  @@index([contactId])
+  @@index([companyId])
+}
+
+enum OutboundStatus {
+  /// Written, not sent. Everything starts here and most things stay here.
+  DRAFT
+  /// The person approved it in the app. Only reachable from a server action.
+  APPROVED
+  SENT
+  /// The provider refused it. `error` says what they said.
+  FAILED
+  CANCELLED
+}
+
+/// A message this app is willing to put in somebody's outbox.
+///
+/// Until this existed, two emails went to the account holder and nothing else
+/// ever left. This reverses that for exactly one case — a follow-up to somebody
+/// already in the CRM — and every column below is part of a refusal:
+///
+/// - `accountId` is required and is one of THEIR mailboxes. This app never
+///   sends as itself on a member's behalf; the instance's own credentials send
+///   the digests to the account holder and nothing else, still. A follow-up to
+///   a recruiter arriving from hired@ is worse than no follow-up.
+/// - `contactId` is required. The address is read off the Contact row, so there
+///   is NO WAY to address somebody who is not already on file — which is the
+///   single guardrail that stops an assistant mailing forty strangers.
+/// - `status` leaves DRAFT for APPROVED only through a server action. No tool
+///   can make that transition, deliberately, and Profile.outboundApproval is
+///   what a person changes if they want the conversational path instead.
+/// - `sentAt` and `providerMessageId` are written in the same update that
+///   leaves the row claimed, so a retry cannot send twice.
+///
+/// The body is KEPT after sending. A record of what you said is the thing this
+/// product exists to keep, and Letter makes the same argument about its links.
+model Outbound {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Which of their own mailboxes it goes from. Restrict, not cascade:
+  /// disconnecting an account must not silently destroy the record of what was
+  /// sent through it.
+  accountId String
+  account   LinkedAccount  @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  /// Who it is to. Required — the address is read off this row, never from the
+  /// caller.
+  contactId String
+  contact   Contact        @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  /// The address as it stood when the draft was written, so a later edit to the
+  /// contact cannot silently redirect an approved message.
+  toEmail   String
+  subject   String
+  body      String
+  status    OutboundStatus @default(DRAFT)
+
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  /// The letter this was drafted from. SET NULL, like Letter's own links:
+  /// deleting the draft must not destroy the record of what went out.
+  letterId      String?
+  letter        Letter?      @relation(fields: [letterId], references: [id], onDelete: SetNull)
+
+  /// The provider's own id for the message, so it can be found in their Sent
+  /// folder and so a retry after a timeout can tell whether the first landed.
+  providerMessageId String @default("")
+  /// Why the last attempt failed, in words a person can act on. Never a token.
+  error             String @default("")
+
+  /// Which connection wrote it, and which sent it. Plain columns and not
+  /// relations, the same call WriteLog makes: the row has to survive the
+  /// connection being deleted, because that is exactly when somebody wants to
+  /// know what it did.
+  draftedBy     String @default("")
+  draftedByName String @default("")
+  sentBy        String @default("")
+  sentByName    String @default("")
+
+  approvedAt DateTime?
+  sentAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId, status, createdAt])
+  /// The daily cap's count, and the "what have I sent" list.
+  @@index([userId, sentAt])
+  @@index([contactId])
+  @@index([applicationId])
+}
+
+/// A conversation with the assistant built into this app.
+///
+/// THIS IS A CLIENT'S TRANSCRIPT, NOT CAREER CONTENT. It is deliberately absent
+/// from export_everything and from the MCP tool surface, for the same reason a
+/// Claude Desktop conversation is absent from both: what you said to a client is
+/// not a record of your search. Deleting it loses nothing the workspace needed.
+model AssistantThread {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The first thing they said, trimmed. NEVER generated by a second API call —
+  /// a title is not worth a request.
+  title     String             @default("")
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  messages  AssistantMessage[]
+
+  /// The drawer's list: this person's threads, most recent first.
+  @@index([userId, updatedAt])
+}
+
+/// One turn, stored as the API's own content blocks.
+///
+/// `content` is the block array VERBATIM — text, tool_use, tool_result — and not
+/// a rendered string, because resuming a thread means handing the model back the
+/// exact tool_use/tool_result pairs it produced. A transcript flattened to text
+/// loses the results, and the second turn then re-runs every tool. Unknown block
+/// types are skipped when rendering rather than refused, so a thread written by
+/// a newer SDK still opens.
+model AssistantMessage {
+  id       String          @id @default(cuid())
+  threadId String
+  thread   AssistantThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  /// Denormalised from the thread so the daily cap and every tenant filter are
+  /// one indexed read rather than a join. Never written from anywhere but the
+  /// owning thread.
+  userId   String
+  /// "user", "assistant", "tool" or "system". The API has only the first two,
+  /// and both of the others ride inside a user-role message's blocks — but
+  /// neither is a message anybody SENT, and counting them against the daily cap
+  /// made one question with five tool calls cost six. So they are stored apart
+  /// and read back as user messages; the cap counts "user" alone, and the
+  /// drawer replays "user" and "assistant" alone.
+  role     String
+  content  Json
+  /// What answered, so a thread still reads correctly after the model setting
+  /// changes.
+  model    String          @default("")
+
+  inputTokens      Int @default(0)
+  outputTokens     Int @default(0)
+  /// Tokens read from and written to the prompt cache, which is where almost
+  /// all of this feature's cost goes or does not.
+  cacheReadTokens  Int @default(0)
+  cacheWriteTokens Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([threadId, createdAt])
+  /// The per-day cap's count, and the admin's spend line.
+  @@index([userId, createdAt])
 }

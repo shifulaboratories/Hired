@@ -5,6 +5,7 @@ import {
   ProviderError,
   type AccountFeature,
   type CalendarEvent,
+  type MailSearch,
   type MailThread,
   type MailThreadSummary,
 } from "@/lib/accounts/types";
@@ -38,6 +39,14 @@ import {
  * subpoenaed from a server that only ever needed to *look*. The cost is a
  * round trip on every open, which is why the screens load these panels after
  * the page rather than blocking on them.
+ *
+ * THERE IS EXACTLY ONE EXCEPTION, and it is deliberate. The mail sweep
+ * (src/lib/data/mail-sweep.ts) writes a subject line and the provider's own
+ * snippet into a Proposal's `evidence`, because a proposal nobody can check is
+ * a proposal nobody should accept. Never a message body, never a whole thread,
+ * and only for a thread that matched somebody already on the pipeline. If you
+ * are reading this thinking it is a bug: it is not, and widening it to bodies
+ * would be.
  *
  * Several accounts merge: a thread list is every account's threads sorted
  * together, and one account failing — a revoked token, a server down — is a
@@ -256,6 +265,24 @@ export async function renameLinkedAccount(userId: string, accountId: string, lab
 export async function disconnectAccount(userId: string, accountId: string): Promise<{ ok: true }> {
   const row = await db.linkedAccount.findFirst({ where: { id: accountId, userId } });
   if (!row) return { ok: true };
+
+  // Outbound.accountId is onDelete: Restrict, because the record of what was
+  // sent through a mailbox has to outlive disconnecting it. Refused in words
+  // here rather than as a foreign-key error from Postgres, and the way out is
+  // to cancel the drafts — a SENT row is permanent on purpose.
+  const sent = await db.outbound.count({ where: { userId, accountId, status: "SENT" } });
+  if (sent > 0) {
+    throw new Error(
+      `${describe(row)} has ${sent} sent ${sent === 1 ? "message" : "messages"} on file, and the record of what you sent outlives the connection. It stays connected — turn sending off under Settings → Account instead, or revoke this app's access from the provider.`,
+    );
+  }
+  const pending = await db.outbound.count({ where: { userId, accountId } });
+  if (pending > 0) {
+    throw new Error(
+      `${describe(row)} still has ${pending} unsent ${pending === 1 ? "message" : "messages"} against it. Cancel or send them first.`,
+    );
+  }
+
   if (row.provider === "GOOGLE") await revokeToken(row.refreshToken);
   await db.linkedAccount.delete({ where: { id: row.id } });
   return { ok: true };
@@ -404,6 +431,32 @@ async function touch(accountIds: string[]) {
 
 /** A row's credentials plus its public view, for one kind of reading. */
 type Prepared = { row: LinkedAccount; view: LinkedAccountView; credentials: ReaderCredentials };
+
+/**
+ * A usable access token for one of this person's own accounts.
+ *
+ * The only thing outside this file that needs a raw token, and it exists for
+ * src/lib/data/outbound.ts: sending is the one write this app does on a
+ * member's behalf, and the transport in src/lib/accounts/send.ts takes a token
+ * rather than a row precisely so it never touches the database. The credential
+ * still never leaves this file as anything but a short-lived access token —
+ * the refresh token does not.
+ */
+export async function accessTokenFor(userId: string, accountId: string): Promise<string> {
+  const row = await db.linkedAccount.findFirst({ where: { id: accountId, userId } });
+  if (!row) throw new AccountNotConnectedError("That account is no longer connected.");
+  if (row.provider === "IMAP") {
+    throw new AccountNotConnectedError(
+      "An IMAP account cannot send through this app — there are no SMTP credentials on it. Connect a Google or Microsoft account for that.",
+    );
+  }
+  const credentials = await credentialsFor(row);
+  if (!credentials.accessToken) {
+    throw new AccountNotConnectedError(`${describe(row)} would not hand back a token. Reconnect it.`);
+  }
+  await touch([row.id]);
+  return credentials.accessToken;
+}
 
 /** Every account that provides a feature, credentials resolved, failures collected rather than thrown. */
 async function prepare(
@@ -782,6 +835,141 @@ export type MatchedEvent = AccountEvent & {
   contactId: string | null;
   contactName: string | null;
 };
+
+/**
+ * Everyone and everywhere on the pipeline, as the two maps a sweep matches on.
+ *
+ * Lifted out of listMatchedEvents so the calendar matcher and the mail sweep
+ * agree on what "somebody on my pipeline" means rather than building two
+ * indexes that drift. FREEMAIL is the load-bearing part: without it one contact
+ * at gmail.com turns "every domain on the pipeline" into "every personal
+ * address in the inbox", and domainOfWebsite is where that decision lives.
+ */
+export type PipelineMatchIndex = {
+  byDomain: Map<string, { companyId: string; companyName: string; applicationId: string | null; applicationCount: number }>;
+  byAddress: Map<string, { contactId: string; name: string; applicationId: string | null; companyId: string | null; companyName: string | null }>;
+  /** Every address and domain flattened, ready to hand a MailReader. */
+  terms: MatchTerms;
+};
+
+export async function pipelineMatchIndex(userId: string): Promise<PipelineMatchIndex> {
+  const [companies, contacts] = await Promise.all([
+    // Both reads filter archivedAt by hand, here and on the nested applications.
+    db.company.findMany({
+      where: { userId, archivedAt: null },
+      select: {
+        id: true,
+        name: true,
+        website: true,
+        applications: {
+          where: { closedAt: null, archivedAt: null },
+          orderBy: { updatedAt: "desc" },
+          select: { id: true },
+        },
+      },
+    }),
+    db.contact.findMany({
+      where: { userId, email: { not: "" }, archivedAt: null },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        applicationId: true,
+        companies: {
+          where: { company: { archivedAt: null } },
+          take: 1,
+          select: { company: { select: { id: true, name: true } } },
+        },
+      },
+    }),
+  ]);
+
+  const byDomain: PipelineMatchIndex["byDomain"] = new Map();
+  for (const company of companies) {
+    const domain = domainOfWebsite(company.website);
+    if (!domain || byDomain.has(domain)) continue;
+    byDomain.set(domain, {
+      companyId: company.id,
+      companyName: company.name,
+      // Deliberately null when there is more than one live application: which
+      // of two jobs a recruiter's mail is about is not something to guess.
+      applicationId: company.applications.length === 1 ? company.applications[0].id : null,
+      applicationCount: company.applications.length,
+    });
+  }
+
+  const byAddress: PipelineMatchIndex["byAddress"] = new Map();
+  for (const contact of contacts) {
+    const email = cleanEmail(contact.email);
+    if (!email || byAddress.has(email)) continue;
+    const company = contact.companies[0]?.company ?? null;
+    byAddress.set(email, {
+      contactId: contact.id,
+      name: contact.name,
+      applicationId: contact.applicationId,
+      companyId: company?.id ?? null,
+      companyName: company?.name ?? null,
+    });
+  }
+
+  return {
+    byDomain,
+    byAddress,
+    terms: { addresses: unique([...byAddress.keys()]), domains: unique([...byDomain.keys()]) },
+  };
+}
+
+/**
+ * One provider call per mailbox for a whole set of addresses and domains.
+ *
+ * The mail sweep's read. `gmailQueryFor` ORs every clause into one brace group,
+ * so thirty open applications go out as a single query per account rather than
+ * thirty — which is the difference between a sweep that can run hourly and one
+ * that cannot. Returns nothing rather than throwing when no mailbox is
+ * connected: the sweep is a background job, and a person who disconnected their
+ * mail has not caused an error.
+ */
+export async function sweepMailboxes(
+  userId: string,
+  search: MailSearch,
+): Promise<MailResult & { accounts: number }> {
+  const { ready, warnings } = await prepare(userId, "mail");
+  if (ready.length === 0) return { threads: [], warnings, accounts: 0 };
+
+  const results = await Promise.all(
+    ready.map(async (account) => {
+      try {
+        const reader = mailReaderFor(account.credentials)!;
+        const threads = await reader.searchThreads(search);
+        return threads.map((thread) => ({
+          ...thread,
+          id: scopedId(account.view.id, thread.id),
+          account: ref(account.view),
+        }));
+      } catch (error) {
+        warnings.push(`${describe(account.row)}: ${error instanceof Error ? error.message : String(error)}`);
+        return [];
+      }
+    }),
+  );
+  await touch(ready.map((account) => account.row.id));
+  return {
+    threads: results.flat().sort((a, b) => b.lastMessageAt.getTime() - a.lastMessageAt.getTime()),
+    warnings,
+    accounts: ready.length,
+  };
+}
+
+/** The addresses this person's own accounts send from. A reply is not news. */
+export async function ownAddresses(userId: string): Promise<Set<string>> {
+  const [rows, user] = await Promise.all([
+    db.linkedAccount.findMany({ where: { userId }, select: { email: true } }),
+    db.user.findUnique({ where: { id: userId }, select: { email: true } }),
+  ]);
+  return new Set(
+    [...rows.map((row) => row.email), user?.email ?? ""].map(cleanEmail).filter(Boolean),
+  );
+}
 
 /**
  * Calendar events in a window, across every connected calendar, that

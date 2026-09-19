@@ -1,7 +1,7 @@
 ---
 title: "Letter tools"
 sidebarTitle: "Letters"
-description: "Six tools over everything you write that is not a resume: cover letters, cold outreach, referral asks, thank-yous and replies."
+description: "Seven tools over everything you write that is not a resume: cover letters, cold outreach, referral asks, thank-yous and replies."
 icon: "envelope-open-text"
 ---
 
@@ -57,13 +57,14 @@ archived application drops out of the lists with it, and comes back when it is r
 
 _Gather everything before writing a letter_
 
-Call this FIRST whenever someone asks for a cover letter, a cold message, a referral ask, a thank-you or a reply. A good letter is built from five things that live five places apart, and this returns all of them in one read: the posting and the company research (`application`), who it is going to (`contact`), the resume it goes out with, `evidence` — the material from Me that actually matches this posting, ranked — and `priorLetters`, up to three of the same kind they have already written. Those last ones matter more than any instruction about tone: two letters somebody wrote themselves are the only reliable description of how they sound. `intent` says what this kind of letter is for, and `missing` names what is not on file — no posting, no research, no named recipient, nothing in Me that matched. Say the missing things out loud rather than writing around them, and never invent an achievement to fill a gap. Read-only, saves nothing.
+Call this FIRST whenever someone asks for a cover letter, a cold message, a referral ask, a thank-you or a reply. A good letter is built from five things that live five places apart, and this returns all of them in one read: the posting and the company research (`application`), who it is going to (`contact`), the resume it goes out with, `evidence` — the material from Me that actually matches this posting, ranked — and `priorLetters`, up to three of the same kind they have already written. Those last ones matter more than any instruction about tone: two letters somebody wrote themselves are the only reliable description of how they sound. `intent` says what this kind of letter is for, and `missing` names what is not on file — no posting, no research, no named recipient, nothing in Me that matched. Say the missing things out loud rather than writing around them, and never invent an achievement to fill a gap. FOUR OF THE KINDS ARE NOT LETTERS TO ANYBODY — LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW and BRAG_DOC are documents about the person, so there is usually no application, no recipient and nothing in `missing` about either. For those, `profile` carries the headline and summary they have now, `evidence` falls back to their roles newest first when you give no `topic`, and `priorLetters` is the previous version of this same document — which on a brag doc is the record itself, and is the thing to add to rather than replace. Read-only, saves nothing.
 
 | Argument | Type | |
 | --- | --- | --- |
-| `kind` | enum | What you are about to write. Defaults to COVER_LETTER  `COVER_LETTER` · `OUTREACH` · `REFERRAL_ASK` · `THANK_YOU` · `REPLY` · `OTHER` |
+| `kind` | enum | What you are about to write. Defaults to COVER_LETTER  `COVER_LETTER` · `OUTREACH` · `REFERRAL_ASK` · `THANK_YOU` · `REPLY` · `LINKEDIN_ABOUT` · `HEADLINE` · `SELF_REVIEW` · `BRAG_DOC` · `OTHER` |
 | `application_id` | string | The job this is about, for the posting, the research and the timeline |
 | `contact_id` | string | The person it is going to, for their name and how they are known |
+| `topic` | string | What this is about, when it is not about a posting — "the last six months", "the billing migration", "the two people I mentored". Used to find the matching material in Me. Leave it out on a self-review or a brag doc and you get their roles, newest first, which is usually what you want |
 
 ### `create_letter`
 
@@ -73,7 +74,7 @@ Save a cover letter, a cold message, a referral ask, a thank-you or a reply. Cal
 
 | Argument | Type | |
 | --- | --- | --- |
-| `kind` | enum | What this is. Defaults to COVER_LETTER  `COVER_LETTER` · `OUTREACH` · `REFERRAL_ASK` · `THANK_YOU` · `REPLY` · `OTHER` |
+| `kind` | enum | What this is. Defaults to COVER_LETTER  `COVER_LETTER` · `OUTREACH` · `REFERRAL_ASK` · `THANK_YOU` · `REPLY` · `LINKEDIN_ABOUT` · `HEADLINE` · `SELF_REVIEW` · `BRAG_DOC` · `OTHER` |
 | `title` | string | What to call it, e.g. 'Anthropic — Staff Engineer' |
 | `body` | string | **required** — The letter itself, as prose. Paragraphs separated by blank lines |
 | `recipient` | string | Who it is addressed to, in their words: 'Priya, engineering manager', 'the hiring team' |
@@ -90,7 +91,7 @@ Everything they have written that is not a resume, newest first, each with the j
 
 | Argument | Type | |
 | --- | --- | --- |
-| `kind` | enum | Only this kind  `COVER_LETTER` · `OUTREACH` · `REFERRAL_ASK` · `THANK_YOU` · `REPLY` · `OTHER` |
+| `kind` | enum | Only this kind  `COVER_LETTER` · `OUTREACH` · `REFERRAL_ASK` · `THANK_YOU` · `REPLY` · `LINKEDIN_ABOUT` · `HEADLINE` · `SELF_REVIEW` · `BRAG_DOC` · `OTHER` |
 | `application_id` | string | Only letters filed under this job |
 | `contact_id` | string | Only letters to this person |
 | `drafts_only` | boolean | Only the ones never marked sent |
@@ -118,7 +119,7 @@ Change a saved letter. Only the fields you send change — but sending `body` RE
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Letter id |
-| `kind` | enum | Change what this is  `COVER_LETTER` · `OUTREACH` · `REFERRAL_ASK` · `THANK_YOU` · `REPLY` · `OTHER` |
+| `kind` | enum | Change what this is  `COVER_LETTER` · `OUTREACH` · `REFERRAL_ASK` · `THANK_YOU` · `REPLY` · `LINKEDIN_ABOUT` · `HEADLINE` · `SELF_REVIEW` · `BRAG_DOC` · `OTHER` |
 | `title` | string | What to call it |
 | `body` | string | The whole letter. Replaces what is there |
 | `recipient` | string | Who it is addressed to |
@@ -126,6 +127,16 @@ Change a saved letter. Only the fields you send change — but sending `body` RE
 | `contact_id` | string | The person it is going to. Empty string detaches |
 | `resume_id` | string | The resume it goes out with. Empty string detaches |
 | `sent_at` | string | The day it was sent, YYYY-MM-DD. Empty string puts it back to a draft |
+
+### `export_letter_pdf`
+
+_Export a letter as a PDF_
+
+Render a letter to a real PDF on the server and return a download url. Reach for this when they are about to actually send one — a form wants a file, or they are attaching it to an email. The page carries their name and contact details from their profile as a letterhead, today's date in THEIR time zone, and the body as they wrote it; nothing is rewritten and nothing is added. The url opens in their browser, where they are already signed in, and is not a public link — a letter names people, and there is deliberately no way to publish one the way a resume can be published. If this instance has no headless browser the tool says so and hands back the print url instead, which produces the same document through the browser's own Save as PDF. A LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW or BRAG_DOC prints without the date and the recipient line, because none of them is addressed to anybody — and a headline is one line, so exporting one is almost never what somebody actually wants. Ask before you spend a page on it.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Letter id |
 
 ### `delete_letter`
 

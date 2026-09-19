@@ -1,5 +1,6 @@
 import { cn, dateRange } from "@/lib/utils";
 import type { ResumeDoc, ResumeSection } from "@/lib/resume-schema";
+import { templateTakesPhoto } from "@/lib/resume-templates";
 
 export type PaperSettings = {
   template: string;
@@ -24,7 +25,10 @@ export type PaperSettings = {
  * academic convention, and a face on it is the one thing that marks a document
  * as not-that-format. A resume can carry showPhoto and still render none here.
  */
-const PHOTO_TEMPLATES = ["classic", "modern", "compact", "editorial"];
+// The list of which templates take a photograph lives in resume-templates.ts
+// now, beside their names and descriptions — it was one of four hand-kept
+// copies of the same subject. harvard has never taken one (the format's own
+// convention has no photograph on it) and neither does ats.
 
 const FONT_CLASS: Record<string, string> = {
   inter: "font-inter",
@@ -61,7 +65,7 @@ export function ResumePaper({
   linkify?: boolean;
 }) {
   const { template, accent, fontFamily, fontSize, lineHeight, pageMargin } = settings;
-  const photo = PHOTO_TEMPLATES.includes(template) ? (settings.photo ?? "") : "";
+  const photo = templateTakesPhoto(template) ? (settings.photo ?? "") : "";
   // The raw index is carried through: `data-rp` addresses doc.sections[i], and
   // filtering first would renumber them. It also replaces section.id as the
   // React key — ids default to "" and RESUME_DOC_SHAPE never mentions them, so
@@ -76,6 +80,7 @@ export function ResumePaper({
         "resume-paper",
         FONT_CLASS[fontFamily] ?? FONT_CLASS.inter,
         template === "harvard" && "resume-paper--harvard",
+        template === "ats" && "resume-paper--ats",
         className,
       )}
       style={
@@ -184,6 +189,34 @@ function Header({
   const centered = template === "classic" || template === "harvard";
   const editorial = template === "editorial";
   const photoAlt = header.name ? `${header.name}` : "";
+
+  // ATS: name, then title, then ONE contact line, then every link printed as
+  // its own URL — even when a label exists.
+  //
+  // That last part is the only place any template changes the document's
+  // CONTENT rather than its look, and it is the whole point of this one: a
+  // link rendered as "portfolio" with the address only in the href is
+  // invisible to a text extractor, so the address is simply not in the
+  // document a parser reads. get_resume_format says so too.
+  if (template === "ats") {
+    return (
+      <header className="rp-block" data-rp="header">
+        <h1 style={{ fontSize: "1.2em", fontWeight: 700, lineHeight: 1.25 }}>
+          {header.name || "Your Name"}
+        </h1>
+        {header.title && <div style={{ marginTop: "0.15em" }}>{header.title}</div>}
+        {contacts.length > 0 && (
+          <div style={{ marginTop: "0.35em" }}>{contacts.join(" | ")}</div>
+        )}
+        {header.links.length > 0 && (
+          <div style={{ marginTop: "0.2em" }}>
+            {header.links.map((link) => stripProtocol(link.url)).join(" | ")}
+          </div>
+        )}
+        <div className="rp-rule" style={{ marginTop: "0.7em" }} />
+      </header>
+    );
+  }
 
   // Harvard: name over a full-width rule, contact line centred beneath it,
   // every item the same size, separated by bullets.
@@ -641,6 +674,21 @@ function SectionBlock({
 
 function SectionHeading({ heading, template }: { heading: string; template: string }) {
   if (!heading) return null;
+
+  // ATS: a plain left-aligned heading, no rule, no letter-spacing, and the
+  // accent forced to inherit so it prints black whatever is set. Uppercase
+  // stays — it is conventional, and a text extractor reads it as ordinary
+  // glyphs either way.
+  if (template === "ats") {
+    return (
+      <h2
+        className="rp-heading"
+        style={{ fontSize: "0.85em", textAlign: "left", letterSpacing: 0, color: "inherit" }}
+      >
+        {heading}
+      </h2>
+    );
+  }
 
   // Harvard: centred, same size as the body, over a full-width rule.
   if (template === "harvard") {

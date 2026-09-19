@@ -3,11 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import type { ActivityType, NoteKind, Stage, TagKind, UserRole } from "@prisma/client";
+import type { ActivityType, McpScope, NoteKind, Stage, TagKind, UserRole } from "@prisma/client";
 import * as me from "@/lib/data/me";
 import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
 import * as offers from "@/lib/data/offers";
+import * as interviews from "@/lib/data/interviews";
 import * as letters from "@/lib/data/letters";
 import * as stageTemplates from "@/lib/data/stage-templates";
 import * as proposals from "@/lib/data/proposals";
@@ -20,7 +21,12 @@ import * as users from "@/lib/data/users";
 import * as waitlist from "@/lib/data/waitlist";
 import * as connections from "@/lib/data/connections";
 import * as accounts from "@/lib/data/accounts";
+import * as watch from "@/lib/data/watch";
+import * as mailSweep from "@/lib/data/mail-sweep";
+import * as captureLink from "@/lib/data/capture-link";
+import * as outbound from "@/lib/data/outbound";
 import * as onboarding from "@/lib/data/onboarding";
+import * as assistant from "@/lib/data/assistant";
 import {
   authenticate,
   claimInstance,
@@ -232,6 +238,16 @@ export async function createConnectionAction(input: { name?: string; client?: st
 export async function renameConnectionAction(id: string, name: string) {
   const user = await requireUser();
   await connections.renameConnection(user.id, id, name);
+  revalidatePath("/settings");
+}
+
+/**
+ * Narrow or widen one connection. Not a permission — see the data layer — so
+ * this needs no confirmation beyond the select itself.
+ */
+export async function setConnectionScopeAction(id: string, scope: McpScope) {
+  const user = await requireUser();
+  await connections.setConnectionScope(user.id, id, scope);
   revalidatePath("/settings");
 }
 
@@ -1154,6 +1170,109 @@ export async function sendDigestNowAction(kind: digest.DigestKind) {
 }
 
 /**
+ * The mail sweep. Off until somebody turns it on here or over a connection —
+ * the same promise the digest switches make, and for a stronger reason: this
+ * one reads their inbox.
+ */
+export async function setMailSweepAction(on: boolean) {
+  const user = await requireUser();
+  const next = await mailSweep.setMailSweep(user.id, on);
+  revalidatePath("/settings");
+  return next;
+}
+
+/**
+ * Outbound mail. Both of these are the app's own buttons, and the second is the
+ * ONLY way a draft becomes APPROVED — there is deliberately no MCP tool for it,
+ * because "approve each one" would mean nothing if a model could click.
+ */
+export async function setOutboundSettingsAction(patch: {
+  dailyLimit?: number;
+  approval?: "each" | "trusted";
+}) {
+  const user = await requireUser();
+  const next = await outbound.setOutboundSettings(user.id, patch);
+  revalidatePath("/settings");
+  return next;
+}
+
+export async function approveOutboundAction(id: string) {
+  const user = await requireUser();
+  const row = await outbound.approveOutbound(user.id, id);
+  revalidateEverywhere();
+  return row;
+}
+
+export async function cancelOutboundAction(id: string) {
+  const user = await requireUser();
+  const row = await outbound.cancelOutbound(user.id, id);
+  revalidateEverywhere();
+  return row;
+}
+
+/**
+ * Sending from the app, after the click.
+ *
+ * The same data function the tool calls, so there is one implementation of
+ * every refusal — including the approval gate, which this path has just
+ * satisfied honestly rather than bypassed.
+ */
+export async function sendOutboundAction(id: string) {
+  const user = await requireUser();
+  const result = await outbound.sendOutbound(user.id, id, {
+    writtenBy: "app",
+    connectionId: "",
+    connectionName: "the app",
+    tool: "sendOutboundAction",
+  });
+  revalidateEverywhere();
+  return result;
+}
+
+/**
+ * The capture link. Minting when one exists ROTATES it, which kills the old
+ * URL — the panel says so beside the button, because a bookmark built on it
+ * stops working the moment this runs.
+ */
+export async function mintCaptureLinkAction() {
+  const user = await requireUser();
+  const next = await captureLink.mintCaptureLink(user.id, await requestBaseUrl());
+  revalidatePath("/settings");
+  return next;
+}
+
+export async function revokeCaptureLinkAction() {
+  const user = await requireUser();
+  const done = await captureLink.revokeCaptureLink(user.id);
+  revalidatePath("/settings");
+  return done;
+}
+
+/**
+ * Stopping a board watch. There is no action to START one: creating a watch
+ * needs a board URL and two filter lists, which is a sentence in a conversation
+ * and a form nobody wants. Stopping one is a button because something making
+ * noise must never need an assistant to switch off.
+ */
+export async function stopWatchingCompanyBoardAction(id: string) {
+  const user = await requireUser();
+  const done = await watch.unwatchCompanyBoard(user.id, id);
+  revalidatePath("/crm");
+  revalidatePath("/settings");
+  return done;
+}
+
+/** The instance's own address, from the request when no public URL is set. */
+async function requestBaseUrl() {
+  const settings = await getSettings();
+  if (settings.publicUrl.trim()) return settings.publicUrl.trim();
+  const headerList = await headers();
+  const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
+  const proto = headerList.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
+/**
  * The review queue. Accepting writes through the same data layer the tool does,
  * so there is exactly one implementation of what "accept" means.
  */
@@ -1265,6 +1384,64 @@ export async function deleteOfferAction(id: string) {
   const offer = await offers.getOffer(user.id, id);
   await offers.deleteOffer(user.id, id);
   if (offer) revalidateApplication(offer.applicationId);
+}
+
+/**
+ * Interview rounds, for the tab on an opened application.
+ *
+ * No `pick` here, unlike the profile and resume actions: interviews.ts builds
+ * its Prisma `data` object field by field rather than spreading a patch, so the
+ * allow-list already exists one level down where patch.ts says it belongs. A
+ * second one here would be a second place to forget a column.
+ */
+export async function scheduleInterviewAction(
+  applicationId: string,
+  input: interviews.InterviewInput,
+) {
+  const user = await requireUser();
+  const result = await interviews.scheduleInterview(user.id, applicationId, input);
+  revalidateApplication(applicationId);
+  return result.interview.id;
+}
+
+export async function updateInterviewAction(id: string, patch: interviews.InterviewInput) {
+  const user = await requireUser();
+  const interview = await interviews.updateInterview(user.id, id, patch);
+  revalidateApplication(interview.application.id);
+}
+
+export async function deleteInterviewAction(id: string) {
+  const user = await requireUser();
+  // Read it first so the right screen is revalidated after the row is gone.
+  const interview = await interviews.getInterview(user.id, id);
+  await interviews.deleteInterview(user.id, id);
+  if (interview) revalidateApplication(interview.application.id);
+}
+
+export async function addInterviewQuestionAction(
+  interviewId: string,
+  input: interviews.QuestionInput,
+) {
+  const user = await requireUser();
+  await interviews.addQuestions(user.id, interviewId, [input]);
+  const interview = await interviews.getInterview(user.id, interviewId);
+  if (interview) revalidateApplication(interview.application.id);
+}
+
+export async function updateInterviewQuestionAction(
+  id: string,
+  patch: Partial<interviews.QuestionInput>,
+) {
+  const user = await requireUser();
+  const question = await interviews.updateQuestion(user.id, id, patch);
+  const interview = await interviews.getInterview(user.id, question.interviewId);
+  if (interview) revalidateApplication(interview.application.id);
+}
+
+export async function deleteInterviewQuestionAction(id: string) {
+  const user = await requireUser();
+  await interviews.deleteQuestion(user.id, id);
+  revalidatePath("/applications");
 }
 
 /** The three screens an offer shows on. */
@@ -1788,6 +1965,9 @@ export async function getApplicationForPanelAction(id: string) {
       interviewRound: application.interviewRound,
       roundLabel: application.roundLabel,
       jobUrl: application.jobUrl,
+      postingStatus: application.postingStatus,
+      postingNote: application.postingNote,
+      postingGoneSince: application.postingGoneSince?.toISOString() ?? null,
       jobDescription: application.jobDescription,
       location: application.location,
       workMode: application.workMode,
@@ -1822,6 +2002,7 @@ export async function getApplicationForPanelAction(id: string) {
     })),
     offers: application.offers.map(offers.offerForUi),
     letters: (await letters.listLetters(user.id, { applicationId: id })).map(letters.letterForUi),
+    interviews: (await interviews.listInterviewDetails(user.id, id)).map(interviews.interviewForUi),
     resumes: resumeList.map((resume) => ({ id: resume.id, name: resume.name })),
     tagOptions: tagOptions.map(asOption),
     lossOptions: lossOptions.map(asOption),
@@ -1976,4 +2157,46 @@ export async function restartTourAction() {
   await onboarding.setTourSeen(user.id, false);
   // The tour mounts from the layout, which every screen renders.
   revalidatePath("/", "layout");
+}
+
+// --- the built-in assistant --------------------------------------------------
+
+/**
+ * The drawer's reads and its housekeeping. The CONVERSATION itself does not go
+ * through here — it streams from /api/assistant, because a server action
+ * returns once and this one has to render as it arrives.
+ *
+ * There are no MCP tools beside these four, deliberately: a transcript of a
+ * client talking to this app is not career content, and Claude Desktop's
+ * conversations are not in Hired either. Everything the assistant can DO was
+ * already callable from a conversation, because it calls those exact tools.
+ */
+export async function assistantThreadsAction() {
+  const user = await requireUser();
+  return assistant.listThreads(user.id);
+}
+
+export async function assistantThreadAction(id: string) {
+  const user = await requireUser();
+  const thread = await assistant.getThread(user.id, id);
+  if (!thread) return null;
+  return {
+    id: thread.id,
+    title: thread.title,
+    messages: thread.messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content as unknown[],
+    })),
+  };
+}
+
+export async function renameAssistantThreadAction(id: string, title: string) {
+  const user = await requireUser();
+  await assistant.renameThread(user.id, id, title);
+}
+
+export async function deleteAssistantThreadAction(id: string) {
+  const user = await requireUser();
+  await assistant.deleteThread(user.id, id);
 }

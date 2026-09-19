@@ -1,7 +1,7 @@
 ---
 title: "Pipeline tools"
 sidebarTitle: "Pipeline"
-description: "Fifty-seven tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
+description: "Ninety-nine tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
 icon: "list-check"
 ---
 
@@ -95,6 +95,85 @@ The same capture as capture_job_posting, over a list of URLs — for somebody wh
 | --- | --- | --- |
 | `urls` | string[] | **required** — The postings' URLs. Duplicates within the list are collapsed before anything is fetched. |
 
+### `watch_company_board`
+
+_Watch a company's jobs board_
+
+Watch one employer's own jobs board and hear about a role the moment it appears. This is the tool for "tell me when Stripe posts a staff engineer role" — a search that is waiting on a particular company rather than browsing. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON; hand it the board link (boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme) or just the company's careers page, and it follows an embedded board through to the real one. ANY OTHER BOARD IS REFUSED and nothing is saved — Workday, SmartRecruiters and a hand-built careers page publish no feed to read, and the honest answer for those is to browse them and paste the links into capture_job_postings. `title_terms` and `location_terms` narrow it: a role has to contain ANY of the title terms AND ANY of the location terms, matched case-insensitively against the posting's own words, and an empty list means anything. THE FIRST LOOK PROPOSES NOTHING: it records what is on the board today as already seen, because a watch on a six-hundred-role board is otherwise six hundred rows to review. Pass propose_existing true when they want what is already up there, and the first ten matches are queued. After that, every new matching role becomes a proposal on their dashboard with the posting already read into it, which they accept to put it on the wishlist or dismiss. NOTHING IS EVER ADDED TO THE PIPELINE WITHOUT A YES. Returns the watch, which provider was found, and how many roles the board is carrying today — read that number back, because a board of four hundred and filters of none is a watch that will be noisy. Calling it again for the same board changes the filters rather than making a second watch.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `board_url` | string | **required** — The board or careers page — boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme, or acme.com/careers |
+| `company_id` | string | The company on file this board belongs to, from list_companies. Preferred |
+| `company` | string | Their name, when there is no id yet. Matched against the companies on file before anything is created |
+| `title_terms` | string[] | A role's title has to contain ANY of these, e.g. ['staff engineer', 'principal engineer']. Empty means every role on the board |
+| `location_terms` | string[] | And its location or work mode has to contain ANY of these, e.g. ['remote', 'new york']. Empty means anywhere |
+| `propose_existing` | boolean | Queue up to ten roles already on the board as well. Default false, which makes the first look a baseline |
+
+### `list_company_watches`
+
+_Which boards are being watched_
+
+Every company board this person is watching: the employer, which provider it reads, the title and location filters on it, when it was last looked at, how many roles it has proposed, and anything that went wrong the last time. Call it before adding a watch, so you change the filters on the one that already exists instead of making a second. It is also the answer to "why have I not heard anything about Acme" — a watch carrying `lastError` has been failing quietly, and one with a `lastFoundAt` of never almost always has filters narrower than the board's own wording. Read-only.
+
+No arguments.
+
+### `update_company_watch`
+
+_Change a board watch's filters_
+
+Change what a watch is looking for, or park it without losing what it has already seen. `title_terms` and `location_terms` REPLACE the lists they are given — send the whole list, not the one term being added, and call list_company_watches first to see what is on there. Widening the filters does not re-offer roles the watch has already decided about: everything on the board the first time it looked is marked seen for good, so a wider filter finds new postings rather than old ones. Setting enabled false keeps the row and stops the looking, which is what somebody wants during a heavy month; unwatch_company_board is for being done with it.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Watch id, from list_company_watches |
+| `title_terms` | string[] | Replaces the title filter. An empty list means every role |
+| `location_terms` | string[] | Replaces the location filter. An empty list means anywhere |
+| `enabled` | boolean | False parks it without deleting it |
+
+### `unwatch_company_board`
+
+_Stop watching a company's board_
+
+Stop watching a board. The watch is deleted outright — there is no archive for one, and this cannot be undone; watching the same board again starts from a fresh baseline, so nothing already on it will be offered. Proposals it has already queued are left exactly where they are, for them to accept or dismiss, and nothing else about the company, its applications or its people is touched. Say whose board you are about to stop watching before you call it.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Watch id, from list_company_watches |
+
+### `check_company_board`
+
+_Look at a watched board now_
+
+Read a watched board right now instead of waiting for the schedule, and queue anything new on it. This is the tool for "anything new at Acme?". It fetches the board, matches the filters against the roles the watch has not already decided about, and queues up to ten of them as proposals with the posting read into each one. NOTHING REACHES THE PIPELINE: the roles wait in the review queue, and it is accept_proposal that creates an application — so do not follow this with accept_proposal unless the person has said yes to that specific role. Returns how many roles the board carries, how many matched, how many were queued, and how many were skipped as already seen. Pass no id to check every watch they have, the one looked at longest ago first; that makes one request per board a few seconds apart, so twenty watches take a moment. An instance that has /api/sweep/<token> on a schedule gets this without anybody asking, and this tool is how somebody impatient jumps the queue.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | One watch, from list_company_watches. Omit to check them all |
+| `limit` | number | How many watches to check when no id is given. Default 20 |
+
+### `check_posting_live`
+
+_Check whether a posting is still up_
+
+Fetch the job posting behind an application and report whether it is still there. A posting that 404s is the cheapest strong signal in a search that the role was filled or pulled, and it usually happens weeks before anybody writes to say so. Pass application_id for one, or nothing to work through every open application that has a link, the one looked at longest ago first. THIS NEVER MOVES A STAGE AND NEVER LOGS ANYTHING TO A TIMELINE. It writes the posting's state onto the application — LIVE, GONE, UNCLEAR, UNREACHABLE, with the date and what the host actually said — and stops, because a page coming down is a fact about the advert and what it means for the application is theirs to decide. GONE takes TWO looks a day apart that both came back 404, so one bad night at a CDN never tells somebody their live application is dead; a single gone reading shows as UNCLEAR, and so does a page that answers 200 without naming a role, which is what every client-rendered board does whether the job exists or not. UNREACHABLE means the host refused to answer and says nothing at all about the role. Returns a line per application and a count of what is gone. When something comes back GONE, tell them plainly, and offer to log_activity or ask where it stands — do not decide it for them, and do not call move_application_stage off the back of this.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_id` | string | One application. Omit to work through the open ones |
+| `limit` | number | How many applications to check when no id is given. Default 25 |
+| `force` | boolean | Check even one looked at in the last three days. Use when they are asking about a specific job right now |
+
 ### `record_offer`
 
 _Record an offer_
@@ -161,6 +240,124 @@ Remove one recorded offer for good. There is no archive for offers — this is g
 | --- | --- | --- |
 | `id` | string | **required** — Offer id, from list_offers |
 
+### `get_outbound_settings`
+
+_Can this workspace send mail_
+
+Whether this app is allowed to send a message from this person's own mailbox, how many a day they set, whether each one waits for a click, which mailboxes can actually send, how many have gone today and what is standing in the way right now. `blockedBecause` is the whole answer when it is non-empty — read it back rather than trying the send and reporting a failure. Three separate things have to be true: an admin turned it on for the instance, the person set a daily number above zero themselves, and a Google or Microsoft mailbox is connected WITH the send permission (an IMAP account cannot send at all, whatever else it does). Read-only, and it sends nothing.
+
+No arguments.
+
+### `draft_outbound_email`
+
+_Draft a message to send from their own mailbox_
+
+Write a message and put it in the outbox as a DRAFT. IT IS NOT SENT — nothing here sends anything, ever, and send_outbound_email is a separate call with its own refusals. This is the follow-up nobody gets round to: the chase after a week of silence, the thank-you the day after an interview, the reply to a recruiter. It goes out from ONE OF THEIR OWN MAILBOXES, so it arrives from them and lands in their Sent folder; this app never sends as itself on anybody's behalf, because a follow-up to a recruiter arriving from a tool's address is worse than no follow-up. IT CAN ONLY BE ADDRESSED TO SOMEBODY ALREADY ON FILE: pass contact_id, and the address is read off that person's record. There is no argument anywhere that takes an address, which is deliberate and is the reason you cannot use this to reach anyone they have not already written down — if they want to mail somebody new, create the contact first and say so. Write the message in THEIR voice, from what is actually on file: call prep_letter or search_me first if you are drafting anything substantial, quote nothing that is not theirs, and never invent a meeting, a name, a date, a number or an agreement that did not happen. Keep it short — this is a follow-up, not a cover letter; use create_letter for anything that wants a title and a draft history. Returns the draft with its id, the mailbox it will go from, what it will say, and whether it now needs approving: out of the box every message waits for a click in the app that NO TOOL CAN MAKE, and the result says so in as many words. Nothing is sent by calling this.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `contact_id` | string | **required** — Who it is to. The address comes off their record — there is no way to pass one |
+| `subject` | string | **required** — The subject line |
+| `body` | string | **required** — The message, plain text, in their voice |
+| `account_id` | string | Which of their mailboxes to send from. Omit to use the only one that can send |
+| `application_id` | string | The job this is about, so the send lands on that job's timeline |
+| `letter_id` | string | A letter this was drafted from, if there is one. Its sentAt is stamped when this goes |
+
+### `list_outbound`
+
+_What is in the outbox_
+
+Every message this app has drafted, sent, failed or had cancelled for this person, newest first — with what it said, who it went to, which mailbox it went from, which connection drafted it and which sent it. Pass status to narrow it: DRAFT is waiting, APPROVED has been clicked and is ready, SENT has gone, FAILED says why in `error`, CANCELLED was called off. Reach for it before drafting anything, so you do not send a second chase to somebody who was chased on Tuesday, and read what went before to match how they actually write. The body is kept after sending, deliberately: a record of what you said is the thing this product exists to keep. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `status` | enum | DRAFT, APPROVED, SENT, FAILED or CANCELLED. Omit for all of them  `DRAFT` · `APPROVED` · `SENT` · `FAILED` · `CANCELLED` |
+| `application_id` | string | Only messages about this job |
+| `contact_id` | string | Only messages to this person |
+| `limit` | number | Max rows to return. Default 50, hard ceiling 500. Prefer narrowing the filters. |
+
+### `send_outbound_email`
+
+_Send a drafted message_
+
+Actually send a draft, from the person's own mailbox. THIS IS THE ONE THING IN THIS APP THAT PUTS A MESSAGE IN FRONT OF SOMEBODY WHO IS NOT ITS OWNER, so read what it says back before claiming anything. It refuses, in order and by name, when: the instance does not allow members to send; the person has not turned it on and set a daily number; no mailbox can send; they are at their daily limit; one went less than a minute ago; the person or the job it is about is in the archive; or — the one that matters most — they are in "approve each one" mode and have not clicked approve. THAT CLICK CANNOT BE MADE BY ANY TOOL, including this one, which is the point of the mode. A refusal comes back as `sent` false with a `reason` to read out; it is not an error and not something to work around. On success it stamps the letter it came from as sent, writes an EMAIL_SENT activity onto the job's timeline, and returns the provider's own message id. AN EMAIL CANNOT BE UNSENT: say who it is going to, from which mailbox, and what it says, and get a plain yes, every time — even in trusted mode. Never send a draft the person has not seen.
+
+**Overwrites or deletes.** **Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Draft id, from draft_outbound_email or list_outbound |
+
+### `cancel_outbound_email`
+
+_Call off a drafted message_
+
+Mark a draft, an approved message or a failed one as cancelled so it can never go. Reach for it when they change their mind, when a draft is wrong enough to rewrite from scratch, or when a failed send should not be retried. The row stays with everything it said — nothing here deletes the record — and a cancelled message cannot be un-cancelled, so draft a new one instead. It does nothing to a message that has already gone, because nothing can.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Message id, from list_outbound |
+
+### `attach_file`
+
+_Keep a file against a job, a person or an offer_
+
+Store a file in the workspace, hanging off exactly one thing: an application, an offer, a letter, a person or a company. This is where the signed offer letter goes, the take-home they submitted, the PDF a recruiter sent, the screenshot of a posting that has since come down. Pass exactly one of application_id, offer_id, letter_id, contact_id or company_id — a file with no home is bytes nobody can find later, so there is no way to store one loose. The bytes arrive one of two ways: `data_uri` when you are holding them, e.g. after reading a local file ('data:application/pdf;base64,…'), or `url` for an https link the server fetches for you, which is MUCH the cheaper of the two and the one to prefer when the file is already on the web. The default limit is 8MB a file and 250MB a workspace; over either, this refuses and says how much is in use. Only PDFs, images, plain text, markdown, CSV, JSON, zips and Word or Excel documents are accepted, and THE TYPE IS READ FROM THE FILE'S OWN FIRST BYTES rather than from what you called it. Attaching the same bytes twice is not a second copy: the file is matched on its checksum and you get the first row back with `reused` true, so re-running after a timeout is safe. Returns the file's id, its size, what is now in use, and a link to download it — the link opens in the browser they are already signed in to and is not public. IT NEVER RETURNS THE BYTES; use read_attachment for a text file you actually need to read. You cannot attach to something in the archive.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `filename` | string | **required** — What the file is called, e.g. 'northwind-offer-signed.pdf' |
+| `data_uri` | string | The file inline: 'data:application/pdf;base64,…'. Use url instead where you can |
+| `url` | string | An https link the server fetches. Cheaper than sending the bytes |
+| `caption` | string | One line about what it is, in their words: 'the offer as signed' |
+| `application_id` | string | The job it belongs to |
+| `offer_id` | string | The offer it belongs to |
+| `letter_id` | string | The letter it went out with |
+| `contact_id` | string | The person it came from |
+| `company_id` | string | The company it is about |
+
+### `list_attachments`
+
+_List kept files_
+
+Every file kept in this workspace, or just the ones hanging off one thing — pass application_id, offer_id, letter_id, contact_id or company_id to narrow it. Reach for this before attach_file when somebody says "the offer letter": it is probably already here. Returns the id, name, type, size, caption and what each is attached to, plus a download link for each; it never returns the bytes, so this is cheap to call on a workspace with two hundred files. Files whose job, person or company is in the archive are NOT listed — restore the record and they come back with it. Capped, and it says so when the list was cut off.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_id` | string | Only files on this job |
+| `offer_id` | string | Only files on this offer |
+| `letter_id` | string | Only files on this letter |
+| `contact_id` | string | Only files on this person |
+| `company_id` | string | Only files on this company |
+| `limit` | number | Max rows to return. Default 100, hard ceiling 500. Prefer narrowing the filters. |
+
+### `read_attachment`
+
+_Read a kept file_
+
+The TEXT of a kept file, for when you actually have to read one — a take-home brief they saved as markdown, a CSV of interview questions, a JSON export somebody sent. Only text files come back with text: a PDF, an image, a zip or a Word document returns `text` null and its download link instead, because there is no honest way to put a binary in a tool result and a base64 string of one is a context window somebody else paid for. Long files are cut and `truncated` says so. Read-only — this never changes the file or the record it hangs off.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Attachment id, from list_attachments |
+| `limit` | number | How many characters of text to return. Default 40,000, which is the ceiling too |
+
+### `delete_attachment`
+
+_Delete a kept file_
+
+Remove one file for good. THERE IS NO ARCHIVE FOR A FILE — this destroys the bytes, and nothing else in the app has a second copy of them. Say which file, and what it was attached to, and get a plain yes first. Use it to free space when a workspace is at its limit, and say how much it got back. Deleting the job, person or company a file hangs off destroys it too, which is what makes a file impossible to orphan.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Attachment id, from list_attachments |
+
 ### `compare_offers`
 
 _Compare the offers on the table_
@@ -181,6 +378,284 @@ Call this BEFORE helping somebody answer or negotiate an offer. It gathers in on
 | Argument | Type | |
 | --- | --- | --- |
 | `application_id` | string | **required** — Which application to brief on |
+
+### `prep_interview`
+
+_Gather everything before an interview_
+
+Call this FIRST whenever somebody has an interview coming up, asks what to expect, or asks you to run prep. Seven things decide an interview and they live seven places apart; this returns all of them in one read. `application` is the posting, the stage and the last ten things logged. `company` is the research on file. `interviewers` is who is in the room. `history` is every earlier round at this employer, with how each went. `employerQuestions` is what THIS employer has already asked — the list nothing in this app could produce before questions were rows, and the first thing to read out. `commonQuestions` is what gets asked everywhere. `weakAnswers` is what is on file with no answer or one they rated badly, which is the homework. `tasks` is whatever the stage checklist already put on their list. `missing` names what is NOT on file — no posting, no research, nobody named, no earlier round — and that list is the most useful thing here: say the gaps out loud rather than writing around them. NEVER invent a story, an employer, a date or a metric to fill one; if it is not in the result, it does not go in an answer. Pass interview_id for a booked round, or application_id to prep a job somebody has not put a date against yet. Read-only, saves nothing.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_id` | string | The job to prep for. Enough on its own. |
+| `interview_id` | string | A booked round, from list_interviews. Narrows the prep to its format and its interviewers. |
+
+### `schedule_interview`
+
+_Put an interview round on the record_
+
+Record a round of interviews — one that is booked, or one that already happened and was never written down. Reach for it the moment a date is agreed. The round NUMBER is worked out for you when you leave it out: one past the deepest round on file for that job, which is also how somebody who has been typing round numbers into the pipeline by hand carries on counting rather than restarting at one. Pass `prep_task_due_at` and it puts a prep task on their list in the same call, which is the point of doing this in one move; the result names the task it made. Interviewers are contact ids from list_contacts — a name that is not a contact yet should become one with create_contact first, because the person is worth keeping after this job ends. THREE THINGS IT DOES NOT DO. It does not move the application: check the stage that comes back and call move_application_stage if the board still says applied. It writes nothing to the timeline, because an interview that has not happened is not a thing that happened — record_interview_outcome writes that line afterwards. And it does not raise the application's round counter above what you give it: that counter only ever goes up. Calling it twice for the same calendar event returns `duplicateOf` and writes nothing.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_id` | string | **required** — Which job this round is for |
+| `round` | number | Which round, counting from 1. Leave it out to continue from the deepest round already on file. |
+| `label` | string | What it is called — 'Phone screen', 'Take-home', 'System design', 'Onsite loop' |
+| `format` | enum | What kind of round it is. Defaults to VIDEO.  `PHONE` · `VIDEO` · `ONSITE` · `TAKE_HOME` · `PAIRING` · `PANEL` · `OTHER` |
+| `scheduled_at` | string | When it is. YYYY-MM-DD, or a full ISO timestamp for a time. A bare date lands at 9am in their own zone. |
+| `duration_mins` | number | How long it is booked for, in minutes |
+| `location` | string | Where, or the joining link — 'Zoom', a Meet URL, 'their office, 4th floor' |
+| `prep` | string | What to say, what to ask, what to avoid. Anything worth having written down before walking in. |
+| `interviewer_ids` | string[] | Contact ids of the people in the room, from list_contacts |
+| `calendar_event_id` | string | The provider's event id when this came off a calendar, so a second sweep does not queue it again |
+| `prep_task_due_at` | string | Also add a prep task due on this day, YYYY-MM-DD. Omit for no task. |
+| `prep_task_title` | string | What that task should say. Defaults to naming the round and the company. |
+
+### `interviews_from_calendar`
+
+_Meetings that look like interviews_
+
+Read this person's own calendar for meetings with people on their pipeline and hand each one back SHAPED AS AN INTERVIEW, ready for schedule_interview. It writes nothing, deliberately: a meeting called "Acme — chat" might be a screen or might be a catch-up with somebody who used to work there, and no rule can tell — so this proposes and the person says which are real. For each it returns the calendar event's id, the title, when it starts, how long it runs, whether it looks like a video call or an onsite (read off the location and the link, not guessed), which job it is about, and any contact already on file who is in the room. `alreadyScheduled` marks the ones a round is already recorded for, so running this twice offers nothing twice — and passing `calendar_event_id` through to schedule_interview is what makes it safe even if you miss that. Needs a calendar connected; says so rather than returning an empty list when none is. Read it back, ask which are interviews, then call schedule_interview once per yes.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `days` | number | How far ahead to look. Default 21, most 90 |
+
+### `list_interviews`
+
+_List interview rounds_
+
+Every round on file, newest first, with who was in the room, how it went and how many questions were recorded against it. Reach for it to answer 'what have I got coming up' (pass upcoming_only), 'how did the Stripe rounds go' (pass application_id or company_id), or before scheduling another one so the round number continues rather than restarting. Rounds on archived applications are never returned. For a week of dates across the whole search, list_schedule is better — it merges these with follow-ups, tasks and real calendar meetings. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_id` | string | Only rounds for this job |
+| `company_id` | string | Only rounds at this employer, across every application there |
+| `from` | string | Only rounds scheduled on or after this day, YYYY-MM-DD |
+| `to` | string | Only rounds scheduled on or before this day, YYYY-MM-DD |
+| `outcome` | enum | Only rounds in this state  `SCHEDULED` · `HELD` · `PASSED` · `REJECTED` · `CANCELLED` · `NO_SHOW` |
+| `upcoming_only` | boolean | Only rounds still ahead of now |
+| `limit` | number | Max rows to return. Default 100, hard ceiling 500. Prefer narrowing the filters. |
+
+### `get_interview`
+
+_Get one interview round_
+
+One round in full: the format, when it is, where, who is in the room, the prep written beforehand, the debrief written after, and every question recorded against it with the answer that was given. Read this before update_interview or record_interview_outcome, because both of those replace the fields you send.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Interview id, from list_interviews |
+
+### `update_interview`
+
+_Fix an interview round_
+
+Correct a round that is already on file — the time moved, the format changed, somebody else joined the panel. Only the fields you send change, so this is safe to call with one of them. TWO TRAPS. `interviewer_ids` REPLACES the whole set rather than adding to it, so read the round with get_interview first and send everyone who should be on it. And this is for FIXING a round, not for saying how it went: record_interview_outcome is what writes the timeline entry and the questions. It can still repair a round on an application you have since archived, which is deliberate — the id could only have come from somewhere that already showed it to you.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Interview id |
+| `round` | number | Which round, counting from 1 |
+| `label` | string | What it is called |
+| `format` | enum | What kind of round it is  `PHONE` · `VIDEO` · `ONSITE` · `TAKE_HOME` · `PAIRING` · `PANEL` · `OTHER` |
+| `outcome` | enum | Where it got to. Prefer record_interview_outcome, which also writes the timeline.  `SCHEDULED` · `HELD` · `PASSED` · `REJECTED` · `CANCELLED` · `NO_SHOW` |
+| `scheduled_at` | string | When it is, YYYY-MM-DD or a full ISO timestamp |
+| `duration_mins` | number | How long, in minutes |
+| `location` | string | Where, or the joining link |
+| `prep` | string | What to say, what to ask, what to avoid. Replaces what is there. |
+| `interviewer_ids` | string[] | REPLACES who is in the room. Send everyone, not just the new one. |
+
+### `record_interview_outcome`
+
+_Say how a round went, and what they asked_
+
+The tool to reach for straight after an interview, and the one that makes every future one easier. It records how the round went, what they wrote about it, and — the part that matters — the questions they were asked with the answers they actually gave. Ask for the real answer, not a better one: the whole value of the bank is knowing which real answers led somewhere, and an improved version recorded now is a story they will not be able to repeat. `better` is where the improved version goes. This is the one write here with side effects, and both are the point: it writes the round's line on the timeline, REWRITING its own earlier line rather than adding a second, and it raises the application's round counter if this round is deeper than anything recorded — never lowering it. It does NOT move the application's stage; a rejection is still move_application_stage, and passing the loss reason there is what makes loss_report useful later. Confidence is 1 to 5 in their own judgement; leave it out rather than guessing one for them.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Interview id |
+| `outcome` | enum | Where it got to. Defaults to HELD when the round was still scheduled.  `SCHEDULED` · `HELD` · `PASSED` · `REJECTED` · `CANCELLED` · `NO_SHOW` |
+| `debrief` | string | What they thought, in their own words. Replaces what is there. |
+| `occurred_at` | string | When it actually happened, YYYY-MM-DD or ISO. Defaults to when it was scheduled. |
+| `questions` | object[] | What was asked, and what they said. Additive — nothing already on file is touched, so this is safe to call again as they remember more. |
+
+### `log_interview_questions`
+
+_Add questions to a round already on file_
+
+Append what was asked to a round that is already recorded, without touching how it went. Reach for it when somebody remembers another question a day later, which is most of them. Additive: nothing already on file is changed or removed, so calling it twice adds twice — read the round with get_interview first if you are not sure whether a question is already there. Record the answer they actually gave rather than a better one; `better` is where the improved version goes.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `interview_id` | string | **required** — Interview id |
+| `questions` | object[] | **required** — The questions to add. |
+
+### `update_interview_question`
+
+_Correct one recorded question_
+
+Fix a question, an answer, a rating or the better version. Only the fields you send change. Correcting the WORDS of a question re-files it in the bank, which is usually what you want — the bank groups by exact wording, so two rememberings of the same question sit apart until one is edited to match the other. Question ids come from get_interview or question_bank.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Question id, from get_interview or question_bank |
+| `question` | string | What was asked. Changing this re-files it in the bank. |
+| `kind` | enum | What sort of question  `BEHAVIOURAL` · `TECHNICAL` · `SYSTEM_DESIGN` · `ROLE` · `CULTURE` · `COMPENSATION` · `MINE` · `OTHER` |
+| `answer` | string | What they actually said |
+| `confidence` | number | Their own verdict, 1 to 5. 0 means nobody said. |
+| `better` | string | What they wish they had said |
+
+### `delete_interview_question`
+
+_Remove a recorded question_
+
+Take one question off a round for good — it was recorded twice, or it was not really a question. Gone, with no archive. Deleting the LAST answer on file for something also removes it from the bank, so a question asked at three employers loses a third of its evidence; prefer correcting it with update_interview_question where the problem is the wording.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Question id |
+
+### `delete_interview`
+
+_Remove an interview round_
+
+Delete a round and everything recorded against it — every question, every answer, and the line it put on the timeline. There is no archive for interviews, so this is gone, and the questions are usually the part worth keeping. Say what will go, including how many questions, and get a plain yes first. The application's round counter is deliberately NOT lowered: how far something got is a fact, and the funnel is built out of that column.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Interview id |
+
+### `question_bank`
+
+_What keeps getting asked, and which answers worked_
+
+Every question ever recorded, across every interview, grouped and ranked. This is what turns a set of interview notes into preparation. `repeated` is the list worth rehearsing — asked more than once, with each answer and which employer it came from. `weak` is the homework: on file with no answer recorded, or rated badly by the person who gave it. `worked` is the answers that came out of a round that was passed or a job that reached an offer. `coverage` is per kind of question and INCLUDES the kinds with zero, because a zero is the most informative row here — never having recorded a system design question is the finding. THREE TRAPS, all of them in `caveats` as well. Questions are grouped by EXACT WORDING, so the same question remembered two ways is two entries: merge them by eye before reporting a count, and use update_interview_question to make one match the other. `ledSomewhere` is correlation and nothing more — a passed round does not show the answer was why, and a good answer in a job lost for other reasons reads as not working. And under about twenty questions there is not enough here to draw any conclusion from, which `caveats` says outright. Rounds on archived applications are excluded. Read-only, saves nothing.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_id` | string | Only questions from rounds on this job |
+| `company_id` | string | Only questions this employer asked |
+| `kind` | enum | Only this sort of question  `BEHAVIOURAL` · `TECHNICAL` · `SYSTEM_DESIGN` · `ROLE` · `CULTURE` · `COMPENSATION` · `MINE` · `OTHER` |
+| `search` | string | Only questions whose words contain this |
+| `min_times_asked` | number | Only questions asked at least this many times. Default 1. |
+| `limit` | number | How many distinct questions to return. Default 100, ceiling 300. |
+
+### `list_stage_cadences`
+
+_How long after a move a follow-up is armed for_
+
+The chase clock, per stage. Every time an application moves, its follow-up date is set a number of days out — seven after applying, four while interviewing, two on an offer — and this says what those numbers are for this person and whether they set them or inherited them. Reach for it before set_stage_cadence so you can say what is changing, and when somebody asks why a follow-up appeared on a date they did not pick. `source` is the field to read: 'default' means no row exists and the built-in is being used, 'yours' means they set that number, and 'off' means they deliberately turned that stage's chasing off, which is not the same thing as never having said. ACCEPTED and LOST are absent on purpose — a terminal move clears the follow-up date outright, so a cadence on one could never fire. Read-only.
+
+No arguments.
+
+### `set_stage_cadence`
+
+_Change how soon a stage chases_
+
+Set how many days after landing in a stage the follow-up date is armed for. Reach for it when somebody says they are chasing too soon, too late, or not at all — 'stop nagging me about wishlist rows' is `stage: WISHLIST, days: null`, and 'give applications a fortnight' is `stage: APPLIED, days: 14`. THREE MEANINGS FOR ONE ARGUMENT, and they are all different: a NUMBER stores that many days; `days: null` stores 'arm nothing for this stage', which is a decision; and LEAVING days OUT deletes their setting and goes back to the built-in, which is how you undo. Say which of the three you are doing before you do it. This changes future moves only — no date already on the board is touched, and if they want one of those moved, that is update_application. A date somebody set by hand for a specific day is never overwritten by a move either, whatever the cadence says. ACCEPTED and LOST are refused by name: a terminal move clears the date outright, so a cadence on one would be a setting that lies.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `stage` | enum | **required** — Which stage's clock to change  `WISHLIST` · `APPLIED` · `INTERVIEWING` · `OFFER` |
+| `days` | number | Days from the move to the follow-up, 0 to 365. Send null to arm nothing for this stage. Omit it entirely to delete the setting and go back to the built-in. |
+| `revert` | boolean | Delete the setting and go back to the built-in. The same as omitting days. |
+
+### `list_referrals`
+
+_Who vouched for you where_
+
+Every referral on file, with where it stands and whether it came to anything. Reach for it when somebody asks who has put them forward, who they are still waiting on, or who they owe a thank-you — and reach for list_relationships instead when the question is who is worth talking to at all, because that one covers everybody in the CRM and this one covers only the people who actually asked on your behalf. `converted` is DERIVED from the application's own stage and timeline, not stored, so it cannot disagree with the funnel. `thanksOwed` is the list that matters: it converted and nobody has said thank you, which is the most expensive unclosed loop in a search and is invisible in every other record this app keeps. `waitingDays` counts from the last time the STATUS moved, not from the last edit, so fixing a typo in the notes does not reset the clock. Referrals from an archived person are excluded; one whose application was archived stays, because who put you forward is a fact about the person. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `contact_id` | string | Only referrals from this person |
+| `application_id` | string | Only referrals for this job |
+| `company_id` | string | Only referrals at this employer |
+| `status` | enum | Only referrals in this state  `ASKED` · `AGREED` · `SUBMITTED` · `DECLINED` · `NO_ANSWER` |
+| `thanks_owed` | boolean | Only the ones that converted and were never acknowledged |
+| `waiting_for_days` | number | Only ones still ASKED or AGREED and older than this many days |
+| `limit` | number | Max rows to return. Default 100, hard ceiling 500. Prefer narrowing the filters. |
+
+### `record_referral`
+
+_Record that somebody put their name behind you_
+
+Log a referral — you asked somebody to refer you, or they offered. Reach for it the moment the ask is made, not when it lands: 'waiting on three people' is only a question this app can answer if the asks are on file. The person is a contact id from list_contacts; create_contact them first if they are not on file yet, because somebody who refers you is worth keeping long after this job. The application is optional and often comes later — 'do you know anyone at Stripe' is asked before anybody applies — and passing one fills in the employer for you. Status starts at ASKED. When it converts, a thank-you task appears on their list automatically, once, the first time the application reaches interviewing or beyond; that is the point of recording it.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `contact_id` | string | **required** — Who vouched for you, from list_contacts |
+| `application_id` | string | The job, if there is one yet |
+| `company_id` | string | The employer. Filled in from the application when you pass one. |
+| `status` | enum | Where it stands. Defaults to ASKED.  `ASKED` · `AGREED` · `SUBMITTED` · `DECLINED` · `NO_ANSWER` |
+| `asked_on` | string | When you asked, YYYY-MM-DD. Defaults to today. |
+| `notes` | string | What you asked for and what they said, in your own words |
+
+### `update_referral`
+
+_Move a referral along, or mark it thanked_
+
+Change where a referral stands, attach the application once there is one, or record that you have thanked them. Only the fields you send change. Moving the STATUS restarts the waiting clock, which is what 'you asked three weeks ago' counts from — so move it when something actually happened, and edit the notes when nothing did. `thanked: true` stamps today and takes it off the thanks-owed list; that is the field the whole model exists for, so do not set it because a thank-you was drafted, only because one was sent.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Referral id, from list_referrals |
+| `status` | enum | Where it stands now. Moving this restarts the waiting clock.  `ASKED` · `AGREED` · `SUBMITTED` · `DECLINED` · `NO_ANSWER` |
+| `application_id` | string | Attach the job, now that there is one. An empty string detaches it. |
+| `company_id` | string | The employer. An empty string detaches it. |
+| `contact_id` | string | Correct who vouched |
+| `asked_on` | string | When you asked, YYYY-MM-DD |
+| `notes` | string | Replaces the notes |
+| `thanked` | boolean | True stamps today as when you thanked them; false clears it |
+
+### `delete_referral`
+
+_Remove a referral_
+
+Delete a referral for good. There is no archive for these. What is lost is the record that a named person put their reputation behind you, which is usually worth keeping even when the job went nowhere — prefer update_referral with a status of DECLINED or NO_ANSWER. Say what will go and get a plain yes first.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Referral id |
+
+### `referral_review`
+
+_Who you owe a thank-you, and who has gone quiet_
+
+The two questions the referral record exists to answer, in one read. `thanksOwed` is anybody whose referral converted and who has never been thanked — work through it first, because it costs one message and it is the difference between a person who refers you once and a person who refers you for the rest of your career. `waiting` is asks that are still ASKED or AGREED and have sat for a while, longest first, so a nudge goes to the right person; a nudge is one line and is not a second ask. `byStatus` counts the whole set and carries a line on what each state means for what to do next. Reach for this in a weekly review, and after any week with several applications. Read-only, saves nothing: update_referral is what records that you acted.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `waiting_for_days` | number | How long counts as waiting. Default 10. |
+
+### `log_win`
+
+_Put something that went well into Me_
+
+Append one thing that went well to their current role's background, under a dated heading. THIS IS THE TOOL FOR AFTER THE SEARCH IS OVER, and it is the one that makes the next one possible: Me stops growing the day somebody accepts an offer, and two years later the next search starts from a role with an empty background that nobody can reconstruct from memory. Reach for it whenever they mention something they did — a project that shipped, a number that moved, something somebody thanked them for — whether or not they asked you to record it; offer, do not assume. Write what they said, in their words, with whatever number they gave. DO NOT polish it into a resume bullet and do not invent an impact figure: a highlight is a deliberate distillation and mine_role_background is what does that, later, with them in the room. If nothing in Me is marked as the current role this refuses and says so — and when there is an accepted application it names the employer, so the next move is to add the role rather than to give up.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `text` | string | **required** — What went well, in their words. One or two sentences is right. |
+| `role_id` | string | Which role it belongs to. Defaults to whichever is marked current. |
+| `occurred_on` | string | When it happened, YYYY-MM-DD. Only decides which month it files under. |
 
 ### `list_stage_templates`
 
@@ -539,6 +1014,76 @@ The numbers behind the flow chart on the analytics page. The ladder is built fro
 
 No arguments.
 
+### `resume_performance`
+
+_Which resume actually gets answered_
+
+Which version of this person's resume gets replies, per document: how many applications went out with it, how many got any response, how many reached an interview, how many reached an offer, and how long a response took. Reach for it when somebody asks which resume to send, whether a tailored one was worth it, or why one document keeps working and another does not — and before writing a new one, because the answer is often that a document already on file is doing fine. `sent` counts applications past the wishlist that this resume was attached to, archived ones excluded. A RESPONSE is the first thing THEY did after you applied: an email received, a call, an interview, an offer, a rejection, or a move into interviewing. Nothing you sent counts — not your application, not a follow-up, not cold outreach — and nothing logged before the day you applied counts, because a recruiter who wrote to you first is not your resume working. `medianDaysToFirstResponse` is measured only over the ones that answered, so it says how long an answer took, never how long you have been waiting; `stillWaiting` is the other half. THE TRAP, and it is the whole reason to read the rest of the result before quoting any of it: every rate is null under five applications rather than rounded, so say the counts — 'two of four' — and never a percentage. `comparable` false means no two resumes have enough behind them to be ranked against each other at all, and you should say that plainly instead of naming a winner. `noResume` is how many applications went out with no document recorded, which is usually the real finding. Every number is a LOWER BOUND on what happened: it measures what was logged, and a reply nobody wrote down does not exist here. Read-only, saves nothing.
+
+No arguments.
+
+### `loss_report`
+
+_Where applications die, and why_
+
+Every application that ended without an offer, cut six ways: the stage it was actually IN when it died, the reason recorded against it, where it came from, and the employer's industry, size and location. Reach for this when the question is 'what keeps killing these' rather than 'how is the search going' — diagnose_search names the weakest step of the funnel, and this says what the applications leaking out of it have in common. The stage is read from the move itself, so a rejection after two rounds is filed under interviewing rather than under the LOST stage every ending shares; where that move was never recorded — an import, or a job added to the board already dead — it falls back to the furthest round the application ever reached, and `provenance` says how many of each. `byReason` is built from this person's own LOSS tags, plus a bucket for endings nobody gave a reason for, and that bucket is usually the finding: you cannot learn anything from forty rejections with no reason on them, and the fix is to start passing loss reasons when you move something to LOST. Every rate is null under five applications rather than rounded — say the counts, not a percentage. An application wearing two source tags counts into both, so those rows do not sum to the total; that is deliberate, it is evidence about both channels, and splitting it between them would invent a precision nobody recorded. Wishlist rows are not in this at all, because nothing was ever sent. Archived applications are excluded. Read-only, saves nothing.
+
+No arguments.
+
+### `skills_gap`
+
+_What every posting asks for that Me cannot evidence_
+
+Reads every job posting captured on the pipeline, works out what keeps coming up across them, and asks search_me whether this person has anything on file for each one. This is a LEARNING LIST, not a fit score for one job — check_resume_fit and the gap_report workflow answer 'does this resume suit this posting', and this answers 'what do the jobs I keep applying for want that I have never written down'. Reach for it when somebody asks what to learn next, what to put on a development plan, or why their applications keep stalling in the same place; and after it, ask them about the missing items, because half of what comes back as missing is work they did and never recorded — anything they tell you goes straight into append_role_background and is then evidenced for every future application. Terms are counted by how many DIFFERENT postings they appear in, so a single long posting cannot invent a trend. Three lists come back. `missing` is the one to trust: search_me matches on ANY word of a term and still found nothing, so zero means zero. `thin` is one record — usually a mention rather than a story. `backed` is the weak end: two or more records matched, but a two-word term can match on the common word alone, so treat it as 'probably fine' rather than proof. THE TRAPS. This has no idea what words mean: 'K8s' and 'Kubernetes' are two different terms and one can read missing while the other reads backed, and an acronym in the posting against a spelled-out name in Me reads as a gap that is not one — check before telling anybody they lack something. It reads THEIR postings, which is a biased sample: it describes what the jobs they chose ask for, not what the market asks for. And `confident` is false under five captured postings, where there is no cross-posting pattern to find at all. `method` explains how each verdict was reached; read it before quoting the result. Nothing is written.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `limit` | number | How many terms to test. Default 40, ceiling 80. Each one costs a search of Me. |
+| `min_postings` | number | Only terms appearing in at least this many different postings. Defaults to a quarter of them, never below 3. |
+
+### `contact_warmth`
+
+_Who has gone cold that you cannot afford to lose_
+
+list_relationships, with time applied to it. It ranks the people in the CRM by what they have actually been worth to the search and then discounts each one by how long since anybody spoke to them, so 'who should I get back in touch with' is one ordered list rather than two columns to combine by eye. Reach for it before a week of cold applications, when somebody asks who to thank or nudge, or when a search has gone quiet and the honest next move is people rather than postings. `cooling` is the list to act on: everyone who earned something — a referral, an introduction, a recruiter on a thread that went somewhere — and has since gone silent or has a ping due, ordered by how much has been LOST rather than by how long it has been, so a referral that produced an onsite three months ago outranks somebody who cold-mailed you once last week. Each person carries the two counts list_relationships gives — `direct`, applications they are attached to, and `atCompany`, applications at a company they represent, which is much weaker evidence — and those are the numbers to quote. THE TRAP: `warmth`, `value` and `decay` are an ORDERING, not a measurement. Never read one out or tell somebody a person is 'at 0.42'; say what they were worth, in the counts, and how long it has been. `confident` false means there is too little on file to rank anybody and the order means nothing — say so rather than reading it as a finding. Archived people and archived applications are excluded. Read-only, saves nothing: schedule_contact_pings puts dates against them and log_follow_up records that you chased one.
+
+No arguments.
+
+### `research_freshness`
+
+_Which companies you know nothing current about_
+
+The companies with something live riding on them, ordered by WHAT IS COMING UP rather than by how old the research is — because a year-old note on a wishlist row is not a problem and a nine-week-old one on the company you have a final with on Thursday is. Each row says the state (`never`, `stale` or `fresh`), how many days ago the company was last touched, how many live applications ride on it, and the nearest booked interview or due follow-up that the research is actually for. Reach for it at the start of a week, before a round of interview prep, or whenever somebody asks what they should be reading. "When was this researched" is approximate ON PURPOSE: it is the company row's own updatedAt, so any edit counts, and being generous costs one company reading as fresh when only its website was fixed — the alternative is a column something has to remember to stamp. Follow it with research_company on the ones that matter, and get_company first so you add to what is written rather than replacing it. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `stale_after_days` | number | How old counts as stale. Default 60 |
+| `ahead_days` | number | How far forward to look for the thing the research is for. Default 21 |
+
+### `workspace_health`
+
+_What is thin in this workspace_
+
+The five places this workspace is missing the labels everything else depends on: companies with no industry, applications with no source, people with no relationship recorded, roles with no highlights distilled out of them, and resumes that were never attached to anything. Reach for it when somebody asks how to get more out of the app, when an analysis you just ran came back unconfident, or at the start of a tidy-up — and reach for get_setup_status instead when the question is whether they have started at all, because this one assumes they have. Every check comes back with a count, the total it is out of, one line saying why it matters, the tool that fixes it, and up to five examples WITH IDS, so you can fix them in the same turn rather than reading out a number and asking them to go and click. Work through it conversationally, one check at a time, largest share of a population first — and confirm before writing: a source tag is a claim about where something came from, and guessing one is worse than leaving it blank. `clean` lists the checks that found nothing, so you can say what is already in good shape rather than only what is wrong. Nothing here is a fault; a workspace three days old is supposed to look like this. Archived companies, people and applications are excluded; roles carry no archive of their own, so all of them are counted. Read-only, saves nothing.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `examples` | number | How many examples to return per check. Default 5, ceiling 25. |
+
+### `morning_brief`
+
+_What changed, what is due, what to do first_
+
+The one call to start a working session with. Returns what has happened since they last looked, what is due now, what is coming this week, what has gone quiet, and an ordered list of what to do first — each item carrying the id of the thing it is about, so the next call needs no lookup. Reach for it on 'catch me up', 'what should I do today', 'anything I am forgetting'; reach for pipeline_review instead when the question is the weekly one, and diagnose_search when the question is why the search is not working. The window is the last day, or the last three on a Monday so Friday afternoon is in it, measured in the person's own time zone. `first` is ordered by what it costs to miss: an offer deadline first, because missing a follow-up costs a day and missing a respond-by costs the job; then anything already overdue; then what is on the calendar today, which cannot be moved; then tasks, pings, and the things that have gone silent. Each entry says why it is where it is. AN EMPTY `first` IS A REAL ANSWER — say there is nothing owed today rather than manufacturing work, because a briefing that finds five things every morning is one people stop reading. `changed` and `ahead` include meetings from a connected Google, Microsoft or CalDAV calendar when there is one, and silently include nothing when there is not. The funnel verdict is left OFF unless you ask for it with include_verdict, because that is the weekly question and computing it roughly doubles the cost of this call. Read-only, saves nothing: log_follow_up, complete_task and move_application_stage are what act on it.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `since_days` | number | How far back 'what changed' looks. Defaults to 1, or 3 on a Monday. |
+| `ahead_days` | number | How far forward 'what is coming' looks. Default 7. |
+| `quiet_after_days` | number | Applications with nothing logged for this many days count as quiet. Default 14. |
+| `first` | number | How many items to put in the priority list. Default 5, ceiling 15. |
+| `include_verdict` | boolean | Also run the funnel diagnosis and return its headline. Default false — it roughly doubles the cost. |
+
 ### `export_funnel_image`
 
 _Export the funnel as an image_
@@ -640,7 +1185,7 @@ To-dos, each with a due date and — at most — one thing it is about: an appli
 
 _Create a task_
 
-Add a to-do, with a due date and — at most — one thing it is about. A task can hang off an application, a company, a person, a resume, a role in Me, or a note; pass the id of whichever ONE it concerns, and none of them for a task that is about nothing in particular. Passing two is refused rather than guessed at. Attaching it matters: the task shows on that record's own screen, and it goes with it if the record is ever deleted. `detail` is the room for what the task actually involves, which the title should not have to carry. Ids that are not this person's, or are in the archive, are refused.
+Add a to-do, with a due date and — at most — one thing it is about. A task can hang off an application, a company, a person, a resume, a role in Me, or a note; pass the id of whichever ONE it concerns, and none of them for a task that is about nothing in particular. Passing two is refused rather than guessed at. Attaching it matters: the task shows on that record's own screen, and it goes with it if the record is ever deleted. `detail` is the room for what the task actually involves, which the title should not have to carry. Ids that are not this person's, or are in the archive, are refused. Pass repeat_unit to make it come back: completing it creates the NEXT one and only the next one, so a month of ignored instances never materialises thirty rows the day somebody catches up. The date is stepped from the first instance's, so 'every Monday' stays on a Monday however late it is ticked off.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -653,12 +1198,15 @@ Add a to-do, with a due date and — at most — one thing it is about. A task c
 | `resumeId` | string | Or to a resume |
 | `roleId` | string | Or to a role in Me |
 | `noteId` | string | Or to a note |
+| `repeat_unit` | enum | Make it repeat. Completing it then creates the next one. Send an empty string to stop a series.  `DAY` · `WEEK` · `MONTH` |
+| `repeat_every` | number | How many units between instances. 1 unless you say otherwise. |
+| `repeat_until` | string | The last day the series may produce an instance, YYYY-MM-DD. Omit to run until stopped. |
 
 ### `complete_task`
 
 _Complete or reopen a task_
 
-Mark a task done, or reopen it with done: false.
+Mark a task done, or reopen it with done: false. When the task repeats, completing it also creates the NEXT instance and returns it as `next` — one, never one per missed week. Reopening and completing again does not make a second: the new instance points back at the one that made it, so the duplicate is refused rather than written.
 
 **Overwrites or deletes.**
 
@@ -671,7 +1219,7 @@ Mark a task done, or reopen it with done: false.
 
 _Update a task_
 
-Reword a task, move its due date, or hook it to something different. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for any of the subject ids to unhook it. Setting one subject CLEARS the others, because a task is about at most one thing — so moving a task from an application to a person is one call with contactId, not two. Use complete_task to tick it off; done is not settable here.
+Reword a task, move its due date, or hook it to something different. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for any of the subject ids to unhook it. Setting one subject CLEARS the others, because a task is about at most one thing — so moving a task from an application to a person is one call with contactId, not two. Use complete_task to tick it off; done is not settable here. THE TRAP with repeats: moving this instance's due date moves THIS instance, not the series, because every future date is stepped from the first one. Sending repeat_unit as an empty string stops the series, and completing the task is then the end of it — which is the whole off switch and is on the row somebody is already looking at.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -685,6 +1233,9 @@ Reword a task, move its due date, or hook it to something different. Only the fi
 | `resumeId` | string | Or to a resume |
 | `roleId` | string | Or to a role in Me |
 | `noteId` | string | Or to a note |
+| `repeat_unit` | enum | Make it repeat. Completing it then creates the next one. Send an empty string to stop a series.  `DAY` · `WEEK` · `MONTH` |
+| `repeat_every` | number | How many units between instances. 1 unless you say otherwise. |
+| `repeat_until` | string | The last day the series may produce an instance, YYYY-MM-DD. Omit to run until stopped. |
 
 ### `delete_task`
 

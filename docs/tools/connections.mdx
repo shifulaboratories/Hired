@@ -1,7 +1,7 @@
 ---
 title: "Account and connection tools"
 sidebarTitle: "Your account"
-description: "Fourteen tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
+description: "Twenty-three tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
 icon: "plug"
 ---
 
@@ -82,23 +82,24 @@ No arguments.
 
 _Turn the weekly summary or the daily nudge on or off_
 
-Both are OFF until somebody asks for them, and this is the only thing that turns them on. The weekly one goes out on a Monday morning and says where the search stands, what moved, what is coming and the one thing worth fixing. The daily one arrives only on a day something is actually due — an offer to answer, a company to chase, a task — and sends nothing on a quiet day, on purpose, so the one that matters does not land in a folder nobody reads. `hour` is in their own time zone. Only offer this when somebody asks for mail; nobody wants to be signed up for email by an assistant.
+All three are OFF until somebody asks, and this is the only thing that turns them on. The weekly one goes out on a Monday morning and says where the search stands. The daily one arrives only on a day something is actually due, and sends nothing on a quiet day, on purpose, so the one that matters does not land in a folder nobody reads. The MONTHLY one is the odd one out and the one worth offering at the right moment: it arrives on the last day of the month and asks for one thing that went well, so Me keeps growing after the search is over — offer it the day somebody accepts an offer, which is the day the other two should come off. It stops sending after three unanswered, because a mail ignored three times is a mail somebody has declined; logging a win, or switching it off and on, starts the count again. `hour` is in their own time zone. Only offer any of this when somebody asks for mail; nobody wants to be signed up for email by an assistant.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `weekly` | boolean | The Monday summary |
 | `daily` | boolean | The due-today nudge. Only sends on a day something is due |
-| `hour` | number | What hour both go out at, 0-23, in their own zone. Default 8 |
+| `monthly_wins` | boolean | The end-of-month ask for one thing that went well. For after the search, not during it. |
+| `hour` | number | What hour they go out at, 0-23, in their own zone. Default 8 |
 
 ### `preview_digest`
 
 _See what a digest would say_
 
-Build the weekly summary or the due-today nudge and return it WITHOUT sending anything. This is the useful one in a conversation: it is the same read the mail is made from, so 'what does my week look like' and 'what is due today' are answered without anybody's inbox being involved. Returns the subject, the opening line and the sections. `empty` true on a nudge means nothing is due, which is why no mail would go out.
+Build the weekly summary, the due-today nudge or the monthly wins ask and return it WITHOUT sending anything. This is the useful one in a conversation: it is the same read the mail is made from, so 'what does my week look like' and 'what is due today' are answered without anybody's inbox being involved. Returns the subject, the opening line and the sections. `empty` true on a nudge means nothing is due, and on a wins ask means there is no current role for a win to land on — which is why no mail would go out in either case.
 
 | Argument | Type | |
 | --- | --- | --- |
-| `kind` | enum | weekly (the Monday summary) or nudge (what is due today). Default weekly  `weekly` · `nudge` |
+| `kind` | enum | weekly (the Monday summary), nudge (what is due today) or wins (the end-of-month ask). Default weekly.  `weekly` · `nudge` · `wins` |
 
 ### `send_digest_now`
 
@@ -110,7 +111,7 @@ Actually send the weekly summary or the daily nudge to this person's own address
 
 | Argument | Type | |
 | --- | --- | --- |
-| `kind` | enum | weekly or nudge. Default weekly  `weekly` · `nudge` |
+| `kind` | enum | weekly, nudge or wins. Default weekly.  `weekly` · `nudge` · `wins` |
 
 ### `export_everything`
 
@@ -149,6 +150,26 @@ Three things a workspace needs before it does anything: one job on the board, so
 
 No arguments.
 
+### `load_sample_workspace`
+
+_Fill an empty workspace with a sample search_
+
+Write a small, plausible job search into this workspace so there is something to look at and something to practise on: four employers, six applications spread across wishlist, applied, interviewing, an offer and one that was lost, five people including a recruiter and an ex-colleague who works at two of them, four weeks of timeline, three tasks (one already overdue), two letters, a resume, and an offer that was revised a week later for eighteen thousand more — which is the thing worth showing, because it is why offers are rows here and not columns. Reach for this when somebody says the app looks empty, or when you are showing them how it works before they have anything real in it; it is a much better first minute than a tour of blank screens. Everything it writes is ORDINARY DATA written the ordinary way, so it moves, sorts, filters, exports and archives exactly like their own will. It refuses on a workspace that already has jobs, roles or highlights in it — a sample mixed into a real search is noise nobody can separate — so if they genuinely want it anyway, say what it will add and pass allow_anyway true. wipe_sample_workspace removes it afterwards, and removes only what this made: anything they have edited or added to is kept and named. Returns what was created and where to look first.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `allow_anyway` | boolean | Load it even though this workspace already has real material in it. Say what it will add first |
+
+### `wipe_sample_workspace`
+
+_Remove the sample search_
+
+Take the sample back out. It removes ONLY what load_sample_workspace wrote, from a list recorded when it wrote it — and anything the person has since edited or added to is KEPT, named in the report, and left exactly where it is, because a sample that quietly deleted a note somebody wrote on it would be worse than no sample. A sample company still holding an application they kept stays too. This is permanent for what it does delete, so say roughly what is about to go and get a plain yes; there is no undo and nothing lands in the archive. Returns what was deleted, what was kept and WHY each survivor was kept, plus `complete`, which is false when anything is still held — a false there means the sample is not fully gone and the report names every piece, so read it back rather than reporting success. Call it again later and it picks up from where it stopped.
+
+**Overwrites or deletes.**
+
+No arguments.
+
 ### `restart_tour`
 
 _Show the welcome tour again_
@@ -157,11 +178,61 @@ Queue the web app's welcome tour to run again the next time this person opens it
 
 No arguments.
 
+### `list_changes`
+
+_What each assistant changed_
+
+Every write that arrived over MCP, newest first: which connection made it, which tool ran, what it touched and one line saying so. Reach for it when somebody asks what an assistant actually did, when something looks wrong and nobody remembers changing it, or before undo_change so you can name the change rather than guessing at it. Saves made in the app's own screens are NOT here, deliberately — the person was there. Versions are kept for both paths, so an edit made in the editor is still recoverable, just not listed. `undoable` and `restorePointAt` are the important pair: only writes that replace a resume or a role are versioned, and `restorePointAt` is the moment the record would go back to, which is often EARLIER than the change itself because versions are coalesced within ten minutes per author. Say that date out loud before undoing — 'this puts it back to how it was at 14:02, before three edits' — and get a yes. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `connection_id` | string | Only changes made through this connection, from list_connections |
+| `tool` | string | Only calls of this tool, e.g. 'update_resume' |
+| `kind` | string | Only changes to this sort of thing: resume, role, application, contact, offer… |
+| `record_id` | string | Only changes to this one record |
+| `limit` | number | How many to return. Default 50, ceiling 500. |
+
+### `list_revisions`
+
+_Earlier versions of a resume or a role_
+
+Every stored version of one resume or one role, newest first, with when it was taken and who caused it. These are BEFORE images: each row is what the record looked like before a write replaced it, so the newest row is where an undo lands. Reach for it before update_resume or update_role on something that matters, so you can tell them what they can get back to, and after a write that went wrong. Versions are taken only when the whole thing is replaced — changing a resume's font or its name does not make one — and they are COALESCED: one per record per author per ten minutes, keeping the OLDER image, so a version is the record as it stood before a sitting of work rather than before a keystroke. At most twenty are kept per record and old ones are swept on this instance's schedule, so this is a safety net rather than an archive. `recordExists` false means the record was deleted, and nothing here can be restored to it. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `kind` | enum | **required** — Which sort of record. These are the only two that are versioned.  `RESUME` · `ROLE` |
+| `record_id` | string | **required** — The resume id or the role id |
+| `limit` | number | How many versions to return. Default and ceiling 20. |
+
+### `restore_revision`
+
+_Put a stored version back_
+
+Replace a resume's document, or a role's fields, with a version stored earlier. Reach for it when a write went wrong and they want it back, and reach for undo_change instead when what they can name is the CHANGE rather than the version. SAY WHAT WILL HAPPEN AND GET A YES FIRST: this replaces the current state, and the date on the version is often earlier than the change they are thinking of, because versions are coalesced within ten minutes per author — restoring can take them back past several edits. The restore is itself undoable: it takes a fresh version of the current state on its way past, and the result names it as `redoRevisionId`. For a resume only the DOCUMENT comes back — the template, font, size, margins and any published link are left exactly as they are, because silently changing a font back is a surprise and a restore must never resurrect a withdrawn public address. `changed` false means the record already matched that version, and you should say so rather than reporting work that did not happen. Refuses, without writing anything, when the stored version does not parse or the record has been deleted.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Revision id, from list_revisions |
+
+### `undo_change`
+
+_Put back what one change replaced_
+
+Undo one row from list_changes. Only writes that replace a resume or a role can be undone, because they are the only two the app takes a copy of on the way past — everything else in the log is a line for the eye. Deleting a company, a person or an application is undone from the archive with restore_records; deleting a role, a resume, a letter, a task or a tag cannot be undone at all, and their tool descriptions say so before they run. SAY WHERE IT LANDS AND GET A YES FIRST: `restorePointAt` on the change is often earlier than the change itself, because versions are coalesced within ten minutes per author, so undoing one edit can take them back past three. The undo is itself undoable — it takes a version of the current state on the way past and names it as `redoRevisionId`. Refuses, without writing anything, when there is no stored version from before that change: it may have been swept, or it may predate version history on this instance.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Change id, from list_changes |
+
 ### `list_connections`
 
 _List AI connections_
 
-Every assistant wired to this workspace: what it is called, which client it was set up for, when it last called in and from what. Reach for it to answer 'which of these am I still using?' or before rotating something — the ids come back here. Tokens deliberately do not: they are credentials, they would sit in this transcript forever, and the only place a person needs to see one is the client they are pasting it into. `isThisOne` marks the connection you are calling through right now.
+Every assistant wired to this workspace: what it is called, which client it was set up for, when it last called in and from what. Reach for it to answer 'which of these am I still using?' or before rotating something — the ids come back here. Tokens deliberately do not: they are credentials, they would sit in this transcript forever, and the only place a person needs to see one is the client they are pasting it into. `isThisOne` marks the connection you are calling through right now, and `scope` says what each one is SERVED — FULL is everything, and a narrowed one is offered fewer tools without being able to do less to the account. set_connection_scope changes it.
 
 No arguments.
 
@@ -189,6 +260,19 @@ Change what a connection is called in the list. Names are for the person, not th
 | `id` | string | **required** — Connection id |
 | `name` | string | **required** — The new name |
 
+### `set_connection_scope`
+
+_Narrow what a connection is served_
+
+Change which tools one client is offered. Four choices: `FULL` is everything, `WRITING` is Me, resumes and letters plus the four reads a document needs about the job it is aimed at, `PIPELINE` is the search — applications, people, the archive, mail and calendar — and `READONLY` is every tool on this server that writes nothing. Narrowing is a ROUTING AID, NOT A PERMISSION: the URL still resolves to the whole account, anybody who can sign in can widen it again, and it is never a reason to hand a connection URL to somebody you would not hand the account to. What it is good for is accuracy and cost — a client choosing between two hundred tools picks the wrong one more often than one choosing between sixty, and the wrong one here writes into somebody's career history. It takes effect on that client's next call, and a client that caches the tool list may need reconnecting to notice. Say which connection and which scope before you call it, because a narrowed client silently stops being able to do things its person may be in the middle of. Get the id from list_connections, which also says what each one is scoped to now.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Connection id, from list_connections |
+| `scope` | enum | **required** — FULL, WRITING, PIPELINE or READONLY  `FULL` · `WRITING` · `PIPELINE` · `READONLY` |
+
 ### `rotate_connection`
 
 _Issue a new token for a connection_
@@ -200,6 +284,26 @@ Kill a connection's URL and issue a fresh one on the same row, keeping its name 
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Connection id, from list_connections |
+
+### `get_capture_link`
+
+_The link that captures a posting from a phone_
+
+The private address that turns a job posting into an application without opening the app, plus the one-line bookmarklet built around it. This is the answer to "I find jobs on my phone and I am not going to open a laptop to save one": tap the bookmark on a posting, the page is read server-side, and the job lands on the wishlist. Returns the URL, the bookmarklet to paste into a bookmark, how many postings it has captured and when it was last used — or `exists` false when none has been minted, which is the default for every account. THE URL IS A CREDENTIAL: anyone holding it can add applications to this workspace. It is far narrower than a connection URL — it cannot read anything and it can do nothing else — but never repeat it anywhere it will be stored, and it is shown in Settings → Connections for them to copy themselves. Read-only.
+
+No arguments.
+
+### `set_capture_link`
+
+_Mint, rotate or revoke the capture link_
+
+Create the capture link, replace it, or switch it off. Minting hands back the URL and the bookmarklet; MINTING WHEN ONE ALREADY EXISTS ROTATES IT, which kills the old URL immediately — every bookmark and Shortcut built on it stops working and has to be replaced, so only do it when they say the link has leaked or they want a new one. `off` true revokes it: the address goes back to answering 404 for everybody, and nothing already captured is touched. Tell them which of the three you are about to do, in those words, before you call it. The link is capped at thirty captures an hour, which is generous for a person and useless to anyone who found it, and it should never be pasted anywhere that unfurls links — a preview bot following it would fire it.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `off` | boolean | Revoke the link instead of minting one. Nothing already captured is affected |
 
 ### `delete_connection`
 

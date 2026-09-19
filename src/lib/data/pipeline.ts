@@ -1,4 +1,4 @@
-import { ActivityType, Prisma, Stage } from "@prisma/client";
+import { ActivityType, Prisma, Stage, type TaskRepeat } from "@prisma/client";
 import { db } from "@/lib/db";
 import { pick } from "@/lib/data/patch";
 import { DAY, hasGoneQuiet, lastTouchAt, quietDaysFor } from "@/lib/quiet";
@@ -13,6 +13,10 @@ import {
 } from "@/lib/data/tags";
 import { archiveRecords } from "@/lib/data/archive";
 import { applyStageTemplates } from "@/lib/data/stage-templates";
+import { cadenceFor, followUpForMove } from "@/lib/data/stage-cadence";
+import { assertEvery, nextOccurrence } from "@/lib/data/recurrence";
+import { applyReferralThanks } from "@/lib/data/referrals";
+import { toDate } from "@/lib/time";
 import { timeZoneOf } from "@/lib/data/me";
 import { atHourInDays, civilDay, civilInstant, endOfDay, startOfWeek } from "@/lib/time";
 import {
@@ -137,6 +141,17 @@ export const ACTIVITY_OPTIONS: ActivityType[] = [
 ];
 
 export const TERMINAL_STAGES: Stage[] = ["ACCEPTED", "LOST"];
+
+/**
+ * Re-exported from src/lib/time.ts, where it moved when referrals.ts needed it.
+ *
+ * pipeline.ts imports referrals.ts to fire thank-you nudges on a converting
+ * move, so referrals.ts importing this back would be a cycle — the same shape
+ * stage-templates.ts avoids by importing nothing from here. Eight modules
+ * already say `from "@/lib/data/pipeline"` for it, and moving the function
+ * without keeping the name here would be eight edits for no gain.
+ */
+export { toDate } from "@/lib/time";
 
 /**
  * Why an ending happened is a LOSS tag now, not a stage.
@@ -938,29 +953,6 @@ function cleanLinks(values: string[]): string[] {
 }
 
 
-/**
- * A date argument, as an instant.
- *
- * A bare "2026-03-14" is a CIVIL date — somebody picked a day off a calendar,
- * or an assistant repeated one back — and `new Date` reads it as UTC midnight,
- * which is the 13th for everyone west of Greenwich. It lands at 9am in their
- * own zone instead: the same hour every date this app sets itself uses, so a
- * follow-up picked by hand behaves exactly like one the app worked out. Values
- * that already carry a time are instants and pass through untouched.
- */
-export function toDate(
-  timeZone: string,
-  value: Date | string | null | undefined,
-): Date | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null || value === "") return null;
-  if (typeof value === "string") {
-    const civil = civilInstant(timeZone, value, 9);
-    if (civil) return civil;
-  }
-  const d = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
 
 /**
  * One end of a date window.
@@ -1060,7 +1052,8 @@ export async function createApplication(userId: string, input: ApplicationInput)
       },
       notes: input.notes ?? "",
       appliedAt,
-      nextFollowUpAt: toDate(zone, input.nextFollowUpAt) ?? defaultFollowUp(zone, stage),
+      nextFollowUpAt:
+        toDate(zone, input.nextFollowUpAt) ?? (await defaultFollowUp(userId, zone, stage)),
       resumeId: input.resumeId ?? null,
     },
     include: applicationInclude,
@@ -1164,6 +1157,51 @@ const CAPTURE_CONCURRENCY = 4;
  * Nothing is created for a page that did not name an employer and a role, and
  * one bad URL never costs the other nine.
  */
+/**
+ * What makes two applications the same job: employer and role title, trimmed
+ * and lower-cased.
+ *
+ * It lived inside captureJobPostings until a board watch and the capture
+ * endpoint needed the same answer. Two places deciding what a duplicate is, is
+ * how one of them starts creating them.
+ */
+export const applicationKey = (company: string, roleTitle: string) =>
+  `${company.trim().toLowerCase()}\u0000${roleTitle.trim().toLowerCase()}`;
+
+/**
+ * Create an application unless that employer and role title are already live.
+ *
+ * Exists so the two callers that can fire twice for one job — accepting a board
+ * watch's proposal a week after it was queued, and tapping the capture
+ * bookmarklet from a phone and then again from a laptop — cannot make a second
+ * row. Archived rows do not count: somebody who binned a job and then captured
+ * it again meant to.
+ */
+export async function createApplicationIfNew(
+  userId: string,
+  input: ApplicationInput,
+): Promise<
+  | { created: true; application: Awaited<ReturnType<typeof createApplication>> }
+  | { created: false; existingId: string; company: string; roleTitle: string }
+> {
+  const wanted = applicationKey(input.company, input.roleTitle);
+  // Archive filter, spelled by hand: an archived duplicate is not a duplicate.
+  const existing = await db.application.findMany({
+    where: { userId, archivedAt: null },
+    select: { id: true, roleTitle: true, company: { select: { name: true } } },
+  });
+  const already = existing.find((row) => applicationKey(row.company.name, row.roleTitle) === wanted);
+  if (already) {
+    return {
+      created: false,
+      existingId: already.id,
+      company: already.company.name,
+      roleTitle: already.roleTitle,
+    };
+  }
+  return { created: true, application: await createApplication(userId, input) };
+}
+
 export async function captureJobPostings(userId: string, urls: string[]): Promise<BatchCaptureResult> {
   const clean = [...new Set(urls.map((url) => url.trim()).filter(Boolean))];
   const result: BatchCaptureResult = { captured: [], duplicates: [], failed: [] };
@@ -1183,9 +1221,6 @@ export async function captureJobPostings(userId: string, urls: string[]): Promis
     parsedByUrl.push(...batch);
   }
 
-  const key = (company: string, roleTitle: string) =>
-    `${company.trim().toLowerCase()}\u0000${roleTitle.trim().toLowerCase()}`;
-
   // Everything live already on file, so a paste of this morning's browsing does
   // not re-add what last week's did.
   const existing = await db.application.findMany({
@@ -1194,7 +1229,7 @@ export async function captureJobPostings(userId: string, urls: string[]): Promis
   });
   const seen = new Map<string, { id: string; company: string; roleTitle: string }>();
   for (const row of existing) {
-    seen.set(key(row.company.name, row.roleTitle), {
+    seen.set(applicationKey(row.company.name, row.roleTitle), {
       id: row.id,
       company: row.company.name,
       roleTitle: row.roleTitle,
@@ -1217,7 +1252,7 @@ export async function captureJobPostings(userId: string, urls: string[]): Promis
       continue;
     }
 
-    const k = key(parsed.company, parsed.roleTitle);
+    const k = applicationKey(parsed.company, parsed.roleTitle);
     const already = seen.get(k);
     if (already) {
       result.duplicates.push({
@@ -1334,20 +1369,17 @@ export async function updateApplication(
   );
 }
 
-/** Days after entering a stage that a nudge should fire. */
-const FOLLOW_UP_DAYS: Partial<Record<Stage, number>> = {
-  APPLIED: 7,
-  // Four days, which is what screening and interviewing both used. The final
-  // round's three is gone with the stage: the tighter number belonged to the
-  // last conversation, and there is no longer a column that says which one
-  // that is. A round is the person's note to themselves, not a rule.
-  INTERVIEWING: 4,
-  OFFER: 2,
-};
-
-function defaultFollowUp(timeZone: string, stage: Stage): Date | null {
-  const days = FOLLOW_UP_DAYS[stage];
-  if (!days) return null;
+/**
+ * The date a new application's follow-up is armed for.
+ *
+ * The built-in numbers moved to src/lib/data/stage-cadence.ts, where a person
+ * can override them per stage. This reads through to whatever they set and
+ * falls back to exactly the old numbers when they have set nothing, so no
+ * existing date moved when cadences landed.
+ */
+async function defaultFollowUp(userId: string, timeZone: string, stage: Stage): Promise<Date | null> {
+  const days = await cadenceFor(userId, stage);
+  if (days === null) return null;
   return inDays(timeZone, days);
 }
 
@@ -1423,6 +1455,11 @@ export async function moveApplicationStage(
     /** Why it ended, as LOSS tag names or ids. Only read when moving to LOST. */
     lossTagIds?: string[];
     lossReasons?: string[];
+    /**
+     * Override the stage's cadence for this move only. A number arms that many
+     * days out; null clears the date outright; omitting it uses the cadence.
+     */
+    followUpInDays?: number | null;
   },
 ) {
   const current = await db.application.findFirst({ where: { id, userId } });
@@ -1439,7 +1476,18 @@ export async function moveApplicationStage(
     data.nextFollowUpAt = null;
   } else {
     data.closedAt = null;
-    data.nextFollowUpAt = defaultFollowUp(zone, stage);
+    // `undefined` means "leave the existing date alone", which is what
+    // followUpForMove returns for a date somebody set by hand for next Tuesday.
+    // Assigning it would be a no-op in Prisma anyway; the explicit branch is so
+    // a reader can see that the rule exists rather than inferring it.
+    const armed = await followUpForMove(
+      userId,
+      stage,
+      zone,
+      current.nextFollowUpAt,
+      extra?.followUpInDays,
+    );
+    if (armed !== undefined) data.nextFollowUpAt = armed;
   }
 
   // The round is a record of how far this got, so nothing here clears it —
@@ -1492,7 +1540,16 @@ export async function moveApplicationStage(
   const addedTasks =
     current.stage === stage ? [] : await applyStageTemplates(userId, id, stage, zone);
 
-  return { ...updated, addedTasks };
+  // A referral that converted and was never acknowledged is the most expensive
+  // unclosed loop in a search, and it is invisible in every other record here.
+  // Deduped on the referral's own thankTaskId, so bouncing between INTERVIEWING
+  // and APPLIED cannot stack up thank-yous.
+  const { created: thankYous } =
+    current.stage === stage
+      ? { created: [] }
+      : await applyReferralThanks(userId, id, stage);
+
+  return { ...updated, addedTasks, thankYous };
 }
 
 function stageActivityType(stage: Stage): ActivityType {
@@ -1878,21 +1935,77 @@ export async function createTask(
     title: string;
     detail?: string;
     dueAt?: Date | string | null;
-  } & TaskSubjectInput,
+  } & TaskSubjectInput &
+    RepeatInput,
 ) {
   const title = input.title.trim();
   if (!title) throw new Error("A task needs a title");
   const subject = await taskSubject(userId, input);
+  const zone = await timeZoneOf(userId);
+  const dueAt = toDate(zone, input.dueAt) ?? null;
+  const repeat = repeatFields(zone, input, dueAt);
   return db.task.create({
     data: {
       userId,
       title,
       detail: input.detail ?? "",
-      dueAt: toDate(await timeZoneOf(userId), input.dueAt) ?? null,
+      dueAt,
       ...subject,
+      ...repeat,
     },
     include: taskSubjectInclude,
   });
+}
+
+/** The three recurrence arguments, read the same way by create and update. */
+export type RepeatInput = {
+  repeatUnit?: TaskRepeat | null;
+  repeatEvery?: number;
+  repeatUntil?: Date | string | null;
+};
+
+/**
+ * Turn the recurrence arguments into columns.
+ *
+ * The anchor is set once, from the due date the series starts on, and never
+ * moved afterwards — every later date is stepped from it. A task set to repeat
+ * with no due date anchors on now, because "every Monday" starting from nothing
+ * has to start from somewhere and today is the only honest answer.
+ *
+ * Passing `repeatUnit: null` clears the whole series, anchor included, so a
+ * later re-repeat starts from its new due date rather than from a date months
+ * ago that nobody remembers setting.
+ */
+function repeatFields(
+  zone: string,
+  input: RepeatInput,
+  dueAt: Date | null,
+  existingAnchor?: Date | null,
+): {
+  repeatUnit?: TaskRepeat | null;
+  repeatEvery?: number;
+  repeatUntil?: Date | null;
+  repeatAnchor?: Date | null;
+} {
+  if (input.repeatUnit === undefined && input.repeatEvery === undefined && input.repeatUntil === undefined) {
+    return {};
+  }
+  if (input.repeatUnit === null) {
+    return { repeatUnit: null, repeatEvery: 1, repeatUntil: null, repeatAnchor: null };
+  }
+  const fields: {
+    repeatUnit?: TaskRepeat | null;
+    repeatEvery?: number;
+    repeatUntil?: Date | null;
+    repeatAnchor?: Date | null;
+  } = {};
+  if (input.repeatUnit !== undefined) {
+    fields.repeatUnit = input.repeatUnit;
+    fields.repeatAnchor = existingAnchor ?? dueAt ?? new Date();
+  }
+  if (input.repeatEvery !== undefined) fields.repeatEvery = assertEvery(input.repeatEvery);
+  if (input.repeatUntil !== undefined) fields.repeatUntil = toDate(zone, input.repeatUntil) ?? null;
+  return fields;
 }
 
 export async function listTasks(userId: string, options?: { done?: boolean; limit?: number }) {
@@ -1923,7 +2036,8 @@ export async function updateTask(
     title?: string;
     detail?: string;
     dueAt?: Date | string | null;
-  } & TaskSubjectInput,
+  } & TaskSubjectInput &
+    RepeatInput,
 ) {
   // Read first, write by id: the same shape as updateContact, and the only way
   // to write a relation — updateMany cannot connect one.
@@ -1937,26 +2051,85 @@ export async function updateTask(
     data.title = title;
   }
   if (patch.detail !== undefined) data.detail = patch.detail;
-  if (patch.dueAt !== undefined) data.dueAt = toDate(await timeZoneOf(userId), patch.dueAt);
+  const zone = await timeZoneOf(userId);
+  if (patch.dueAt !== undefined) data.dueAt = toDate(zone, patch.dueAt);
   const subject = await taskSubject(userId, patch);
+  // The anchor survives an edit to the due date: moving one instance moves that
+  // instance, not the whole series off its Monday.
+  const repeat = repeatFields(zone, patch, current.dueAt, current.repeatAnchor);
   return db.task.update({
     where: { id },
     // Scalar foreign keys rather than connect/disconnect: `taskSubject` already
     // returns every column it means to move, including the ones it is clearing,
     // and expressing five of those as relation ops is five times the code for
     // the same UPDATE.
-    data: { ...data, ...subject },
+    data: { ...data, ...subject, ...repeat },
     include: taskSubjectInclude,
   });
 }
 
+/**
+ * Tick a task off, and make the next one when it repeats.
+ *
+ * The next instance is stepped from `repeatAnchor` — the first instance's due
+ * date — and lands on the first occurrence AFTER now. Stepping from the anchor
+ * rather than from this task's own date is what keeps "every Monday" on a
+ * Monday after somebody ticks one off three weeks late, and it is also what
+ * stops a month of ignored instances materialising forty rows the day they
+ * catch up: there is one next task, not one per missed week.
+ *
+ * `repeatFrom` is the dedupe. A completion that finds a task already pointing
+ * back at this one makes nothing, so complete, reopen and complete again cannot
+ * produce two — the same shape as the checklist's dedupe on stageTemplateId.
+ */
 export async function setTaskDone(userId: string, id: string, done: boolean) {
   const { count } = await db.task.updateMany({
     where: { id, userId },
     data: { done, doneAt: done ? new Date() : null },
   });
   if (count === 0) throw new Error(`No task with id ${id}`);
-  return db.task.findFirstOrThrow({ where: { id, userId } });
+  const task = await db.task.findFirstOrThrow({ where: { id, userId } });
+
+  if (!done || !task.repeatUnit) return { task, next: null };
+
+  const already = await db.task.findFirst({
+    where: { userId, repeatFrom: task.id },
+    select: { id: true },
+  });
+  if (already) return { task, next: null };
+
+  const zone = await timeZoneOf(userId);
+  const due = nextOccurrence(
+    zone,
+    {
+      unit: task.repeatUnit,
+      every: task.repeatEvery,
+      until: task.repeatUntil,
+      anchor: task.repeatAnchor ?? task.dueAt ?? task.createdAt,
+    },
+    new Date(),
+  );
+  // Past `until`: the series is over, and the task that just closed was its
+  // last. Nothing is created and nothing says otherwise.
+  if (!due) return { task, next: null };
+
+  const next = await db.task.create({
+    data: {
+      userId,
+      title: task.title,
+      detail: task.detail,
+      dueAt: due,
+      applicationId: task.applicationId,
+      companyId: task.companyId,
+      contactId: task.contactId,
+      repeatUnit: task.repeatUnit,
+      repeatEvery: task.repeatEvery,
+      repeatUntil: task.repeatUntil,
+      repeatAnchor: task.repeatAnchor ?? task.dueAt ?? task.createdAt,
+      repeatFrom: task.id,
+    },
+  });
+  return { task, next };
 }
 
 export async function deleteTask(userId: string, id: string) {
@@ -2357,7 +2530,7 @@ export async function dueNow(
  * here, so this file — which client components import for its constants —
  * never reaches the provider code and its Node-only libraries.
  */
-export type ScheduleKind = "FOLLOW_UP" | "TASK" | "ACTIVITY" | "MEETING" | "OFFER";
+export type ScheduleKind = "FOLLOW_UP" | "TASK" | "ACTIVITY" | "MEETING" | "OFFER" | "INTERVIEW";
 
 export type ScheduleEntry = {
   kind: ScheduleKind;
@@ -2916,27 +3089,39 @@ export async function listRelationships(userId: string, now = new Date()): Promi
     };
   });
 
-  // What a person is worth, for ordering only. A direct interview outranks a
-  // company one because the evidence behind it is stronger, and neither is a
-  // score anybody is shown — the two counts are.
-  const weight = (row: ContactStanding) =>
+  const sorted = [...standings].sort(
+    (a, b) => relationshipWeight(b) - relationshipWeight(a) || b.quietDays - a.quietDays,
+  );
+
+  return {
+    contacts: sorted,
+    worthKeepingWarm: sorted.filter(
+      (row) => relationshipWeight(row) > 0 && (row.pingDue || row.quietDays >= CONTACT_QUIET_AFTER),
+    ),
+    // One contact and one application cannot tell anybody who matters.
+    confident: contacts.length >= 3 && applications.length >= 3,
+  };
+}
+
+/**
+ * What a person is worth, for ORDERING only. A direct interview outranks a
+ * company one because the evidence behind it is stronger, and neither is a
+ * score anybody is shown — the two counts are.
+ *
+ * Exported, and hoisted out of `listRelationships` for that, because
+ * `contactWarmth` in analytics.ts multiplies it by a decay curve. A second copy
+ * of this arithmetic would drift, and then two screens would disagree about who
+ * matters, which is the one thing this number exists to settle.
+ */
+export function relationshipWeight(row: ContactStanding) {
+  return (
     row.direct.offers * 8 +
     row.direct.interviews * 4 +
     row.direct.applications * 2 +
     row.atCompany.offers * 2 +
     row.atCompany.interviews +
-    row.atCompany.applications * 0.25;
-
-  const sorted = [...standings].sort((a, b) => weight(b) - weight(a) || b.quietDays - a.quietDays);
-
-  return {
-    contacts: sorted,
-    worthKeepingWarm: sorted.filter(
-      (row) => weight(row) > 0 && (row.pingDue || row.quietDays >= CONTACT_QUIET_AFTER),
-    ),
-    // One contact and one application cannot tell anybody who matters.
-    confident: contacts.length >= 3 && applications.length >= 3,
-  };
+    row.atCompany.applications * 0.25
+  );
 }
 
 /** Days of silence after which a contact who earned something is worth a nudge. */

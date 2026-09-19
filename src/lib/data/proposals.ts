@@ -14,8 +14,11 @@ import * as pipeline from "@/lib/data/pipeline";
  * The safety story, because this is the one place in the app where a stored
  * blob turns into a write:
  *
- * - **A closed set of kinds.** Five, each mapping to exactly one data-layer
+ * - **A closed set of kinds.** Six, each mapping to exactly one data-layer
  *   call. There is no "run this tool" proposal and there should never be one.
+ *   The sixth, CREATE_APPLICATION, is the one a board watch queues, and its
+ *   payload is the posting ALREADY PARSED — never a URL for accept to go and
+ *   fetch, which would give this queue a property none of the rest of it has.
  * - **Validated twice.** Once when it is queued, so a malformed proposal is
  *   refused rather than sitting there looking legitimate, and again on accept,
  *   because the world moves between the two.
@@ -32,6 +35,7 @@ export const PROPOSAL_KINDS = [
   "CREATE_TASK",
   "SET_FOLLOW_UP",
   "CREATE_CONTACT",
+  "CREATE_APPLICATION",
 ] as const satisfies readonly ProposalKind[];
 
 export const PROPOSAL_LABEL: Record<ProposalKind, string> = {
@@ -40,6 +44,7 @@ export const PROPOSAL_LABEL: Record<ProposalKind, string> = {
   CREATE_TASK: "Add a task",
   SET_FOLLOW_UP: "Change the follow-up",
   CREATE_CONTACT: "Add a person",
+  CREATE_APPLICATION: "Add to the board",
 };
 
 type Payload = Record<string, unknown>;
@@ -108,6 +113,12 @@ function complain(kind: ProposalKind, payload: Payload): string | null {
       return null;
     case "CREATE_CONTACT":
       return str(payload, "name") ? null : "create_contact needs a name";
+    case "CREATE_APPLICATION": {
+      // The same two things captureJobPosting refuses to guess.
+      if (!str(payload, "company")) return "create_application needs an employer";
+      if (!str(payload, "roleTitle")) return "create_application needs a role title";
+      return null;
+    }
   }
 }
 
@@ -312,6 +323,25 @@ async function dispatch(userId: string, kind: ProposalKind, payload: Payload): P
         companyIds: list(payload, "companyIds") ?? (str(payload, "companyId") ? [str(payload, "companyId")!] : undefined),
       });
       return `Added ${contact.name} to your people.`;
+    }
+    case "CREATE_APPLICATION": {
+      // One data-layer call, and nothing here touches the network: the payload
+      // carries the posting a board watch already read.
+      const result = await pipeline.createApplicationIfNew(userId, {
+        company: str(payload, "company")!,
+        companyWebsite: str(payload, "companyWebsite"),
+        roleTitle: str(payload, "roleTitle")!,
+        stage: "WISHLIST",
+        jobUrl: str(payload, "jobUrl"),
+        jobDescription: str(payload, "jobDescription"),
+        location: str(payload, "location"),
+        workMode: str(payload, "workMode"),
+        salaryRange: str(payload, "salaryRange"),
+        sources: list(payload, "sources"),
+      });
+      return result.created
+        ? `Added ${result.application.roleTitle} at ${result.application.company.name} to your wishlist.`
+        : `${result.roleTitle} at ${result.company} is already on your board. Nothing was created.`;
     }
   }
 }

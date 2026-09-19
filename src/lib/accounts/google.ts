@@ -31,9 +31,16 @@ import {
  * returns the shapes in types.ts; who the token belongs to is the data
  * layer's business, and nothing in this file touches the database.
  *
- * Read-only by construction. The scopes asked for cannot send, label, delete
- * or accept anything, and no function here issues anything but GET — except
- * the token endpoint, which is how a refresh token becomes a usable one.
+ * Read-only, with ONE exception that is not in this file. The scopes asked for
+ * here cannot send, label, delete or accept anything, and no function here
+ * issues anything but GET — except the token endpoint, which is how a refresh
+ * token becomes a usable one.
+ *
+ * The exception is src/lib/accounts/send.ts, which posts one message to Gmail's
+ * send endpoint on a member's explicit instruction, under the gmail.send scope,
+ * which a person grants separately by reconnecting. It is a separate file so
+ * this sentence stays true of this one, and so nothing that reads can ever
+ * accidentally write.
  */
 
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";

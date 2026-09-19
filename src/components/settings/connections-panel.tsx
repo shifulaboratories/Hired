@@ -34,11 +34,26 @@ import {
 } from "@/components/settings/accounts";
 import { cn } from "@/lib/utils";
 import { MCP_CLIENTS, clientName } from "@/lib/mcp/clients";
+import type { McpScope } from "@prisma/client";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SCOPES, scopeBlurb, scopeLabel } from "@/lib/mcp/scopes";
 import {
   createConnectionAction,
   deleteConnectionAction,
+  mintCaptureLinkAction,
   renameConnectionAction,
+  revokeCaptureLinkAction,
   rotateConnectionAction,
+  setConnectionScopeAction,
+  setMailSweepAction,
   testConnectionAction,
 } from "@/server/actions";
 
@@ -62,6 +77,8 @@ export type ConnectionRow = {
   name: string;
   client: string;
   token: string;
+  /** What this one is SERVED. Not a permission — see src/lib/mcp/scopes.ts. */
+  scope: McpScope;
   lastUsedAt: string | null;
   lastUsedFrom: string;
 };
@@ -73,6 +90,24 @@ export type AccountsProps = {
   microsoftReady: boolean;
   /** The outcome of a connect that just came back from a provider, if one did. */
   notice: { ok: boolean; message: string } | null;
+  /** The mail sweep, which reads these accounts on a schedule. Off by default. */
+  sweep: {
+    on: boolean;
+    lastRunAt: string | null;
+    note: string;
+    mailConnected: boolean;
+    calendarConnected: boolean;
+  };
+};
+
+/** The one-act credential that captures a posting from a phone. */
+export type CaptureLinkProps = {
+  exists: boolean;
+  url: string;
+  bookmarklet: string;
+  captured: number;
+  lastUsedAt: string | null;
+  note: string;
 };
 
 function ago(iso: string | null) {
@@ -257,6 +292,7 @@ function ConnectionSheet({
   const [renaming, setRenaming] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [client, setClient] = useState(connection.client);
+  const [scope, setScope] = useState<McpScope>(connection.scope);
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
   // Two transitions, not one: testing a connection and rotating its token are
   // different waits, and sharing a pending flag put a spinner on the Test
@@ -432,6 +468,50 @@ function ConnectionSheet({
             <p className="text-muted-foreground text-xs">
               This URL is a password for your account. Anyone holding it can read and write
               your career history, resumes and pipeline.
+            </p>
+          </div>
+
+          {/* One select, no new screen.
+              Narrowing is about ACCURACY first: an assistant choosing between
+              two hundred tools picks the wrong one more often than one choosing
+              between sixty, and the wrong one here writes into a career
+              history. It is deliberately not described as a permission, because
+              it is not one — the sentence underneath says so in those words. */}
+          <div className="space-y-1.5">
+            <Label htmlFor={`scope-${connection.id}`} className="text-[13px] font-semibold">
+              What this one is served
+            </Label>
+            <Select
+              value={scope}
+              onValueChange={(next) => {
+                const chosen = next as McpScope;
+                setScope(chosen);
+                startTransition(async () => {
+                  try {
+                    await setConnectionScopeAction(connection.id, chosen);
+                    toast.success(`Now served ${scopeLabel(chosen).toLowerCase()}`);
+                  } catch (error) {
+                    setScope(connection.scope);
+                    toast.error(error instanceof Error ? error.message : "Could not change that.");
+                  }
+                });
+              }}
+            >
+              <SelectTrigger id={`scope-${connection.id}`} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SCOPES.map((entry) => (
+                  <SelectItem key={entry.key} value={entry.key}>
+                    {entry.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              {scopeBlurb(scope)} This is not a permission — the URL still reaches the whole
+              account, and anybody who can sign in can widen it again. It narrows what the
+              assistant is offered, which is what makes it pick the right tool.
             </p>
           </div>
 
@@ -723,6 +803,7 @@ export function ConnectionsPanel({
   isAdmin,
   promptCount,
   accounts,
+  captureLink,
 }: {
   baseUrl: string;
   connections: ConnectionRow[];
@@ -731,8 +812,11 @@ export function ConnectionsPanel({
   isAdmin: boolean;
   promptCount: number;
   accounts: AccountsProps;
+  captureLink: CaptureLinkProps;
 }) {
   const [pending, startTransition] = useTransition();
+  const [sweeping, startSweeping] = useTransition();
+  const [capturing, startCapturing] = useTransition();
   const [picking, setPicking] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [openAccountId, setOpenAccountId] = useState<string | null>(null);
@@ -889,6 +973,136 @@ export function ConnectionsPanel({
           )}
           Add an assistant or an account
         </button>
+      </section>
+
+      {/* Two settings, not two screens.
+          The sweep and the capture link both belong to the wiring above — one
+          reads the accounts, the other is a narrower credential than the
+          connection URLs — so they sit under the list rather than growing a tab
+          apiece. Neither costs a click in its default, off, state. */}
+      <section className="space-y-3 rounded-xl border px-4 py-3.5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <Label htmlFor="mail-sweep" className="text-[13.5px] font-medium">
+              Read new mail and queue what it finds
+            </Label>
+            <p className="text-muted-foreground mt-0.5 text-[13px]">
+              Once an hour, look through the accounts above for mail from the companies and people
+              already on your pipeline{accounts.sweep.calendarConnected ? ", and at meetings booked with them," : ""}{" "}
+              and put what it finds on your dashboard to accept or dismiss. It never writes to your
+              pipeline on its own, and it never looks outside the addresses your own records name.
+            </p>
+            {!accounts.sweep.mailConnected && (
+              <p className="text-faint mt-1 text-[12px]">
+                Connect a mailbox above and this switch starts working.
+              </p>
+            )}
+            {accounts.sweep.on && accounts.sweep.lastRunAt && (
+              <p className="text-faint mt-1 text-[12px]">
+                Last looked {ago(accounts.sweep.lastRunAt)}
+                {accounts.sweep.note ? ` · ${accounts.sweep.note}` : ""}
+              </p>
+            )}
+          </div>
+          <Switch
+            id="mail-sweep"
+            checked={accounts.sweep.on}
+            disabled={!accounts.sweep.mailConnected || sweeping}
+            onCheckedChange={(next) =>
+              startSweeping(async () => {
+                try {
+                  await setMailSweepAction(next);
+                  toast.success(next ? "The sweep is on" : "The sweep is off");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Could not change that.");
+                }
+              })
+            }
+          />
+        </div>
+
+        <div className="border-t pt-3">
+          {captureLink.exists ? (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[13.5px] font-medium">Capture link</p>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    disabled={capturing}
+                    onClick={() =>
+                      startCapturing(async () => {
+                        await mintCaptureLinkAction();
+                        toast.success("Rotated — the old link no longer works");
+                      })
+                    }
+                  >
+                    Rotate
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="text-muted-foreground hover:text-destructive"
+                    disabled={capturing}
+                    onClick={() =>
+                      startCapturing(async () => {
+                        await revokeCaptureLinkAction();
+                        toast.success("Revoked");
+                      })
+                    }
+                  >
+                    Revoke
+                  </Button>
+                </div>
+              </div>
+              <p className="text-muted-foreground text-[13px]">
+                Drag this to your bookmark bar, or make it an iOS Shortcut. Tap it on a job posting
+                and the role lands on your wishlist without opening the app. It is a password —
+                anyone holding it can add applications here — so never paste it anywhere that
+                unfurls links.
+              </p>
+              {captureLink.note ? (
+                <p className="text-faint text-[12px]">{captureLink.note}</p>
+              ) : (
+                <>
+                  <CodeBlock code={captureLink.bookmarklet} label="Bookmarklet" />
+                  <div className="flex items-center gap-2">
+                    <code className="text-faint min-w-0 flex-1 truncate text-[12px]">
+                      {captureLink.url}
+                    </code>
+                    <CopyButton value={captureLink.url} label="Copy URL" variant="ghost" />
+                  </div>
+                </>
+              )}
+              <p className="text-faint text-[12px]">
+                {captureLink.captured === 0
+                  ? "Nothing captured yet"
+                  : `${captureLink.captured} captured`}
+                {captureLink.lastUsedAt ? ` · last used ${ago(captureLink.lastUsedAt)}` : ""}
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-muted-foreground text-[13px]">
+                Capture a posting from your phone with one tap, without opening the app.
+              </p>
+              <Button
+                variant="outline"
+                size="xs"
+                disabled={capturing}
+                onClick={() =>
+                  startCapturing(async () => {
+                    await mintCaptureLinkAction();
+                    toast.success("Capture link created");
+                  })
+                }
+              >
+                Create a capture link
+              </Button>
+            </div>
+          )}
+        </div>
       </section>
 
       <p className="text-muted-foreground text-xs leading-relaxed">

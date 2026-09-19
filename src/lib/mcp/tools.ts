@@ -1,5 +1,8 @@
 import type {
   ActivityType,
+  McpScope,
+  OutboundStatus,
+  TaskRepeat,
   LetterKind,
   NoteKind,
   ProposalStatus,
@@ -19,6 +22,35 @@ import * as transfer from "@/lib/data/transfer";
 import * as digest from "@/lib/data/digest";
 import { PROPOSAL_KINDS } from "@/lib/data/proposals";
 import { LETTER_KINDS } from "@/lib/data/letters";
+import * as analytics from "@/lib/data/analytics";
+import * as interviews from "@/lib/data/interviews";
+import * as revisions from "@/lib/data/revisions";
+import * as stageCadence from "@/lib/data/stage-cadence";
+import * as referrals from "@/lib/data/referrals";
+import { REFERRAL_STATUSES } from "@/lib/data/referrals";
+import * as wins from "@/lib/data/wins";
+import * as watch from "@/lib/data/watch";
+import * as mailSweep from "@/lib/data/mail-sweep";
+import * as captureLink from "@/lib/data/capture-link";
+import * as linkedin from "@/lib/data/linkedin";
+import * as sample from "@/lib/data/sample";
+import * as attachments from "@/lib/data/attachments";
+import * as outbound from "@/lib/data/outbound";
+import { DEFAULT_TEMPLATE, RESUME_TEMPLATES } from "@/lib/resume-templates";
+import { textDifferences } from "@/lib/resume-ats";
+import {
+  CORE_TOOLS,
+  SCOPE_VALUES,
+  SECTIONS,
+  scopeByKey,
+  scopeBlurb,
+  scopeLabel,
+} from "@/lib/mcp/scopes";
+import {
+  INTERVIEW_FORMATS,
+  INTERVIEW_OUTCOMES,
+  QUESTION_KINDS,
+} from "@/lib/data/interviews";
 import * as tags from "@/lib/data/tags";
 import type { TagKind } from "@prisma/client";
 import * as views from "@/lib/data/views";
@@ -54,6 +86,7 @@ import * as connections from "@/lib/data/connections";
 import * as onboarding from "@/lib/data/onboarding";
 import * as accountsData from "@/lib/data/accounts";
 import * as schedule from "@/lib/data/schedule";
+import { instanceAssistantUsage } from "@/lib/data/assistant";
 import {
   getSettings,
   updateSettings,
@@ -61,6 +94,8 @@ import {
   billingIsConfigured,
   googleIsConfigured,
   microsoftIsConfigured,
+  assistantIsConfigured,
+  DEFAULT_ASSISTANT_MODEL,
   maskSecret,
   listVariables,
   setVariables,
@@ -71,7 +106,7 @@ import { renderEmailTemplate, sendEmail } from "@/lib/email";
 import { isAdmin, createEphemeralSession, destroySession, SESSION_COOKIE } from "@/lib/auth";
 import { parseResumeDoc, RESUME_DOC_SHAPE } from "@/lib/resume-schema";
 import { diffResumeDocs } from "@/lib/resume-diff";
-import { renderPdf, pdfRenderingAvailable } from "@/lib/pdf";
+import { renderPdf, readRenderedText, pdfRenderingAvailable } from "@/lib/pdf";
 import { clientName, clientsById, guessClient } from "@/lib/mcp/clients";
 
 type Json = Record<string, unknown>;
@@ -86,6 +121,10 @@ export type McpContext = {
   user: User;
   /** The connection this call arrived on, so connection tools can tell which. */
   connectionId: string;
+  /** What it was called at the time, which is what the change log stores. */
+  connectionName: string;
+  /** What this connection is served. Tools read it only to describe themselves. */
+  scope: McpScope;
   /** Where this instance is reachable, for building invite links. */
   baseUrl: string;
 };
@@ -242,9 +281,10 @@ const limitArg = (fallback: number) =>
   num(`Max rows to return. Default ${fallback}, hard ceiling ${LIST_CEILING}. Prefer narrowing the filters.`);
 
 /** The two messages this app can send. Mirrored in tools/gen-tool-docs.mjs. */
-const DIGEST_KINDS = ["weekly", "nudge"] as const;
+const DIGEST_KINDS = ["weekly", "nudge", "wins"] as const;
 
 /** The three states a queued proposal can be in. Mirrored in tools/gen-tool-docs.mjs. */
+const OUTBOUND_STATUSES = ["DRAFT", "APPROVED", "SENT", "FAILED", "CANCELLED"] as const;
 const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"] as const;
 
 const str = (description: string) => ({ type: "string", description });
@@ -287,6 +327,68 @@ function required(args: Json, key: string): string {
     throw new Error(`Missing required string argument "${key}"`);
   }
   return value;
+}
+
+/**
+ * The three recurrence arguments, read the same way by create_task and
+ * update_task.
+ *
+ * An EMPTY STRING for repeat_unit means "stop this series", which is a decision,
+ * and is distinct from omitting it, which leaves the series alone. `s()`
+ * collapses neither, so the raw value is read.
+ */
+function repeatFrom(args: Json): {
+  repeatUnit?: TaskRepeat | null;
+  repeatEvery?: number;
+  repeatUntil?: string;
+} {
+  const raw = args.repeat_unit;
+  return defined({
+    repeatUnit: raw === undefined ? undefined : raw === "" ? null : (raw as TaskRepeat),
+    repeatEvery: n(args, "repeat_every"),
+    repeatUntil: s(args, "repeat_until"),
+  });
+}
+
+/** The interview fields, read the same way by schedule_interview and update_interview. */
+function interviewInputFrom(args: Json): interviews.InterviewInput {
+  return defined({
+    round: n(args, "round"),
+    label: s(args, "label"),
+    format: s(args, "format") as interviews.InterviewInput["format"],
+    outcome: s(args, "outcome") as interviews.InterviewInput["outcome"],
+    scheduledAt: s(args, "scheduled_at"),
+    durationMins: n(args, "duration_mins"),
+    location: s(args, "location"),
+    prep: s(args, "prep"),
+    calendarEventId: s(args, "calendar_event_id"),
+    interviewerIds: a(args, "interviewer_ids"),
+  });
+}
+
+/**
+ * The `questions` array, read the same way wherever it appears.
+ *
+ * Anything without words is dropped rather than refused: an assistant listing
+ * six questions and leaving one blank has made a formatting mistake, not a
+ * request to fail the whole call and lose the other five.
+ */
+function questionsFrom(args: Json): interviews.QuestionInput[] | undefined {
+  const raw = args.questions;
+  if (!Array.isArray(raw)) return undefined;
+  const rows = raw
+    .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object")
+    .map((row) =>
+      defined({
+        question: typeof row.question === "string" ? row.question : "",
+        kind: row.kind as interviews.QuestionInput["kind"],
+        answer: typeof row.answer === "string" ? row.answer : undefined,
+        confidence: typeof row.confidence === "number" ? row.confidence : undefined,
+        better: typeof row.better === "string" ? row.better : undefined,
+      }),
+    )
+    .filter((row): row is interviews.QuestionInput => Boolean(row.question?.trim()));
+  return rows;
 }
 
 /** The letter fields, read the same way by create_letter and update_letter. */
@@ -430,6 +532,32 @@ function importPayloadFrom(args: Json): Parameters<typeof me.importResume>[1] {
 /** What to do about a role already on file. Shared by both import tools. */
 function onExistingFrom(args: Json): { onExisting?: "merge" | "skip" } {
   return s(args, "on_existing") === "skip" ? { onExisting: "skip" } : {};
+}
+
+/** Whichever of the five subject ids the caller named. Zero and two are refused
+ * in the data layer, which is the one place that rule should live. */
+function attachmentSubjectFrom(args: Json) {
+  return defined({
+    applicationId: s(args, "application_id"),
+    offerId: s(args, "offer_id"),
+    letterId: s(args, "letter_id"),
+    contactId: s(args, "contact_id"),
+    companyId: s(args, "company_id"),
+  });
+}
+
+/** The archive's files, as they arrived. Nothing here reformats a CSV. */
+function archiveFilesFrom(args: Json): { name: string; text: string }[] {
+  const files = args.files;
+  if (!Array.isArray(files)) throw new Error('Missing required argument "files"');
+  return files.map((entry, index) => {
+    const file = (entry ?? {}) as Record<string, unknown>;
+    const name = typeof file.name === "string" ? file.name.trim() : "";
+    const text = typeof file.text === "string" ? file.text : "";
+    if (!name) throw new Error(`files[${index}] has no name`);
+    if (!text) throw new Error(`files[${index}] (${name}) has no text`);
+    return { name, text };
+  });
 }
 
 /**
@@ -1516,6 +1644,54 @@ export const tools: McpTool[] = [
   },
 
   {
+    name: "import_linkedin_archive",
+    title: "Import a LinkedIn data export",
+    description:
+      "Fill in Me from LinkedIn's own data export — the zip you get from Settings → Data privacy → Get a copy of your data. Reach for this the moment someone says they have one: it is the only document in this product's world that does not have to be interpreted, so it is more accurate than pasting a resume and far more accurate than pasting a profile page. Unzip it yourself and pass the files that matter as `files`, each with its name and its text EXACTLY as the file has it, commas and quotes and all — do not reformat, summarise or tidy the CSV. The ones it reads are Profile.csv, Positions.csv, Education.csv, Skills.csv, Languages.csv, Certifications.csv, Projects.csv and Email Addresses.csv; pass whichever of those exist and it names any file it could not use rather than failing. Two more are read only if you ask: pass jobs true to turn Jobs/Job Applications.csv into applications on the board at APPLIED, and connections true to file people from Connections.csv — and only the ones whose Company already matches a company on file, capped at 200, because nobody wants eight hundred strangers in their CRM. Everything is ADDITIVE and re-import is safe, on exactly the same rules as import_resume: profile fields fill only where they are empty, a role already on file is not created twice, education is matched on school and degree, projects and certifications on name, and skills are unioned into the group they belong to. ROLES FROM AN ARCHIVE CARRY NO BULLETS, on purpose — LinkedIn's Description field is prose, and splitting it into highlights would manufacture achievement lines the person never wrote; the whole description lands in the role's background, where search_me can mine it and where they can see it is theirs. Run it with dry_run true first on any workspace that is not empty and read the report back: it is the same report the real import returns, and it comes from running the real import and rolling it back, so it cannot disagree. Returns what was read from each file with a ROW COUNT each — read those, because a count of zero on a file that should have rows means LinkedIn renamed a column — plus what was ignored, created, merged into and skipped. Report that; do not claim success blindly. Never edit what the archive says on the way in: no employer, title, date or metric that is not in the file.",
+    inputSchema: object(
+      {
+        files: {
+          type: "array",
+          description:
+            "The archive's CSV files. Names are matched on the basename, so 'Jobs/Job Applications.csv' is fine.",
+          items: object(
+            {
+              name: str("The file's name, e.g. 'Positions.csv'"),
+              text: str("The file's contents, verbatim, including the header row"),
+            },
+            ["name", "text"],
+          ),
+        },
+        jobs: bool(
+          "Also create applications from Jobs/Job Applications.csv, at APPLIED with the date LinkedIn recorded. Default false — offer it, do not assume it",
+        ),
+        connections: bool(
+          "Also file people from Connections.csv whose Company is already a company on file. Default false. Capped at 200",
+        ),
+        on_existing: str(
+          "'merge' (default) or 'skip', matching import_resume. Merge adds what a role does not already have; skip drops the whole entry",
+        ),
+        dry_run: bool(
+          "Do every lookup and no writes, and report the same numbers. Do this first whenever the workspace is not empty",
+        ),
+      },
+      ["files"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      linkedin.importLinkedInArchive(ctx.userId, archiveFilesFrom(args), {
+        ...onExistingFrom(args),
+        jobs: b(args, "jobs") ?? false,
+        connections: b(args, "connections") ?? false,
+        dryRun: b(args, "dry_run") ?? false,
+      }),
+  },
+  {
     name: "preview_resume_import",
     title: "Preview what importing a resume would do",
     description:
@@ -1565,21 +1741,16 @@ export const tools: McpTool[] = [
     },
     handler: async (_args, ctx) => ({
       documentShape: RESUME_DOC_SHAPE,
-      defaultTemplate: "harvard",
-      templates: [
-        {
-          key: "harvard",
-          description:
-            "DEFAULT. The Harvard OCS format: Times-metric serif, everything one size, name and section headings centred over full-width rules, each entry two justified lines (organisation/location, then role/dates). Dense, black-and-white, maximally ATS-safe. Use this unless asked otherwise.",
-        },
-        { key: "classic", description: "Serif headings, centred header. Timeless, ATS-safe. Takes a photo, centred above the name." },
-        { key: "modern", description: "Sans-serif, accent rules, left-aligned header. Takes a photo, beside the name." },
-        { key: "compact", description: "Tight leading, two-column skills. Fits the most content. Takes a photo, beside the name." },
-        { key: "editorial", description: "Large display name, generous whitespace, magazine feel. Takes a photo, squared off beside the name." },
-      ],
+      defaultTemplate: DEFAULT_TEMPLATE,
+      // From the one catalogue, so the picker in the app and the list an
+      // assistant is handed cannot say different things.
+      templates: RESUME_TEMPLATES.map((template) => ({
+        key: template.key,
+        description: template.description,
+      })),
       fonts: ["serif", "inter", "mono"],
       defaults: {
-        template: "harvard",
+        template: DEFAULT_TEMPLATE,
         fontFamily: "serif",
         accent: "#000000",
         fontSize: 10,
@@ -2091,6 +2262,65 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => resumes.resumeFitReport(ctx.userId, required(args, "id")),
   },
   {
+    name: "preview_ats_text",
+    title: "See what a machine reads",
+    description:
+      "What a parser gets when it opens this resume, and what falls out on the way. Reach for it when somebody asks whether their resume is \"ATS-friendly\", before they upload one to a portal that will read it rather than a person, or when they are deciding whether to switch to the ats template. Returns `text` — the whole document flattened in reading order, which is what a well-behaved parser sees — and, where this instance has a headless browser, `rendered`: the same document read back off the actual printed page, so anything that exists only as a picture, a colour or a CSS decoration is simply missing from it. `differences` is the honest half: every line in one and not the other. It catches the real ones — a skills group with a name and no skills prints nothing but is in the text, a link whose label is on the page while its address is not, a section that is hidden. `checks` is a short list of flat, checkable facts, each with the reason it matters: is there an email, is there a phone, are the dates YYYY-MM, are the headings the conventional ones, does the document show a photo, and how many columns there are — one, always, because this app has no two-column template. `method` says how each verdict was reached; read it before quoting any of them. THERE IS NO SCORE, deliberately. No two applicant tracking systems parse alike, none of them publishes what it does, and a number here would be a number this app invented — the widely repeated claim that most resumes are auto-rejected by software is not sourced anywhere. Report the facts, say which of them you are unsure about, and let the person decide. Nothing is written and nothing is rewritten: this reads the document, it does not fix it. Use update_resume once they have agreed to a change.",
+    inputSchema: object(
+      {
+        id: str("Resume id"),
+        render: bool(
+          "Also read the text back off the printed page in a headless browser. On by default where one exists; pass false to skip the browser and get the document half instantly",
+        ),
+      },
+      ["id"],
+    ),
+    annotations: {
+      // Not read-only, for the same reason export_resume_pdf is not: rendering
+      // signs in as a short-lived Session row. The document is untouched.
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const base = await resumes.resumeAtsReport(ctx.userId, required(args, "id"));
+      const wantsRender = b(args, "render") ?? true;
+      if (!wantsRender || !pdfRenderingAvailable()) {
+        return {
+          ...base,
+          rendered: null,
+          differences: null,
+          note: wantsRender
+            ? "This instance has no headless browser, so only the document half was read. Every check above still holds; what is missing is the comparison against the printed page."
+            : "The printed page was not read, because render was false.",
+        };
+      }
+      const token = await createEphemeralSession(ctx.userId);
+      try {
+        const rendered = await readRenderedText({
+          url: `${ctx.baseUrl}/print/${required(args, "id")}`,
+          sessionCookie: {
+            name: SESSION_COOKIE,
+            value: token,
+            domain: new URL(ctx.baseUrl).hostname,
+            secure: ctx.baseUrl.startsWith("https:"),
+          },
+        });
+        return { ...base, rendered, differences: textDifferences(base.text, rendered), note: "" };
+      } catch (error) {
+        return {
+          ...base,
+          rendered: null,
+          differences: null,
+          note: `The printed page could not be read (${error instanceof Error ? error.message : "it failed"}), so only the document half is here.`,
+        };
+      } finally {
+        await destroySession(token);
+      }
+    },
+  },
+  {
     name: "preview_resume_text",
     title: "Preview a resume document as text",
     description:
@@ -2128,7 +2358,7 @@ export const tools: McpTool[] = [
     name: "prep_letter",
     title: "Gather everything before writing a letter",
     description:
-      "Call this FIRST whenever someone asks for a cover letter, a cold message, a referral ask, a thank-you or a reply. A good letter is built from five things that live five places apart, and this returns all of them in one read: the posting and the company research (`application`), who it is going to (`contact`), the resume it goes out with, `evidence` — the material from Me that actually matches this posting, ranked — and `priorLetters`, up to three of the same kind they have already written. Those last ones matter more than any instruction about tone: two letters somebody wrote themselves are the only reliable description of how they sound. `intent` says what this kind of letter is for, and `missing` names what is not on file — no posting, no research, no named recipient, nothing in Me that matched. Say the missing things out loud rather than writing around them, and never invent an achievement to fill a gap. Read-only, saves nothing.",
+      "Call this FIRST whenever someone asks for a cover letter, a cold message, a referral ask, a thank-you or a reply. A good letter is built from five things that live five places apart, and this returns all of them in one read: the posting and the company research (`application`), who it is going to (`contact`), the resume it goes out with, `evidence` — the material from Me that actually matches this posting, ranked — and `priorLetters`, up to three of the same kind they have already written. Those last ones matter more than any instruction about tone: two letters somebody wrote themselves are the only reliable description of how they sound. `intent` says what this kind of letter is for, and `missing` names what is not on file — no posting, no research, no named recipient, nothing in Me that matched. Say the missing things out loud rather than writing around them, and never invent an achievement to fill a gap. FOUR OF THE KINDS ARE NOT LETTERS TO ANYBODY — LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW and BRAG_DOC are documents about the person, so there is usually no application, no recipient and nothing in `missing` about either. For those, `profile` carries the headline and summary they have now, `evidence` falls back to their roles newest first when you give no `topic`, and `priorLetters` is the previous version of this same document — which on a brag doc is the record itself, and is the thing to add to rather than replace. Read-only, saves nothing.",
     inputSchema: object({
       kind: {
         type: "string",
@@ -2137,6 +2367,9 @@ export const tools: McpTool[] = [
       },
       application_id: str("The job this is about, for the posting, the research and the timeline"),
       contact_id: str("The person it is going to, for their name and how they are known"),
+      topic: str(
+        "What this is about, when it is not about a posting — \"the last six months\", \"the billing migration\", \"the two people I mentored\". Used to find the matching material in Me. Leave it out on a self-review or a brag doc and you get their roles, newest first, which is usually what you want",
+      ),
     }),
     annotations: {
       readOnlyHint: true,
@@ -2147,6 +2380,7 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) =>
       letters.letterContext(ctx.userId, {
         kind: enumArg(args, "kind", LETTER_KINDS) as LetterKind | undefined,
+        topic: s(args, "topic"),
         applicationId: s(args, "application_id"),
         contactId: s(args, "contact_id"),
       }),
@@ -2254,6 +2488,84 @@ export const tools: McpTool[] = [
     },
     handler: async (args, ctx) =>
       letters.updateLetter(ctx.userId, required(args, "id"), letterInputFrom(args)),
+  },
+  {
+    name: "export_letter_pdf",
+    title: "Export a letter as a PDF",
+    description:
+      "Render a letter to a real PDF on the server and return a download url. Reach for this when they are about to actually send one — a form wants a file, or they are attaching it to an email. The page carries their name and contact details from their profile as a letterhead, today's date in THEIR time zone, and the body as they wrote it; nothing is rewritten and nothing is added. The url opens in their browser, where they are already signed in, and is not a public link — a letter names people, and there is deliberately no way to publish one the way a resume can be published. If this instance has no headless browser the tool says so and hands back the print url instead, which produces the same document through the browser's own Save as PDF. A LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW or BRAG_DOC prints without the date and the recipient line, because none of them is addressed to anybody — and a headline is one line, so exporting one is almost never what somebody actually wants. Ask before you spend a page on it.",
+    inputSchema: object({ id: str("Letter id") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const id = required(args, "id");
+      const letter = await letters.getLetter(ctx.userId, id);
+      if (!letter) throw new Error(`No letter with id ${id}`);
+
+      const name = letter.title || letters.LETTER_LABEL[letter.kind];
+      const printUrl = `${ctx.baseUrl}/print/letter/${id}`;
+      if (!pdfRenderingAvailable()) {
+        return withLinks(
+          {
+            available: false,
+            printUrl,
+            message:
+              "This instance has no headless browser, so it cannot render PDFs server-side. Open the print url and use the browser's Save as PDF.",
+          },
+          [
+            {
+              type: "resource_link",
+              uri: printUrl,
+              name: `${name} (print page)`,
+              description: "Opens the US-Letter page; use the browser's Save as PDF.",
+              mimeType: "text/html",
+            },
+          ],
+        );
+      }
+
+      // Rendered here rather than just handing back a url, so the answer is
+      // "it worked", not "here is an address, hope it works" — the same
+      // reasoning export_resume_pdf is built on.
+      const token = await createEphemeralSession(ctx.userId);
+      try {
+        const { bytes, pages } = await renderPdf({
+          url: printUrl,
+          marker: ".letter-paper",
+          sessionCookie: {
+            name: SESSION_COOKIE,
+            value: token,
+            domain: new URL(ctx.baseUrl).hostname,
+            secure: ctx.baseUrl.startsWith("https:"),
+          },
+        });
+        const downloadUrl = `${ctx.baseUrl}/api/letters/${id}/pdf`;
+        return withLinks(
+          {
+            available: true,
+            url: downloadUrl,
+            pages,
+            sizeKb: Math.round(bytes.length / 1024),
+            name,
+          },
+          [
+            {
+              type: "resource_link",
+              uri: downloadUrl,
+              name: `${name}.pdf`,
+              description: `${pages} page${pages === 1 ? "" : "s"}.`,
+              mimeType: "application/pdf",
+            },
+          ],
+        );
+      } finally {
+        await destroySession(token);
+      }
+    },
   },
   {
     name: "delete_letter",
@@ -2368,6 +2680,155 @@ export const tools: McpTool[] = [
       pipeline.captureJobPostings(ctx.userId, requiredArray(args, "urls")),
   },
   {
+    name: "watch_company_board",
+    title: "Watch a company's jobs board",
+    description:
+      "Watch one employer's own jobs board and hear about a role the moment it appears. This is the tool for \"tell me when Stripe posts a staff engineer role\" — a search that is waiting on a particular company rather than browsing. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON; hand it the board link (boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme) or just the company's careers page, and it follows an embedded board through to the real one. ANY OTHER BOARD IS REFUSED and nothing is saved — Workday, SmartRecruiters and a hand-built careers page publish no feed to read, and the honest answer for those is to browse them and paste the links into capture_job_postings. `title_terms` and `location_terms` narrow it: a role has to contain ANY of the title terms AND ANY of the location terms, matched case-insensitively against the posting's own words, and an empty list means anything. THE FIRST LOOK PROPOSES NOTHING: it records what is on the board today as already seen, because a watch on a six-hundred-role board is otherwise six hundred rows to review. Pass propose_existing true when they want what is already up there, and the first ten matches are queued. After that, every new matching role becomes a proposal on their dashboard with the posting already read into it, which they accept to put it on the wishlist or dismiss. NOTHING IS EVER ADDED TO THE PIPELINE WITHOUT A YES. Returns the watch, which provider was found, and how many roles the board is carrying today — read that number back, because a board of four hundred and filters of none is a watch that will be noisy. Calling it again for the same board changes the filters rather than making a second watch.",
+    inputSchema: object(
+      {
+        board_url: str(
+          "The board or careers page — boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme, or acme.com/careers",
+        ),
+        company_id: str("The company on file this board belongs to, from list_companies. Preferred"),
+        company: str(
+          "Their name, when there is no id yet. Matched against the companies on file before anything is created",
+        ),
+        title_terms: strArray(
+          "A role's title has to contain ANY of these, e.g. ['staff engineer', 'principal engineer']. Empty means every role on the board",
+        ),
+        location_terms: strArray(
+          "And its location or work mode has to contain ANY of these, e.g. ['remote', 'new york']. Empty means anywhere",
+        ),
+        propose_existing: bool(
+          "Queue up to ten roles already on the board as well. Default false, which makes the first look a baseline",
+        ),
+      },
+      ["board_url"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      watch.watchCompanyBoard(ctx.userId, {
+        boardUrl: required(args, "board_url"),
+        ...defined({
+          companyId: s(args, "company_id"),
+          company: s(args, "company"),
+          titleTerms: a(args, "title_terms"),
+          locationTerms: a(args, "location_terms"),
+          proposeExisting: b(args, "propose_existing"),
+        }),
+      }),
+  },
+  {
+    name: "list_company_watches",
+    title: "Which boards are being watched",
+    description:
+      "Every company board this person is watching: the employer, which provider it reads, the title and location filters on it, when it was last looked at, how many roles it has proposed, and anything that went wrong the last time. Call it before adding a watch, so you change the filters on the one that already exists instead of making a second. It is also the answer to \"why have I not heard anything about Acme\" — a watch carrying `lastError` has been failing quietly, and one with a `lastFoundAt` of never almost always has filters narrower than the board's own wording. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => watch.listCompanyWatches(ctx.userId),
+  },
+  {
+    name: "update_company_watch",
+    title: "Change a board watch's filters",
+    description:
+      "Change what a watch is looking for, or park it without losing what it has already seen. `title_terms` and `location_terms` REPLACE the lists they are given — send the whole list, not the one term being added, and call list_company_watches first to see what is on there. Widening the filters does not re-offer roles the watch has already decided about: everything on the board the first time it looked is marked seen for good, so a wider filter finds new postings rather than old ones. Setting enabled false keeps the row and stops the looking, which is what somebody wants during a heavy month; unwatch_company_board is for being done with it.",
+    inputSchema: object(
+      {
+        id: str("Watch id, from list_company_watches"),
+        title_terms: strArray("Replaces the title filter. An empty list means every role"),
+        location_terms: strArray("Replaces the location filter. An empty list means anywhere"),
+        enabled: bool("False parks it without deleting it"),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      watch.updateCompanyWatch(
+        ctx.userId,
+        required(args, "id"),
+        defined({
+          titleTerms: a(args, "title_terms"),
+          locationTerms: a(args, "location_terms"),
+          enabled: b(args, "enabled"),
+        }),
+      ),
+  },
+  {
+    name: "unwatch_company_board",
+    title: "Stop watching a company's board",
+    description:
+      "Stop watching a board. The watch is deleted outright — there is no archive for one, and this cannot be undone; watching the same board again starts from a fresh baseline, so nothing already on it will be offered. Proposals it has already queued are left exactly where they are, for them to accept or dismiss, and nothing else about the company, its applications or its people is touched. Say whose board you are about to stop watching before you call it.",
+    inputSchema: object({ id: str("Watch id, from list_company_watches") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => watch.unwatchCompanyBoard(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "check_company_board",
+    title: "Look at a watched board now",
+    description:
+      "Read a watched board right now instead of waiting for the schedule, and queue anything new on it. This is the tool for \"anything new at Acme?\". It fetches the board, matches the filters against the roles the watch has not already decided about, and queues up to ten of them as proposals with the posting read into each one. NOTHING REACHES THE PIPELINE: the roles wait in the review queue, and it is accept_proposal that creates an application — so do not follow this with accept_proposal unless the person has said yes to that specific role. Returns how many roles the board carries, how many matched, how many were queued, and how many were skipped as already seen. Pass no id to check every watch they have, the one looked at longest ago first; that makes one request per board a few seconds apart, so twenty watches take a moment. An instance that has /api/sweep/<token> on a schedule gets this without anybody asking, and this tool is how somebody impatient jumps the queue.",
+    inputSchema: object({
+      id: str("One watch, from list_company_watches. Omit to check them all"),
+      limit: num("How many watches to check when no id is given. Default 20"),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      watch.checkCompanyBoards(ctx.userId, defined({ watchId: s(args, "id"), limit: n(args, "limit") })),
+  },
+  {
+    name: "check_posting_live",
+    title: "Check whether a posting is still up",
+    description:
+      "Fetch the job posting behind an application and report whether it is still there. A posting that 404s is the cheapest strong signal in a search that the role was filled or pulled, and it usually happens weeks before anybody writes to say so. Pass application_id for one, or nothing to work through every open application that has a link, the one looked at longest ago first. THIS NEVER MOVES A STAGE AND NEVER LOGS ANYTHING TO A TIMELINE. It writes the posting's state onto the application — LIVE, GONE, UNCLEAR, UNREACHABLE, with the date and what the host actually said — and stops, because a page coming down is a fact about the advert and what it means for the application is theirs to decide. GONE takes TWO looks a day apart that both came back 404, so one bad night at a CDN never tells somebody their live application is dead; a single gone reading shows as UNCLEAR, and so does a page that answers 200 without naming a role, which is what every client-rendered board does whether the job exists or not. UNREACHABLE means the host refused to answer and says nothing at all about the role. Returns a line per application and a count of what is gone. When something comes back GONE, tell them plainly, and offer to log_activity or ask where it stands — do not decide it for them, and do not call move_application_stage off the back of this.",
+    inputSchema: object({
+      application_id: str("One application. Omit to work through the open ones"),
+      limit: num("How many applications to check when no id is given. Default 25"),
+      force: bool(
+        "Check even one looked at in the last three days. Use when they are asking about a specific job right now",
+      ),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      watch.checkPostings(
+        ctx.userId,
+        defined({
+          applicationId: s(args, "application_id"),
+          limit: n(args, "limit"),
+          force: b(args, "force"),
+        }),
+      ),
+  },
+  {
     name: "record_offer",
     title: "Record an offer",
     description:
@@ -2468,6 +2929,256 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => offers.deleteOffer(ctx.userId, required(args, "id")),
   },
   {
+    name: "get_outbound_settings",
+    title: "Can this workspace send mail",
+    description:
+      "Whether this app is allowed to send a message from this person's own mailbox, how many a day they set, whether each one waits for a click, which mailboxes can actually send, how many have gone today and what is standing in the way right now. `blockedBecause` is the whole answer when it is non-empty — read it back rather than trying the send and reporting a failure. Three separate things have to be true: an admin turned it on for the instance, the person set a daily number above zero themselves, and a Google or Microsoft mailbox is connected WITH the send permission (an IMAP account cannot send at all, whatever else it does). Read-only, and it sends nothing.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => outbound.getOutboundSettings(ctx.userId),
+  },
+  {
+    name: "draft_outbound_email",
+    title: "Draft a message to send from their own mailbox",
+    description:
+      "Write a message and put it in the outbox as a DRAFT. IT IS NOT SENT — nothing here sends anything, ever, and send_outbound_email is a separate call with its own refusals. This is the follow-up nobody gets round to: the chase after a week of silence, the thank-you the day after an interview, the reply to a recruiter. It goes out from ONE OF THEIR OWN MAILBOXES, so it arrives from them and lands in their Sent folder; this app never sends as itself on anybody's behalf, because a follow-up to a recruiter arriving from a tool's address is worse than no follow-up. IT CAN ONLY BE ADDRESSED TO SOMEBODY ALREADY ON FILE: pass contact_id, and the address is read off that person's record. There is no argument anywhere that takes an address, which is deliberate and is the reason you cannot use this to reach anyone they have not already written down — if they want to mail somebody new, create the contact first and say so. Write the message in THEIR voice, from what is actually on file: call prep_letter or search_me first if you are drafting anything substantial, quote nothing that is not theirs, and never invent a meeting, a name, a date, a number or an agreement that did not happen. Keep it short — this is a follow-up, not a cover letter; use create_letter for anything that wants a title and a draft history. Returns the draft with its id, the mailbox it will go from, what it will say, and whether it now needs approving: out of the box every message waits for a click in the app that NO TOOL CAN MAKE, and the result says so in as many words. Nothing is sent by calling this.",
+    inputSchema: object(
+      {
+        contact_id: str("Who it is to. The address comes off their record — there is no way to pass one"),
+        subject: str("The subject line"),
+        body: str("The message, plain text, in their voice"),
+        account_id: str("Which of their mailboxes to send from. Omit to use the only one that can send"),
+        application_id: str("The job this is about, so the send lands on that job's timeline"),
+        letter_id: str("A letter this was drafted from, if there is one. Its sentAt is stamped when this goes"),
+      },
+      ["contact_id", "subject", "body"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      outbound.draftOutbound(
+        ctx.userId,
+        {
+          contactId: required(args, "contact_id"),
+          subject: required(args, "subject"),
+          body: required(args, "body"),
+          ...defined({
+            accountId: s(args, "account_id"),
+            applicationId: s(args, "application_id"),
+            letterId: s(args, "letter_id"),
+          }),
+        },
+        { writtenBy: "mcp", connectionId: ctx.connectionId, connectionName: ctx.connectionName, tool: "draft_outbound_email" },
+      ),
+  },
+  {
+    name: "list_outbound",
+    title: "What is in the outbox",
+    description:
+      "Every message this app has drafted, sent, failed or had cancelled for this person, newest first — with what it said, who it went to, which mailbox it went from, which connection drafted it and which sent it. Pass status to narrow it: DRAFT is waiting, APPROVED has been clicked and is ready, SENT has gone, FAILED says why in `error`, CANCELLED was called off. Reach for it before drafting anything, so you do not send a second chase to somebody who was chased on Tuesday, and read what went before to match how they actually write. The body is kept after sending, deliberately: a record of what you said is the thing this product exists to keep. Read-only.",
+    inputSchema: object({
+      status: {
+        type: "string",
+        enum: [...OUTBOUND_STATUSES],
+        description: "DRAFT, APPROVED, SENT, FAILED or CANCELLED. Omit for all of them",
+      },
+      application_id: str("Only messages about this job"),
+      contact_id: str("Only messages to this person"),
+      limit: limitArg(50),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      capped(
+        await outbound.listOutbound(ctx.userId, {
+          ...defined({
+            status: enumArg(args, "status", OUTBOUND_STATUSES) as OutboundStatus | undefined,
+            applicationId: s(args, "application_id"),
+            contactId: s(args, "contact_id"),
+          }),
+          limit: n(args, "limit") ?? 50,
+        }),
+        n(args, "limit"),
+        50,
+      ),
+  },
+  {
+    name: "send_outbound_email",
+    title: "Send a drafted message",
+    description:
+      "Actually send a draft, from the person's own mailbox. THIS IS THE ONE THING IN THIS APP THAT PUTS A MESSAGE IN FRONT OF SOMEBODY WHO IS NOT ITS OWNER, so read what it says back before claiming anything. It refuses, in order and by name, when: the instance does not allow members to send; the person has not turned it on and set a daily number; no mailbox can send; they are at their daily limit; one went less than a minute ago; the person or the job it is about is in the archive; or — the one that matters most — they are in \"approve each one\" mode and have not clicked approve. THAT CLICK CANNOT BE MADE BY ANY TOOL, including this one, which is the point of the mode. A refusal comes back as `sent` false with a `reason` to read out; it is not an error and not something to work around. On success it stamps the letter it came from as sent, writes an EMAIL_SENT activity onto the job's timeline, and returns the provider's own message id. AN EMAIL CANNOT BE UNSENT: say who it is going to, from which mailbox, and what it says, and get a plain yes, every time — even in trusted mode. Never send a draft the person has not seen.",
+    inputSchema: object({ id: str("Draft id, from draft_outbound_email or list_outbound") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      outbound.sendOutbound(ctx.userId, required(args, "id"), {
+        writtenBy: "mcp",
+        connectionId: ctx.connectionId,
+        connectionName: ctx.connectionName,
+        tool: "send_outbound_email",
+      }),
+  },
+  {
+    name: "cancel_outbound_email",
+    title: "Call off a drafted message",
+    description:
+      "Mark a draft, an approved message or a failed one as cancelled so it can never go. Reach for it when they change their mind, when a draft is wrong enough to rewrite from scratch, or when a failed send should not be retried. The row stays with everything it said — nothing here deletes the record — and a cancelled message cannot be un-cancelled, so draft a new one instead. It does nothing to a message that has already gone, because nothing can.",
+    inputSchema: object({ id: str("Message id, from list_outbound") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => outbound.cancelOutbound(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "attach_file",
+    title: "Keep a file against a job, a person or an offer",
+    description:
+      "Store a file in the workspace, hanging off exactly one thing: an application, an offer, a letter, a person or a company. This is where the signed offer letter goes, the take-home they submitted, the PDF a recruiter sent, the screenshot of a posting that has since come down. Pass exactly one of application_id, offer_id, letter_id, contact_id or company_id — a file with no home is bytes nobody can find later, so there is no way to store one loose. The bytes arrive one of two ways: `data_uri` when you are holding them, e.g. after reading a local file ('data:application/pdf;base64,…'), or `url` for an https link the server fetches for you, which is MUCH the cheaper of the two and the one to prefer when the file is already on the web. The default limit is 8MB a file and 250MB a workspace; over either, this refuses and says how much is in use. Only PDFs, images, plain text, markdown, CSV, JSON, zips and Word or Excel documents are accepted, and THE TYPE IS READ FROM THE FILE'S OWN FIRST BYTES rather than from what you called it. Attaching the same bytes twice is not a second copy: the file is matched on its checksum and you get the first row back with `reused` true, so re-running after a timeout is safe. Returns the file's id, its size, what is now in use, and a link to download it — the link opens in the browser they are already signed in to and is not public. IT NEVER RETURNS THE BYTES; use read_attachment for a text file you actually need to read. You cannot attach to something in the archive.",
+    inputSchema: object(
+      {
+        filename: str("What the file is called, e.g. 'northwind-offer-signed.pdf'"),
+        data_uri: str("The file inline: 'data:application/pdf;base64,…'. Use url instead where you can"),
+        url: str("An https link the server fetches. Cheaper than sending the bytes"),
+        caption: str("One line about what it is, in their words: 'the offer as signed'"),
+        application_id: str("The job it belongs to"),
+        offer_id: str("The offer it belongs to"),
+        letter_id: str("The letter it went out with"),
+        contact_id: str("The person it came from"),
+        company_id: str("The company it is about"),
+      },
+      ["filename"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) => {
+      const result = await attachments.createAttachment(ctx.userId, {
+        filename: required(args, "filename"),
+        ...defined({
+          dataUri: s(args, "data_uri"),
+          url: s(args, "url"),
+          caption: s(args, "caption"),
+          ...attachmentSubjectFrom(args),
+        }),
+      });
+      const url = `${ctx.baseUrl}/api/attachments/${result.attachment.id}`;
+      return withLinks({ ...result, url }, [
+        {
+          type: "resource_link",
+          uri: url,
+          name: result.attachment.filename,
+          description: `${Math.max(1, Math.round(result.attachment.size / 1000))}KB. Opens in the browser they are already signed in to.`,
+          mimeType: result.attachment.mimeType,
+        },
+      ]);
+    },
+  },
+  {
+    name: "list_attachments",
+    title: "List kept files",
+    description:
+      "Every file kept in this workspace, or just the ones hanging off one thing — pass application_id, offer_id, letter_id, contact_id or company_id to narrow it. Reach for this before attach_file when somebody says \"the offer letter\": it is probably already here. Returns the id, name, type, size, caption and what each is attached to, plus a download link for each; it never returns the bytes, so this is cheap to call on a workspace with two hundred files. Files whose job, person or company is in the archive are NOT listed — restore the record and they come back with it. Capped, and it says so when the list was cut off.",
+    inputSchema: object({
+      application_id: str("Only files on this job"),
+      offer_id: str("Only files on this offer"),
+      letter_id: str("Only files on this letter"),
+      contact_id: str("Only files on this person"),
+      company_id: str("Only files on this company"),
+      limit: limitArg(100),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const rows = await attachments.listAttachments(ctx.userId, {
+        ...attachmentSubjectFrom(args),
+        limit: n(args, "limit") ?? 100,
+      });
+      return capped(
+        rows.map((row) => ({ ...row, url: `${ctx.baseUrl}/api/attachments/${row.id}` })),
+        n(args, "limit"),
+        100,
+      );
+    },
+  },
+  {
+    name: "read_attachment",
+    title: "Read a kept file",
+    description:
+      "The TEXT of a kept file, for when you actually have to read one — a take-home brief they saved as markdown, a CSV of interview questions, a JSON export somebody sent. Only text files come back with text: a PDF, an image, a zip or a Word document returns `text` null and its download link instead, because there is no honest way to put a binary in a tool result and a base64 string of one is a context window somebody else paid for. Long files are cut and `truncated` says so. Read-only — this never changes the file or the record it hangs off.",
+    inputSchema: object(
+      {
+        id: str("Attachment id, from list_attachments"),
+        limit: num("How many characters of text to return. Default 40,000, which is the ceiling too"),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const result = await attachments.readAttachmentText(
+        ctx.userId,
+        required(args, "id"),
+        n(args, "limit"),
+      );
+      return {
+        ...result,
+        url: `${ctx.baseUrl}/api/attachments/${result.attachment.id}`,
+        note:
+          result.text === null
+            ? `${result.attachment.mimeType} is not something that can be read as text. The link opens it.`
+            : "",
+      };
+    },
+  },
+  {
+    name: "delete_attachment",
+    title: "Delete a kept file",
+    description:
+      "Remove one file for good. THERE IS NO ARCHIVE FOR A FILE — this destroys the bytes, and nothing else in the app has a second copy of them. Say which file, and what it was attached to, and get a plain yes first. Use it to free space when a workspace is at its limit, and say how much it got back. Deleting the job, person or company a file hangs off destroys it too, which is what makes a file impossible to orphan.",
+    inputSchema: object({ id: str("Attachment id, from list_attachments") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const done = await attachments.deleteAttachment(ctx.userId, required(args, "id"));
+      return { ...done, usage: await attachments.attachmentUsage(ctx.userId) };
+    },
+  },
+  {
     name: "compare_offers",
     title: "Compare the offers on the table",
     description:
@@ -2502,6 +3213,605 @@ export const tools: McpTool[] = [
     },
     handler: async (args, ctx) =>
       offers.offerBriefing(ctx.userId, required(args, "application_id")),
+  },
+  // -------------------------------------------------------------------------
+  // INTERVIEWS — rounds, what was asked, and what you said
+  // -------------------------------------------------------------------------
+  {
+    name: "prep_interview",
+    title: "Gather everything before an interview",
+    description:
+      "Call this FIRST whenever somebody has an interview coming up, asks what to expect, or asks you to run prep. Seven things decide an interview and they live seven places apart; this returns all of them in one read. `application` is the posting, the stage and the last ten things logged. `company` is the research on file. `interviewers` is who is in the room. `history` is every earlier round at this employer, with how each went. `employerQuestions` is what THIS employer has already asked — the list nothing in this app could produce before questions were rows, and the first thing to read out. `commonQuestions` is what gets asked everywhere. `weakAnswers` is what is on file with no answer or one they rated badly, which is the homework. `tasks` is whatever the stage checklist already put on their list. `missing` names what is NOT on file — no posting, no research, nobody named, no earlier round — and that list is the most useful thing here: say the gaps out loud rather than writing around them. NEVER invent a story, an employer, a date or a metric to fill one; if it is not in the result, it does not go in an answer. Pass interview_id for a booked round, or application_id to prep a job somebody has not put a date against yet. Read-only, saves nothing.",
+    inputSchema: object({
+      application_id: str("The job to prep for. Enough on its own."),
+      interview_id: str(
+        "A booked round, from list_interviews. Narrows the prep to its format and its interviewers.",
+      ),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      interviews.interviewBriefing(ctx.userId, {
+        applicationId: s(args, "application_id"),
+        interviewId: s(args, "interview_id"),
+      }),
+  },
+  {
+    name: "schedule_interview",
+    title: "Put an interview round on the record",
+    description:
+      "Record a round of interviews — one that is booked, or one that already happened and was never written down. Reach for it the moment a date is agreed. The round NUMBER is worked out for you when you leave it out: one past the deepest round on file for that job, which is also how somebody who has been typing round numbers into the pipeline by hand carries on counting rather than restarting at one. Pass `prep_task_due_at` and it puts a prep task on their list in the same call, which is the point of doing this in one move; the result names the task it made. Interviewers are contact ids from list_contacts — a name that is not a contact yet should become one with create_contact first, because the person is worth keeping after this job ends. THREE THINGS IT DOES NOT DO. It does not move the application: check the stage that comes back and call move_application_stage if the board still says applied. It writes nothing to the timeline, because an interview that has not happened is not a thing that happened — record_interview_outcome writes that line afterwards. And it does not raise the application's round counter above what you give it: that counter only ever goes up. Calling it twice for the same calendar event returns `duplicateOf` and writes nothing.",
+    inputSchema: object(
+      {
+        application_id: str("Which job this round is for"),
+        round: num(
+          "Which round, counting from 1. Leave it out to continue from the deepest round already on file.",
+        ),
+        label: str("What it is called — 'Phone screen', 'Take-home', 'System design', 'Onsite loop'"),
+        format: {
+          type: "string",
+          enum: [...INTERVIEW_FORMATS],
+          description: "What kind of round it is. Defaults to VIDEO.",
+        },
+        scheduled_at: str(
+          "When it is. YYYY-MM-DD, or a full ISO timestamp for a time. A bare date lands at 9am in their own zone.",
+        ),
+        duration_mins: num("How long it is booked for, in minutes"),
+        location: str("Where, or the joining link — 'Zoom', a Meet URL, 'their office, 4th floor'"),
+        prep: str("What to say, what to ask, what to avoid. Anything worth having written down before walking in."),
+        interviewer_ids: strArray("Contact ids of the people in the room, from list_contacts"),
+        calendar_event_id: str(
+          "The provider's event id when this came off a calendar, so a second sweep does not queue it again",
+        ),
+        prep_task_due_at: str("Also add a prep task due on this day, YYYY-MM-DD. Omit for no task."),
+        prep_task_title: str("What that task should say. Defaults to naming the round and the company."),
+      },
+      ["application_id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      interviews.scheduleInterview(ctx.userId, required(args, "application_id"), {
+        ...interviewInputFrom(args),
+        prepTaskDueAt: s(args, "prep_task_due_at"),
+        prepTaskTitle: s(args, "prep_task_title"),
+      }),
+  },
+  {
+    name: "interviews_from_calendar",
+    title: "Meetings that look like interviews",
+    description:
+      "Read this person's own calendar for meetings with people on their pipeline and hand each one back SHAPED AS AN INTERVIEW, ready for schedule_interview. It writes nothing, deliberately: a meeting called \"Acme — chat\" might be a screen or might be a catch-up with somebody who used to work there, and no rule can tell — so this proposes and the person says which are real. For each it returns the calendar event's id, the title, when it starts, how long it runs, whether it looks like a video call or an onsite (read off the location and the link, not guessed), which job it is about, and any contact already on file who is in the room. `alreadyScheduled` marks the ones a round is already recorded for, so running this twice offers nothing twice — and passing `calendar_event_id` through to schedule_interview is what makes it safe even if you miss that. Needs a calendar connected; says so rather than returning an empty list when none is. Read it back, ask which are interviews, then call schedule_interview once per yes.",
+    inputSchema: object({
+      days: num("How far ahead to look. Default 21, most 90"),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      interviews.interviewsFromCalendar(ctx.userId, defined({ days: n(args, "days") })),
+  },
+  {
+    name: "list_interviews",
+    title: "List interview rounds",
+    description:
+      "Every round on file, newest first, with who was in the room, how it went and how many questions were recorded against it. Reach for it to answer 'what have I got coming up' (pass upcoming_only), 'how did the Stripe rounds go' (pass application_id or company_id), or before scheduling another one so the round number continues rather than restarting. Rounds on archived applications are never returned. For a week of dates across the whole search, list_schedule is better — it merges these with follow-ups, tasks and real calendar meetings. Read-only.",
+    inputSchema: object({
+      application_id: str("Only rounds for this job"),
+      company_id: str("Only rounds at this employer, across every application there"),
+      from: str("Only rounds scheduled on or after this day, YYYY-MM-DD"),
+      to: str("Only rounds scheduled on or before this day, YYYY-MM-DD"),
+      outcome: {
+        type: "string",
+        enum: [...INTERVIEW_OUTCOMES],
+        description: "Only rounds in this state",
+      },
+      upcoming_only: bool("Only rounds still ahead of now"),
+      limit: limitArg(100),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      capped(
+        await interviews.listInterviews(
+          ctx.userId,
+          defined({
+            applicationId: s(args, "application_id"),
+            companyId: s(args, "company_id"),
+            from: s(args, "from"),
+            to: s(args, "to"),
+            outcome: s(args, "outcome") as never,
+            upcomingOnly: b(args, "upcoming_only"),
+            limit: n(args, "limit"),
+          }),
+        ),
+        n(args, "limit"),
+        100,
+      ),
+  },
+  {
+    name: "get_interview",
+    title: "Get one interview round",
+    description:
+      "One round in full: the format, when it is, where, who is in the room, the prep written beforehand, the debrief written after, and every question recorded against it with the answer that was given. Read this before update_interview or record_interview_outcome, because both of those replace the fields you send.",
+    inputSchema: object({ id: str("Interview id, from list_interviews") }, ["id"]),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => interviews.getInterview(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "update_interview",
+    title: "Fix an interview round",
+    description:
+      "Correct a round that is already on file — the time moved, the format changed, somebody else joined the panel. Only the fields you send change, so this is safe to call with one of them. TWO TRAPS. `interviewer_ids` REPLACES the whole set rather than adding to it, so read the round with get_interview first and send everyone who should be on it. And this is for FIXING a round, not for saying how it went: record_interview_outcome is what writes the timeline entry and the questions. It can still repair a round on an application you have since archived, which is deliberate — the id could only have come from somewhere that already showed it to you.",
+    inputSchema: object(
+      {
+        id: str("Interview id"),
+        round: num("Which round, counting from 1"),
+        label: str("What it is called"),
+        format: { type: "string", enum: [...INTERVIEW_FORMATS], description: "What kind of round it is" },
+        outcome: {
+          type: "string",
+          enum: [...INTERVIEW_OUTCOMES],
+          description: "Where it got to. Prefer record_interview_outcome, which also writes the timeline.",
+        },
+        scheduled_at: str("When it is, YYYY-MM-DD or a full ISO timestamp"),
+        duration_mins: num("How long, in minutes"),
+        location: str("Where, or the joining link"),
+        prep: str("What to say, what to ask, what to avoid. Replaces what is there."),
+        interviewer_ids: strArray("REPLACES who is in the room. Send everyone, not just the new one."),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      interviews.updateInterview(ctx.userId, required(args, "id"), interviewInputFrom(args)),
+  },
+  {
+    name: "record_interview_outcome",
+    title: "Say how a round went, and what they asked",
+    description:
+      "The tool to reach for straight after an interview, and the one that makes every future one easier. It records how the round went, what they wrote about it, and — the part that matters — the questions they were asked with the answers they actually gave. Ask for the real answer, not a better one: the whole value of the bank is knowing which real answers led somewhere, and an improved version recorded now is a story they will not be able to repeat. `better` is where the improved version goes. This is the one write here with side effects, and both are the point: it writes the round's line on the timeline, REWRITING its own earlier line rather than adding a second, and it raises the application's round counter if this round is deeper than anything recorded — never lowering it. It does NOT move the application's stage; a rejection is still move_application_stage, and passing the loss reason there is what makes loss_report useful later. Confidence is 1 to 5 in their own judgement; leave it out rather than guessing one for them.",
+    inputSchema: object(
+      {
+        id: str("Interview id"),
+        outcome: {
+          type: "string",
+          enum: [...INTERVIEW_OUTCOMES],
+          description: "Where it got to. Defaults to HELD when the round was still scheduled.",
+        },
+        debrief: str("What they thought, in their own words. Replaces what is there."),
+        occurred_at: str("When it actually happened, YYYY-MM-DD or ISO. Defaults to when it was scheduled."),
+        questions: {
+          type: "array",
+          description:
+            "What was asked, and what they said. Additive — nothing already on file is touched, so this is safe to call again as they remember more.",
+          items: object(
+            {
+              question: str("What was asked, as close to the interviewer's own words as they remember"),
+              kind: {
+                type: "string",
+                enum: [...QUESTION_KINDS],
+                description:
+                  "What sort of question. MINE is one they asked the interviewer. Defaults to BEHAVIOURAL.",
+              },
+              answer: str("What they ACTUALLY said. Not an improved version."),
+              confidence: num("Their own verdict on the answer, 1 to 5. Leave it out rather than guessing."),
+              better: str("What they wish they had said. This is where the improved version goes."),
+            },
+            ["question"],
+          ),
+        },
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      interviews.recordInterviewOutcome(ctx.userId, required(args, "id"), {
+        outcome: s(args, "outcome") as never,
+        debrief: s(args, "debrief"),
+        occurredAt: s(args, "occurred_at"),
+        questions: questionsFrom(args),
+      }),
+  },
+  {
+    name: "log_interview_questions",
+    title: "Add questions to a round already on file",
+    description:
+      "Append what was asked to a round that is already recorded, without touching how it went. Reach for it when somebody remembers another question a day later, which is most of them. Additive: nothing already on file is changed or removed, so calling it twice adds twice — read the round with get_interview first if you are not sure whether a question is already there. Record the answer they actually gave rather than a better one; `better` is where the improved version goes.",
+    inputSchema: object(
+      {
+        interview_id: str("Interview id"),
+        questions: {
+          type: "array",
+          description: "The questions to add.",
+          items: object(
+            {
+              question: str("What was asked"),
+              kind: {
+                type: "string",
+                enum: [...QUESTION_KINDS],
+                description: "What sort of question. MINE is one they asked the interviewer.",
+              },
+              answer: str("What they actually said"),
+              confidence: num("Their own verdict, 1 to 5"),
+              better: str("What they wish they had said"),
+            },
+            ["question"],
+          ),
+        },
+      },
+      ["interview_id", "questions"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => ({
+      added: await interviews.addQuestions(
+        ctx.userId,
+        required(args, "interview_id"),
+        questionsFrom(args) ?? [],
+      ),
+    }),
+  },
+  {
+    name: "update_interview_question",
+    title: "Correct one recorded question",
+    description:
+      "Fix a question, an answer, a rating or the better version. Only the fields you send change. Correcting the WORDS of a question re-files it in the bank, which is usually what you want — the bank groups by exact wording, so two rememberings of the same question sit apart until one is edited to match the other. Question ids come from get_interview or question_bank.",
+    inputSchema: object(
+      {
+        id: str("Question id, from get_interview or question_bank"),
+        question: str("What was asked. Changing this re-files it in the bank."),
+        kind: { type: "string", enum: [...QUESTION_KINDS], description: "What sort of question" },
+        answer: str("What they actually said"),
+        confidence: num("Their own verdict, 1 to 5. 0 means nobody said."),
+        better: str("What they wish they had said"),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      interviews.updateQuestion(ctx.userId, required(args, "id"), {
+        question: s(args, "question"),
+        kind: s(args, "kind") as never,
+        answer: s(args, "answer"),
+        confidence: n(args, "confidence"),
+        better: s(args, "better"),
+      }),
+  },
+  {
+    name: "delete_interview_question",
+    title: "Remove a recorded question",
+    description:
+      "Take one question off a round for good — it was recorded twice, or it was not really a question. Gone, with no archive. Deleting the LAST answer on file for something also removes it from the bank, so a question asked at three employers loses a third of its evidence; prefer correcting it with update_interview_question where the problem is the wording.",
+    inputSchema: object({ id: str("Question id") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => interviews.deleteQuestion(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "delete_interview",
+    title: "Remove an interview round",
+    description:
+      "Delete a round and everything recorded against it — every question, every answer, and the line it put on the timeline. There is no archive for interviews, so this is gone, and the questions are usually the part worth keeping. Say what will go, including how many questions, and get a plain yes first. The application's round counter is deliberately NOT lowered: how far something got is a fact, and the funnel is built out of that column.",
+    inputSchema: object({ id: str("Interview id") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => interviews.deleteInterview(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "question_bank",
+    title: "What keeps getting asked, and which answers worked",
+    description:
+      "Every question ever recorded, across every interview, grouped and ranked. This is what turns a set of interview notes into preparation. `repeated` is the list worth rehearsing — asked more than once, with each answer and which employer it came from. `weak` is the homework: on file with no answer recorded, or rated badly by the person who gave it. `worked` is the answers that came out of a round that was passed or a job that reached an offer. `coverage` is per kind of question and INCLUDES the kinds with zero, because a zero is the most informative row here — never having recorded a system design question is the finding. THREE TRAPS, all of them in `caveats` as well. Questions are grouped by EXACT WORDING, so the same question remembered two ways is two entries: merge them by eye before reporting a count, and use update_interview_question to make one match the other. `ledSomewhere` is correlation and nothing more — a passed round does not show the answer was why, and a good answer in a job lost for other reasons reads as not working. And under about twenty questions there is not enough here to draw any conclusion from, which `caveats` says outright. Rounds on archived applications are excluded. Read-only, saves nothing.",
+    inputSchema: object({
+      application_id: str("Only questions from rounds on this job"),
+      company_id: str("Only questions this employer asked"),
+      kind: { type: "string", enum: [...QUESTION_KINDS], description: "Only this sort of question" },
+      search: str("Only questions whose words contain this"),
+      min_times_asked: num("Only questions asked at least this many times. Default 1."),
+      limit: num("How many distinct questions to return. Default 100, ceiling 300."),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      interviews.questionBank(
+        ctx.userId,
+        defined({
+          applicationId: s(args, "application_id"),
+          companyId: s(args, "company_id"),
+          kind: s(args, "kind") as never,
+          search: s(args, "search"),
+          minTimesAsked: n(args, "min_times_asked"),
+          limit: n(args, "limit"),
+        }),
+      ),
+  },
+  {
+    name: "list_stage_cadences",
+    title: "How long after a move a follow-up is armed for",
+    description:
+      "The chase clock, per stage. Every time an application moves, its follow-up date is set a number of days out — seven after applying, four while interviewing, two on an offer — and this says what those numbers are for this person and whether they set them or inherited them. Reach for it before set_stage_cadence so you can say what is changing, and when somebody asks why a follow-up appeared on a date they did not pick. `source` is the field to read: 'default' means no row exists and the built-in is being used, 'yours' means they set that number, and 'off' means they deliberately turned that stage's chasing off, which is not the same thing as never having said. ACCEPTED and LOST are absent on purpose — a terminal move clears the follow-up date outright, so a cadence on one could never fire. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => stageCadence.listStageCadences(ctx.userId),
+  },
+  {
+    name: "set_stage_cadence",
+    title: "Change how soon a stage chases",
+    description:
+      "Set how many days after landing in a stage the follow-up date is armed for. Reach for it when somebody says they are chasing too soon, too late, or not at all — 'stop nagging me about wishlist rows' is `stage: WISHLIST, days: null`, and 'give applications a fortnight' is `stage: APPLIED, days: 14`. THREE MEANINGS FOR ONE ARGUMENT, and they are all different: a NUMBER stores that many days; `days: null` stores 'arm nothing for this stage', which is a decision; and LEAVING days OUT deletes their setting and goes back to the built-in, which is how you undo. Say which of the three you are doing before you do it. This changes future moves only — no date already on the board is touched, and if they want one of those moved, that is update_application. A date somebody set by hand for a specific day is never overwritten by a move either, whatever the cadence says. ACCEPTED and LOST are refused by name: a terminal move clears the date outright, so a cadence on one would be a setting that lies.",
+    inputSchema: object(
+      {
+        stage: {
+          type: "string",
+          enum: ["WISHLIST", "APPLIED", "INTERVIEWING", "OFFER"],
+          description: "Which stage's clock to change",
+        },
+        days: num(
+          "Days from the move to the follow-up, 0 to 365. Send null to arm nothing for this stage. Omit it entirely to delete the setting and go back to the built-in.",
+        ),
+        revert: bool("Delete the setting and go back to the built-in. The same as omitting days."),
+      },
+      ["stage"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const stage = required(args, "stage") as Stage;
+      // `null` and "absent" mean different things here, and `n()` collapses
+      // them, so the raw argument is read rather than the helper's answer.
+      const raw = args.days;
+      const days =
+        b(args, "revert") || raw === undefined
+          ? undefined
+          : raw === null
+            ? null
+            : typeof raw === "number"
+              ? raw
+              : undefined;
+      return stageCadence.setStageCadence(ctx.userId, stage, days);
+    },
+  },
+  {
+    name: "list_referrals",
+    title: "Who vouched for you where",
+    description:
+      "Every referral on file, with where it stands and whether it came to anything. Reach for it when somebody asks who has put them forward, who they are still waiting on, or who they owe a thank-you — and reach for list_relationships instead when the question is who is worth talking to at all, because that one covers everybody in the CRM and this one covers only the people who actually asked on your behalf. `converted` is DERIVED from the application's own stage and timeline, not stored, so it cannot disagree with the funnel. `thanksOwed` is the list that matters: it converted and nobody has said thank you, which is the most expensive unclosed loop in a search and is invisible in every other record this app keeps. `waitingDays` counts from the last time the STATUS moved, not from the last edit, so fixing a typo in the notes does not reset the clock. Referrals from an archived person are excluded; one whose application was archived stays, because who put you forward is a fact about the person. Read-only.",
+    inputSchema: object({
+      contact_id: str("Only referrals from this person"),
+      application_id: str("Only referrals for this job"),
+      company_id: str("Only referrals at this employer"),
+      status: {
+        type: "string",
+        enum: [...REFERRAL_STATUSES],
+        description: "Only referrals in this state",
+      },
+      thanks_owed: bool("Only the ones that converted and were never acknowledged"),
+      waiting_for_days: num("Only ones still ASKED or AGREED and older than this many days"),
+      limit: limitArg(100),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      capped(
+        await referrals.listReferrals(
+          ctx.userId,
+          defined({
+            contactId: s(args, "contact_id"),
+            applicationId: s(args, "application_id"),
+            companyId: s(args, "company_id"),
+            status: s(args, "status") as never,
+            thanksOwed: b(args, "thanks_owed"),
+            waitingForDays: n(args, "waiting_for_days"),
+            limit: n(args, "limit"),
+          }),
+        ),
+        n(args, "limit"),
+        100,
+      ),
+  },
+  {
+    name: "record_referral",
+    title: "Record that somebody put their name behind you",
+    description:
+      "Log a referral — you asked somebody to refer you, or they offered. Reach for it the moment the ask is made, not when it lands: 'waiting on three people' is only a question this app can answer if the asks are on file. The person is a contact id from list_contacts; create_contact them first if they are not on file yet, because somebody who refers you is worth keeping long after this job. The application is optional and often comes later — 'do you know anyone at Stripe' is asked before anybody applies — and passing one fills in the employer for you. Status starts at ASKED. When it converts, a thank-you task appears on their list automatically, once, the first time the application reaches interviewing or beyond; that is the point of recording it.",
+    inputSchema: object(
+      {
+        contact_id: str("Who vouched for you, from list_contacts"),
+        application_id: str("The job, if there is one yet"),
+        company_id: str("The employer. Filled in from the application when you pass one."),
+        status: {
+          type: "string",
+          enum: [...REFERRAL_STATUSES],
+          description: "Where it stands. Defaults to ASKED.",
+        },
+        asked_on: str("When you asked, YYYY-MM-DD. Defaults to today."),
+        notes: str("What you asked for and what they said, in your own words"),
+      },
+      ["contact_id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      referrals.createReferral(ctx.userId, {
+        contactId: required(args, "contact_id"),
+        applicationId: s(args, "application_id"),
+        companyId: s(args, "company_id"),
+        status: s(args, "status") as never,
+        askedOn: s(args, "asked_on"),
+        notes: s(args, "notes"),
+      }),
+  },
+  {
+    name: "update_referral",
+    title: "Move a referral along, or mark it thanked",
+    description:
+      "Change where a referral stands, attach the application once there is one, or record that you have thanked them. Only the fields you send change. Moving the STATUS restarts the waiting clock, which is what 'you asked three weeks ago' counts from — so move it when something actually happened, and edit the notes when nothing did. `thanked: true` stamps today and takes it off the thanks-owed list; that is the field the whole model exists for, so do not set it because a thank-you was drafted, only because one was sent.",
+    inputSchema: object(
+      {
+        id: str("Referral id, from list_referrals"),
+        status: {
+          type: "string",
+          enum: [...REFERRAL_STATUSES],
+          description: "Where it stands now. Moving this restarts the waiting clock.",
+        },
+        application_id: str("Attach the job, now that there is one. An empty string detaches it."),
+        company_id: str("The employer. An empty string detaches it."),
+        contact_id: str("Correct who vouched"),
+        asked_on: str("When you asked, YYYY-MM-DD"),
+        notes: str("Replaces the notes"),
+        thanked: bool("True stamps today as when you thanked them; false clears it"),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      referrals.updateReferral(ctx.userId, required(args, "id"), {
+        contactId: s(args, "contact_id"),
+        applicationId: s(args, "application_id"),
+        companyId: s(args, "company_id"),
+        status: s(args, "status") as never,
+        askedOn: s(args, "asked_on"),
+        notes: s(args, "notes"),
+        thanked: b(args, "thanked"),
+      }),
+  },
+  {
+    name: "delete_referral",
+    title: "Remove a referral",
+    description:
+      "Delete a referral for good. There is no archive for these. What is lost is the record that a named person put their reputation behind you, which is usually worth keeping even when the job went nowhere — prefer update_referral with a status of DECLINED or NO_ANSWER. Say what will go and get a plain yes first.",
+    inputSchema: object({ id: str("Referral id") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => referrals.deleteReferral(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "referral_review",
+    title: "Who you owe a thank-you, and who has gone quiet",
+    description:
+      "The two questions the referral record exists to answer, in one read. `thanksOwed` is anybody whose referral converted and who has never been thanked — work through it first, because it costs one message and it is the difference between a person who refers you once and a person who refers you for the rest of your career. `waiting` is asks that are still ASKED or AGREED and have sat for a while, longest first, so a nudge goes to the right person; a nudge is one line and is not a second ask. `byStatus` counts the whole set and carries a line on what each state means for what to do next. Reach for this in a weekly review, and after any week with several applications. Read-only, saves nothing: update_referral is what records that you acted.",
+    inputSchema: object({
+      waiting_for_days: num("How long counts as waiting. Default 10."),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      referrals.referralReview(ctx.userId, defined({ waitingForDays: n(args, "waiting_for_days") })),
+  },
+  {
+    name: "log_win",
+    title: "Put something that went well into Me",
+    description:
+      "Append one thing that went well to their current role's background, under a dated heading. THIS IS THE TOOL FOR AFTER THE SEARCH IS OVER, and it is the one that makes the next one possible: Me stops growing the day somebody accepts an offer, and two years later the next search starts from a role with an empty background that nobody can reconstruct from memory. Reach for it whenever they mention something they did — a project that shipped, a number that moved, something somebody thanked them for — whether or not they asked you to record it; offer, do not assume. Write what they said, in their words, with whatever number they gave. DO NOT polish it into a resume bullet and do not invent an impact figure: a highlight is a deliberate distillation and mine_role_background is what does that, later, with them in the room. If nothing in Me is marked as the current role this refuses and says so — and when there is an accepted application it names the employer, so the next move is to add the role rather than to give up.",
+    inputSchema: object(
+      {
+        text: str("What went well, in their words. One or two sentences is right."),
+        role_id: str("Which role it belongs to. Defaults to whichever is marked current."),
+        occurred_on: str("When it happened, YYYY-MM-DD. Only decides which month it files under."),
+      },
+      ["text"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const result = await wins.logWin(ctx.userId, {
+        text: required(args, "text"),
+        roleId: s(args, "role_id"),
+        occurredOn: s(args, "occurred_on"),
+      });
+      return {
+        roleId: result.target.roleId,
+        role: `${result.target.title} at ${result.target.company}`,
+        heading: result.heading,
+        backgroundChars: result.role.background.length,
+      };
+    },
   },
   {
     name: "list_stage_templates",
@@ -3232,6 +4542,146 @@ export const tools: McpTool[] = [
     },
     handler: async (_args, ctx) => pipeline.funnelFlows(ctx.userId),
   },
+  // The six analyses. They own no tables and write nothing — each is an
+  // ordering over reads that already exist, so a number here that disagrees
+  // with diagnose_search or list_resumes is a bug in analytics.ts.
+  {
+    name: "resume_performance",
+    title: "Which resume actually gets answered",
+    description:
+      "Which version of this person's resume gets replies, per document: how many applications went out with it, how many got any response, how many reached an interview, how many reached an offer, and how long a response took. Reach for it when somebody asks which resume to send, whether a tailored one was worth it, or why one document keeps working and another does not — and before writing a new one, because the answer is often that a document already on file is doing fine. `sent` counts applications past the wishlist that this resume was attached to, archived ones excluded. A RESPONSE is the first thing THEY did after you applied: an email received, a call, an interview, an offer, a rejection, or a move into interviewing. Nothing you sent counts — not your application, not a follow-up, not cold outreach — and nothing logged before the day you applied counts, because a recruiter who wrote to you first is not your resume working. `medianDaysToFirstResponse` is measured only over the ones that answered, so it says how long an answer took, never how long you have been waiting; `stillWaiting` is the other half. THE TRAP, and it is the whole reason to read the rest of the result before quoting any of it: every rate is null under five applications rather than rounded, so say the counts — 'two of four' — and never a percentage. `comparable` false means no two resumes have enough behind them to be ranked against each other at all, and you should say that plainly instead of naming a winner. `noResume` is how many applications went out with no document recorded, which is usually the real finding. Every number is a LOWER BOUND on what happened: it measures what was logged, and a reply nobody wrote down does not exist here. Read-only, saves nothing.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => analytics.resumePerformance(ctx.userId),
+  },
+  {
+    name: "loss_report",
+    title: "Where applications die, and why",
+    description:
+      "Every application that ended without an offer, cut six ways: the stage it was actually IN when it died, the reason recorded against it, where it came from, and the employer's industry, size and location. Reach for this when the question is 'what keeps killing these' rather than 'how is the search going' — diagnose_search names the weakest step of the funnel, and this says what the applications leaking out of it have in common. The stage is read from the move itself, so a rejection after two rounds is filed under interviewing rather than under the LOST stage every ending shares; where that move was never recorded — an import, or a job added to the board already dead — it falls back to the furthest round the application ever reached, and `provenance` says how many of each. `byReason` is built from this person's own LOSS tags, plus a bucket for endings nobody gave a reason for, and that bucket is usually the finding: you cannot learn anything from forty rejections with no reason on them, and the fix is to start passing loss reasons when you move something to LOST. Every rate is null under five applications rather than rounded — say the counts, not a percentage. An application wearing two source tags counts into both, so those rows do not sum to the total; that is deliberate, it is evidence about both channels, and splitting it between them would invent a precision nobody recorded. Wishlist rows are not in this at all, because nothing was ever sent. Archived applications are excluded. Read-only, saves nothing.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => analytics.lossReport(ctx.userId),
+  },
+  {
+    name: "skills_gap",
+    title: "What every posting asks for that Me cannot evidence",
+    description:
+      "Reads every job posting captured on the pipeline, works out what keeps coming up across them, and asks search_me whether this person has anything on file for each one. This is a LEARNING LIST, not a fit score for one job — check_resume_fit and the gap_report workflow answer 'does this resume suit this posting', and this answers 'what do the jobs I keep applying for want that I have never written down'. Reach for it when somebody asks what to learn next, what to put on a development plan, or why their applications keep stalling in the same place; and after it, ask them about the missing items, because half of what comes back as missing is work they did and never recorded — anything they tell you goes straight into append_role_background and is then evidenced for every future application. Terms are counted by how many DIFFERENT postings they appear in, so a single long posting cannot invent a trend. Three lists come back. `missing` is the one to trust: search_me matches on ANY word of a term and still found nothing, so zero means zero. `thin` is one record — usually a mention rather than a story. `backed` is the weak end: two or more records matched, but a two-word term can match on the common word alone, so treat it as 'probably fine' rather than proof. THE TRAPS. This has no idea what words mean: 'K8s' and 'Kubernetes' are two different terms and one can read missing while the other reads backed, and an acronym in the posting against a spelled-out name in Me reads as a gap that is not one — check before telling anybody they lack something. It reads THEIR postings, which is a biased sample: it describes what the jobs they chose ask for, not what the market asks for. And `confident` is false under five captured postings, where there is no cross-posting pattern to find at all. `method` explains how each verdict was reached; read it before quoting the result. Nothing is written.",
+    inputSchema: object({
+      limit: num("How many terms to test. Default 40, ceiling 80. Each one costs a search of Me."),
+      min_postings: num(
+        "Only terms appearing in at least this many different postings. Defaults to a quarter of them, never below 3.",
+      ),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      analytics.skillsGap(
+        ctx.userId,
+        defined({ limit: n(args, "limit"), minPostings: n(args, "min_postings") }),
+      ),
+  },
+  {
+    name: "contact_warmth",
+    title: "Who has gone cold that you cannot afford to lose",
+    description:
+      "list_relationships, with time applied to it. It ranks the people in the CRM by what they have actually been worth to the search and then discounts each one by how long since anybody spoke to them, so 'who should I get back in touch with' is one ordered list rather than two columns to combine by eye. Reach for it before a week of cold applications, when somebody asks who to thank or nudge, or when a search has gone quiet and the honest next move is people rather than postings. `cooling` is the list to act on: everyone who earned something — a referral, an introduction, a recruiter on a thread that went somewhere — and has since gone silent or has a ping due, ordered by how much has been LOST rather than by how long it has been, so a referral that produced an onsite three months ago outranks somebody who cold-mailed you once last week. Each person carries the two counts list_relationships gives — `direct`, applications they are attached to, and `atCompany`, applications at a company they represent, which is much weaker evidence — and those are the numbers to quote. THE TRAP: `warmth`, `value` and `decay` are an ORDERING, not a measurement. Never read one out or tell somebody a person is 'at 0.42'; say what they were worth, in the counts, and how long it has been. `confident` false means there is too little on file to rank anybody and the order means nothing — say so rather than reading it as a finding. Archived people and archived applications are excluded. Read-only, saves nothing: schedule_contact_pings puts dates against them and log_follow_up records that you chased one.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => analytics.contactWarmth(ctx.userId),
+  },
+  {
+    name: "research_freshness",
+    title: "Which companies you know nothing current about",
+    description:
+      "The companies with something live riding on them, ordered by WHAT IS COMING UP rather than by how old the research is — because a year-old note on a wishlist row is not a problem and a nine-week-old one on the company you have a final with on Thursday is. Each row says the state (`never`, `stale` or `fresh`), how many days ago the company was last touched, how many live applications ride on it, and the nearest booked interview or due follow-up that the research is actually for. Reach for it at the start of a week, before a round of interview prep, or whenever somebody asks what they should be reading. \"When was this researched\" is approximate ON PURPOSE: it is the company row's own updatedAt, so any edit counts, and being generous costs one company reading as fresh when only its website was fixed — the alternative is a column something has to remember to stamp. Follow it with research_company on the ones that matter, and get_company first so you add to what is written rather than replacing it. Read-only.",
+    inputSchema: object({
+      stale_after_days: num("How old counts as stale. Default 60"),
+      ahead_days: num("How far forward to look for the thing the research is for. Default 21"),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      analytics.researchFreshness(
+        ctx.userId,
+        defined({ staleAfterDays: n(args, "stale_after_days"), aheadDays: n(args, "ahead_days") }),
+      ),
+  },
+  {
+    name: "workspace_health",
+    title: "What is thin in this workspace",
+    description:
+      "The five places this workspace is missing the labels everything else depends on: companies with no industry, applications with no source, people with no relationship recorded, roles with no highlights distilled out of them, and resumes that were never attached to anything. Reach for it when somebody asks how to get more out of the app, when an analysis you just ran came back unconfident, or at the start of a tidy-up — and reach for get_setup_status instead when the question is whether they have started at all, because this one assumes they have. Every check comes back with a count, the total it is out of, one line saying why it matters, the tool that fixes it, and up to five examples WITH IDS, so you can fix them in the same turn rather than reading out a number and asking them to go and click. Work through it conversationally, one check at a time, largest share of a population first — and confirm before writing: a source tag is a claim about where something came from, and guessing one is worse than leaving it blank. `clean` lists the checks that found nothing, so you can say what is already in good shape rather than only what is wrong. Nothing here is a fault; a workspace three days old is supposed to look like this. Archived companies, people and applications are excluded; roles carry no archive of their own, so all of them are counted. Read-only, saves nothing.",
+    inputSchema: object({
+      examples: num("How many examples to return per check. Default 5, ceiling 25."),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      analytics.workspaceHealth(ctx.userId, defined({ examples: n(args, "examples") })),
+  },
+  {
+    name: "morning_brief",
+    title: "What changed, what is due, what to do first",
+    description:
+      "The one call to start a working session with. Returns what has happened since they last looked, what is due now, what is coming this week, what has gone quiet, and an ordered list of what to do first — each item carrying the id of the thing it is about, so the next call needs no lookup. Reach for it on 'catch me up', 'what should I do today', 'anything I am forgetting'; reach for pipeline_review instead when the question is the weekly one, and diagnose_search when the question is why the search is not working. The window is the last day, or the last three on a Monday so Friday afternoon is in it, measured in the person's own time zone. `first` is ordered by what it costs to miss: an offer deadline first, because missing a follow-up costs a day and missing a respond-by costs the job; then anything already overdue; then what is on the calendar today, which cannot be moved; then tasks, pings, and the things that have gone silent. Each entry says why it is where it is. AN EMPTY `first` IS A REAL ANSWER — say there is nothing owed today rather than manufacturing work, because a briefing that finds five things every morning is one people stop reading. `changed` and `ahead` include meetings from a connected Google, Microsoft or CalDAV calendar when there is one, and silently include nothing when there is not. The funnel verdict is left OFF unless you ask for it with include_verdict, because that is the weekly question and computing it roughly doubles the cost of this call. Read-only, saves nothing: log_follow_up, complete_task and move_application_stage are what act on it.",
+    inputSchema: object({
+      since_days: num("How far back 'what changed' looks. Defaults to 1, or 3 on a Monday."),
+      ahead_days: num("How far forward 'what is coming' looks. Default 7."),
+      quiet_after_days: num(
+        "Applications with nothing logged for this many days count as quiet. Default 14.",
+      ),
+      first: num("How many items to put in the priority list. Default 5, ceiling 15."),
+      include_verdict: bool(
+        "Also run the funnel diagnosis and return its headline. Default false — it roughly doubles the cost.",
+      ),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      analytics.morningBrief(
+        ctx.userId,
+        defined({
+          sinceDays: n(args, "since_days"),
+          aheadDays: n(args, "ahead_days"),
+          quietAfterDays: n(args, "quiet_after_days"),
+          first: n(args, "first"),
+          includeVerdict: b(args, "include_verdict"),
+        }),
+      ),
+  },
   {
     name: "export_funnel_image",
     title: "Export the funnel as an image",
@@ -3468,7 +4918,7 @@ export const tools: McpTool[] = [
     name: "create_task",
     title: "Create a task",
     description:
-      "Add a to-do, with a due date and — at most — one thing it is about. A task can hang off an application, a company, a person, a resume, a role in Me, or a note; pass the id of whichever ONE it concerns, and none of them for a task that is about nothing in particular. Passing two is refused rather than guessed at. Attaching it matters: the task shows on that record's own screen, and it goes with it if the record is ever deleted. `detail` is the room for what the task actually involves, which the title should not have to carry. Ids that are not this person's, or are in the archive, are refused.",
+      "Add a to-do, with a due date and — at most — one thing it is about. A task can hang off an application, a company, a person, a resume, a role in Me, or a note; pass the id of whichever ONE it concerns, and none of them for a task that is about nothing in particular. Passing two is refused rather than guessed at. Attaching it matters: the task shows on that record's own screen, and it goes with it if the record is ever deleted. `detail` is the room for what the task actually involves, which the title should not have to carry. Ids that are not this person's, or are in the archive, are refused. Pass repeat_unit to make it come back: completing it creates the NEXT one and only the next one, so a month of ignored instances never materialises thirty rows the day somebody catches up. The date is stepped from the first instance's, so 'every Monday' stays on a Monday however late it is ticked off.",
     inputSchema: object(
       {
         title: str("What needs doing"),
@@ -3480,6 +4930,14 @@ export const tools: McpTool[] = [
         resumeId: str("Or to a resume"),
         roleId: str("Or to a role in Me"),
         noteId: str("Or to a note"),
+        repeat_unit: {
+          type: "string",
+          enum: ["DAY", "WEEK", "MONTH"],
+          description:
+            "Make it repeat. Completing it then creates the next one. Send an empty string to stop a series.",
+        },
+        repeat_every: num("How many units between instances. 1 unless you say otherwise."),
+        repeat_until: str("The last day the series may produce an instance, YYYY-MM-DD. Omit to run until stopped."),
       },
       ["title"],
     ),
@@ -3501,13 +4959,15 @@ export const tools: McpTool[] = [
           resumeId: s(args, "resumeId"),
           roleId: s(args, "roleId"),
           noteId: s(args, "noteId"),
+          ...repeatFrom(args),
         }),
       }),
   },
   {
     name: "complete_task",
     title: "Complete or reopen a task",
-    description: "Mark a task done, or reopen it with done: false.",
+    description:
+      "Mark a task done, or reopen it with done: false. When the task repeats, completing it also creates the NEXT instance and returns it as `next` — one, never one per missed week. Reopening and completing again does not make a second: the new instance points back at the one that made it, so the duplicate is refused rather than written.",
     inputSchema: object({ id: str("Task id"), done: bool("Default true") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -3521,7 +4981,7 @@ export const tools: McpTool[] = [
     name: "update_task",
     title: "Update a task",
     description:
-      "Reword a task, move its due date, or hook it to something different. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for any of the subject ids to unhook it. Setting one subject CLEARS the others, because a task is about at most one thing — so moving a task from an application to a person is one call with contactId, not two. Use complete_task to tick it off; done is not settable here.",
+      "Reword a task, move its due date, or hook it to something different. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for any of the subject ids to unhook it. Setting one subject CLEARS the others, because a task is about at most one thing — so moving a task from an application to a person is one call with contactId, not two. Use complete_task to tick it off; done is not settable here. THE TRAP with repeats: moving this instance's due date moves THIS instance, not the series, because every future date is stepped from the first one. Sending repeat_unit as an empty string stops the series, and completing the task is then the end of it — which is the whole off switch and is on the row somebody is already looking at.",
     inputSchema: object(
       {
         id: str("Task id"),
@@ -3534,6 +4994,14 @@ export const tools: McpTool[] = [
         resumeId: str("Or to a resume"),
         roleId: str("Or to a role in Me"),
         noteId: str("Or to a note"),
+        repeat_unit: {
+          type: "string",
+          enum: ["DAY", "WEEK", "MONTH"],
+          description:
+            "Make it repeat. Completing it then creates the next one. Send an empty string to stop a series.",
+        },
+        repeat_every: num("How many units between instances. 1 unless you say otherwise."),
+        repeat_until: str("The last day the series may produce an instance, YYYY-MM-DD. Omit to run until stopped."),
       },
       ["id"],
     ),
@@ -3557,6 +5025,7 @@ export const tools: McpTool[] = [
           resumeId: s(args, "resumeId"),
           roleId: s(args, "roleId"),
           noteId: s(args, "noteId"),
+          ...repeatFrom(args),
         }),
       ),
   },
@@ -4707,6 +6176,60 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => accountsData.getEmailThread(ctx.userId, required(args, "threadId")),
   },
   {
+    name: "get_mail_sweep",
+    title: "Is the mail sweep on",
+    description:
+      "Whether this person has asked the app to look through their own mail on a schedule, when it last ran, how far it has read up to, and whether a mailbox is actually connected for it to read. `mailConnected` false means the switch is inert until they connect something under Settings → Connections — say that rather than turning on something that cannot work. `note` is non-empty when the last run was short, usually because the window came back full. Read-only, and it reads nothing from anybody's mailbox.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => mailSweep.getMailSweep(ctx.userId),
+  },
+  {
+    name: "set_mail_sweep",
+    title: "Turn the mail sweep on or off",
+    description:
+      "OFF until somebody asks for it, and this is the only thing that turns it on. On, the app reads the mail that arrives from the companies and people already on their pipeline and queues what it finds on their dashboard: the message to log, the person to add, the meeting that means an interview. IT NEVER WRITES TO THE PIPELINE — every finding is a proposal waiting for a yes — and it never reads anything outside the addresses and domains their own records name. It also looks at a connected calendar, which is where the one stage move comes from, so say that when you offer it. Only offer this when somebody asks for it; nobody wants an assistant signing them up to have their inbox read. Turning it off stops the schedule and leaves everything already queued exactly where it is. Returns the settings as they now stand.",
+    inputSchema: object({ on: bool("True to sweep, false to stop") }, ["on"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => mailSweep.setMailSweep(ctx.userId, args.on === true),
+  },
+  {
+    name: "run_mail_sweep",
+    title: "Read what is new in the mail now",
+    description:
+      "Look through this person's own mailboxes for messages that arrived from the companies and people on their pipeline since the last look, and queue what a rule can prove: the message to log against a job, somebody new at a tracked company to add as a contact, and — when a calendar is connected — a booked meeting that means an application has reached interviewing. NOTHING IS WRITTEN. Every finding is a proposal on their dashboard, and accept_proposal is what applies one; do not accept your own proposals. It deliberately does NOT read what a message MEANS: a rejection, an offer, a take-home and a request to reschedule all come back on `needsReading` instead, with the thread id, because a rule that read the word \"unfortunately\" as a rejection would put \"you have been rejected\" in front of somebody who was only being apologised to. That list is what to work through next — get_email_thread on each, then propose_changes with the line you are reading quoted as the evidence. Returns the window it read, how many threads it saw, what it queued, the ones needing a read, and any account that refused. Pass days to look further back than the watermark, which is what to do the first time somebody asks. This is the same work the schedule does hourly on an instance that has /api/sweep/<token> set up, and it is safe to call either way — a thread already accounted for is never queued twice.",
+    inputSchema: object({
+      days: num(
+        "Look back this many days instead of picking up where the last sweep stopped. Use it for a deliberate wider look",
+      ),
+      include_calendar: bool(
+        "Also look at booked meetings, which is where the one stage move comes from. Default true when a calendar is connected",
+      ),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      mailSweep.runMailSweep(
+        ctx.userId,
+        defined({ days: n(args, "days"), includeCalendar: b(args, "include_calendar") }),
+      ),
+  },
+
+  {
     name: "search_calendar",
     title: "Search calendars",
     description:
@@ -4759,11 +6282,14 @@ export const tools: McpTool[] = [
     name: "set_digest_settings",
     title: "Turn the weekly summary or the daily nudge on or off",
     description:
-      "Both are OFF until somebody asks for them, and this is the only thing that turns them on. The weekly one goes out on a Monday morning and says where the search stands, what moved, what is coming and the one thing worth fixing. The daily one arrives only on a day something is actually due — an offer to answer, a company to chase, a task — and sends nothing on a quiet day, on purpose, so the one that matters does not land in a folder nobody reads. `hour` is in their own time zone. Only offer this when somebody asks for mail; nobody wants to be signed up for email by an assistant.",
+      "All three are OFF until somebody asks, and this is the only thing that turns them on. The weekly one goes out on a Monday morning and says where the search stands. The daily one arrives only on a day something is actually due, and sends nothing on a quiet day, on purpose, so the one that matters does not land in a folder nobody reads. The MONTHLY one is the odd one out and the one worth offering at the right moment: it arrives on the last day of the month and asks for one thing that went well, so Me keeps growing after the search is over — offer it the day somebody accepts an offer, which is the day the other two should come off. It stops sending after three unanswered, because a mail ignored three times is a mail somebody has declined; logging a win, or switching it off and on, starts the count again. `hour` is in their own time zone. Only offer any of this when somebody asks for mail; nobody wants to be signed up for email by an assistant.",
     inputSchema: object({
       weekly: bool("The Monday summary"),
       daily: bool("The due-today nudge. Only sends on a day something is due"),
-      hour: num("What hour both go out at, 0-23, in their own zone. Default 8"),
+      monthly_wins: bool(
+        "The end-of-month ask for one thing that went well. For after the search, not during it.",
+      ),
+      hour: num("What hour they go out at, 0-23, in their own zone. Default 8"),
     }),
     annotations: {
       readOnlyHint: false,
@@ -4775,6 +6301,7 @@ export const tools: McpTool[] = [
       digest.setDigestPreferences(ctx.userId, {
         weeklyDigest: b(args, "weekly"),
         dailyNudge: b(args, "daily"),
+        winsNudge: b(args, "monthly_wins"),
         digestHour: n(args, "hour"),
       }),
   },
@@ -4782,12 +6309,13 @@ export const tools: McpTool[] = [
     name: "preview_digest",
     title: "See what a digest would say",
     description:
-      "Build the weekly summary or the due-today nudge and return it WITHOUT sending anything. This is the useful one in a conversation: it is the same read the mail is made from, so 'what does my week look like' and 'what is due today' are answered without anybody's inbox being involved. Returns the subject, the opening line and the sections. `empty` true on a nudge means nothing is due, which is why no mail would go out.",
+      "Build the weekly summary, the due-today nudge or the monthly wins ask and return it WITHOUT sending anything. This is the useful one in a conversation: it is the same read the mail is made from, so 'what does my week look like' and 'what is due today' are answered without anybody's inbox being involved. Returns the subject, the opening line and the sections. `empty` true on a nudge means nothing is due, and on a wins ask means there is no current role for a win to land on — which is why no mail would go out in either case.",
     inputSchema: object({
       kind: {
         type: "string",
         enum: [...DIGEST_KINDS],
-        description: "weekly (the Monday summary) or nudge (what is due today). Default weekly",
+        description:
+          "weekly (the Monday summary), nudge (what is due today) or wins (the end-of-month ask). Default weekly.",
       },
     }),
     annotations: {
@@ -4808,7 +6336,11 @@ export const tools: McpTool[] = [
     description:
       "Actually send the weekly summary or the daily nudge to this person's own address, immediately, ignoring the schedule and the once-a-day guard. It does NOT ignore the opt-in: somebody who has not turned that message on gets nothing and the result says so. Use it to show someone what they signed up for, or when they ask for their week by mail. For reading it here, preview_digest is the tool — this one puts a message in an inbox.",
     inputSchema: object({
-      kind: { type: "string", enum: [...DIGEST_KINDS], description: "weekly or nudge. Default weekly" },
+      kind: {
+        type: "string",
+        enum: [...DIGEST_KINDS],
+        description: "weekly, nudge or wins. Default weekly.",
+      },
     }),
     annotations: {
       readOnlyHint: false,
@@ -4909,6 +6441,39 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => onboarding.setupStatus(ctx.userId),
   },
   {
+    name: "load_sample_workspace",
+    title: "Fill an empty workspace with a sample search",
+    description:
+      "Write a small, plausible job search into this workspace so there is something to look at and something to practise on: four employers, six applications spread across wishlist, applied, interviewing, an offer and one that was lost, five people including a recruiter and an ex-colleague who works at two of them, four weeks of timeline, three tasks (one already overdue), two letters, a resume, and an offer that was revised a week later for eighteen thousand more — which is the thing worth showing, because it is why offers are rows here and not columns. Reach for this when somebody says the app looks empty, or when you are showing them how it works before they have anything real in it; it is a much better first minute than a tour of blank screens. Everything it writes is ORDINARY DATA written the ordinary way, so it moves, sorts, filters, exports and archives exactly like their own will. It refuses on a workspace that already has jobs, roles or highlights in it — a sample mixed into a real search is noise nobody can separate — so if they genuinely want it anyway, say what it will add and pass allow_anyway true. wipe_sample_workspace removes it afterwards, and removes only what this made: anything they have edited or added to is kept and named. Returns what was created and where to look first.",
+    inputSchema: object({
+      allow_anyway: bool(
+        "Load it even though this workspace already has real material in it. Say what it will add first",
+      ),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      sample.loadSampleWorkspace(ctx.userId, { allowAnyway: b(args, "allow_anyway") === true }),
+  },
+  {
+    name: "wipe_sample_workspace",
+    title: "Remove the sample search",
+    description:
+      "Take the sample back out. It removes ONLY what load_sample_workspace wrote, from a list recorded when it wrote it — and anything the person has since edited or added to is KEPT, named in the report, and left exactly where it is, because a sample that quietly deleted a note somebody wrote on it would be worse than no sample. A sample company still holding an application they kept stays too. This is permanent for what it does delete, so say roughly what is about to go and get a plain yes; there is no undo and nothing lands in the archive. Returns what was deleted, what was kept and WHY each survivor was kept, plus `complete`, which is false when anything is still held — a false there means the sample is not fully gone and the report names every piece, so read it back rather than reporting success. Call it again later and it picks up from where it stopped.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => sample.wipeSampleWorkspace(ctx.userId),
+  },
+  {
     name: "restart_tour",
     title: "Show the welcome tour again",
     description:
@@ -4929,10 +6494,111 @@ export const tools: McpTool[] = [
     },
   },
   {
+    name: "list_changes",
+    title: "What each assistant changed",
+    description:
+      "Every write that arrived over MCP, newest first: which connection made it, which tool ran, what it touched and one line saying so. Reach for it when somebody asks what an assistant actually did, when something looks wrong and nobody remembers changing it, or before undo_change so you can name the change rather than guessing at it. Saves made in the app's own screens are NOT here, deliberately — the person was there. Versions are kept for both paths, so an edit made in the editor is still recoverable, just not listed. `undoable` and `restorePointAt` are the important pair: only writes that replace a resume or a role are versioned, and `restorePointAt` is the moment the record would go back to, which is often EARLIER than the change itself because versions are coalesced within ten minutes per author. Say that date out loud before undoing — 'this puts it back to how it was at 14:02, before three edits' — and get a yes. Read-only.",
+    inputSchema: object({
+      connection_id: str("Only changes made through this connection, from list_connections"),
+      tool: str("Only calls of this tool, e.g. 'update_resume'"),
+      kind: str("Only changes to this sort of thing: resume, role, application, contact, offer…"),
+      record_id: str("Only changes to this one record"),
+      limit: num("How many to return. Default 50, ceiling 500."),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      revisions.listChanges(
+        ctx.userId,
+        defined({
+          connectionId: s(args, "connection_id"),
+          tool: s(args, "tool"),
+          kind: s(args, "kind"),
+          recordId: s(args, "record_id"),
+          limit: n(args, "limit"),
+        }),
+      ),
+  },
+  {
+    name: "list_revisions",
+    title: "Earlier versions of a resume or a role",
+    description:
+      "Every stored version of one resume or one role, newest first, with when it was taken and who caused it. These are BEFORE images: each row is what the record looked like before a write replaced it, so the newest row is where an undo lands. Reach for it before update_resume or update_role on something that matters, so you can tell them what they can get back to, and after a write that went wrong. Versions are taken only when the whole thing is replaced — changing a resume's font or its name does not make one — and they are COALESCED: one per record per author per ten minutes, keeping the OLDER image, so a version is the record as it stood before a sitting of work rather than before a keystroke. At most twenty are kept per record and old ones are swept on this instance's schedule, so this is a safety net rather than an archive. `recordExists` false means the record was deleted, and nothing here can be restored to it. Read-only.",
+    inputSchema: object(
+      {
+        kind: {
+          type: "string",
+          enum: ["RESUME", "ROLE"],
+          description: "Which sort of record. These are the only two that are versioned.",
+        },
+        record_id: str("The resume id or the role id"),
+        limit: num("How many versions to return. Default and ceiling 20."),
+      },
+      ["kind", "record_id"],
+    ),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      revisions.listRevisions(
+        ctx.userId,
+        required(args, "kind") as "RESUME" | "ROLE",
+        required(args, "record_id"),
+        n(args, "limit"),
+      ),
+  },
+  {
+    name: "restore_revision",
+    title: "Put a stored version back",
+    description:
+      "Replace a resume's document, or a role's fields, with a version stored earlier. Reach for it when a write went wrong and they want it back, and reach for undo_change instead when what they can name is the CHANGE rather than the version. SAY WHAT WILL HAPPEN AND GET A YES FIRST: this replaces the current state, and the date on the version is often earlier than the change they are thinking of, because versions are coalesced within ten minutes per author — restoring can take them back past several edits. The restore is itself undoable: it takes a fresh version of the current state on its way past, and the result names it as `redoRevisionId`. For a resume only the DOCUMENT comes back — the template, font, size, margins and any published link are left exactly as they are, because silently changing a font back is a surprise and a restore must never resurrect a withdrawn public address. `changed` false means the record already matched that version, and you should say so rather than reporting work that did not happen. Refuses, without writing anything, when the stored version does not parse or the record has been deleted.",
+    inputSchema: object({ id: str("Revision id, from list_revisions") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      revisions.restoreRevision(ctx.userId, required(args, "id"), {
+        writtenBy: "mcp",
+        connectionId: ctx.connectionId,
+        connectionName: ctx.connectionName,
+        tool: "restore_revision",
+      }),
+  },
+  {
+    name: "undo_change",
+    title: "Put back what one change replaced",
+    description:
+      "Undo one row from list_changes. Only writes that replace a resume or a role can be undone, because they are the only two the app takes a copy of on the way past — everything else in the log is a line for the eye. Deleting a company, a person or an application is undone from the archive with restore_records; deleting a role, a resume, a letter, a task or a tag cannot be undone at all, and their tool descriptions say so before they run. SAY WHERE IT LANDS AND GET A YES FIRST: `restorePointAt` on the change is often earlier than the change itself, because versions are coalesced within ten minutes per author, so undoing one edit can take them back past three. The undo is itself undoable — it takes a version of the current state on the way past and names it as `redoRevisionId`. Refuses, without writing anything, when there is no stored version from before that change: it may have been swept, or it may predate version history on this instance.",
+    inputSchema: object({ id: str("Change id, from list_changes") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      revisions.undoChange(ctx.userId, required(args, "id"), {
+        writtenBy: "mcp",
+        connectionId: ctx.connectionId,
+        connectionName: ctx.connectionName,
+        tool: "undo_change",
+      }),
+  },
+  {
     name: "list_connections",
     title: "List AI connections",
     description:
-      "Every assistant wired to this workspace: what it is called, which client it was set up for, when it last called in and from what. Reach for it to answer 'which of these am I still using?' or before rotating something — the ids come back here. Tokens deliberately do not: they are credentials, they would sit in this transcript forever, and the only place a person needs to see one is the client they are pasting it into. `isThisOne` marks the connection you are calling through right now.",
+      "Every assistant wired to this workspace: what it is called, which client it was set up for, when it last called in and from what. Reach for it to answer 'which of these am I still using?' or before rotating something — the ids come back here. Tokens deliberately do not: they are credentials, they would sit in this transcript forever, and the only place a person needs to see one is the client they are pasting it into. `isThisOne` marks the connection you are calling through right now, and `scope` says what each one is SERVED — FULL is everything, and a narrowed one is offered fewer tools without being able to do less to the account. set_connection_scope changes it.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -4950,6 +6616,8 @@ export const tools: McpTool[] = [
         createdAt: row.createdAt,
         lastUsedAt: row.lastUsedAt,
         lastUsedFrom: guessClient(row.lastUsedFrom) || null,
+        scope: row.scope,
+        scopeLabel: scopeLabel(row.scope),
         isThisOne: row.id === ctx.connectionId,
       }));
     },
@@ -5008,6 +6676,30 @@ export const tools: McpTool[] = [
     },
   },
   {
+    name: "set_connection_scope",
+    title: "Narrow what a connection is served",
+    description:
+      "Change which tools one client is offered. Four choices: `FULL` is everything, `WRITING` is Me, resumes and letters plus the four reads a document needs about the job it is aimed at, `PIPELINE` is the search — applications, people, the archive, mail and calendar — and `READONLY` is every tool on this server that writes nothing. Narrowing is a ROUTING AID, NOT A PERMISSION: the URL still resolves to the whole account, anybody who can sign in can widen it again, and it is never a reason to hand a connection URL to somebody you would not hand the account to. What it is good for is accuracy and cost — a client choosing between two hundred tools picks the wrong one more often than one choosing between sixty, and the wrong one here writes into somebody's career history. It takes effect on that client's next call, and a client that caches the tool list may need reconnecting to notice. Say which connection and which scope before you call it, because a narrowed client silently stops being able to do things its person may be in the middle of. Get the id from list_connections, which also says what each one is scoped to now.",
+    inputSchema: object(
+      {
+        id: str("Connection id, from list_connections"),
+        scope: { type: "string", enum: [...SCOPE_VALUES], description: "FULL, WRITING, PIPELINE or READONLY" },
+      },
+      ["id", "scope"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const scope = required(args, "scope") as McpScope;
+      await connections.setConnectionScope(ctx.userId, required(args, "id"), scope);
+      return { id: required(args, "id"), scope, label: scopeLabel(scope), serves: scopeBlurb(scope) };
+    },
+  },
+  {
     name: "rotate_connection",
     title: "Issue a new token for a connection",
     description:
@@ -5029,6 +6721,39 @@ export const tools: McpTool[] = [
           "The old URL is dead. Paste this one into that client or it stays disconnected. It is a password.",
       };
     },
+  },
+  {
+    name: "get_capture_link",
+    title: "The link that captures a posting from a phone",
+    description:
+      "The private address that turns a job posting into an application without opening the app, plus the one-line bookmarklet built around it. This is the answer to \"I find jobs on my phone and I am not going to open a laptop to save one\": tap the bookmark on a posting, the page is read server-side, and the job lands on the wishlist. Returns the URL, the bookmarklet to paste into a bookmark, how many postings it has captured and when it was last used — or `exists` false when none has been minted, which is the default for every account. THE URL IS A CREDENTIAL: anyone holding it can add applications to this workspace. It is far narrower than a connection URL — it cannot read anything and it can do nothing else — but never repeat it anywhere it will be stored, and it is shown in Settings → Connections for them to copy themselves. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => captureLink.getCaptureLink(ctx.userId, ctx.baseUrl),
+  },
+  {
+    name: "set_capture_link",
+    title: "Mint, rotate or revoke the capture link",
+    description:
+      "Create the capture link, replace it, or switch it off. Minting hands back the URL and the bookmarklet; MINTING WHEN ONE ALREADY EXISTS ROTATES IT, which kills the old URL immediately — every bookmark and Shortcut built on it stops working and has to be replaced, so only do it when they say the link has leaked or they want a new one. `off` true revokes it: the address goes back to answering 404 for everybody, and nothing already captured is touched. Tell them which of the three you are about to do, in those words, before you call it. The link is capped at thirty captures an hour, which is generous for a person and useless to anyone who found it, and it should never be pasted anywhere that unfurls links — a preview bot following it would fire it.",
+    inputSchema: object({
+      off: bool("Revoke the link instead of minting one. Nothing already captured is affected"),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      b(args, "off")
+        ? captureLink.revokeCaptureLink(ctx.userId)
+        : captureLink.mintCaptureLink(ctx.userId, ctx.baseUrl),
   },
   {
     name: "delete_connection",
@@ -5649,6 +7374,81 @@ export const tools: McpTool[] = [
     },
   },
   {
+    name: "admin_get_assistant_config",
+    title: "Check the built-in assistant",
+    description:
+      "Whether the chat built into this app is turned on, which model answers, the daily message cap, the tool scope it is served, and what it has cost in tokens over the last thirty days. The API key comes back masked. Empty key means the whole feature is off and the button is never rendered — which is the right setting for an instance whose people connect Claude or another MCP client instead, because that costs this instance nothing. The usage figures are counts and sums across the instance; there is deliberately no way for an admin to read anybody's conversation.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    adminOnly: true,
+    handler: async () => {
+      const settings = await getSettings();
+      const since = new Date(Date.now() - 30 * 86_400_000);
+      const usage = await instanceAssistantUsage(since);
+      return {
+        configured: assistantIsConfigured(settings),
+        anthropicApiKey: maskSecret(settings.assistantApiKey),
+        model: settings.assistantModel,
+        dailyMessages: settings.assistantDailyMessages,
+        scope: settings.assistantScope,
+        last30Days: usage,
+        help: "Billing is the instance owner's: the key is theirs and every message is charged to it. The scope is the honest cost lever — the full tool surface is most of the tokens on every turn, and WRITING is about a quarter of it. Turn it off by clearing the key with admin_set_assistant_config.",
+      };
+    },
+  },
+  {
+    name: "admin_set_assistant_config",
+    title: "Configure the built-in assistant",
+    description:
+      "Turn the chat built into this app on or off and set what it costs. Only the fields you pass are changed. Pass an empty anthropicApiKey to turn it off completely — the button stops being rendered and nothing here calls out. dailyMessages is per person, counted in their own time zone, and 0 means no cap at all, which on a key somebody is paying for is a decision rather than a default. scope is the same four values a connection can be narrowed to and is the one real lever on what a turn costs; it is NOT a permission, because the assistant already runs as whoever is signed in.",
+    inputSchema: object({
+      anthropicApiKey: str("Anthropic API key from console.anthropic.com, starts with sk-ant-. Empty turns the feature off."),
+      model: str(`Which model answers. Default ${DEFAULT_ASSISTANT_MODEL}.`),
+      dailyMessages: num("Messages one person may send in a day. 0 means no cap."),
+      scope: {
+        type: "string",
+        enum: [...SCOPE_VALUES],
+        description: "Which tools it is served: FULL, WRITING, PIPELINE or READONLY",
+      },
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    adminOnly: true,
+    handler: async (args, ctx) => {
+      const scope = s(args, "scope");
+      if (scope !== undefined && !(SCOPE_VALUES as readonly string[]).includes(scope)) {
+        throw new Error(`scope must be one of ${SCOPE_VALUES.join(", ")}.`);
+      }
+      const daily = n(args, "dailyMessages");
+      await updateSettings(
+        ctx.user,
+        defined({
+          assistantApiKey: s(args, "anthropicApiKey"),
+          assistantModel: s(args, "model"),
+          assistantDailyMessages: daily === undefined ? undefined : Math.max(0, Math.round(daily)),
+          assistantScope: scope as McpScope | undefined,
+        }),
+      );
+      const settings = await getSettings();
+      return {
+        configured: assistantIsConfigured(settings),
+        model: settings.assistantModel,
+        dailyMessages: settings.assistantDailyMessages,
+        scope: settings.assistantScope,
+        serves: scopeBlurb(settings.assistantScope),
+      };
+    },
+  },
+  {
     name: "admin_get_google_config",
     title: "Check Google sign-in",
     description:
@@ -5924,9 +7724,9 @@ Finish with a gap report: which of the posting's requirements the resume evidenc
     name: "write_letter",
     title: "Write a letter",
     description:
-      "Draft a cover letter, a cold message, a referral ask, a thank-you or a reply — gathering the posting, the evidence and their own earlier letters first, so it sounds like them and every claim in it is true.",
+      "Draft anything they write that is not a resume — a cover letter, a cold message, a referral ask, a thank-you, a reply, or one of the four that are about them rather than to anybody: a LinkedIn About, a headline, a self-review, a brag doc. Gathers the posting, the evidence and their own earlier documents of the same kind first, so it sounds like them and every claim in it is true.",
     arguments: [
-      { name: "kind", description: "COVER_LETTER, OUTREACH, REFERRAL_ASK, THANK_YOU or REPLY. Defaults to a cover letter" },
+      { name: "kind", description: "COVER_LETTER, OUTREACH, REFERRAL_ASK, THANK_YOU, REPLY, LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW or BRAG_DOC. Defaults to a cover letter" },
       { name: "application_id", description: "The job it is about" },
       { name: "contact_id", description: "The person it is going to" },
       { name: "notes", description: "Anything they want said, or the message being replied to" },
@@ -5949,6 +7749,9 @@ Work in this order:
    cannot evidence, leave it out and tell me afterwards.
 4. Use application.companyNotes and application.recentActivity for the part that is about
    THEM. A letter that could have been sent to any employer is a letter nobody answers.
+   If this is a LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW or BRAG_DOC there is nobody to write
+   to — skip this step entirely and build it out of evidence and profile. Step 3 still
+   holds: nothing goes in that I did not do.
 5. Draft it. Short. No "I am writing to express my interest", no restating the resume, no
    adjectives doing work a fact should do.
 6. Call create_letter to save it, with the kind, a title of "<Company> — <what it is>", the
@@ -6116,10 +7919,10 @@ If the research on file is thin, say so and offer to run research_company first.
 Work in this order:
 1. Call list_linked_accounts. If nothing is connected, stop and tell me how to connect (Settings → Connections, or connect_imap_account with an app password); do not guess at my mail.
 2. Call list_applications (open ones) and list_follow_ups.
-3. For each open application, call list_correspondence with its applicationId and days=${args.days ?? "7"}. Where a thread looks like it changed something — a reply from the company, an interview invitation, a rejection, an offer, a take-home — call get_email_thread and read it rather than trusting the snippet.
+3. Call run_mail_sweep with days=${args.days ?? "7"}. That makes ONE request per mailbox for the whole pipeline instead of one per application, queues the things a rule can prove, and hands back a needsReading list of the threads it deliberately would not judge. Then call get_email_thread on each of those and READ it rather than trusting the snippet — a reply from the company, an interview invitation, a rejection, an offer, a take-home. Only fall back to list_correspondence per application if run_mail_sweep says no mailbox is connected.
 4. Call search_calendar for the same window forward ${args.days ?? "7"} days too, and note interviews or calls that are on the calendar but not on the pipeline.
 5. Tell me, application by application, what moved and quote the line that says so. Be specific about dates and numbers; never round a salary or a deadline.
-6. Then call propose_changes with one proposal per thing you found — LOG_ACTIVITY (type INTERVIEW, EMAIL_RECEIVED, REJECTION, OFFER as fits, with the date it happened), MOVE_STAGE, SET_FOLLOW_UP, CREATE_TASK or CREATE_CONTACT — quoting the line from the thread as the evidence on each. That queues them on my dashboard, where I can accept or dismiss them one at a time whenever I get to it. Call list_proposals first so you do not queue the same suggestion twice, and check the refused list in the result.
+6. Then call propose_changes with one proposal per thing the READING turned up — the sweep has already queued what it could prove, so do not queue those again — LOG_ACTIVITY (type INTERVIEW, EMAIL_RECEIVED, REJECTION, OFFER as fits, with the date it happened), MOVE_STAGE, SET_FOLLOW_UP, CREATE_TASK or CREATE_CONTACT — quoting the line from the thread as the evidence on each. That queues them on my dashboard, where I can accept or dismiss them one at a time whenever I get to it. Call list_proposals first so you do not queue the same suggestion twice, and check the refused list in the result.
 7. Do NOT call accept_proposal. Nothing is written until I say so. Then tell me what you queued, and read back anything that was refused.
 
 Skip newsletters, job-board digests and anything automated that does not concern a specific application. If a thread involves a person who is not a contact yet, suggest create_contact with their name and address.`,
@@ -6166,9 +7969,15 @@ Then confirm what you filed and where, and ask me about anything that was ambigu
 
 export const promptsByName = new Map(prompts.map((prompt) => [prompt.name, prompt]));
 
-/** Same rule as tools: members never see the admin workflows. */
-export function promptsFor(user: { role: UserRole }): McpPrompt[] {
-  return isAdmin(user) ? prompts : prompts.filter((prompt) => !prompt.adminOnly);
+/**
+ * Same rule as tools: members never see the admin workflows, and a narrowed
+ * connection only sees the workflows whose every step it can actually take.
+ *
+ * Defined further down, once the scope tables exist — this shim keeps the
+ * export where callers expect it.
+ */
+export function promptsFor(user: { role: UserRole }, scope: McpScope = "FULL"): McpPrompt[] {
+  return promptsForScope(user, scope);
 }
 
 // ---------------------------------------------------------------------------
@@ -6275,6 +8084,10 @@ const MAX_RESULT_CHARS: Record<string, number> = {
   list_archive: 80_000,
   get_resume: 80_000,
   preview_resume_text: 60_000,
+  // Forty terms each carrying up to three excerpts, and a brief that carries a
+  // week of the schedule plus the pipeline's stats.
+  skills_gap: 60_000,
+  morning_brief: 60_000,
   admin_audit_log: 80_000,
 };
 
@@ -6307,8 +8120,172 @@ export function metaFor(name: string): Json | undefined {
 /** The data tools plus the workflow tools. Order matters only for display. */
 export const allTools: McpTool[] = [...tools, ...prompts.map(promptAsTool)];
 
-export function toolsFor(user: { role: UserRole }): McpTool[] {
-  return isAdmin(user) ? allTools : allTools.filter((tool) => !tool.adminOnly);
+export const toolsByName = new Map(allTools.map((tool) => [tool.name, tool]));
+
+// ---------------------------------------------------------------------------
+// Scopes: what one connection is SERVED
+// ---------------------------------------------------------------------------
+
+/**
+ * Which tool names belong to each scope, worked out once at module load.
+ *
+ * Per-request would mean walking two hundred tools on every `tools/list`, and
+ * the table is static, so it is built with the module: eight entries, one per
+ * scope per role.
+ *
+ * FULL is not computed from sections at all. It is defined as "exactly what
+ * this server served before scopes existed", which is the promise the migration
+ * makes, and the only way to keep that promise is to take the same code path.
+ */
+function namesInSections(keys: readonly string[]): Set<string> {
+  const names = new Set<string>();
+  for (const key of keys) {
+    const section = SECTIONS.find((candidate) => candidate.key === key);
+    if (!section) throw new Error(`scopes.ts names a section "${key}" that SECTIONS does not have`);
+    const from = tools.findIndex((tool) => tool.name === section.first);
+    const to = tools.findIndex((tool) => tool.name === section.last);
+    if (from < 0 || to < 0 || to < from) {
+      throw new Error(
+        `Section "${key}" runs ${section.first}..${section.last}, which is no longer a range in tools.ts`,
+      );
+    }
+    for (const tool of tools.slice(from, to + 1)) names.add(tool.name);
+  }
+  return names;
 }
 
-export const toolsByName = new Map(allTools.map((tool) => [tool.name, tool]));
+/**
+ * A workflow's membership is DERIVED, not declared: a prompt is served in a
+ * scope only when every tool its body names is served there.
+ *
+ * Declaring it would be a second list to keep right, and the failure mode is
+ * silent — a workflow that tells a client to call a tool it cannot see reads
+ * as the app being broken. Deriving it means adding a step to `tailor_resume`
+ * that needs a pipeline write simply moves it to FULL, with no edit anywhere.
+ */
+function workflowFits(prompt: McpPrompt, served: Set<string>): boolean {
+  // Build with empty arguments purely to read the body; nothing is executed.
+  let body: string;
+  try {
+    body = prompt.build({});
+  } catch {
+    // A workflow whose build refuses empty arguments cannot be inspected, so
+    // it is FULL-only rather than silently included.
+    return false;
+  }
+  const named = [...body.matchAll(/\b([a-z][a-z0-9_]{3,})\b/g)]
+    .map((match) => match[1])
+    .filter((word) => toolsByName.has(word));
+  return named.every((name) => served.has(name));
+}
+
+type ScopeTable = { tools: McpTool[]; prompts: McpPrompt[]; names: Set<string> };
+
+function buildScope(scopeKey: McpScope, admin: boolean): ScopeTable {
+  const roleTools = admin ? allTools : allTools.filter((tool) => !tool.adminOnly);
+  const rolePrompts = admin ? prompts : prompts.filter((prompt) => !prompt.adminOnly);
+
+  if (scopeKey === "FULL") {
+    return { tools: roleTools, prompts: rolePrompts, names: new Set(roleTools.map((t) => t.name)) };
+  }
+
+  const scope = scopeByKey.get(scopeKey);
+  if (!scope) throw new Error(`Unknown scope ${scopeKey}`);
+  const inSections = namesInSections(scope.sections);
+  const allowed = new Set<string>([...inSections, ...scope.extras, ...CORE_TOOLS]);
+
+  // allTools carries every workflow TWICE — once here as a tool, and once in
+  // `prompts`, because prompts are a client-optional surface and tools are not.
+  // A name filter cannot see that: no workflow is in a section or an extra, so
+  // the tool copy fell out of every narrowed scope and a WRITING connection got
+  // tailor_resume in prompts/list and nowhere else — invisible to exactly the
+  // clients the tool copy exists for. So they are set aside here and decided as
+  // workflows below, by the same workflowFits that decides the prompt.
+  const workflowNames = new Set(prompts.map((prompt) => prompt.name));
+
+  const served = roleTools.filter((tool) => {
+    if (workflowNames.has(tool.name)) return false;
+    // Admin tools are excluded from EVERY non-FULL scope, including for an
+    // admin and including READONLY. An admin's pipeline client has no business
+    // being offered admin_delete_user, and this is one line rather than a
+    // fifth scope.
+    if (tool.adminOnly) return false;
+    if (!allowed.has(tool.name)) return false;
+    if (scope.readOnly && tool.annotations.readOnlyHint !== true) return false;
+    return true;
+  });
+  const names = new Set(served.map((tool) => tool.name));
+
+  // A fixed point rather than one pass, because a workflow may name another —
+  // prep_for_interview ends by offering to run research_company. Judged against
+  // the tools alone, a workflow like that could never fit a narrowed scope even
+  // when everything it needs is served. So: start from the tools, add the
+  // workflows that fit, and go round again until nothing new fits. It
+  // terminates because the set only grows and is bounded by the array.
+  const reachable = new Set(names);
+  const fits: McpPrompt[] = [];
+  const candidates = rolePrompts.filter((prompt) => !prompt.adminOnly);
+  for (;;) {
+    const next = candidates.filter(
+      (prompt) => !reachable.has(prompt.name) && workflowFits(prompt, reachable),
+    );
+    if (next.length === 0) break;
+    for (const prompt of next) {
+      reachable.add(prompt.name);
+      fits.push(prompt);
+    }
+  }
+  // Back into the array's own order, so two scopes never disagree about it.
+  const fitNames = new Set(fits.map((prompt) => prompt.name));
+  fits.sort((a, b) => candidates.indexOf(a) - candidates.indexOf(b));
+
+  return {
+    // Appended rather than interleaved, which is the order FULL serves too.
+    tools: [...served, ...roleTools.filter((tool) => fitNames.has(tool.name))],
+    prompts: fits,
+    names: new Set([...names, ...fitNames]),
+  };
+}
+
+const SCOPE_TABLES = new Map<string, ScopeTable>();
+for (const scope of SCOPE_VALUES) {
+  for (const admin of [false, true]) {
+    SCOPE_TABLES.set(`${scope}:${admin}`, buildScope(scope, admin));
+  }
+}
+
+const tableFor = (user: { role: UserRole }, scope: McpScope): ScopeTable =>
+  SCOPE_TABLES.get(`${scope}:${isAdmin(user)}`) ?? SCOPE_TABLES.get(`FULL:${isAdmin(user)}`)!;
+
+export function toolsFor(user: { role: UserRole }, scope: McpScope = "FULL"): McpTool[] {
+  return tableFor(user, scope).tools;
+}
+
+function promptsForScope(user: { role: UserRole }, scope: McpScope): McpPrompt[] {
+  return tableFor(user, scope).prompts;
+}
+
+/**
+ * Why a tool is not served here, or null when it is.
+ *
+ * The sentence matters: a client that asked for something narrowed away should
+ * be able to say what happened and how its person widens it, rather than
+ * guessing that the app is broken.
+ */
+export function outOfScope(
+  name: string,
+  user: { role: UserRole },
+  scope: McpScope,
+): string | null {
+  const tool = toolsByName.get(name);
+  if (!tool) return `There is no tool called ${name}.`;
+  if (tool.adminOnly && !isAdmin(user)) {
+    return `${name} is an admin tool and this account is not an admin.`;
+  }
+  if (tableFor(user, scope).names.has(name)) return null;
+  return (
+    `${name} is not served on this connection, which is scoped to "${scopeLabel(scope)}" — ` +
+    `${scopeBlurb(scope)} Nothing is wrong: the account still has that tool. ` +
+    `They can widen this connection under Settings → Connections, or use a connection that is not narrowed.`
+  );
+}

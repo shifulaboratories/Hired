@@ -1,6 +1,7 @@
 import * as pipeline from "@/lib/data/pipeline";
 import { listMatchedEvents } from "@/lib/data/accounts";
 import { offersDueBetween, offersDueBy } from "@/lib/data/offers";
+import { interviewsBetween, FORMAT_LABEL } from "@/lib/data/interviews";
 import { timeZoneOf } from "@/lib/data/me";
 import { endOfDay } from "@/lib/time";
 
@@ -21,10 +22,11 @@ export async function listSchedule(
 ): Promise<pipeline.ScheduleEntry[]> {
   const start = new Date(from);
   const end = new Date(to);
-  const [own, matched] = await Promise.all([
+  const [own, matched, rounds] = await Promise.all([
     pipeline.listSchedule(userId, from, to),
     // Empty, never an error, when nothing is connected.
     listMatchedEvents(userId, start, end).then((result) => result.events),
+    interviewsBetween(userId, start, end),
   ]);
 
   const deadlines: pipeline.ScheduleEntry[] = (await offersDueBetween(userId, start, end)).map(
@@ -66,7 +68,33 @@ export async function listSchedule(
     url: event.url,
   }));
 
-  return [...own, ...meetings, ...deadlines].sort((a, b) => a.date.getTime() - b.date.getTime());
+  // Rounds, merged here for the same reason offer deadlines are: they belong in
+  // a window of time rather than in the bell. An interview on Tuesday is an
+  // appointment, not a debt, and putting appointments in the bell turns it into
+  // a calendar — which is the thing the tasks-page decision took out.
+  const interviews: pipeline.ScheduleEntry[] = rounds.map((interview) => ({
+    kind: "INTERVIEW" as const,
+    id: interview.id,
+    date: interview.scheduledAt!,
+    title: `${interview.label || `Round ${interview.round}`} · ${interview.application.company.name}`,
+    detail: [
+      FORMAT_LABEL[interview.format],
+      interview.application.roleTitle,
+      interview.interviewers.map((person) => person.name).join(", "),
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    company: interview.application.company.name,
+    applicationId: interview.application.id,
+    contactId: null,
+    stage: interview.application.stage,
+    done: null,
+    activityType: null,
+  }));
+
+  return [...own, ...meetings, ...deadlines, ...interviews].sort(
+    (a, b) => a.date.getTime() - b.date.getTime(),
+  );
 }
 
 /**
