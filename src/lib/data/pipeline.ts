@@ -2916,27 +2916,39 @@ export async function listRelationships(userId: string, now = new Date()): Promi
     };
   });
 
-  // What a person is worth, for ordering only. A direct interview outranks a
-  // company one because the evidence behind it is stronger, and neither is a
-  // score anybody is shown — the two counts are.
-  const weight = (row: ContactStanding) =>
+  const sorted = [...standings].sort(
+    (a, b) => relationshipWeight(b) - relationshipWeight(a) || b.quietDays - a.quietDays,
+  );
+
+  return {
+    contacts: sorted,
+    worthKeepingWarm: sorted.filter(
+      (row) => relationshipWeight(row) > 0 && (row.pingDue || row.quietDays >= CONTACT_QUIET_AFTER),
+    ),
+    // One contact and one application cannot tell anybody who matters.
+    confident: contacts.length >= 3 && applications.length >= 3,
+  };
+}
+
+/**
+ * What a person is worth, for ORDERING only. A direct interview outranks a
+ * company one because the evidence behind it is stronger, and neither is a
+ * score anybody is shown — the two counts are.
+ *
+ * Exported, and hoisted out of `listRelationships` for that, because
+ * `contactWarmth` in analytics.ts multiplies it by a decay curve. A second copy
+ * of this arithmetic would drift, and then two screens would disagree about who
+ * matters, which is the one thing this number exists to settle.
+ */
+export function relationshipWeight(row: ContactStanding) {
+  return (
     row.direct.offers * 8 +
     row.direct.interviews * 4 +
     row.direct.applications * 2 +
     row.atCompany.offers * 2 +
     row.atCompany.interviews +
-    row.atCompany.applications * 0.25;
-
-  const sorted = [...standings].sort((a, b) => weight(b) - weight(a) || b.quietDays - a.quietDays);
-
-  return {
-    contacts: sorted,
-    worthKeepingWarm: sorted.filter(
-      (row) => weight(row) > 0 && (row.pingDue || row.quietDays >= CONTACT_QUIET_AFTER),
-    ),
-    // One contact and one application cannot tell anybody who matters.
-    confident: contacts.length >= 3 && applications.length >= 3,
-  };
+    row.atCompany.applications * 0.25
+  );
 }
 
 /** Days of silence after which a contact who earned something is worth a nudge. */

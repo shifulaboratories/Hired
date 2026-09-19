@@ -1,7 +1,7 @@
 ---
 title: "Pipeline tools"
 sidebarTitle: "Pipeline"
-description: "Fifty-seven tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
+description: "Sixty-three tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
 icon: "list-check"
 ---
 
@@ -538,6 +538,65 @@ _Get the funnel, rung by rung_
 The numbers behind the flow chart on the analytics page. The ladder is built from the rounds this person actually records: with none it is applied → interviewing → offer, and with rounds logged it is applied → round 1 → round 2 → … → offer, which is the whole reason to number them. For each rung: how many ever got that far, how many went on, how many are still sitting there, and how many left at that exact point and why — `ended` carries their own LOSS tag names, plus 'Offer accepted' for a signed one and 'Lost' for an ending nobody gave a reason for. Progress is measured by the furthest an application actually got, so a rejection after two rounds leaks out of round two rather than out of applied. Each rung carries its own `label` and a `tone` token, so do not translate the keys yourself. Wishlist rows are counted separately and are not in the funnel at all, because nothing was ever sent. Archived applications are excluded. Use export_funnel_image for the picture. Read-only. Says nothing is there yet rather than dividing by zero.
 
 No arguments.
+
+### `resume_performance`
+
+_Which resume actually gets answered_
+
+Which version of this person's resume gets replies, per document: how many applications went out with it, how many got any response, how many reached an interview, how many reached an offer, and how long a response took. Reach for it when somebody asks which resume to send, whether a tailored one was worth it, or why one document keeps working and another does not — and before writing a new one, because the answer is often that a document already on file is doing fine. `sent` counts applications past the wishlist that this resume was attached to, archived ones excluded. A RESPONSE is the first thing THEY did after you applied: an email received, a call, an interview, an offer, a rejection, or a move into interviewing. Nothing you sent counts — not your application, not a follow-up, not cold outreach — and nothing logged before the day you applied counts, because a recruiter who wrote to you first is not your resume working. `medianDaysToFirstResponse` is measured only over the ones that answered, so it says how long an answer took, never how long you have been waiting; `stillWaiting` is the other half. THE TRAP, and it is the whole reason to read the rest of the result before quoting any of it: every rate is null under five applications rather than rounded, so say the counts — 'two of four' — and never a percentage. `comparable` false means no two resumes have enough behind them to be ranked against each other at all, and you should say that plainly instead of naming a winner. `noResume` is how many applications went out with no document recorded, which is usually the real finding. Every number is a LOWER BOUND on what happened: it measures what was logged, and a reply nobody wrote down does not exist here. Read-only, saves nothing.
+
+No arguments.
+
+### `loss_report`
+
+_Where applications die, and why_
+
+Every application that ended without an offer, cut six ways: the stage it was actually IN when it died, the reason recorded against it, where it came from, and the employer's industry, size and location. Reach for this when the question is 'what keeps killing these' rather than 'how is the search going' — diagnose_search names the weakest step of the funnel, and this says what the applications leaking out of it have in common. The stage is read from the move itself, so a rejection after two rounds is filed under interviewing rather than under the LOST stage every ending shares; where that move was never recorded — an import, or a job added to the board already dead — it falls back to the furthest round the application ever reached, and `provenance` says how many of each. `byReason` is built from this person's own LOSS tags, plus a bucket for endings nobody gave a reason for, and that bucket is usually the finding: you cannot learn anything from forty rejections with no reason on them, and the fix is to start passing loss reasons when you move something to LOST. Every rate is null under five applications rather than rounded — say the counts, not a percentage. An application wearing two source tags counts into both, so those rows do not sum to the total; that is deliberate, it is evidence about both channels, and splitting it between them would invent a precision nobody recorded. Wishlist rows are not in this at all, because nothing was ever sent. Archived applications are excluded. Read-only, saves nothing.
+
+No arguments.
+
+### `skills_gap`
+
+_What every posting asks for that Me cannot evidence_
+
+Reads every job posting captured on the pipeline, works out what keeps coming up across them, and asks search_me whether this person has anything on file for each one. This is a LEARNING LIST, not a fit score for one job — check_resume_fit and the gap_report workflow answer 'does this resume suit this posting', and this answers 'what do the jobs I keep applying for want that I have never written down'. Reach for it when somebody asks what to learn next, what to put on a development plan, or why their applications keep stalling in the same place; and after it, ask them about the missing items, because half of what comes back as missing is work they did and never recorded — anything they tell you goes straight into append_role_background and is then evidenced for every future application. Terms are counted by how many DIFFERENT postings they appear in, so a single long posting cannot invent a trend. Three lists come back. `missing` is the one to trust: search_me matches on ANY word of a term and still found nothing, so zero means zero. `thin` is one record — usually a mention rather than a story. `backed` is the weak end: two or more records matched, but a two-word term can match on the common word alone, so treat it as 'probably fine' rather than proof. THE TRAPS. This has no idea what words mean: 'K8s' and 'Kubernetes' are two different terms and one can read missing while the other reads backed, and an acronym in the posting against a spelled-out name in Me reads as a gap that is not one — check before telling anybody they lack something. It reads THEIR postings, which is a biased sample: it describes what the jobs they chose ask for, not what the market asks for. And `confident` is false under five captured postings, where there is no cross-posting pattern to find at all. `method` explains how each verdict was reached; read it before quoting the result. Nothing is written.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `limit` | number | How many terms to test. Default 40, ceiling 80. Each one costs a search of Me. |
+| `min_postings` | number | Only terms appearing in at least this many different postings. Defaults to a quarter of them, never below 3. |
+
+### `contact_warmth`
+
+_Who has gone cold that you cannot afford to lose_
+
+list_relationships, with time applied to it. It ranks the people in the CRM by what they have actually been worth to the search and then discounts each one by how long since anybody spoke to them, so 'who should I get back in touch with' is one ordered list rather than two columns to combine by eye. Reach for it before a week of cold applications, when somebody asks who to thank or nudge, or when a search has gone quiet and the honest next move is people rather than postings. `cooling` is the list to act on: everyone who earned something — a referral, an introduction, a recruiter on a thread that went somewhere — and has since gone silent or has a ping due, ordered by how much has been LOST rather than by how long it has been, so a referral that produced an onsite three months ago outranks somebody who cold-mailed you once last week. Each person carries the two counts list_relationships gives — `direct`, applications they are attached to, and `atCompany`, applications at a company they represent, which is much weaker evidence — and those are the numbers to quote. THE TRAP: `warmth`, `value` and `decay` are an ORDERING, not a measurement. Never read one out or tell somebody a person is 'at 0.42'; say what they were worth, in the counts, and how long it has been. `confident` false means there is too little on file to rank anybody and the order means nothing — say so rather than reading it as a finding. Archived people and archived applications are excluded. Read-only, saves nothing: schedule_contact_pings puts dates against them and log_follow_up records that you chased one.
+
+No arguments.
+
+### `workspace_health`
+
+_What is thin in this workspace_
+
+The five places this workspace is missing the labels everything else depends on: companies with no industry, applications with no source, people with no relationship recorded, roles with no highlights distilled out of them, and resumes that were never attached to anything. Reach for it when somebody asks how to get more out of the app, when an analysis you just ran came back unconfident, or at the start of a tidy-up — and reach for get_setup_status instead when the question is whether they have started at all, because this one assumes they have. Every check comes back with a count, the total it is out of, one line saying why it matters, the tool that fixes it, and up to five examples WITH IDS, so you can fix them in the same turn rather than reading out a number and asking them to go and click. Work through it conversationally, one check at a time, largest share of a population first — and confirm before writing: a source tag is a claim about where something came from, and guessing one is worse than leaving it blank. `clean` lists the checks that found nothing, so you can say what is already in good shape rather than only what is wrong. Nothing here is a fault; a workspace three days old is supposed to look like this. Archived companies, people and applications are excluded; roles carry no archive of their own, so all of them are counted. Read-only, saves nothing.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `examples` | number | How many examples to return per check. Default 5, ceiling 25. |
+
+### `morning_brief`
+
+_What changed, what is due, what to do first_
+
+The one call to start a working session with. Returns what has happened since they last looked, what is due now, what is coming this week, what has gone quiet, and an ordered list of what to do first — each item carrying the id of the thing it is about, so the next call needs no lookup. Reach for it on 'catch me up', 'what should I do today', 'anything I am forgetting'; reach for pipeline_review instead when the question is the weekly one, and diagnose_search when the question is why the search is not working. The window is the last day, or the last three on a Monday so Friday afternoon is in it, measured in the person's own time zone. `first` is ordered by what it costs to miss: an offer deadline first, because missing a follow-up costs a day and missing a respond-by costs the job; then anything already overdue; then what is on the calendar today, which cannot be moved; then tasks, pings, and the things that have gone silent. Each entry says why it is where it is. AN EMPTY `first` IS A REAL ANSWER — say there is nothing owed today rather than manufacturing work, because a briefing that finds five things every morning is one people stop reading. `changed` and `ahead` include meetings from a connected Google, Microsoft or CalDAV calendar when there is one, and silently include nothing when there is not. The funnel verdict is left OFF unless you ask for it with include_verdict, because that is the weekly question and computing it roughly doubles the cost of this call. Read-only, saves nothing: log_follow_up, complete_task and move_application_stage are what act on it.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `since_days` | number | How far back 'what changed' looks. Defaults to 1, or 3 on a Monday. |
+| `ahead_days` | number | How far forward 'what is coming' looks. Default 7. |
+| `quiet_after_days` | number | Applications with nothing logged for this many days count as quiet. Default 14. |
+| `first` | number | How many items to put in the priority list. Default 5, ceiling 15. |
+| `include_verdict` | boolean | Also run the funnel diagnosis and return its headline. Default false — it roughly doubles the cost. |
 
 ### `export_funnel_image`
 
