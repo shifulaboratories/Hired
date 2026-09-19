@@ -116,6 +116,21 @@ just *talk* to it.
   jobs already on the board. Deleting a line leaves the tasks it already made alone —
   deleting a setting should not delete work you are part-way through. A new account has
   none; there is a starting set of six if you would rather not design your own.
+- **One message can leave** — off, and a long way off. Two emails have always
+  gone to you and nothing else has ever left this app; a follow-up is the one
+  exception, and it is mostly made of refusals. It sends **from your own
+  mailbox**, never as the instance, so it arrives from you and lands in your Sent
+  folder — a chase that reaches a recruiter from a tool's address is worse than
+  no chase. It can only be addressed to somebody **already on your pipeline**:
+  the address is read off their record and there is no way to give it one, which
+  is what stops an assistant mailing forty strangers. It drafts first, always,
+  and out of the box every message waits on your dashboard for you to press Send
+  — **no assistant can make that click**. Three separate switches have to be on:
+  the instance's, yours, and a Google or Microsoft mailbox reconnected with
+  permission to send. Turning yours on is also setting a daily number, because
+  there is no state where sending is on and the limit is undefined. You can hand
+  over the click if you want to, and the copy beside that switch says plainly
+  what you are handing over.
 - **Somewhere to put the file** — the signed offer letter, the take-home you sent,
   the PDF a recruiter mailed over, a screenshot of a posting that has since come
   down. Files hang off exactly one thing — a job, an offer, a letter, a person or
@@ -248,7 +263,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  207 tools any MCP client can call (240 if you're an admin). Claude, Claude Code, ChatGPT,
+  214 tools any MCP client can call (247 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -431,7 +446,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 207, or 240 if you're an admin.
+then tells you how many tools answered — 214, or 247 if you're an admin.
 
 Each connection can also be narrowed to one job, in the panel where you copy its URL:
 **Everything** (the default, and what every connection had before this existed), **Me,
@@ -667,7 +682,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-207 tools. One hundred and ninety-eight of them are the data tools across the five areas, the
+214 tools. Two hundred and five of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it

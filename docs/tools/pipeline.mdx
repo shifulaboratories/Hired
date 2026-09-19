@@ -1,7 +1,7 @@
 ---
 title: "Pipeline tools"
 sidebarTitle: "Pipeline"
-description: "Ninety-two tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
+description: "Ninety-nine tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
 icon: "list-check"
 ---
 
@@ -240,6 +240,66 @@ Remove one recorded offer for good. There is no archive for offers — this is g
 | --- | --- | --- |
 | `id` | string | **required** — Offer id, from list_offers |
 
+### `get_outbound_settings`
+
+_Can this workspace send mail_
+
+Whether this app is allowed to send a message from this person's own mailbox, how many a day they set, whether each one waits for a click, which mailboxes can actually send, how many have gone today and what is standing in the way right now. `blockedBecause` is the whole answer when it is non-empty — read it back rather than trying the send and reporting a failure. Three separate things have to be true: an admin turned it on for the instance, the person set a daily number above zero themselves, and a Google or Microsoft mailbox is connected WITH the send permission (an IMAP account cannot send at all, whatever else it does). Read-only, and it sends nothing.
+
+No arguments.
+
+### `draft_outbound_email`
+
+_Draft a message to send from their own mailbox_
+
+Write a message and put it in the outbox as a DRAFT. IT IS NOT SENT — nothing here sends anything, ever, and send_outbound_email is a separate call with its own refusals. This is the follow-up nobody gets round to: the chase after a week of silence, the thank-you the day after an interview, the reply to a recruiter. It goes out from ONE OF THEIR OWN MAILBOXES, so it arrives from them and lands in their Sent folder; this app never sends as itself on anybody's behalf, because a follow-up to a recruiter arriving from a tool's address is worse than no follow-up. IT CAN ONLY BE ADDRESSED TO SOMEBODY ALREADY ON FILE: pass contact_id, and the address is read off that person's record. There is no argument anywhere that takes an address, which is deliberate and is the reason you cannot use this to reach anyone they have not already written down — if they want to mail somebody new, create the contact first and say so. Write the message in THEIR voice, from what is actually on file: call prep_letter or search_me first if you are drafting anything substantial, quote nothing that is not theirs, and never invent a meeting, a name, a date, a number or an agreement that did not happen. Keep it short — this is a follow-up, not a cover letter; use create_letter for anything that wants a title and a draft history. Returns the draft with its id, the mailbox it will go from, what it will say, and whether it now needs approving: out of the box every message waits for a click in the app that NO TOOL CAN MAKE, and the result says so in as many words. Nothing is sent by calling this.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `contact_id` | string | **required** — Who it is to. The address comes off their record — there is no way to pass one |
+| `subject` | string | **required** — The subject line |
+| `body` | string | **required** — The message, plain text, in their voice |
+| `account_id` | string | Which of their mailboxes to send from. Omit to use the only one that can send |
+| `application_id` | string | The job this is about, so the send lands on that job's timeline |
+| `letter_id` | string | A letter this was drafted from, if there is one. Its sentAt is stamped when this goes |
+
+### `list_outbound`
+
+_What is in the outbox_
+
+Every message this app has drafted, sent, failed or had cancelled for this person, newest first — with what it said, who it went to, which mailbox it went from, which connection drafted it and which sent it. Pass status to narrow it: DRAFT is waiting, APPROVED has been clicked and is ready, SENT has gone, FAILED says why in `error`, CANCELLED was called off. Reach for it before drafting anything, so you do not send a second chase to somebody who was chased on Tuesday, and read what went before to match how they actually write. The body is kept after sending, deliberately: a record of what you said is the thing this product exists to keep. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `status` | enum | DRAFT, APPROVED, SENT, FAILED or CANCELLED. Omit for all of them  `DRAFT` · `APPROVED` · `SENT` · `FAILED` · `CANCELLED` |
+| `application_id` | string | Only messages about this job |
+| `contact_id` | string | Only messages to this person |
+| `limit` | number | Max rows to return. Default 50, hard ceiling 500. Prefer narrowing the filters. |
+
+### `send_outbound_email`
+
+_Send a drafted message_
+
+Actually send a draft, from the person's own mailbox. THIS IS THE ONE THING IN THIS APP THAT PUTS A MESSAGE IN FRONT OF SOMEBODY WHO IS NOT ITS OWNER, so read what it says back before claiming anything. It refuses, in order and by name, when: the instance does not allow members to send; the person has not turned it on and set a daily number; no mailbox can send; they are at their daily limit; one went less than a minute ago; the person or the job it is about is in the archive; or — the one that matters most — they are in "approve each one" mode and have not clicked approve. THAT CLICK CANNOT BE MADE BY ANY TOOL, including this one, which is the point of the mode. A refusal comes back as `sent` false with a `reason` to read out; it is not an error and not something to work around. On success it stamps the letter it came from as sent, writes an EMAIL_SENT activity onto the job's timeline, and returns the provider's own message id. AN EMAIL CANNOT BE UNSENT: say who it is going to, from which mailbox, and what it says, and get a plain yes, every time — even in trusted mode. Never send a draft the person has not seen.
+
+**Overwrites or deletes.** **Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Draft id, from draft_outbound_email or list_outbound |
+
+### `cancel_outbound_email`
+
+_Call off a drafted message_
+
+Mark a draft, an approved message or a failed one as cancelled so it can never go. Reach for it when they change their mind, when a draft is wrong enough to rewrite from scratch, or when a failed send should not be retried. The row stays with everything it said — nothing here deletes the record — and a cancelled message cannot be un-cancelled, so draft a new one instead. It does nothing to a message that has already gone, because nothing can.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Message id, from list_outbound |
+
 ### `attach_file`
 
 _Keep a file against a job, a person or an offer_
@@ -350,6 +410,18 @@ Record a round of interviews — one that is booked, or one that already happene
 | `calendar_event_id` | string | The provider's event id when this came off a calendar, so a second sweep does not queue it again |
 | `prep_task_due_at` | string | Also add a prep task due on this day, YYYY-MM-DD. Omit for no task. |
 | `prep_task_title` | string | What that task should say. Defaults to naming the round and the company. |
+
+### `interviews_from_calendar`
+
+_Meetings that look like interviews_
+
+Read this person's own calendar for meetings with people on their pipeline and hand each one back SHAPED AS AN INTERVIEW, ready for schedule_interview. It writes nothing, deliberately: a meeting called "Acme — chat" might be a screen or might be a catch-up with somebody who used to work there, and no rule can tell — so this proposes and the person says which are real. For each it returns the calendar event's id, the title, when it starts, how long it runs, whether it looks like a video call or an onsite (read off the location and the link, not guessed), which job it is about, and any contact already on file who is in the room. `alreadyScheduled` marks the ones a round is already recorded for, so running this twice offers nothing twice — and passing `calendar_event_id` through to schedule_interview is what makes it safe even if you miss that. Needs a calendar connected; says so rather than returning an empty list when none is. Read it back, ask which are interviews, then call schedule_interview once per yes.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `days` | number | How far ahead to look. Default 21, most 90 |
 
 ### `list_interviews`
 
@@ -976,6 +1048,17 @@ _Who has gone cold that you cannot afford to lose_
 list_relationships, with time applied to it. It ranks the people in the CRM by what they have actually been worth to the search and then discounts each one by how long since anybody spoke to them, so 'who should I get back in touch with' is one ordered list rather than two columns to combine by eye. Reach for it before a week of cold applications, when somebody asks who to thank or nudge, or when a search has gone quiet and the honest next move is people rather than postings. `cooling` is the list to act on: everyone who earned something — a referral, an introduction, a recruiter on a thread that went somewhere — and has since gone silent or has a ping due, ordered by how much has been LOST rather than by how long it has been, so a referral that produced an onsite three months ago outranks somebody who cold-mailed you once last week. Each person carries the two counts list_relationships gives — `direct`, applications they are attached to, and `atCompany`, applications at a company they represent, which is much weaker evidence — and those are the numbers to quote. THE TRAP: `warmth`, `value` and `decay` are an ORDERING, not a measurement. Never read one out or tell somebody a person is 'at 0.42'; say what they were worth, in the counts, and how long it has been. `confident` false means there is too little on file to rank anybody and the order means nothing — say so rather than reading it as a finding. Archived people and archived applications are excluded. Read-only, saves nothing: schedule_contact_pings puts dates against them and log_follow_up records that you chased one.
 
 No arguments.
+
+### `research_freshness`
+
+_Which companies you know nothing current about_
+
+The companies with something live riding on them, ordered by WHAT IS COMING UP rather than by how old the research is — because a year-old note on a wishlist row is not a problem and a nine-week-old one on the company you have a final with on Thursday is. Each row says the state (`never`, `stale` or `fresh`), how many days ago the company was last touched, how many live applications ride on it, and the nearest booked interview or due follow-up that the research is actually for. Reach for it at the start of a week, before a round of interview prep, or whenever somebody asks what they should be reading. "When was this researched" is approximate ON PURPOSE: it is the company row's own updatedAt, so any edit counts, and being generous costs one company reading as fresh when only its website was fixed — the alternative is a column something has to remember to stamp. Follow it with research_company on the ones that matter, and get_company first so you add to what is written rather than replacing it. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `stale_after_days` | number | How old counts as stale. Default 60 |
+| `ahead_days` | number | How far forward to look for the thing the research is for. Default 21 |
 
 ### `workspace_health`
 

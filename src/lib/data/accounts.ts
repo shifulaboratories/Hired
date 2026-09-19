@@ -265,6 +265,24 @@ export async function renameLinkedAccount(userId: string, accountId: string, lab
 export async function disconnectAccount(userId: string, accountId: string): Promise<{ ok: true }> {
   const row = await db.linkedAccount.findFirst({ where: { id: accountId, userId } });
   if (!row) return { ok: true };
+
+  // Outbound.accountId is onDelete: Restrict, because the record of what was
+  // sent through a mailbox has to outlive disconnecting it. Refused in words
+  // here rather than as a foreign-key error from Postgres, and the way out is
+  // to cancel the drafts — a SENT row is permanent on purpose.
+  const sent = await db.outbound.count({ where: { userId, accountId, status: "SENT" } });
+  if (sent > 0) {
+    throw new Error(
+      `${describe(row)} has ${sent} sent ${sent === 1 ? "message" : "messages"} on file, and the record of what you sent outlives the connection. It stays connected — turn sending off under Settings → Account instead, or revoke this app's access from the provider.`,
+    );
+  }
+  const pending = await db.outbound.count({ where: { userId, accountId } });
+  if (pending > 0) {
+    throw new Error(
+      `${describe(row)} still has ${pending} unsent ${pending === 1 ? "message" : "messages"} against it. Cancel or send them first.`,
+    );
+  }
+
   if (row.provider === "GOOGLE") await revokeToken(row.refreshToken);
   await db.linkedAccount.delete({ where: { id: row.id } });
   return { ok: true };
@@ -413,6 +431,32 @@ async function touch(accountIds: string[]) {
 
 /** A row's credentials plus its public view, for one kind of reading. */
 type Prepared = { row: LinkedAccount; view: LinkedAccountView; credentials: ReaderCredentials };
+
+/**
+ * A usable access token for one of this person's own accounts.
+ *
+ * The only thing outside this file that needs a raw token, and it exists for
+ * src/lib/data/outbound.ts: sending is the one write this app does on a
+ * member's behalf, and the transport in src/lib/accounts/send.ts takes a token
+ * rather than a row precisely so it never touches the database. The credential
+ * still never leaves this file as anything but a short-lived access token —
+ * the refresh token does not.
+ */
+export async function accessTokenFor(userId: string, accountId: string): Promise<string> {
+  const row = await db.linkedAccount.findFirst({ where: { id: accountId, userId } });
+  if (!row) throw new AccountNotConnectedError("That account is no longer connected.");
+  if (row.provider === "IMAP") {
+    throw new AccountNotConnectedError(
+      "An IMAP account cannot send through this app — there are no SMTP credentials on it. Connect a Google or Microsoft account for that.",
+    );
+  }
+  const credentials = await credentialsFor(row);
+  if (!credentials.accessToken) {
+    throw new AccountNotConnectedError(`${describe(row)} would not hand back a token. Reconnect it.`);
+  }
+  await touch([row.id]);
+  return credentials.accessToken;
+}
 
 /** Every account that provides a feature, credentials resolved, failures collected rather than thrown. */
 async function prepare(

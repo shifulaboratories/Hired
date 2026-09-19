@@ -1049,3 +1049,106 @@ export async function interviewBriefing(
     missing,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Meetings that look like interviews
+// ---------------------------------------------------------------------------
+
+/** A calendar meeting that matches the pipeline, shaped for scheduleInterview. */
+export type CalendarInterview = {
+  /** The provider's own event id. `calendarEventId` refuses a second copy. */
+  calendarEventId: string;
+  title: string;
+  start: Date;
+  durationMins: number;
+  location: string;
+  url: string;
+  format: InterviewFormat;
+  applicationId: string;
+  application: string;
+  /** Contact ids already on file for the people in the room. */
+  interviewerIds: string[];
+  interviewers: string[];
+  /** True when an Interview row already carries this event's id. */
+  alreadyScheduled: boolean;
+};
+
+/**
+ * Meetings on their own calendar that look like interviews, as inputs.
+ *
+ * DELIBERATELY NOT A WRITER. It returns what `schedule_interview` would take and
+ * stops, because a meeting called "Acme — chat" might be a screen or might be a
+ * catch-up with somebody who used to work there, and there is no rule that can
+ * tell. The assistant reads these back, the person says which are real, and
+ * `schedule_interview` writes them one at a time.
+ *
+ * `calendarEventId` carries through, which is what makes running this twice
+ * harmless: scheduleInterview already refuses a second row for an event it has
+ * seen.
+ */
+export async function interviewsFromCalendar(
+  userId: string,
+  options?: { days?: number; now?: Date },
+): Promise<{ meetings: CalendarInterview[]; warning: string | null; windowDays: number }> {
+  const now = options?.now ?? new Date();
+  const windowDays = Math.min(Math.max(options?.days ?? 21, 1), 90);
+  const { listMatchedEvents } = await import("@/lib/data/accounts");
+
+  const { events, warning } = await listMatchedEvents(
+    userId,
+    now,
+    new Date(now.getTime() + windowDays * 86_400_000),
+  );
+
+  const applicationIds = [...new Set(events.map((event) => event.applicationId).filter(Boolean))] as string[];
+  if (applicationIds.length === 0) return { meetings: [], warning, windowDays };
+
+  // Archive filter, spelled by hand: a meeting about a job in the bin is not an
+  // interview to schedule.
+  const [applications, taken] = await Promise.all([
+    db.application.findMany({
+      where: { userId, id: { in: applicationIds }, archivedAt: null },
+      select: { id: true, roleTitle: true, company: { select: { name: true } } },
+    }),
+    db.interview.findMany({
+      where: { userId, calendarEventId: { in: events.map((event) => event.id) } },
+      select: { calendarEventId: true },
+    }),
+  ]);
+  const byId = new Map(applications.map((row) => [row.id, row]));
+  const seen = new Set(taken.map((row) => row.calendarEventId));
+
+  const meetings: CalendarInterview[] = [];
+  for (const event of events) {
+    const application = event.applicationId ? byId.get(event.applicationId) : undefined;
+    if (!application) continue;
+    const minutes = Math.max(
+      15,
+      Math.round((event.end.getTime() - event.start.getTime()) / 60_000) || 30,
+    );
+    meetings.push({
+      calendarEventId: event.id,
+      title: event.title,
+      start: event.start,
+      durationMins: minutes,
+      location: event.location,
+      url: event.url,
+      // Read off the meeting rather than guessed at: a link in the location is
+      // a video call, an address is an onsite, and neither is a judgement.
+      format: /zoom|meet\.google|teams|whereby|hangout|https?:\/\//i.test(
+        `${event.location} ${event.url}`,
+      )
+        ? "VIDEO"
+        : event.location.trim()
+          ? "ONSITE"
+          : "OTHER",
+      applicationId: application.id,
+      application: `${application.roleTitle} at ${application.company.name}`,
+      interviewerIds: event.contactId ? [event.contactId] : [],
+      interviewers: event.contactName ? [event.contactName] : [],
+      alreadyScheduled: seen.has(event.id),
+    });
+  }
+
+  return { meetings: meetings.sort((a, b) => a.start.getTime() - b.start.getTime()), warning, windowDays };
+}

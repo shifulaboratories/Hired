@@ -1,6 +1,7 @@
 import type {
   ActivityType,
   McpScope,
+  OutboundStatus,
   TaskRepeat,
   LetterKind,
   NoteKind,
@@ -34,6 +35,7 @@ import * as captureLink from "@/lib/data/capture-link";
 import * as linkedin from "@/lib/data/linkedin";
 import * as sample from "@/lib/data/sample";
 import * as attachments from "@/lib/data/attachments";
+import * as outbound from "@/lib/data/outbound";
 import { DEFAULT_TEMPLATE, RESUME_TEMPLATES } from "@/lib/resume-templates";
 import { textDifferences } from "@/lib/resume-ats";
 import {
@@ -279,6 +281,7 @@ const limitArg = (fallback: number) =>
 const DIGEST_KINDS = ["weekly", "nudge", "wins"] as const;
 
 /** The three states a queued proposal can be in. Mirrored in tools/gen-tool-docs.mjs. */
+const OUTBOUND_STATUSES = ["DRAFT", "APPROVED", "SENT", "FAILED", "CANCELLED"] as const;
 const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"] as const;
 
 const str = (description: string) => ({ type: "string", description });
@@ -2923,6 +2926,127 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => offers.deleteOffer(ctx.userId, required(args, "id")),
   },
   {
+    name: "get_outbound_settings",
+    title: "Can this workspace send mail",
+    description:
+      "Whether this app is allowed to send a message from this person's own mailbox, how many a day they set, whether each one waits for a click, which mailboxes can actually send, how many have gone today and what is standing in the way right now. `blockedBecause` is the whole answer when it is non-empty — read it back rather than trying the send and reporting a failure. Three separate things have to be true: an admin turned it on for the instance, the person set a daily number above zero themselves, and a Google or Microsoft mailbox is connected WITH the send permission (an IMAP account cannot send at all, whatever else it does). Read-only, and it sends nothing.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => outbound.getOutboundSettings(ctx.userId),
+  },
+  {
+    name: "draft_outbound_email",
+    title: "Draft a message to send from their own mailbox",
+    description:
+      "Write a message and put it in the outbox as a DRAFT. IT IS NOT SENT — nothing here sends anything, ever, and send_outbound_email is a separate call with its own refusals. This is the follow-up nobody gets round to: the chase after a week of silence, the thank-you the day after an interview, the reply to a recruiter. It goes out from ONE OF THEIR OWN MAILBOXES, so it arrives from them and lands in their Sent folder; this app never sends as itself on anybody's behalf, because a follow-up to a recruiter arriving from a tool's address is worse than no follow-up. IT CAN ONLY BE ADDRESSED TO SOMEBODY ALREADY ON FILE: pass contact_id, and the address is read off that person's record. There is no argument anywhere that takes an address, which is deliberate and is the reason you cannot use this to reach anyone they have not already written down — if they want to mail somebody new, create the contact first and say so. Write the message in THEIR voice, from what is actually on file: call prep_letter or search_me first if you are drafting anything substantial, quote nothing that is not theirs, and never invent a meeting, a name, a date, a number or an agreement that did not happen. Keep it short — this is a follow-up, not a cover letter; use create_letter for anything that wants a title and a draft history. Returns the draft with its id, the mailbox it will go from, what it will say, and whether it now needs approving: out of the box every message waits for a click in the app that NO TOOL CAN MAKE, and the result says so in as many words. Nothing is sent by calling this.",
+    inputSchema: object(
+      {
+        contact_id: str("Who it is to. The address comes off their record — there is no way to pass one"),
+        subject: str("The subject line"),
+        body: str("The message, plain text, in their voice"),
+        account_id: str("Which of their mailboxes to send from. Omit to use the only one that can send"),
+        application_id: str("The job this is about, so the send lands on that job's timeline"),
+        letter_id: str("A letter this was drafted from, if there is one. Its sentAt is stamped when this goes"),
+      },
+      ["contact_id", "subject", "body"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      outbound.draftOutbound(
+        ctx.userId,
+        {
+          contactId: required(args, "contact_id"),
+          subject: required(args, "subject"),
+          body: required(args, "body"),
+          ...defined({
+            accountId: s(args, "account_id"),
+            applicationId: s(args, "application_id"),
+            letterId: s(args, "letter_id"),
+          }),
+        },
+        { writtenBy: "mcp", connectionId: ctx.connectionId, connectionName: ctx.connectionName, tool: "draft_outbound_email" },
+      ),
+  },
+  {
+    name: "list_outbound",
+    title: "What is in the outbox",
+    description:
+      "Every message this app has drafted, sent, failed or had cancelled for this person, newest first — with what it said, who it went to, which mailbox it went from, which connection drafted it and which sent it. Pass status to narrow it: DRAFT is waiting, APPROVED has been clicked and is ready, SENT has gone, FAILED says why in `error`, CANCELLED was called off. Reach for it before drafting anything, so you do not send a second chase to somebody who was chased on Tuesday, and read what went before to match how they actually write. The body is kept after sending, deliberately: a record of what you said is the thing this product exists to keep. Read-only.",
+    inputSchema: object({
+      status: {
+        type: "string",
+        enum: [...OUTBOUND_STATUSES],
+        description: "DRAFT, APPROVED, SENT, FAILED or CANCELLED. Omit for all of them",
+      },
+      application_id: str("Only messages about this job"),
+      contact_id: str("Only messages to this person"),
+      limit: limitArg(50),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      capped(
+        await outbound.listOutbound(ctx.userId, {
+          ...defined({
+            status: enumArg(args, "status", OUTBOUND_STATUSES) as OutboundStatus | undefined,
+            applicationId: s(args, "application_id"),
+            contactId: s(args, "contact_id"),
+          }),
+          limit: n(args, "limit") ?? 50,
+        }),
+        n(args, "limit"),
+        50,
+      ),
+  },
+  {
+    name: "send_outbound_email",
+    title: "Send a drafted message",
+    description:
+      "Actually send a draft, from the person's own mailbox. THIS IS THE ONE THING IN THIS APP THAT PUTS A MESSAGE IN FRONT OF SOMEBODY WHO IS NOT ITS OWNER, so read what it says back before claiming anything. It refuses, in order and by name, when: the instance does not allow members to send; the person has not turned it on and set a daily number; no mailbox can send; they are at their daily limit; one went less than a minute ago; the person or the job it is about is in the archive; or — the one that matters most — they are in \"approve each one\" mode and have not clicked approve. THAT CLICK CANNOT BE MADE BY ANY TOOL, including this one, which is the point of the mode. A refusal comes back as `sent` false with a `reason` to read out; it is not an error and not something to work around. On success it stamps the letter it came from as sent, writes an EMAIL_SENT activity onto the job's timeline, and returns the provider's own message id. AN EMAIL CANNOT BE UNSENT: say who it is going to, from which mailbox, and what it says, and get a plain yes, every time — even in trusted mode. Never send a draft the person has not seen.",
+    inputSchema: object({ id: str("Draft id, from draft_outbound_email or list_outbound") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      outbound.sendOutbound(ctx.userId, required(args, "id"), {
+        writtenBy: "mcp",
+        connectionId: ctx.connectionId,
+        connectionName: ctx.connectionName,
+        tool: "send_outbound_email",
+      }),
+  },
+  {
+    name: "cancel_outbound_email",
+    title: "Call off a drafted message",
+    description:
+      "Mark a draft, an approved message or a failed one as cancelled so it can never go. Reach for it when they change their mind, when a draft is wrong enough to rewrite from scratch, or when a failed send should not be retried. The row stays with everything it said — nothing here deletes the record — and a cancelled message cannot be un-cancelled, so draft a new one instead. It does nothing to a message that has already gone, because nothing can.",
+    inputSchema: object({ id: str("Message id, from list_outbound") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => outbound.cancelOutbound(ctx.userId, required(args, "id")),
+  },
+  {
     name: "attach_file",
     title: "Keep a file against a job, a person or an offer",
     description:
@@ -3157,6 +3281,23 @@ export const tools: McpTool[] = [
         prepTaskDueAt: s(args, "prep_task_due_at"),
         prepTaskTitle: s(args, "prep_task_title"),
       }),
+  },
+  {
+    name: "interviews_from_calendar",
+    title: "Meetings that look like interviews",
+    description:
+      "Read this person's own calendar for meetings with people on their pipeline and hand each one back SHAPED AS AN INTERVIEW, ready for schedule_interview. It writes nothing, deliberately: a meeting called \"Acme — chat\" might be a screen or might be a catch-up with somebody who used to work there, and no rule can tell — so this proposes and the person says which are real. For each it returns the calendar event's id, the title, when it starts, how long it runs, whether it looks like a video call or an onsite (read off the location and the link, not guessed), which job it is about, and any contact already on file who is in the room. `alreadyScheduled` marks the ones a round is already recorded for, so running this twice offers nothing twice — and passing `calendar_event_id` through to schedule_interview is what makes it safe even if you miss that. Needs a calendar connected; says so rather than returning an empty list when none is. Read it back, ask which are interviews, then call schedule_interview once per yes.",
+    inputSchema: object({
+      days: num("How far ahead to look. Default 21, most 90"),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      interviews.interviewsFromCalendar(ctx.userId, defined({ days: n(args, "days") })),
   },
   {
     name: "list_interviews",
@@ -4465,6 +4606,27 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (_args, ctx) => analytics.contactWarmth(ctx.userId),
+  },
+  {
+    name: "research_freshness",
+    title: "Which companies you know nothing current about",
+    description:
+      "The companies with something live riding on them, ordered by WHAT IS COMING UP rather than by how old the research is — because a year-old note on a wishlist row is not a problem and a nine-week-old one on the company you have a final with on Thursday is. Each row says the state (`never`, `stale` or `fresh`), how many days ago the company was last touched, how many live applications ride on it, and the nearest booked interview or due follow-up that the research is actually for. Reach for it at the start of a week, before a round of interview prep, or whenever somebody asks what they should be reading. \"When was this researched\" is approximate ON PURPOSE: it is the company row's own updatedAt, so any edit counts, and being generous costs one company reading as fresh when only its website was fixed — the alternative is a column something has to remember to stamp. Follow it with research_company on the ones that matter, and get_company first so you add to what is written rather than replacing it. Read-only.",
+    inputSchema: object({
+      stale_after_days: num("How old counts as stale. Default 60"),
+      ahead_days: num("How far forward to look for the thing the research is for. Default 21"),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      analytics.researchFreshness(
+        ctx.userId,
+        defined({ staleAfterDays: n(args, "stale_after_days"), aheadDays: n(args, "ahead_days") }),
+      ),
   },
   {
     name: "workspace_health",

@@ -1030,3 +1030,138 @@ export async function morningBrief(
     first,
   };
 }
+
+// ---------------------------------------------------------------------------
+// How old is what you know
+// ---------------------------------------------------------------------------
+
+export type StaleCompany = {
+  id: string;
+  name: string;
+  /** What a person would call the state: "never", "stale", "fresh". */
+  state: "never" | "stale" | "fresh";
+  researchedAt: Date | null;
+  daysOld: number | null;
+  /** Live applications riding on it, which is what makes staleness cost something. */
+  liveApplications: number;
+  /** The nearest thing coming up that this research is for, if there is one. */
+  nextUp: { applicationId: string; roleTitle: string; when: Date; what: string } | null;
+  why: string;
+};
+
+/** Past this, research is old enough that a company has plausibly moved. */
+export const RESEARCH_STALE_AFTER_DAYS = 60;
+
+/**
+ * Which companies you are about to talk to and know nothing current about.
+ *
+ * `Company.notes` has an `updatedAt` on its row and nothing finer, so "when was
+ * this researched" is approximate on purpose — ANY edit to the company counts,
+ * and being generous costs one company appearing as fresh when only its website
+ * was fixed. The alternative is a `researchedAt` column that something has to
+ * remember to stamp, which is a column that drifts.
+ *
+ * It is ordered by WHAT IS COMING UP, not by age: research that is a year old
+ * on a company with nothing live is not a problem, and research that is nine
+ * weeks old on the one you have a final with on Thursday is. A list sorted by
+ * age would put those the wrong way round.
+ */
+export async function researchFreshness(
+  userId: string,
+  options?: { staleAfterDays?: number; aheadDays?: number; now?: Date },
+): Promise<{ companies: StaleCompany[]; staleAfterDays: number; checked: number }> {
+  const now = options?.now ?? new Date();
+  const staleAfterDays = Math.min(Math.max(options?.staleAfterDays ?? RESEARCH_STALE_AFTER_DAYS, 1), 365);
+  const aheadDays = Math.min(Math.max(options?.aheadDays ?? 21, 1), 90);
+  const ahead = new Date(now.getTime() + aheadDays * 86_400_000);
+
+  // Archive filter, spelled by hand, and again on the nested applications.
+  const companies = await db.company.findMany({
+    where: { userId, archivedAt: null, applications: { some: { archivedAt: null, closedAt: null } } },
+    select: {
+      id: true,
+      name: true,
+      notes: true,
+      updatedAt: true,
+      applications: {
+        where: { archivedAt: null, closedAt: null },
+        select: {
+          id: true,
+          roleTitle: true,
+          stage: true,
+          nextFollowUpAt: true,
+          interviews: {
+            where: { scheduledAt: { gte: now, lte: ahead } },
+            orderBy: { scheduledAt: "asc" },
+            take: 1,
+            select: { scheduledAt: true, label: true },
+          },
+        },
+      },
+    },
+  });
+
+  const rows: StaleCompany[] = [];
+  for (const company of companies) {
+    const researched = company.notes.trim() ? company.updatedAt : null;
+    const daysOld = researched
+      ? Math.floor((now.getTime() - researched.getTime()) / 86_400_000)
+      : null;
+    const state: StaleCompany["state"] =
+      researched === null ? "never" : daysOld! >= staleAfterDays ? "stale" : "fresh";
+
+    // The soonest thing this research is actually for: a booked interview
+    // first, because that is the one with a date somebody else set.
+    let nextUp: StaleCompany["nextUp"] = null;
+    for (const application of company.applications) {
+      const interview = application.interviews[0];
+      const candidate = interview?.scheduledAt
+        ? { when: interview.scheduledAt, what: interview.label || "an interview" }
+        : application.nextFollowUpAt && application.nextFollowUpAt <= ahead
+          ? { when: application.nextFollowUpAt, what: "a follow-up" }
+          : null;
+      if (!candidate) continue;
+      if (!nextUp || candidate.when < nextUp.when) {
+        nextUp = {
+          applicationId: application.id,
+          roleTitle: application.roleTitle,
+          when: candidate.when,
+          what: candidate.what,
+        };
+      }
+    }
+
+    if (state === "fresh" && nextUp === null) continue;
+
+    rows.push({
+      id: company.id,
+      name: company.name,
+      state,
+      researchedAt: researched,
+      daysOld,
+      liveApplications: company.applications.length,
+      nextUp,
+      why:
+        state === "never"
+          ? nextUp
+            ? `Nothing on file about them, and there is ${nextUp.what} on the ${nextUp.when.toISOString().slice(0, 10)}.`
+            : "Nothing on file about them, and something live riding on it."
+          : state === "stale"
+            ? nextUp
+              ? `Last looked at ${daysOld} days ago, and there is ${nextUp.what} on the ${nextUp.when.toISOString().slice(0, 10)}.`
+              : `Last looked at ${daysOld} days ago.`
+            : `Researched ${daysOld} days ago — recent enough, and listed only because there is ${nextUp!.what} coming up.`,
+    });
+  }
+
+  // What is coming up first, then what is oldest. A list sorted by age alone
+  // buries the one that matters on Thursday under a year-old wishlist row.
+  rows.sort((a, b) => {
+    if (a.nextUp && b.nextUp) return a.nextUp.when.getTime() - b.nextUp.when.getTime();
+    if (a.nextUp) return -1;
+    if (b.nextUp) return 1;
+    return (b.daysOld ?? Number.MAX_SAFE_INTEGER) - (a.daysOld ?? Number.MAX_SAFE_INTEGER);
+  });
+
+  return { companies: rows, staleAfterDays, checked: companies.length };
+}

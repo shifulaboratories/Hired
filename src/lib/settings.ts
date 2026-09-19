@@ -50,6 +50,7 @@ export const SETTING_KEYS = {
   sweepToken: "sweep_token",
   attachmentMaxBytes: "attachment_max_bytes",
   attachmentWorkspaceBytes: "attachment_workspace_bytes",
+  outboundEnabled: "outbound_enabled",
 } as const;
 
 export type InstanceSettings = {
@@ -116,6 +117,12 @@ export type InstanceSettings = {
   attachmentMaxBytes: number;
   /** Bytes, every file one person keeps. */
   attachmentWorkspaceBytes: number;
+  /**
+   * Whether anybody on this instance may send a message from their own mailbox
+   * through the app. OFF by default, and when it is off nothing a member sets
+   * on their own profile matters.
+   */
+  outboundEnabled: boolean;
 };
 
 /**
@@ -386,6 +393,16 @@ export const VARIABLES: VariableDef[] = [
     placeholder: "250000000",
     fallback: "250000000",
   },
+  {
+    key: SETTING_KEYS.outboundEnabled,
+    field: "outboundEnabled",
+    label: "Members may send mail",
+    help: "Off by default. When off, nobody on this instance can send a message from their own mailbox through the app, whatever their own settings say. On, each person still has to turn it on for themselves and set a daily number, and every message still goes from their own account rather than from this instance.",
+    kind: "toggle",
+    group: "Email",
+    placeholder: "",
+    fallback: "0",
+  },
 ];
 
 const BY_KEY = new Map(VARIABLES.map((variable) => [variable.key, variable]));
@@ -438,6 +455,7 @@ export async function getSettings(): Promise<InstanceSettings> {
     stripePaymentLink: raw(SETTING_KEYS.stripePaymentLink),
     digestToken: raw(SETTING_KEYS.digestToken),
     sweepToken: raw(SETTING_KEYS.sweepToken),
+    outboundEnabled: raw(SETTING_KEYS.outboundEnabled) === "1",
     attachmentMaxBytes: byteCap(raw(SETTING_KEYS.attachmentMaxBytes), 8_000_000, 100_000_000),
     attachmentWorkspaceBytes: byteCap(
       raw(SETTING_KEYS.attachmentWorkspaceBytes),

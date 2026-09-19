@@ -530,6 +530,17 @@ export async function listArchive(
  * is why there is no confirmation logic down here: nothing reaches this code
  * that the person has not already deleted once.
  */
+/**
+ * A contact who has ever been SENT something is never destroyed.
+ *
+ * Outbound.contactId is onDelete: Restrict, because the record of a message you
+ * actually sent has to outlive binning the person — so without this every bulk
+ * destroy would raise a foreign-key error from Postgres and take the whole
+ * sweep down with it. Four deletes carry it: the one-at-a-time destroy, the
+ * empty-the-bin, the per-user expiry and the instance sweep.
+ */
+const KEPT_BY_OUTBOUND = { outbound: { none: {} } } as const;
+
 export async function deleteArchived(
   userId: string,
   kind: ArchiveKind,
@@ -560,11 +571,21 @@ export async function deleteArchived(
           continue;
         }
       } else {
+        // KEPT_BY_OUTBOUND, and it is the reason Outbound.contactId is
+        // onDelete: Restrict. A record of a message you actually sent has to
+        // survive binning the person, and a Postgres foreign-key error is not a
+        // sentence anybody can act on — so this refuses in words instead.
         const { count } = await db.contact.deleteMany({
-          where: { id, userId, archivedAt: { not: null } },
+          where: { id, userId, archivedAt: { not: null }, ...KEPT_BY_OUTBOUND },
         });
         if (count === 0) {
-          skipped.push({ id, reason: "Not in the archive" });
+          const held = await db.outbound.count({ where: { userId, contactId: id } });
+          skipped.push({
+            id,
+            reason: held
+              ? `Not destroyed: there ${held === 1 ? "is a message" : `are ${held} messages`} on file that went to them, and the record of what you sent outlives the contact.`
+              : "Not in the archive",
+          });
           continue;
         }
       }
@@ -596,7 +617,7 @@ export async function emptyArchive(
   }
   if (wants("contact")) {
     deleted.contact = (
-      await db.contact.deleteMany({ where: { userId, archivedAt: { not: null } } })
+      await db.contact.deleteMany({ where: { userId, archivedAt: { not: null }, ...KEPT_BY_OUTBOUND } })
     ).count;
   }
   if (wants("company")) {
@@ -650,7 +671,7 @@ export async function purgeExpiredFor(
 
   const deleted: Record<ArchiveKind, number> = { company: 0, contact: 0, application: 0 };
   deleted.application = (await db.application.deleteMany({ where: expired })).count;
-  deleted.contact = (await db.contact.deleteMany({ where: expired })).count;
+  deleted.contact = (await db.contact.deleteMany({ where: { ...expired, ...KEPT_BY_OUTBOUND } })).count;
   // Same reason as emptyArchive: the cascade must not take an application the
   // window has not reached yet.
   deleted.company = await destroyArchivedCompanies(userId, expired, deleted);
@@ -688,7 +709,7 @@ export async function sweepArchive(now = new Date()): Promise<{ purged: number; 
   const expired = { archivedAt: { not: null, lte: cutoff } };
 
   const applications = (await db.application.deleteMany({ where: expired })).count;
-  const contacts = (await db.contact.deleteMany({ where: expired })).count;
+  const contacts = (await db.contact.deleteMany({ where: { ...expired, ...KEPT_BY_OUTBOUND } })).count;
   // The companies whose applications are all gone or archived. Anything still
   // holding a LIVE application is left standing, because the foreign key would
   // take it down too.

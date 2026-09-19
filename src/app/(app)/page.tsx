@@ -13,7 +13,9 @@ import { FadeIn } from "@/components/motion";
 import { FollowUpList } from "@/components/dashboard/follow-up-list";
 import { SetupStrip } from "@/components/dashboard/setup-strip";
 import { ReviewQueue } from "@/components/dashboard/review-queue";
+import { Outbox } from "@/components/dashboard/outbox";
 import { listProposals, PROPOSAL_LABEL } from "@/lib/data/proposals";
+import { getOutboundSettings, listOutbound } from "@/lib/data/outbound";
 import { QuickLog } from "@/components/dashboard/quick-log";
 import { TaskPanel } from "@/components/tasks/task-panel";
 import { PingScheduler } from "@/components/tasks/ping-scheduler";
@@ -173,6 +175,8 @@ async function TodayTab({
     roles,
     notes,
     queued,
+    outboxDrafts,
+    outboundSettings,
   ] =
     await Promise.all([
       listTasks(userId, { limit: 300 }),
@@ -187,6 +191,8 @@ async function TodayTab({
       listRoles(userId),
       listNotes(userId),
       listProposals(userId),
+      listOutbound(userId, { status: "DRAFT", limit: 10 }),
+      getOutboundSettings(userId),
     ]);
 
   // Everything a task can be about, in one list for the picker. Built here
@@ -274,6 +280,25 @@ async function TodayTab({
           own the moment the first job lands, the way the setup strip clears
           itself. */}
       {applications.length > 0 && <QuickLog />}
+
+      {/* Above the review queue, because this one is a message with somebody
+          else's name on it waiting on one word, and because the click here is
+          the only thing standing between a drafted message and a real person's
+          inbox. Draws nothing when there are no drafts, which is most days. */}
+      <Outbox
+        rows={outboxDrafts.map((row) => ({
+          id: row.id,
+          subject: row.subject,
+          body: row.body,
+          toEmail: row.toEmail,
+          contactName: row.contact?.name ?? row.toEmail,
+          fromEmail: row.account?.email ?? "",
+          application: row.application ? `${row.application.roleTitle} at ${row.application.company}` : "",
+          status: row.status,
+          error: row.error,
+        }))}
+        blockedBecause={outboundSettings.blockedBecause}
+      />
 
       {/* Above the day's work, because this is somebody else's reading of your
           inbox waiting on one word from you, and it goes stale. Draws nothing

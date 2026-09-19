@@ -34,6 +34,7 @@ import {
 import { listLinkedAccounts } from "@/lib/data/accounts";
 import { getMailSweep } from "@/lib/data/mail-sweep";
 import { getCaptureLink } from "@/lib/data/capture-link";
+import { getOutboundSettings } from "@/lib/data/outbound";
 import { listStageTemplates, stageTemplateUsage } from "@/lib/data/stage-templates";
 import { isGoogleRefusal, refusalMessage } from "@/lib/google";
 
@@ -72,7 +73,7 @@ export default async function SettingsPage({
 
   // Nobody should ever land here with nothing to copy.
   await ensureDefaultConnection(user.id);
-  const [connections, profile, skills, settings, linkedAccounts, sweep, capture] = await Promise.all([
+  const [connections, profile, skills, settings, linkedAccounts, sweep, capture, outboundSettings] = await Promise.all([
     listConnections(user.id),
     getProfile(user.id),
     listSkills(),
@@ -80,6 +81,7 @@ export default async function SettingsPage({
     listLinkedAccounts(user.id),
     getMailSweep(user.id),
     getCaptureLink(user.id, baseUrl),
+    getOutboundSettings(user.id),
   ]);
 
   // What the consent screen came back with, as a fixed code — never text from
@@ -244,6 +246,13 @@ export default async function SettingsPage({
                 dailyNudge: profile.dailyNudge,
                 digestHour: profile.digestHour,
                 emailConfigured: emailIsConfigured(settings),
+              }}
+              outbound={{
+                instanceEnabled: outboundSettings.instanceEnabled,
+                dailyLimit: outboundSettings.dailyLimit,
+                approval: outboundSettings.approval,
+                accounts: outboundSettings.accounts.length,
+                sentToday: outboundSettings.sentToday,
               }}
             />
           </FadeIn>

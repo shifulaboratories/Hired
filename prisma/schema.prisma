@@ -99,6 +99,7 @@ model User {
   captureLink        CaptureLink?
   sampleLoad         SampleLoad?
   attachments        Attachment[]
+  outbound           Outbound[]
 
   @@index([role])
   @@index([stripeCustomerId])
@@ -177,6 +178,8 @@ model LinkedAccount {
   lastUsedAt           DateTime?
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
+
+  outbound Outbound[]
 
   @@unique([userId, provider, email])
   @@index([userId])
@@ -549,6 +552,19 @@ model Profile {
   /// window hit the fifty-thread ceiling. Empty when it was clean.
   mailSweepNote  String    @default("")
 
+  /// Outbound mail, and the number that turns it on. ZERO MEANS THIS APP WILL
+  /// NOT SEND ON THEIR BEHALF AT ALL, which is what every account has until
+  /// they say otherwise; any other value is both the switch and the daily
+  /// ceiling, so there is no state where sending is on and the limit is
+  /// undefined. Set only from Settings by the person themselves — no admin can
+  /// set it, and no MCP tool can, which is the point.
+  outboundDailyLimit Int    @default(0)
+  /// "each" (default): every message waits for a click in the app before it can
+  /// be sent, and NO TOOL CAN MAKE THAT CLICK. "trusted": a connected assistant
+  /// may send within the daily limit without one. The copy beside this in
+  /// Settings says exactly what the second one gives away.
+  outboundApproval   String @default("each")
+
   updatedAt DateTime @updatedAt
 }
 
@@ -822,6 +838,7 @@ model Letter {
   updatedAt DateTime  @updatedAt
 
   attachments Attachment[]
+  outbound    Outbound[]
 
   @@index([userId])
   @@index([userId, kind])
@@ -1008,6 +1025,7 @@ model Application {
   proposals   Proposal[]
   /// Files kept against this job. Attachments carry no archivedAt; see the model.
   attachments Attachment[]
+  outbound    Outbound[]
 
   @@index([userId, stage])
   @@index([userId, nextFollowUpAt])
@@ -1733,6 +1751,7 @@ model Contact {
   referrals      Referral[]
   proposals      Proposal[]
   attachments    Attachment[]
+  outbound       Outbound[]
 
   @@index([userId])
   @@index([userId, updatedAt])
@@ -2095,4 +2114,90 @@ model Attachment {
   @@index([letterId])
   @@index([contactId])
   @@index([companyId])
+}
+
+enum OutboundStatus {
+  /// Written, not sent. Everything starts here and most things stay here.
+  DRAFT
+  /// The person approved it in the app. Only reachable from a server action.
+  APPROVED
+  SENT
+  /// The provider refused it. `error` says what they said.
+  FAILED
+  CANCELLED
+}
+
+/// A message this app is willing to put in somebody's outbox.
+///
+/// Until this existed, two emails went to the account holder and nothing else
+/// ever left. This reverses that for exactly one case — a follow-up to somebody
+/// already in the CRM — and every column below is part of a refusal:
+///
+/// - `accountId` is required and is one of THEIR mailboxes. This app never
+///   sends as itself on a member's behalf; the instance's own credentials send
+///   the digests to the account holder and nothing else, still. A follow-up to
+///   a recruiter arriving from hired@ is worse than no follow-up.
+/// - `contactId` is required. The address is read off the Contact row, so there
+///   is NO WAY to address somebody who is not already on file — which is the
+///   single guardrail that stops an assistant mailing forty strangers.
+/// - `status` leaves DRAFT for APPROVED only through a server action. No tool
+///   can make that transition, deliberately, and Profile.outboundApproval is
+///   what a person changes if they want the conversational path instead.
+/// - `sentAt` and `providerMessageId` are written in the same update that
+///   leaves the row claimed, so a retry cannot send twice.
+///
+/// The body is KEPT after sending. A record of what you said is the thing this
+/// product exists to keep, and Letter makes the same argument about its links.
+model Outbound {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Which of their own mailboxes it goes from. Restrict, not cascade:
+  /// disconnecting an account must not silently destroy the record of what was
+  /// sent through it.
+  accountId String
+  account   LinkedAccount  @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  /// Who it is to. Required — the address is read off this row, never from the
+  /// caller.
+  contactId String
+  contact   Contact        @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  /// The address as it stood when the draft was written, so a later edit to the
+  /// contact cannot silently redirect an approved message.
+  toEmail   String
+  subject   String
+  body      String
+  status    OutboundStatus @default(DRAFT)
+
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  /// The letter this was drafted from. SET NULL, like Letter's own links:
+  /// deleting the draft must not destroy the record of what went out.
+  letterId      String?
+  letter        Letter?      @relation(fields: [letterId], references: [id], onDelete: SetNull)
+
+  /// The provider's own id for the message, so it can be found in their Sent
+  /// folder and so a retry after a timeout can tell whether the first landed.
+  providerMessageId String @default("")
+  /// Why the last attempt failed, in words a person can act on. Never a token.
+  error             String @default("")
+
+  /// Which connection wrote it, and which sent it. Plain columns and not
+  /// relations, the same call WriteLog makes: the row has to survive the
+  /// connection being deleted, because that is exactly when somebody wants to
+  /// know what it did.
+  draftedBy     String @default("")
+  draftedByName String @default("")
+  sentBy        String @default("")
+  sentByName    String @default("")
+
+  approvedAt DateTime?
+  sentAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId, status, createdAt])
+  /// The daily cap's count, and the "what have I sent" list.
+  @@index([userId, sentAt])
+  @@index([contactId])
+  @@index([applicationId])
 }

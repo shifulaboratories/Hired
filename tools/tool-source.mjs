@@ -105,6 +105,8 @@ const PROPOSAL_KINDS = ["LOG_ACTIVITY", "MOVE_STAGE", "CREATE_TASK", "SET_FOLLOW
 const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"];
 // Mirrors SCOPE_VALUES in src/lib/mcp/scopes.ts, checked below.
 const SCOPE_VALUES = ["FULL", "WRITING", "PIPELINE", "READONLY"];
+// Mirrors OUTBOUND_STATUSES in src/lib/mcp/tools.ts, checked below.
+const OUTBOUND_STATUSES = ["DRAFT", "APPROVED", "SENT", "FAILED", "CANCELLED"];
 const DIGEST_KINDS = ["weekly", "nudge", "wins"];
 // Mirrors LETTER_KINDS in src/lib/data/letters.ts, checked below.
 const LETTER_KINDS = [
@@ -122,7 +124,7 @@ const REFERRAL_STATUSES = ["ASKED", "AGREED", "SUBMITTED", "DECLINED", "NO_ANSWE
 // Mirrors SYSTEM_EVENT_SOURCES in src/lib/data/system.ts, checked below.
 const SYSTEM_EVENT_SOURCES = [
   "stripe.webhook", "billing.sync", "email.send", "google.signin", "google.data",
-  "microsoft.data", "mcp.tool", "mcp.origin", "app",
+  "microsoft.data", "mcp.tool", "mcp.origin", "outbound.send", "app",
 ];
 
 for (const [name, values] of [
@@ -244,7 +246,7 @@ for (const [name, values] of [
 const scope = {
   str, num, bool, strArray, object, limitArg, SYSTEM_EVENT_SOURCES, LETTER_KINDS,
   INTERVIEW_FORMATS, INTERVIEW_OUTCOMES, QUESTION_KINDS, REFERRAL_STATUSES,
-  PROPOSAL_KINDS, PROPOSAL_STATUSES, DIGEST_KINDS, SCOPE_VALUES,
+  PROPOSAL_KINDS, PROPOSAL_STATUSES, DIGEST_KINDS, SCOPE_VALUES, OUTBOUND_STATUSES,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
   ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,
   COMPANY_MISSING, CONTACT_MISSING, PIPELINE_VIEW_VALUES, COLUMN_LIST_VALUES,

@@ -24,6 +24,7 @@ import * as accounts from "@/lib/data/accounts";
 import * as watch from "@/lib/data/watch";
 import * as mailSweep from "@/lib/data/mail-sweep";
 import * as captureLink from "@/lib/data/capture-link";
+import * as outbound from "@/lib/data/outbound";
 import * as onboarding from "@/lib/data/onboarding";
 import {
   authenticate,
@@ -1177,6 +1178,54 @@ export async function setMailSweepAction(on: boolean) {
   const next = await mailSweep.setMailSweep(user.id, on);
   revalidatePath("/settings");
   return next;
+}
+
+/**
+ * Outbound mail. Both of these are the app's own buttons, and the second is the
+ * ONLY way a draft becomes APPROVED — there is deliberately no MCP tool for it,
+ * because "approve each one" would mean nothing if a model could click.
+ */
+export async function setOutboundSettingsAction(patch: {
+  dailyLimit?: number;
+  approval?: "each" | "trusted";
+}) {
+  const user = await requireUser();
+  const next = await outbound.setOutboundSettings(user.id, patch);
+  revalidatePath("/settings");
+  return next;
+}
+
+export async function approveOutboundAction(id: string) {
+  const user = await requireUser();
+  const row = await outbound.approveOutbound(user.id, id);
+  revalidateEverywhere();
+  return row;
+}
+
+export async function cancelOutboundAction(id: string) {
+  const user = await requireUser();
+  const row = await outbound.cancelOutbound(user.id, id);
+  revalidateEverywhere();
+  return row;
+}
+
+/**
+ * Sending from the app, after the click.
+ *
+ * The same data function the tool calls, so there is one implementation of
+ * every refusal — including the approval gate, which this path has just
+ * satisfied honestly rather than bypassed.
+ */
+export async function sendOutboundAction(id: string) {
+  const user = await requireUser();
+  const result = await outbound.sendOutbound(user.id, id, {
+    writtenBy: "app",
+    connectionId: "",
+    connectionName: "the app",
+    tool: "sendOutboundAction",
+  });
+  revalidateEverywhere();
+  return result;
 }
 
 /**
