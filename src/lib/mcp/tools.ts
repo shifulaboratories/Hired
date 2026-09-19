@@ -2256,6 +2256,84 @@ export const tools: McpTool[] = [
       letters.updateLetter(ctx.userId, required(args, "id"), letterInputFrom(args)),
   },
   {
+    name: "export_letter_pdf",
+    title: "Export a letter as a PDF",
+    description:
+      "Render a letter to a real PDF on the server and return a download url. Reach for this when they are about to actually send one — a form wants a file, or they are attaching it to an email. The page carries their name and contact details from their profile as a letterhead, today's date in THEIR time zone, and the body as they wrote it; nothing is rewritten and nothing is added. The url opens in their browser, where they are already signed in, and is not a public link — a letter names people, and there is deliberately no way to publish one the way a resume can be published. If this instance has no headless browser the tool says so and hands back the print url instead, which produces the same document through the browser's own Save as PDF.",
+    inputSchema: object({ id: str("Letter id") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const id = required(args, "id");
+      const letter = await letters.getLetter(ctx.userId, id);
+      if (!letter) throw new Error(`No letter with id ${id}`);
+
+      const name = letter.title || letters.LETTER_LABEL[letter.kind];
+      const printUrl = `${ctx.baseUrl}/print/letter/${id}`;
+      if (!pdfRenderingAvailable()) {
+        return withLinks(
+          {
+            available: false,
+            printUrl,
+            message:
+              "This instance has no headless browser, so it cannot render PDFs server-side. Open the print url and use the browser's Save as PDF.",
+          },
+          [
+            {
+              type: "resource_link",
+              uri: printUrl,
+              name: `${name} (print page)`,
+              description: "Opens the US-Letter page; use the browser's Save as PDF.",
+              mimeType: "text/html",
+            },
+          ],
+        );
+      }
+
+      // Rendered here rather than just handing back a url, so the answer is
+      // "it worked", not "here is an address, hope it works" — the same
+      // reasoning export_resume_pdf is built on.
+      const token = await createEphemeralSession(ctx.userId);
+      try {
+        const { bytes, pages } = await renderPdf({
+          url: printUrl,
+          marker: ".letter-paper",
+          sessionCookie: {
+            name: SESSION_COOKIE,
+            value: token,
+            domain: new URL(ctx.baseUrl).hostname,
+            secure: ctx.baseUrl.startsWith("https:"),
+          },
+        });
+        const downloadUrl = `${ctx.baseUrl}/api/letters/${id}/pdf`;
+        return withLinks(
+          {
+            available: true,
+            url: downloadUrl,
+            pages,
+            sizeKb: Math.round(bytes.length / 1024),
+            name,
+          },
+          [
+            {
+              type: "resource_link",
+              uri: downloadUrl,
+              name: `${name}.pdf`,
+              description: `${pages} page${pages === 1 ? "" : "s"}.`,
+              mimeType: "application/pdf",
+            },
+          ],
+        );
+      } finally {
+        await destroySession(token);
+      }
+    },
+  },
+  {
     name: "delete_letter",
     title: "Delete a letter",
     description:

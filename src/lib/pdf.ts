@@ -88,6 +88,13 @@ export type PdfResult = {
 export async function renderPdf(input: {
   url: string;
   sessionCookie: { name: string; value: string; domain: string; secure: boolean };
+  /**
+   * The element that proves the page rendered a document rather than a redirect
+   * to the login screen. A selector rather than a fixed class because letters
+   * print through this same function and are not resumes; the default keeps
+   * every existing caller reading exactly as it did.
+   */
+  marker?: string;
 }): Promise<PdfResult> {
   const executablePath = chromiumPath();
   if (!executablePath) {
@@ -123,7 +130,7 @@ export async function renderPdf(input: {
     }
 
     // The page must have actually rendered a document, not a redirect to login.
-    const paper = await page.locator(".resume-paper").count();
+    const paper = await page.locator(input.marker ?? ".resume-paper").count();
     if (paper === 0) throw new Error("The print page rendered no document.");
 
     const bytes = await page.pdf({

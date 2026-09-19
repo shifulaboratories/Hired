@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FileSignatureIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { FileSignatureIcon, PlusIcon, PrinterIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import type { LetterKind } from "@prisma/client";
 import { Button } from "@/components/ui/button";
@@ -255,16 +255,41 @@ function LetterEditor({
     <div className="min-w-0 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <SaveIndicator state={save.state} />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-faint hover:text-destructive"
-          onClick={onDelete}
-          disabled={busy}
-          aria-label="Delete this letter"
-        >
-          <Trash2Icon />
-        </Button>
+        <div className="flex items-center gap-1">
+          {/* The print page rather than /api/letters/[id]/pdf, which is what the
+              resume editor links to when the host has a Chromium. That editor
+              is rendered by a server page and is handed the answer; this panel
+              is inside a client component two levels down, so knowing it would
+              mean threading a boolean through the application detail for one
+              icon. The print page works on every host and its own button says
+              "Save as PDF", so the worst case is one extra keystroke. The
+              server-rendered file is a tool call away — export_letter_pdf. */}
+          <Button
+            asChild
+            variant="ghost"
+            size="icon-sm"
+            className="text-faint hover:text-foreground"
+          >
+            <a
+              href={`/print/letter/${letter.id}`}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Print this letter or save it as a PDF"
+            >
+              <PrinterIcon />
+            </a>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-faint hover:text-destructive"
+            onClick={onDelete}
+            disabled={busy}
+            aria-label="Delete this letter"
+          >
+            <Trash2Icon />
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 @min-[34rem]:grid-cols-2">

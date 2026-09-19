@@ -1,7 +1,7 @@
 ---
 title: "Letter tools"
 sidebarTitle: "Letters"
-description: "Six tools over everything you write that is not a resume: cover letters, cold outreach, referral asks, thank-yous and replies."
+description: "Seven tools over everything you write that is not a resume: cover letters, cold outreach, referral asks, thank-yous and replies."
 icon: "envelope-open-text"
 ---
 
@@ -126,6 +126,16 @@ Change a saved letter. Only the fields you send change — but sending `body` RE
 | `contact_id` | string | The person it is going to. Empty string detaches |
 | `resume_id` | string | The resume it goes out with. Empty string detaches |
 | `sent_at` | string | The day it was sent, YYYY-MM-DD. Empty string puts it back to a draft |
+
+### `export_letter_pdf`
+
+_Export a letter as a PDF_
+
+Render a letter to a real PDF on the server and return a download url. Reach for this when they are about to actually send one — a form wants a file, or they are attaching it to an email. The page carries their name and contact details from their profile as a letterhead, today's date in THEIR time zone, and the body as they wrote it; nothing is rewritten and nothing is added. The url opens in their browser, where they are already signed in, and is not a public link — a letter names people, and there is deliberately no way to publish one the way a resume can be published. If this instance has no headless browser the tool says so and hands back the print url instead, which produces the same document through the browser's own Save as PDF.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Letter id |
 
 ### `delete_letter`
 
