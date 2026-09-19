@@ -58,6 +58,7 @@ import { CompanyChip } from "@/components/crm/company-chip";
 import { CompanyAvatar } from "@/components/pipeline/company-avatar";
 import { ValuePicker } from "@/components/pipeline/value-picker";
 import { OfferCard, type OfferValue } from "@/components/pipeline/offer-card";
+import { InterviewsPanel, type InterviewValue } from "@/components/pipeline/interviews-panel";
 import { LettersPanel, type LetterRow } from "@/components/letters/letters-panel";
 import { PaperThumb } from "@/components/resume/paper-thumb";
 import { ResumePaper, type PaperSettings } from "@/components/resume/resume-paper";
@@ -139,6 +140,7 @@ export function ApplicationDetail({
   contacts,
   tasks,
   offers,
+  interviews,
   letters,
   resumes,
   tagOptions,
@@ -157,6 +159,7 @@ export function ApplicationDetail({
   tasks: Task[];
   /** Every version of the offer, newest first. Empty until one is recorded. */
   offers: OfferValue[];
+  interviews: InterviewValue[];
   /** What has been written to this employer, newest first. */
   letters: LetterRow[];
   resumes: { id: string; name: string }[];
@@ -425,6 +428,12 @@ export function ApplicationDetail({
                 <span className="text-faint nums ml-1 text-[11px]">{activities.length}</span>
               )}
             </TabsTrigger>
+            <TabsTrigger value="interviews">
+              Interviews
+              {interviews.length > 0 && (
+                <span className="text-faint nums ml-1 text-[11px]">{interviews.length}</span>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="letters">
               Letters
               {letters.length > 0 && (
@@ -470,6 +479,22 @@ export function ApplicationDetail({
               subject={{ kind: "application", id: application.id }}
               access={googleAccess}
             />
+          </TabsContent>
+
+          <TabsContent value="interviews">
+            {/* The rounds, and what was asked in each. The questions are the
+                point: everything else here is scaffolding for getting them
+                written down while somebody still remembers them, which is the
+                hour afterwards and never again. question_bank is what reads
+                them back across every job. */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-[15px]">Rounds at {values.company}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <InterviewsPanel applicationId={application.id} interviews={interviews} />
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="letters">

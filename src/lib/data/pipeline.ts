@@ -2357,7 +2357,7 @@ export async function dueNow(
  * here, so this file — which client components import for its constants —
  * never reaches the provider code and its Node-only libraries.
  */
-export type ScheduleKind = "FOLLOW_UP" | "TASK" | "ACTIVITY" | "MEETING" | "OFFER";
+export type ScheduleKind = "FOLLOW_UP" | "TASK" | "ACTIVITY" | "MEETING" | "OFFER" | "INTERVIEW";
 
 export type ScheduleEntry = {
   kind: ScheduleKind;

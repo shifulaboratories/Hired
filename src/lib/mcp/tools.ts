@@ -20,6 +20,12 @@ import * as digest from "@/lib/data/digest";
 import { PROPOSAL_KINDS } from "@/lib/data/proposals";
 import { LETTER_KINDS } from "@/lib/data/letters";
 import * as analytics from "@/lib/data/analytics";
+import * as interviews from "@/lib/data/interviews";
+import {
+  INTERVIEW_FORMATS,
+  INTERVIEW_OUTCOMES,
+  QUESTION_KINDS,
+} from "@/lib/data/interviews";
 import * as tags from "@/lib/data/tags";
 import type { TagKind } from "@prisma/client";
 import * as views from "@/lib/data/views";
@@ -288,6 +294,47 @@ function required(args: Json, key: string): string {
     throw new Error(`Missing required string argument "${key}"`);
   }
   return value;
+}
+
+/** The interview fields, read the same way by schedule_interview and update_interview. */
+function interviewInputFrom(args: Json): interviews.InterviewInput {
+  return defined({
+    round: n(args, "round"),
+    label: s(args, "label"),
+    format: s(args, "format") as interviews.InterviewInput["format"],
+    outcome: s(args, "outcome") as interviews.InterviewInput["outcome"],
+    scheduledAt: s(args, "scheduled_at"),
+    durationMins: n(args, "duration_mins"),
+    location: s(args, "location"),
+    prep: s(args, "prep"),
+    calendarEventId: s(args, "calendar_event_id"),
+    interviewerIds: a(args, "interviewer_ids"),
+  });
+}
+
+/**
+ * The `questions` array, read the same way wherever it appears.
+ *
+ * Anything without words is dropped rather than refused: an assistant listing
+ * six questions and leaving one blank has made a formatting mistake, not a
+ * request to fail the whole call and lose the other five.
+ */
+function questionsFrom(args: Json): interviews.QuestionInput[] | undefined {
+  const raw = args.questions;
+  if (!Array.isArray(raw)) return undefined;
+  const rows = raw
+    .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object")
+    .map((row) =>
+      defined({
+        question: typeof row.question === "string" ? row.question : "",
+        kind: row.kind as interviews.QuestionInput["kind"],
+        answer: typeof row.answer === "string" ? row.answer : undefined,
+        confidence: typeof row.confidence === "number" ? row.confidence : undefined,
+        better: typeof row.better === "string" ? row.better : undefined,
+      }),
+    )
+    .filter((row): row is interviews.QuestionInput => Boolean(row.question?.trim()));
+  return rows;
 }
 
 /** The letter fields, read the same way by create_letter and update_letter. */
@@ -2581,6 +2628,352 @@ export const tools: McpTool[] = [
     },
     handler: async (args, ctx) =>
       offers.offerBriefing(ctx.userId, required(args, "application_id")),
+  },
+  // -------------------------------------------------------------------------
+  // INTERVIEWS — rounds, what was asked, and what you said
+  // -------------------------------------------------------------------------
+  {
+    name: "prep_interview",
+    title: "Gather everything before an interview",
+    description:
+      "Call this FIRST whenever somebody has an interview coming up, asks what to expect, or asks you to run prep. Seven things decide an interview and they live seven places apart; this returns all of them in one read. `application` is the posting, the stage and the last ten things logged. `company` is the research on file. `interviewers` is who is in the room. `history` is every earlier round at this employer, with how each went. `employerQuestions` is what THIS employer has already asked — the list nothing in this app could produce before questions were rows, and the first thing to read out. `commonQuestions` is what gets asked everywhere. `weakAnswers` is what is on file with no answer or one they rated badly, which is the homework. `tasks` is whatever the stage checklist already put on their list. `missing` names what is NOT on file — no posting, no research, nobody named, no earlier round — and that list is the most useful thing here: say the gaps out loud rather than writing around them. NEVER invent a story, an employer, a date or a metric to fill one; if it is not in the result, it does not go in an answer. Pass interview_id for a booked round, or application_id to prep a job somebody has not put a date against yet. Read-only, saves nothing.",
+    inputSchema: object({
+      application_id: str("The job to prep for. Enough on its own."),
+      interview_id: str(
+        "A booked round, from list_interviews. Narrows the prep to its format and its interviewers.",
+      ),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      interviews.interviewBriefing(ctx.userId, {
+        applicationId: s(args, "application_id"),
+        interviewId: s(args, "interview_id"),
+      }),
+  },
+  {
+    name: "schedule_interview",
+    title: "Put an interview round on the record",
+    description:
+      "Record a round of interviews — one that is booked, or one that already happened and was never written down. Reach for it the moment a date is agreed. The round NUMBER is worked out for you when you leave it out: one past the deepest round on file for that job, which is also how somebody who has been typing round numbers into the pipeline by hand carries on counting rather than restarting at one. Pass `prep_task_due_at` and it puts a prep task on their list in the same call, which is the point of doing this in one move; the result names the task it made. Interviewers are contact ids from list_contacts — a name that is not a contact yet should become one with create_contact first, because the person is worth keeping after this job ends. THREE THINGS IT DOES NOT DO. It does not move the application: check the stage that comes back and call move_application_stage if the board still says applied. It writes nothing to the timeline, because an interview that has not happened is not a thing that happened — record_interview_outcome writes that line afterwards. And it does not raise the application's round counter above what you give it: that counter only ever goes up. Calling it twice for the same calendar event returns `duplicateOf` and writes nothing.",
+    inputSchema: object(
+      {
+        application_id: str("Which job this round is for"),
+        round: num(
+          "Which round, counting from 1. Leave it out to continue from the deepest round already on file.",
+        ),
+        label: str("What it is called — 'Phone screen', 'Take-home', 'System design', 'Onsite loop'"),
+        format: {
+          type: "string",
+          enum: [...INTERVIEW_FORMATS],
+          description: "What kind of round it is. Defaults to VIDEO.",
+        },
+        scheduled_at: str(
+          "When it is. YYYY-MM-DD, or a full ISO timestamp for a time. A bare date lands at 9am in their own zone.",
+        ),
+        duration_mins: num("How long it is booked for, in minutes"),
+        location: str("Where, or the joining link — 'Zoom', a Meet URL, 'their office, 4th floor'"),
+        prep: str("What to say, what to ask, what to avoid. Anything worth having written down before walking in."),
+        interviewer_ids: strArray("Contact ids of the people in the room, from list_contacts"),
+        calendar_event_id: str(
+          "The provider's event id when this came off a calendar, so a second sweep does not queue it again",
+        ),
+        prep_task_due_at: str("Also add a prep task due on this day, YYYY-MM-DD. Omit for no task."),
+        prep_task_title: str("What that task should say. Defaults to naming the round and the company."),
+      },
+      ["application_id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      interviews.scheduleInterview(ctx.userId, required(args, "application_id"), {
+        ...interviewInputFrom(args),
+        prepTaskDueAt: s(args, "prep_task_due_at"),
+        prepTaskTitle: s(args, "prep_task_title"),
+      }),
+  },
+  {
+    name: "list_interviews",
+    title: "List interview rounds",
+    description:
+      "Every round on file, newest first, with who was in the room, how it went and how many questions were recorded against it. Reach for it to answer 'what have I got coming up' (pass upcoming_only), 'how did the Stripe rounds go' (pass application_id or company_id), or before scheduling another one so the round number continues rather than restarting. Rounds on archived applications are never returned. For a week of dates across the whole search, list_schedule is better — it merges these with follow-ups, tasks and real calendar meetings. Read-only.",
+    inputSchema: object({
+      application_id: str("Only rounds for this job"),
+      company_id: str("Only rounds at this employer, across every application there"),
+      from: str("Only rounds scheduled on or after this day, YYYY-MM-DD"),
+      to: str("Only rounds scheduled on or before this day, YYYY-MM-DD"),
+      outcome: {
+        type: "string",
+        enum: [...INTERVIEW_OUTCOMES],
+        description: "Only rounds in this state",
+      },
+      upcoming_only: bool("Only rounds still ahead of now"),
+      limit: limitArg(100),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      capped(
+        await interviews.listInterviews(
+          ctx.userId,
+          defined({
+            applicationId: s(args, "application_id"),
+            companyId: s(args, "company_id"),
+            from: s(args, "from"),
+            to: s(args, "to"),
+            outcome: s(args, "outcome") as never,
+            upcomingOnly: b(args, "upcoming_only"),
+            limit: n(args, "limit"),
+          }),
+        ),
+        n(args, "limit"),
+        100,
+      ),
+  },
+  {
+    name: "get_interview",
+    title: "Get one interview round",
+    description:
+      "One round in full: the format, when it is, where, who is in the room, the prep written beforehand, the debrief written after, and every question recorded against it with the answer that was given. Read this before update_interview or record_interview_outcome, because both of those replace the fields you send.",
+    inputSchema: object({ id: str("Interview id, from list_interviews") }, ["id"]),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => interviews.getInterview(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "update_interview",
+    title: "Fix an interview round",
+    description:
+      "Correct a round that is already on file — the time moved, the format changed, somebody else joined the panel. Only the fields you send change, so this is safe to call with one of them. TWO TRAPS. `interviewer_ids` REPLACES the whole set rather than adding to it, so read the round with get_interview first and send everyone who should be on it. And this is for FIXING a round, not for saying how it went: record_interview_outcome is what writes the timeline entry and the questions. It can still repair a round on an application you have since archived, which is deliberate — the id could only have come from somewhere that already showed it to you.",
+    inputSchema: object(
+      {
+        id: str("Interview id"),
+        round: num("Which round, counting from 1"),
+        label: str("What it is called"),
+        format: { type: "string", enum: [...INTERVIEW_FORMATS], description: "What kind of round it is" },
+        outcome: {
+          type: "string",
+          enum: [...INTERVIEW_OUTCOMES],
+          description: "Where it got to. Prefer record_interview_outcome, which also writes the timeline.",
+        },
+        scheduled_at: str("When it is, YYYY-MM-DD or a full ISO timestamp"),
+        duration_mins: num("How long, in minutes"),
+        location: str("Where, or the joining link"),
+        prep: str("What to say, what to ask, what to avoid. Replaces what is there."),
+        interviewer_ids: strArray("REPLACES who is in the room. Send everyone, not just the new one."),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      interviews.updateInterview(ctx.userId, required(args, "id"), interviewInputFrom(args)),
+  },
+  {
+    name: "record_interview_outcome",
+    title: "Say how a round went, and what they asked",
+    description:
+      "The tool to reach for straight after an interview, and the one that makes every future one easier. It records how the round went, what they wrote about it, and — the part that matters — the questions they were asked with the answers they actually gave. Ask for the real answer, not a better one: the whole value of the bank is knowing which real answers led somewhere, and an improved version recorded now is a story they will not be able to repeat. `better` is where the improved version goes. This is the one write here with side effects, and both are the point: it writes the round's line on the timeline, REWRITING its own earlier line rather than adding a second, and it raises the application's round counter if this round is deeper than anything recorded — never lowering it. It does NOT move the application's stage; a rejection is still move_application_stage, and passing the loss reason there is what makes loss_report useful later. Confidence is 1 to 5 in their own judgement; leave it out rather than guessing one for them.",
+    inputSchema: object(
+      {
+        id: str("Interview id"),
+        outcome: {
+          type: "string",
+          enum: [...INTERVIEW_OUTCOMES],
+          description: "Where it got to. Defaults to HELD when the round was still scheduled.",
+        },
+        debrief: str("What they thought, in their own words. Replaces what is there."),
+        occurred_at: str("When it actually happened, YYYY-MM-DD or ISO. Defaults to when it was scheduled."),
+        questions: {
+          type: "array",
+          description:
+            "What was asked, and what they said. Additive — nothing already on file is touched, so this is safe to call again as they remember more.",
+          items: object(
+            {
+              question: str("What was asked, as close to the interviewer's own words as they remember"),
+              kind: {
+                type: "string",
+                enum: [...QUESTION_KINDS],
+                description:
+                  "What sort of question. MINE is one they asked the interviewer. Defaults to BEHAVIOURAL.",
+              },
+              answer: str("What they ACTUALLY said. Not an improved version."),
+              confidence: num("Their own verdict on the answer, 1 to 5. Leave it out rather than guessing."),
+              better: str("What they wish they had said. This is where the improved version goes."),
+            },
+            ["question"],
+          ),
+        },
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      interviews.recordInterviewOutcome(ctx.userId, required(args, "id"), {
+        outcome: s(args, "outcome") as never,
+        debrief: s(args, "debrief"),
+        occurredAt: s(args, "occurred_at"),
+        questions: questionsFrom(args),
+      }),
+  },
+  {
+    name: "log_interview_questions",
+    title: "Add questions to a round already on file",
+    description:
+      "Append what was asked to a round that is already recorded, without touching how it went. Reach for it when somebody remembers another question a day later, which is most of them. Additive: nothing already on file is changed or removed, so calling it twice adds twice — read the round with get_interview first if you are not sure whether a question is already there. Record the answer they actually gave rather than a better one; `better` is where the improved version goes.",
+    inputSchema: object(
+      {
+        interview_id: str("Interview id"),
+        questions: {
+          type: "array",
+          description: "The questions to add.",
+          items: object(
+            {
+              question: str("What was asked"),
+              kind: {
+                type: "string",
+                enum: [...QUESTION_KINDS],
+                description: "What sort of question. MINE is one they asked the interviewer.",
+              },
+              answer: str("What they actually said"),
+              confidence: num("Their own verdict, 1 to 5"),
+              better: str("What they wish they had said"),
+            },
+            ["question"],
+          ),
+        },
+      },
+      ["interview_id", "questions"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => ({
+      added: await interviews.addQuestions(
+        ctx.userId,
+        required(args, "interview_id"),
+        questionsFrom(args) ?? [],
+      ),
+    }),
+  },
+  {
+    name: "update_interview_question",
+    title: "Correct one recorded question",
+    description:
+      "Fix a question, an answer, a rating or the better version. Only the fields you send change. Correcting the WORDS of a question re-files it in the bank, which is usually what you want — the bank groups by exact wording, so two rememberings of the same question sit apart until one is edited to match the other. Question ids come from get_interview or question_bank.",
+    inputSchema: object(
+      {
+        id: str("Question id, from get_interview or question_bank"),
+        question: str("What was asked. Changing this re-files it in the bank."),
+        kind: { type: "string", enum: [...QUESTION_KINDS], description: "What sort of question" },
+        answer: str("What they actually said"),
+        confidence: num("Their own verdict, 1 to 5. 0 means nobody said."),
+        better: str("What they wish they had said"),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      interviews.updateQuestion(ctx.userId, required(args, "id"), {
+        question: s(args, "question"),
+        kind: s(args, "kind") as never,
+        answer: s(args, "answer"),
+        confidence: n(args, "confidence"),
+        better: s(args, "better"),
+      }),
+  },
+  {
+    name: "delete_interview_question",
+    title: "Remove a recorded question",
+    description:
+      "Take one question off a round for good — it was recorded twice, or it was not really a question. Gone, with no archive. Deleting the LAST answer on file for something also removes it from the bank, so a question asked at three employers loses a third of its evidence; prefer correcting it with update_interview_question where the problem is the wording.",
+    inputSchema: object({ id: str("Question id") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => interviews.deleteQuestion(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "delete_interview",
+    title: "Remove an interview round",
+    description:
+      "Delete a round and everything recorded against it — every question, every answer, and the line it put on the timeline. There is no archive for interviews, so this is gone, and the questions are usually the part worth keeping. Say what will go, including how many questions, and get a plain yes first. The application's round counter is deliberately NOT lowered: how far something got is a fact, and the funnel is built out of that column.",
+    inputSchema: object({ id: str("Interview id") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => interviews.deleteInterview(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "question_bank",
+    title: "What keeps getting asked, and which answers worked",
+    description:
+      "Every question ever recorded, across every interview, grouped and ranked. This is what turns a set of interview notes into preparation. `repeated` is the list worth rehearsing — asked more than once, with each answer and which employer it came from. `weak` is the homework: on file with no answer recorded, or rated badly by the person who gave it. `worked` is the answers that came out of a round that was passed or a job that reached an offer. `coverage` is per kind of question and INCLUDES the kinds with zero, because a zero is the most informative row here — never having recorded a system design question is the finding. THREE TRAPS, all of them in `caveats` as well. Questions are grouped by EXACT WORDING, so the same question remembered two ways is two entries: merge them by eye before reporting a count, and use update_interview_question to make one match the other. `ledSomewhere` is correlation and nothing more — a passed round does not show the answer was why, and a good answer in a job lost for other reasons reads as not working. And under about twenty questions there is not enough here to draw any conclusion from, which `caveats` says outright. Rounds on archived applications are excluded. Read-only, saves nothing.",
+    inputSchema: object({
+      application_id: str("Only questions from rounds on this job"),
+      company_id: str("Only questions this employer asked"),
+      kind: { type: "string", enum: [...QUESTION_KINDS], description: "Only this sort of question" },
+      search: str("Only questions whose words contain this"),
+      min_times_asked: num("Only questions asked at least this many times. Default 1."),
+      limit: num("How many distinct questions to return. Default 100, ceiling 300."),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      interviews.questionBank(
+        ctx.userId,
+        defined({
+          applicationId: s(args, "application_id"),
+          companyId: s(args, "company_id"),
+          kind: s(args, "kind") as never,
+          search: s(args, "search"),
+          minTimesAsked: n(args, "min_times_asked"),
+          limit: n(args, "limit"),
+        }),
+      ),
   },
   {
     name: "list_stage_templates",

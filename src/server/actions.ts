@@ -8,6 +8,7 @@ import * as me from "@/lib/data/me";
 import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
 import * as offers from "@/lib/data/offers";
+import * as interviews from "@/lib/data/interviews";
 import * as letters from "@/lib/data/letters";
 import * as stageTemplates from "@/lib/data/stage-templates";
 import * as proposals from "@/lib/data/proposals";
@@ -1267,6 +1268,64 @@ export async function deleteOfferAction(id: string) {
   if (offer) revalidateApplication(offer.applicationId);
 }
 
+/**
+ * Interview rounds, for the tab on an opened application.
+ *
+ * No `pick` here, unlike the profile and resume actions: interviews.ts builds
+ * its Prisma `data` object field by field rather than spreading a patch, so the
+ * allow-list already exists one level down where patch.ts says it belongs. A
+ * second one here would be a second place to forget a column.
+ */
+export async function scheduleInterviewAction(
+  applicationId: string,
+  input: interviews.InterviewInput,
+) {
+  const user = await requireUser();
+  const result = await interviews.scheduleInterview(user.id, applicationId, input);
+  revalidateApplication(applicationId);
+  return result.interview.id;
+}
+
+export async function updateInterviewAction(id: string, patch: interviews.InterviewInput) {
+  const user = await requireUser();
+  const interview = await interviews.updateInterview(user.id, id, patch);
+  revalidateApplication(interview.application.id);
+}
+
+export async function deleteInterviewAction(id: string) {
+  const user = await requireUser();
+  // Read it first so the right screen is revalidated after the row is gone.
+  const interview = await interviews.getInterview(user.id, id);
+  await interviews.deleteInterview(user.id, id);
+  if (interview) revalidateApplication(interview.application.id);
+}
+
+export async function addInterviewQuestionAction(
+  interviewId: string,
+  input: interviews.QuestionInput,
+) {
+  const user = await requireUser();
+  await interviews.addQuestions(user.id, interviewId, [input]);
+  const interview = await interviews.getInterview(user.id, interviewId);
+  if (interview) revalidateApplication(interview.application.id);
+}
+
+export async function updateInterviewQuestionAction(
+  id: string,
+  patch: Partial<interviews.QuestionInput>,
+) {
+  const user = await requireUser();
+  const question = await interviews.updateQuestion(user.id, id, patch);
+  const interview = await interviews.getInterview(user.id, question.interviewId);
+  if (interview) revalidateApplication(interview.application.id);
+}
+
+export async function deleteInterviewQuestionAction(id: string) {
+  const user = await requireUser();
+  await interviews.deleteQuestion(user.id, id);
+  revalidatePath("/applications");
+}
+
 /** The three screens an offer shows on. */
 function revalidateApplication(id: string) {
   revalidatePath("/applications");
@@ -1822,6 +1881,7 @@ export async function getApplicationForPanelAction(id: string) {
     })),
     offers: application.offers.map(offers.offerForUi),
     letters: (await letters.listLetters(user.id, { applicationId: id })).map(letters.letterForUi),
+    interviews: (await interviews.listInterviewDetails(user.id, id)).map(interviews.interviewForUi),
     resumes: resumeList.map((resume) => ({ id: resume.id, name: resume.name })),
     tagOptions: tagOptions.map(asOption),
     lossOptions: lossOptions.map(asOption),

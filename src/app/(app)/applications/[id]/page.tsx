@@ -8,6 +8,7 @@ import { applicationFieldValues, getApplication, listCompanies } from "@/lib/dat
 import { listTags, tagsOfKind } from "@/lib/data/tags";
 import { offerForUi } from "@/lib/data/offers";
 import { letterForUi, listLetters } from "@/lib/data/letters";
+import { interviewForUi, listInterviewDetails } from "@/lib/data/interviews";
 import { getResume, listResumeNames } from "@/lib/data/resumes";
 import { requireUser } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
@@ -29,6 +30,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
     googleConnection,
     fieldValues,
     letters,
+    interviews,
   ] =
     await Promise.all([
       getApplication(user.id, id),
@@ -40,6 +42,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
       accountAccess(user.id),
       applicationFieldValues(user.id),
       listLetters(user.id, { applicationId: id }),
+      listInterviewDetails(user.id, id),
     ]);
   if (!application) notFound();
 
@@ -93,6 +96,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
           }))}
           offers={application.offers.map(offerForUi)}
           letters={letters.map(letterForUi)}
+          interviews={interviews.map(interviewForUi)}
           tasks={application.tasks.map((task) => ({
             id: task.id,
             title: task.title,

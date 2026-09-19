@@ -106,6 +106,12 @@ const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"];
 const DIGEST_KINDS = ["weekly", "nudge"];
 // Mirrors LETTER_KINDS in src/lib/data/letters.ts, checked below.
 const LETTER_KINDS = ["COVER_LETTER", "OUTREACH", "REFERRAL_ASK", "THANK_YOU", "REPLY", "OTHER"];
+// Mirrors the three in src/lib/data/interviews.ts, all checked below.
+const INTERVIEW_FORMATS = ["PHONE", "VIDEO", "ONSITE", "TAKE_HOME", "PAIRING", "PANEL", "OTHER"];
+const INTERVIEW_OUTCOMES = ["SCHEDULED", "HELD", "PASSED", "REJECTED", "CANCELLED", "NO_SHOW"];
+const QUESTION_KINDS = [
+  "BEHAVIOURAL", "TECHNICAL", "SYSTEM_DESIGN", "ROLE", "CULTURE", "COMPENSATION", "MINE", "OTHER",
+];
 // Mirrors SYSTEM_EVENT_SOURCES in src/lib/data/system.ts, checked below.
 const SYSTEM_EVENT_SOURCES = [
   "stripe.webhook", "billing.sync", "email.send", "google.signin", "google.data",
@@ -169,6 +175,23 @@ for (const [name, values] of [
   }
 }
 {
+  // The three interview enums live in the data layer; tools.ts imports them.
+  const file = readFileSync(join(ROOT, "src", "lib", "data", "interviews.ts"), "utf8");
+  for (const [name, values] of [
+    ["INTERVIEW_FORMATS", INTERVIEW_FORMATS],
+    ["INTERVIEW_OUTCOMES", INTERVIEW_OUTCOMES],
+    ["QUESTION_KINDS", QUESTION_KINDS],
+  ]) {
+    const declared = new RegExp(`export const ${name} = \\[([\\s\\S]*?)\\]`).exec(file);
+    const found = declared ? [...declared[1].matchAll(/"([A-Z_]+)"/g)].map((m) => m[1]) : [];
+    if (found.join(",") !== values.join(",")) {
+      throw new Error(
+        `${name} changed in interviews.ts (${found.join(", ")}) — update tools/tool-source.mjs`,
+      );
+    }
+  }
+}
+{
   // The list cap. Mirrored above so the argument tables can be generated without
   // importing TypeScript; checked here so raising it in tools.ts fails this run
   // instead of leaving every "hard ceiling 500" in the manual wrong.
@@ -190,6 +213,7 @@ for (const [name, values] of [
 
 const scope = {
   str, num, bool, strArray, object, limitArg, SYSTEM_EVENT_SOURCES, LETTER_KINDS,
+  INTERVIEW_FORMATS, INTERVIEW_OUTCOMES, QUESTION_KINDS,
   PROPOSAL_KINDS, PROPOSAL_STATUSES, DIGEST_KINDS,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
   ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,

@@ -64,31 +64,33 @@ model User {
   invitedBy   User?   @relation("UserInvites", fields: [invitedById], references: [id], onDelete: SetNull)
   invitees    User[]  @relation("UserInvites")
 
-  sessions       Session[]
-  mcpConnections McpConnection[]
-  sentInvites    Invite[]        @relation("InviteSender")
-  profile        Profile?
-  roles          Role[]
-  highlights     Highlight[]
-  education      Education[]
-  projects       Project[]
-  skillGroups    SkillGroup[]
-  certifications Certification[]
-  notes          Note[]
-  resumes        Resume[]
-  letters        Letter[]
-  companies      Company[]
-  applications   Application[]
-  offers         Offer[]
-  contacts       Contact[]
-  activities     Activity[]
-  tasks          Task[]
-  savedViews     SavedView[]
-  tags           Tag[]
-  stageTemplates StageTemplate[]
-  proposals      Proposal[]
-  pipelineShares PipelineShare[]
-  linkedAccounts LinkedAccount[]
+  sessions           Session[]
+  mcpConnections     McpConnection[]
+  sentInvites        Invite[]            @relation("InviteSender")
+  profile            Profile?
+  roles              Role[]
+  highlights         Highlight[]
+  education          Education[]
+  projects           Project[]
+  skillGroups        SkillGroup[]
+  certifications     Certification[]
+  notes              Note[]
+  resumes            Resume[]
+  letters            Letter[]
+  companies          Company[]
+  applications       Application[]
+  offers             Offer[]
+  contacts           Contact[]
+  activities         Activity[]
+  tasks              Task[]
+  savedViews         SavedView[]
+  tags               Tag[]
+  stageTemplates     StageTemplate[]
+  interviews         Interview[]
+  interviewQuestions InterviewQuestion[]
+  proposals          Proposal[]
+  pipelineShares     PipelineShare[]
+  linkedAccounts     LinkedAccount[]
 
   @@index([role])
   @@index([stripeCustomerId])
@@ -885,6 +887,9 @@ model Application {
   /// than a handful of columns. Offers carry no archivedAt of their own; see
   /// the model.
   offers     Offer[]
+  /// Every round, in order. Interviews carry no archivedAt of their own; see
+  /// the model.
+  interviews Interview[]
   letters    Letter[]
   proposals  Proposal[]
 
@@ -974,6 +979,189 @@ model Offer {
 ///
 /// Materialised by moveApplicationStage. Editing a template never touches the
 /// tasks it has already made: those are work in progress, not a setting.
+/// What a round actually was. Not how it went — that is `outcome`.
+enum InterviewFormat {
+  PHONE
+  VIDEO
+  ONSITE
+  TAKE_HOME
+  PAIRING
+  PANEL
+  OTHER
+}
+
+/// Where a round got to, as one lifecycle rather than a status column and a
+/// verdict column. Two columns is two places to disagree, which is the argument
+/// Offer already made for having no status at all.
+///
+/// SCHEDULED is the future. HELD means it happened and nobody has said yet —
+/// which is where most rounds sit for a week. CANCELLED and NO_SHOW are kept
+/// apart because they are different signals: one of them is about them.
+enum InterviewOutcome {
+  SCHEDULED
+  HELD
+  PASSED
+  REJECTED
+  CANCELLED
+  NO_SHOW
+}
+
+/// What a question was about. A fixed taxonomy rather than a seventh TagKind: a
+/// tag is a label a PERSON owns, renames and deletes, and these are the kinds of
+/// question that exist whoever is asking. The same call ActivityType and
+/// LetterKind already make.
+///
+/// MINE is a question you asked THEM. It lives here rather than in a model of
+/// its own because "which of my questions landed" is the same question as
+/// "which of my answers landed", asked from the other side of the table.
+enum QuestionKind {
+  BEHAVIOURAL
+  TECHNICAL
+  SYSTEM_DESIGN
+  ROLE
+  CULTURE
+  COMPENSATION
+  MINE
+  OTHER
+}
+
+/// A round of interviews, as a record rather than a sentence in a timeline.
+///
+/// It does NOT replace the INTERVIEW activity. src/lib/data/resumes.ts counts
+/// those rows to prove a resume got somebody into a room, and the dashboard's
+/// one-line logger writes them; both would go quiet if they stopped existing.
+/// Instead an interview OWNS one — `activityId` — written when the outcome is
+/// recorded and rewritten rather than duplicated when it changes. One writer,
+/// one row: the timeline is a rendering of this record, not a second one.
+///
+/// Application.interviewRound survives as the high-water mark the funnel is
+/// built out of. This model never lowers it; see recordInterviewOutcome.
+///
+/// No archivedAt. Like offers, activities and tasks, an interview follows its
+/// application in and out of the archive through ITS column. The cost is the
+/// same and is worse by one level: every read here that does not start from an
+/// already-filtered application spells `application: { archivedAt: null }`
+/// itself. src/lib/data/interviews.ts numbers each of them.
+model Interview {
+  id              String           @id @default(cuid())
+  /// Denormalised so every query filters on it directly, the same shape Offer,
+  /// Activity and Task use. This is what keeps tenant isolation a compile-time
+  /// property rather than a join somebody has to remember.
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applicationId   String
+  application     Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  /// Which round this is, counting from 1. Seeded from the application's own
+  /// interviewRound when nobody says, so a search that recorded rounds by hand
+  /// before this model existed carries on counting rather than restarting.
+  round           Int              @default(1)
+  /// What it was called: "Phone screen", "Take-home", "Onsite loop". Empty is
+  /// normal, and the UI prints "Round 2" for those.
+  label           String           @default("")
+  format          InterviewFormat  @default(VIDEO)
+  outcome         InterviewOutcome @default(SCHEDULED)
+  /// When it is, or was. Null means somebody recorded a round after the fact and
+  /// never said which day — which is common and is not an error.
+  scheduledAt     DateTime?
+  /// Minutes. 0 means nobody said, which is different from a zero-length
+  /// interview and is why it is not nullable.
+  durationMins    Int              @default(0)
+  /// Where, or the joining link. One field, because "Zoom", a Meet URL and
+  /// "their office, 4th floor" are the same answer to the same question.
+  location        String           @default("")
+  /// What you wrote BEFORE: what to say, what to ask, what to avoid.
+  prep            String           @default("")
+  /// What you thought AFTER, in your own words. The questions are rows; this is
+  /// the feeling, which no row holds.
+  debrief         String           @default("")
+  /// The provider's own event id, when this came off a calendar. It is the
+  /// dedupe key: a second sweep must not queue the same meeting twice. Empty for
+  /// one recorded by hand.
+  calendarEventId String           @default("")
+  /// The one timeline row this interview owns. No relation and no foreign key,
+  /// deliberately — the same call Application.archivedWith makes. Somebody can
+  /// delete the activity from the timeline, and a dangling breadcrumb is
+  /// harmless: the writer re-reads it and writes a fresh one if it is gone.
+  activityId      String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  interviewers InterviewInterviewer[]
+  questions    InterviewQuestion[]
+
+  @@index([userId])
+  @@index([applicationId, round])
+  @@index([userId, scheduledAt])
+  @@index([userId, calendarEventId])
+}
+
+/// Who was in the room. Explicit rather than Prisma's implicit many-to-many, for
+/// the reason ApplicationTag and ContactCompany already give: an implicit
+/// table's name and its "A"/"B" columns are a convention of Prisma's rather than
+/// a contract, and the migrations here are hand-written SQL.
+///
+/// Not a String[] of ids: Task's own comment settles that argument — an id array
+/// has no referential integrity, so deleting a contact leaves a name nothing can
+/// resolve, forever.
+model InterviewInterviewer {
+  interviewId String
+  interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  contactId   String
+  contact     Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@id([interviewId, contactId])
+  @@index([contactId])
+}
+
+/// One question asked in one interview, and what you said.
+///
+/// A row rather than a JSON column on Interview, and the reason is the bank:
+/// "what gets asked repeatedly" is a GROUP BY across every interview ever, and a
+/// JSON array can only answer it by reading a whole career into memory and
+/// counting in TypeScript — which is the shape search_me was in before it became
+/// Postgres FTS. Rows also give a question a stable id to correct, and a
+/// normalised key to group on.
+///
+/// No archivedAt, and one level further removed than Offer: it follows its
+/// interview, which follows its application. EVERY read here spells
+/// `interview: { application: { archivedAt: null } }` by hand.
+model InterviewQuestion {
+  id          String       @id @default(cuid())
+  /// Denormalised, like Offer.userId, so no read has to join two levels up to
+  /// stay inside one tenant.
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interviewId String
+  interview   Interview    @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  kind        QuestionKind @default(BEHAVIOURAL)
+  /// What they asked, as close to the interviewer's own words as it can be
+  /// remembered. The bank groups by these words, so a paraphrase becomes a
+  /// second entry for the same question — a cost worth stating in the tool
+  /// description rather than trying to fix with fuzzy matching.
+  question    String
+  /// lower(trim(question)) with punctuation dropped and runs of whitespace
+  /// collapsed. Case-insensitive grouping is the whole point, and Prisma cannot
+  /// express a functional index — the same workaround Tag.key uses.
+  key         String
+  /// What they ACTUALLY said. Not an improved version: the bank's value is
+  /// knowing which real answers led somewhere.
+  answer      String       @default("")
+  /// Their own verdict on the answer, 1 (fumbled it) to 5 (nailed it). 0 means
+  /// nobody said, which is different from a 1 and is why it is not nullable.
+  confidence  Int          @default(0)
+  /// What they wish they had said. This is the field that turns a bad round into
+  /// preparation for the next one.
+  better      String       @default("")
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([userId, key])
+  @@index([interviewId, sortOrder])
+  @@index([userId, kind])
+}
+
 model StageTemplate {
   id        String   @id @default(cuid())
   userId    String
@@ -1135,28 +1323,28 @@ model ContactTag {
 }
 
 model Contact {
-  id             String           @id @default(cuid())
+  id             String                 @id @default(cuid())
   userId         String
-  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   name           String
-  title          String           @default("")
-  email          String           @default("")
-  phone          String           @default("")
-  relationship   String           @default("")
+  title          String                 @default("")
+  email          String                 @default("")
+  phone          String                 @default("")
+  relationship   String                 @default("")
   /// Where to find them. Named columns for the platforms people actually ask
   /// for by name, so a tool can say "their LinkedIn" and mean one field —
   /// same shape as Profile, which settled this argument already.
-  linkedin       String           @default("")
-  twitter        String           @default("")
-  instagram      String           @default("")
-  github         String           @default("")
-  website        String           @default("")
+  linkedin       String                 @default("")
+  twitter        String                 @default("")
+  instagram      String                 @default("")
+  github         String                 @default("")
+  website        String                 @default("")
   /// Everything else someone is reachable at: Bluesky, Mastodon, a Substack,
   /// a personal page. A list rather than five more columns, because the tail
   /// of "other means of social media" has no end and none of it needs a name
   /// of its own to be openable.
-  otherLinks     String[]         @default([])
-  notes          String           @default("")
+  otherLinks     String[]               @default([])
+  notes          String                 @default("")
   /// When to next get in touch — the date that keeps a relationship warm.
   nextFollowUpAt DateTime?
   /// Everywhere they represent. A person is a founder at one company, an
@@ -1165,17 +1353,19 @@ model Contact {
   /// flattens the join rows to { id, name, website } under the same name.
   companies      ContactCompany[]
   applicationId  String?
-  application    Application?     @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  application    Application?           @relation(fields: [applicationId], references: [id], onDelete: SetNull)
   activities     Activity[]
   /// How this person is filed: "recruiter", "warm intro", "ex-colleague".
   tags           ContactTag[]
   /// Null means live. See Company.archivedAt. Their timeline follows them in
   /// and out through this one column rather than carrying its own.
   archivedAt     DateTime?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @default(now()) @updatedAt
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @default(now()) @updatedAt
   tasks          Task[]
   letters        Letter[]
+  /// Rooms they were in. The join is explicit; see InterviewInterviewer.
+  interviews     InterviewInterviewer[]
   proposals      Proposal[]
 
   @@index([userId])
