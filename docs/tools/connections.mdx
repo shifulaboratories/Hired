@@ -1,7 +1,7 @@
 ---
 title: "Account and connection tools"
 sidebarTitle: "Your account"
-description: "Fourteen tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
+description: "Eighteen tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
 icon: "plug"
 ---
 
@@ -156,6 +156,56 @@ _Show the welcome tour again_
 Queue the web app's welcome tour to run again the next time this person opens it — the short walk through what the board, Me and the assistant connection are for. Reach for it when somebody says they are lost, that they never saw an introduction, or that they want the tutorial back; also worth offering to someone whose `get_setup_status` shows tourSeenAt null who is clearly struggling. It does not open anything on its own — nothing here can reach into their browser — so say plainly that it will appear next time they load the app. Setting it back to seen is the tour's own job, not a tool: they put it away by finishing or closing it.
 
 No arguments.
+
+### `list_changes`
+
+_What each assistant changed_
+
+Every write that arrived over MCP, newest first: which connection made it, which tool ran, what it touched and one line saying so. Reach for it when somebody asks what an assistant actually did, when something looks wrong and nobody remembers changing it, or before undo_change so you can name the change rather than guessing at it. Saves made in the app's own screens are NOT here, deliberately — the person was there. Versions are kept for both paths, so an edit made in the editor is still recoverable, just not listed. `undoable` and `restorePointAt` are the important pair: only writes that replace a resume or a role are versioned, and `restorePointAt` is the moment the record would go back to, which is often EARLIER than the change itself because versions are coalesced within ten minutes per author. Say that date out loud before undoing — 'this puts it back to how it was at 14:02, before three edits' — and get a yes. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `connection_id` | string | Only changes made through this connection, from list_connections |
+| `tool` | string | Only calls of this tool, e.g. 'update_resume' |
+| `kind` | string | Only changes to this sort of thing: resume, role, application, contact, offer… |
+| `record_id` | string | Only changes to this one record |
+| `limit` | number | How many to return. Default 50, ceiling 500. |
+
+### `list_revisions`
+
+_Earlier versions of a resume or a role_
+
+Every stored version of one resume or one role, newest first, with when it was taken and who caused it. These are BEFORE images: each row is what the record looked like before a write replaced it, so the newest row is where an undo lands. Reach for it before update_resume or update_role on something that matters, so you can tell them what they can get back to, and after a write that went wrong. Versions are taken only when the whole thing is replaced — changing a resume's font or its name does not make one — and they are COALESCED: one per record per author per ten minutes, keeping the OLDER image, so a version is the record as it stood before a sitting of work rather than before a keystroke. At most twenty are kept per record and old ones are swept on this instance's schedule, so this is a safety net rather than an archive. `recordExists` false means the record was deleted, and nothing here can be restored to it. Read-only.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `kind` | enum | **required** — Which sort of record. These are the only two that are versioned.  `RESUME` · `ROLE` |
+| `record_id` | string | **required** — The resume id or the role id |
+| `limit` | number | How many versions to return. Default and ceiling 20. |
+
+### `restore_revision`
+
+_Put a stored version back_
+
+Replace a resume's document, or a role's fields, with a version stored earlier. Reach for it when a write went wrong and they want it back, and reach for undo_change instead when what they can name is the CHANGE rather than the version. SAY WHAT WILL HAPPEN AND GET A YES FIRST: this replaces the current state, and the date on the version is often earlier than the change they are thinking of, because versions are coalesced within ten minutes per author — restoring can take them back past several edits. The restore is itself undoable: it takes a fresh version of the current state on its way past, and the result names it as `redoRevisionId`. For a resume only the DOCUMENT comes back — the template, font, size, margins and any published link are left exactly as they are, because silently changing a font back is a surprise and a restore must never resurrect a withdrawn public address. `changed` false means the record already matched that version, and you should say so rather than reporting work that did not happen. Refuses, without writing anything, when the stored version does not parse or the record has been deleted.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Revision id, from list_revisions |
+
+### `undo_change`
+
+_Put back what one change replaced_
+
+Undo one row from list_changes. Only writes that replace a resume or a role can be undone, because they are the only two the app takes a copy of on the way past — everything else in the log is a line for the eye. Deleting a company, a person or an application is undone from the archive with restore_records; deleting a role, a resume, a letter, a task or a tag cannot be undone at all, and their tool descriptions say so before they run. SAY WHERE IT LANDS AND GET A YES FIRST: `restorePointAt` on the change is often earlier than the change itself, because versions are coalesced within ten minutes per author, so undoing one edit can take them back past three. The undo is itself undoable — it takes a version of the current state on the way past and names it as `redoRevisionId`. Refuses, without writing anything, when there is no stored version from before that change: it may have been swept, or it may predate version history on this instance.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Change id, from list_changes |
 
 ### `list_connections`
 

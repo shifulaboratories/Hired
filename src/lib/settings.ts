@@ -30,6 +30,9 @@ export const SETTING_KEYS = {
   archiveRetentionDays: "archive_retention_days",
   /** Bookkeeping the sweep owns, not a knob. See listVariables. */
   archiveSweptAt: "archive_swept_at",
+  revisionRetentionDays: "revision_retention_days",
+  /** Bookkeeping again, not a knob. */
+  revisionsSweptAt: "revisions_swept_at",
   googleClientId: "google_client_id",
   googleClientSecret: "google_client_secret",
   googleAllowSignup: "google_allow_signup",
@@ -63,6 +66,13 @@ export type InstanceSettings = {
    * it is destroyed. 0 keeps everything until somebody empties it by hand.
    */
   archiveRetentionDays: number;
+  /**
+   * Days a version of a resume or a role, and a line in the change log, is kept
+   * before it is swept. 0 keeps everything. This is storage, not content: it
+   * holds copies of documents, so the default is finite where the archive's is
+   * a person's own decision.
+   */
+  revisionRetentionDays: number;
   /** Google sign-in. Empty client id means the button is not shown at all. */
   googleClientId: string;
   googleClientSecret: string;
@@ -185,6 +195,16 @@ export const VARIABLES: VariableDef[] = [
     group: "Instance",
     placeholder: "30",
     fallback: "30",
+  },
+  {
+    key: SETTING_KEYS.revisionRetentionDays,
+    field: "revisionRetentionDays",
+    label: "Version history",
+    help: "How many days a previous version of a resume or a role, and a line in the change log, is kept before it is swept. Versions are what undo_change and restore_revision put back, so shortening this shortens how far back somebody can go. 0 keeps everything, which grows without limit.",
+    kind: "text",
+    group: "Instance",
+    placeholder: "90",
+    fallback: "90",
   },
   {
     key: SETTING_KEYS.googleClientId,
@@ -359,6 +379,7 @@ export async function getSettings(): Promise<InstanceSettings> {
     companyLogos: raw(SETTING_KEYS.companyLogos) !== "0",
     mcpAllowedOrigins: raw(SETTING_KEYS.mcpAllowedOrigins),
     archiveRetentionDays: retentionDays(raw(SETTING_KEYS.archiveRetentionDays)),
+    revisionRetentionDays: retentionDays(raw(SETTING_KEYS.revisionRetentionDays)),
     googleClientId: raw(SETTING_KEYS.googleClientId),
     googleClientSecret: raw(SETTING_KEYS.googleClientSecret),
     googleAllowSignup: raw(SETTING_KEYS.googleAllowSignup) === "1",
@@ -522,7 +543,12 @@ export async function listVariables(): Promise<VariableRow[]> {
     // archive_swept_at is a clock the sweep keeps, not a knob anybody sets. An
     // operator screen of settings should not carry a timestamp that changes on
     // its own every hour.
-    .filter((row) => !BY_KEY.has(row.key) && row.key !== SETTING_KEYS.archiveSweptAt)
+    .filter(
+      (row) =>
+        !BY_KEY.has(row.key) &&
+        row.key !== SETTING_KEYS.archiveSweptAt &&
+        row.key !== SETTING_KEYS.revisionsSweptAt,
+    )
     .map((row) => ({
       key: row.key,
       label: row.key,

@@ -8,6 +8,7 @@ import {
   type StoredWidths,
 } from "@/lib/column-widths";
 import { pick } from "@/lib/data/patch";
+import { snapshot, APP_AUTHOR, type WriteAuthor } from "@/lib/data/revision-store";
 import { resolvePhoto } from "@/lib/photo";
 import { bulletSimilarity, SAME_BULLET } from "@/lib/resume-similarity";
 import { isValidTimeZone, SERVER_ZONE } from "@/lib/time";
@@ -311,9 +312,30 @@ const ROLE_COLUMNS = [
   "isCurrent", "summary", "background", "tags",
 ] as const;
 
-export async function updateRole(userId: string, id: string, patch: Partial<RoleInput>) {
+export async function updateRole(
+  userId: string,
+  id: string,
+  patch: Partial<RoleInput>,
+  /** Who is writing, for the version store. See updateResume's own note. */
+  author: WriteAuthor = APP_AUTHOR,
+) {
   const data = pick(patch, ROLE_COLUMNS);
   if (Object.keys(data).length === 0) return existingOrThrow(db.role, id, userId, "role");
+
+  // This is the write append_role_background exists because of: it replaces the
+  // background wholesale, so the copy is taken on the way past.
+  const before = await db.role.findFirst({ where: { id, userId } });
+  if (before) {
+    await snapshot(
+      userId,
+      "ROLE",
+      id,
+      Object.fromEntries(ROLE_COLUMNS.map((column) => [column, before[column]])),
+      `${before.title} at ${before.company}`,
+      author,
+    );
+  }
+
   const { count } = await db.role.updateMany({ where: { id, userId }, data });
   if (count === 0) throw new Error(`No role with id ${id}`);
   return db.role.findFirstOrThrow({ where: { id, userId } });

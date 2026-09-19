@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 import type { Prisma, User, UserRole } from "@prisma/client";
 import { db } from "@/lib/db";
 import { sweepArchive } from "@/lib/data/archive";
+import { sweepRevisions } from "@/lib/data/revisions";
 import { getSettings } from "@/lib/settings";
 import { baseUrlFrom } from "@/lib/request-url";
 
@@ -447,7 +448,13 @@ const LAST_USED_RESOLUTION_MS = 60_000;
  * connections has to know which one it is speaking through — that is what lets
  * "disconnect the old laptop" refuse to cut the wire it is standing on.
  */
-export type McpCaller = { user: User; connectionId: string };
+/**
+ * `connectionName` rides along because the change log stores the name as it was
+ * at the time: a log that resolved the name at read time would relabel every
+ * historic row the day somebody renamed a connection, and go blank the day they
+ * deleted one. Same call AdminAudit makes about actorId.
+ */
+export type McpCaller = { user: User; connectionId: string; connectionName: string };
 
 export async function userByMcpToken(
   token: string | null | undefined,
@@ -473,6 +480,8 @@ export async function userByMcpToken(
     // nobody restarts still clears its archive. Never let bookkeeping fail a
     // real request.
     void sweepArchive().catch(() => {});
+    // The version store's sweep rides the same throttle, for the same reason.
+    void sweepRevisions().catch(() => {});
     void db.mcpConnection
       .update({
         where: { id: connection.id },
@@ -484,7 +493,7 @@ export async function userByMcpToken(
       .catch(() => {});
   }
 
-  return { user, connectionId: connection.id };
+  return { user, connectionId: connection.id, connectionName: connection.name };
 }
 
 /** Every user starts with one connection so Settings is never an empty page. */

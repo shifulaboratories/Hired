@@ -91,6 +91,8 @@ model User {
   proposals          Proposal[]
   pipelineShares     PipelineShare[]
   linkedAccounts     LinkedAccount[]
+  revisions          Revision[]
+  writeLogs          WriteLog[]
 
   @@index([role])
   @@index([stripeCustomerId])
@@ -1242,6 +1244,117 @@ model Proposal {
   @@index([userId, status])
   @@index([applicationId])
   @@index([contactId])
+}
+
+/// What something looked like before it was replaced.
+///
+/// `update_resume` and `update_role` replace what you send — that is their
+/// contract and their whole hazard, and `append_role_background` exists because
+/// assistants kept overwriting people's notes with `update_role`. This is the
+/// copy taken on the way past.
+///
+/// BEFORE images, never after. To put something back you need the state you are
+/// going back to, so the newest row for a record IS the restore point and the
+/// current state stays where it belongs, in the record. A record nobody has ever
+/// overwritten costs nothing here.
+///
+/// One table for both kinds rather than two, because the cap, the retention
+/// sweep, the "newest at or before this instant" lookup and the join from
+/// WriteLog are the same code for each. `data` therefore means two shapes,
+/// discriminated by `kind`, the way Proposal.payload does — and like that column
+/// it is validated on the way OUT as well as in, because a blob in a database
+/// becomes a write the moment somebody restores it.
+///
+/// Append-only. Nothing updates a row here; the cap and the sweep delete them.
+model Revision {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind           RevisionKind
+  /// The Resume or Role this is a copy of. Deliberately NOT a foreign key:
+  /// deleting a resume destroys it for good, and a dangling revision the sweep
+  /// clears later is cheaper than a cascade nobody expected. Nothing restores to
+  /// a record that is gone — restoreRevision re-reads it first.
+  recordId       String
+  /// Resume: { name, doc } — the document only, never the template, the font or
+  /// the published slug. Role: exactly the ROLE_COLUMNS of src/lib/data/me.ts,
+  /// so a restore is `updateRole(userId, id, snapshot)` and `pick()` narrows it.
+  data           Json
+  /// A line for the list: the resume's name, or the role's title at the company.
+  label          String       @default("")
+  /// "mcp" or "app". With connectionId it is the author, and two different
+  /// authors never coalesce into one revision.
+  writtenBy      String       @default("app")
+  /// The MCP connection that caused it, or "" for a save from the app's own
+  /// screens. A plain column and not a relation, the same call AdminAudit makes
+  /// about actorId: a record that empties itself when the thing it describes is
+  /// deleted cannot answer the question it exists for.
+  connectionId   String       @default("")
+  /// What that connection was called at the time, for the same reason.
+  connectionName String       @default("")
+  /// The tool that caused it, or "" when the app's own editor saved it.
+  tool           String       @default("")
+  createdAt      DateTime     @default(now())
+
+  /// The cap's query, the restore-point lookup and the sweep all read this
+  /// order. It is the only index this table needs.
+  @@index([userId, kind, recordId, createdAt])
+  /// The age sweep, which walks by date across every kind.
+  @@index([userId, createdAt])
+}
+
+enum RevisionKind {
+  RESUME
+  ROLE
+}
+
+/// What each assistant changed, and when.
+///
+/// AdminAudit answers "who suspended this account". SystemEvent answers "is the
+/// instance working". This answers the question a person asks about their own
+/// workspace: what did the thing I connected actually do to my career history.
+///
+/// Written in ONE place — the tools/call case in src/lib/mcp/handler.ts — for
+/// every tool whose annotations say it is not read-only. Nothing in the data
+/// layer knows this table exists, which is the point: a log that has to be
+/// remembered at two hundred call sites is a log that is wrong at forty of them.
+///
+/// MCP only. A save from this app's own screens is not a row here; the person
+/// was there. Versions ARE kept for both paths — see Revision — so a change made
+/// in the editor is still recoverable, just not listed here.
+///
+/// It stores a subject and a sentence, never an operation's arguments: the
+/// argument to update_resume is an entire document, and a log that carried it
+/// would be a second unswept copy of the revision store.
+///
+/// There is no link to a Revision. Undo asks for the newest Revision for this
+/// row's (kind, recordId) at or before its createdAt, which is exactly "the
+/// state before this write" and stays right when a revision was coalesced away.
+model WriteLog {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The MCP connection this arrived on. A plain column, not a relation, so the
+  /// row survives the connection being deleted.
+  connectionId   String   @default("")
+  /// What that connection was called at the time.
+  connectionName String   @default("")
+  /// The tool that ran, e.g. "update_resume".
+  tool           String
+  /// What it touched: "resume", "role", "application", … or "other" when the
+  /// tool's name carries no noun this knows. Only "resume" and "role" are ever
+  /// undoable; everything else is a line for the eye.
+  kind           String   @default("other")
+  /// The id of the thing touched, or "" when the tool touched several or none.
+  recordId       String   @default("")
+  /// One line, already human. Never the call's arguments.
+  summary        String
+  createdAt      DateTime @default(now())
+
+  /// The list, newest first, optionally filtered by connection.
+  @@index([userId, createdAt])
+  /// The per-record history, and undo's lookup of its own row.
+  @@index([userId, kind, recordId, createdAt])
 }
 
 enum TagKind {

@@ -11,6 +11,7 @@ import {
 } from "@/lib/mcp/tools";
 import { meIsEmpty, listGuardrails } from "@/lib/data/me";
 import { recordSystemEvent } from "@/lib/data/system";
+import { recordWrite } from "@/lib/data/revision-store";
 import { isAdmin, type McpCaller } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
 
@@ -352,6 +353,33 @@ const INTERNAL_ERROR = -32603;
 const HEADER_MISMATCH = -32020;
 const UNSUPPORTED_PROTOCOL_VERSION = -32022;
 
+/**
+ * The id a call was about, for the change log, guessed from the arguments.
+ *
+ * Every tool here that touches one record names it `id`, or `<noun>_id` for the
+ * ones that take two. That covers the writes worth logging an id for; anything
+ * bulk, or anything that created something, logs an empty id and stays a line
+ * for the eye rather than an undo point.
+ *
+ * Deliberately NOT a per-tool map. A map would be a second place to remember a
+ * tool exists, which is exactly what driving this off the read-only hint avoids.
+ */
+function subjectIdIn(args: Record<string, unknown>): string {
+  for (const key of [
+    "id",
+    "resume_id",
+    "role_id",
+    "application_id",
+    "interview_id",
+    "contact_id",
+    "company_id",
+  ]) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 function err(id: JsonRpcId, code: number, message: string, data?: unknown): JsonRpcResponse {
   return { jsonrpc: "2.0", id, error: { code, message, ...(data ? { data } : {}) } };
 }
@@ -499,6 +527,25 @@ async function handleMessage(
       const args = (params.arguments ?? {}) as Record<string, unknown>;
       try {
         const result = await tool.handler(args, ctx);
+        // The change log, written in ONE place for every tool that is not
+        // read-only. Driven off `annotations.readOnlyHint`, which every tool
+        // already declares, so a tool added next year is logged without anybody
+        // remembering to log it — which is the whole reason it is here and not
+        // at two hundred call sites in the data layer.
+        //
+        // Awaited, so a reply cannot outrun the row it describes, but never
+        // fatal: recordWrite swallows its own failures rather than turning a
+        // successful tool call into an error the model sees.
+        if (tool.annotations.readOnlyHint !== true) {
+          await recordWrite({
+            userId: ctx.userId,
+            connectionId: ctx.connectionId,
+            connectionName: ctx.connectionName,
+            tool: name,
+            summary: tool.title,
+            recordId: subjectIdIn(args),
+          });
+        }
         // Links ride alongside the JSON rather than replacing it: a client that
         // renders resource links gets something clickable, one that doesn't sees
         // exactly what it always saw.
@@ -770,7 +817,7 @@ function decodeMcpName(value: string): string {
 
 /** Entry point shared by both MCP routes. */
 export async function handleMcpPost(request: Request, caller: McpCaller): Promise<Response> {
-  const { user, connectionId } = caller;
+  const { user, connectionId, connectionName } = caller;
 
   const url = new URL(request.url);
   const forwardedHost = request.headers.get("x-forwarded-host");
@@ -811,7 +858,7 @@ export async function handleMcpPost(request: Request, caller: McpCaller): Promis
     return jsonResponse(err(null, PARSE_ERROR, "Invalid JSON"), 400);
   }
 
-  const ctx: McpContext = { userId: user.id, user, connectionId, baseUrl };
+  const ctx: McpContext = { userId: user.id, user, connectionId, connectionName, baseUrl };
 
   const wantsSse = (request.headers.get("accept") ?? "").includes("text/event-stream");
   const messages = Array.isArray(body) ? (body as JsonRpcRequest[]) : [body as JsonRpcRequest];

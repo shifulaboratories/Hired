@@ -21,6 +21,7 @@ import { PROPOSAL_KINDS } from "@/lib/data/proposals";
 import { LETTER_KINDS } from "@/lib/data/letters";
 import * as analytics from "@/lib/data/analytics";
 import * as interviews from "@/lib/data/interviews";
+import * as revisions from "@/lib/data/revisions";
 import {
   INTERVIEW_FORMATS,
   INTERVIEW_OUTCOMES,
@@ -93,6 +94,8 @@ export type McpContext = {
   user: User;
   /** The connection this call arrived on, so connection tools can tell which. */
   connectionId: string;
+  /** What it was called at the time, which is what the change log stores. */
+  connectionName: string;
   /** Where this instance is reachable, for building invite links. */
   baseUrl: string;
 };
@@ -5518,6 +5521,107 @@ export const tools: McpTool[] = [
         message: "The welcome tour will run the next time they open the web app.",
       };
     },
+  },
+  {
+    name: "list_changes",
+    title: "What each assistant changed",
+    description:
+      "Every write that arrived over MCP, newest first: which connection made it, which tool ran, what it touched and one line saying so. Reach for it when somebody asks what an assistant actually did, when something looks wrong and nobody remembers changing it, or before undo_change so you can name the change rather than guessing at it. Saves made in the app's own screens are NOT here, deliberately — the person was there. Versions are kept for both paths, so an edit made in the editor is still recoverable, just not listed. `undoable` and `restorePointAt` are the important pair: only writes that replace a resume or a role are versioned, and `restorePointAt` is the moment the record would go back to, which is often EARLIER than the change itself because versions are coalesced within ten minutes per author. Say that date out loud before undoing — 'this puts it back to how it was at 14:02, before three edits' — and get a yes. Read-only.",
+    inputSchema: object({
+      connection_id: str("Only changes made through this connection, from list_connections"),
+      tool: str("Only calls of this tool, e.g. 'update_resume'"),
+      kind: str("Only changes to this sort of thing: resume, role, application, contact, offer…"),
+      record_id: str("Only changes to this one record"),
+      limit: num("How many to return. Default 50, ceiling 500."),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      revisions.listChanges(
+        ctx.userId,
+        defined({
+          connectionId: s(args, "connection_id"),
+          tool: s(args, "tool"),
+          kind: s(args, "kind"),
+          recordId: s(args, "record_id"),
+          limit: n(args, "limit"),
+        }),
+      ),
+  },
+  {
+    name: "list_revisions",
+    title: "Earlier versions of a resume or a role",
+    description:
+      "Every stored version of one resume or one role, newest first, with when it was taken and who caused it. These are BEFORE images: each row is what the record looked like before a write replaced it, so the newest row is where an undo lands. Reach for it before update_resume or update_role on something that matters, so you can tell them what they can get back to, and after a write that went wrong. Versions are taken only when the whole thing is replaced — changing a resume's font or its name does not make one — and they are COALESCED: one per record per author per ten minutes, keeping the OLDER image, so a version is the record as it stood before a sitting of work rather than before a keystroke. At most twenty are kept per record and old ones are swept on this instance's schedule, so this is a safety net rather than an archive. `recordExists` false means the record was deleted, and nothing here can be restored to it. Read-only.",
+    inputSchema: object(
+      {
+        kind: {
+          type: "string",
+          enum: ["RESUME", "ROLE"],
+          description: "Which sort of record. These are the only two that are versioned.",
+        },
+        record_id: str("The resume id or the role id"),
+        limit: num("How many versions to return. Default and ceiling 20."),
+      },
+      ["kind", "record_id"],
+    ),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      revisions.listRevisions(
+        ctx.userId,
+        required(args, "kind") as "RESUME" | "ROLE",
+        required(args, "record_id"),
+        n(args, "limit"),
+      ),
+  },
+  {
+    name: "restore_revision",
+    title: "Put a stored version back",
+    description:
+      "Replace a resume's document, or a role's fields, with a version stored earlier. Reach for it when a write went wrong and they want it back, and reach for undo_change instead when what they can name is the CHANGE rather than the version. SAY WHAT WILL HAPPEN AND GET A YES FIRST: this replaces the current state, and the date on the version is often earlier than the change they are thinking of, because versions are coalesced within ten minutes per author — restoring can take them back past several edits. The restore is itself undoable: it takes a fresh version of the current state on its way past, and the result names it as `redoRevisionId`. For a resume only the DOCUMENT comes back — the template, font, size, margins and any published link are left exactly as they are, because silently changing a font back is a surprise and a restore must never resurrect a withdrawn public address. `changed` false means the record already matched that version, and you should say so rather than reporting work that did not happen. Refuses, without writing anything, when the stored version does not parse or the record has been deleted.",
+    inputSchema: object({ id: str("Revision id, from list_revisions") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      revisions.restoreRevision(ctx.userId, required(args, "id"), {
+        writtenBy: "mcp",
+        connectionId: ctx.connectionId,
+        connectionName: ctx.connectionName,
+        tool: "restore_revision",
+      }),
+  },
+  {
+    name: "undo_change",
+    title: "Put back what one change replaced",
+    description:
+      "Undo one row from list_changes. Only writes that replace a resume or a role can be undone, because they are the only two the app takes a copy of on the way past — everything else in the log is a line for the eye. Deleting a company, a person or an application is undone from the archive with restore_records; deleting a role, a resume, a letter, a task or a tag cannot be undone at all, and their tool descriptions say so before they run. SAY WHERE IT LANDS AND GET A YES FIRST: `restorePointAt` on the change is often earlier than the change itself, because versions are coalesced within ten minutes per author, so undoing one edit can take them back past three. The undo is itself undoable — it takes a version of the current state on the way past and names it as `redoRevisionId`. Refuses, without writing anything, when there is no stored version from before that change: it may have been swept, or it may predate version history on this instance.",
+    inputSchema: object({ id: str("Change id, from list_changes") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      revisions.undoChange(ctx.userId, required(args, "id"), {
+        writtenBy: "mcp",
+        connectionId: ctx.connectionId,
+        connectionName: ctx.connectionName,
+        tool: "undo_change",
+      }),
   },
   {
     name: "list_connections",

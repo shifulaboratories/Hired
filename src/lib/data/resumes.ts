@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Prisma, Stage } from "@prisma/client";
 import { db } from "@/lib/db";
 import { pick } from "@/lib/data/patch";
+import { snapshot, APP_AUTHOR, type WriteAuthor } from "@/lib/data/revision-store";
 import {
   blankSection,
   emptyResumeDoc,
@@ -247,6 +248,16 @@ export async function updateResume(
   userId: string,
   id: string,
   patch: ResumeMeta & { data?: unknown },
+  /**
+   * Who is writing, for the version store. Defaults to the person at a
+   * keyboard, which is what every server action is.
+   *
+   * The snapshot is taken HERE rather than in a caller because this is the one
+   * place the document is replaced — the MCP tool and the editor's autosave
+   * both arrive through it — and a future writer cannot forget a copy that is
+   * taken on the only path.
+   */
+  author: WriteAuthor = APP_AUTHOR,
 ) {
   // slug / visibility / publishedAt are deliberately absent: publishing goes
   // through publishResume, which allocates an unguessable slug and keeps the
@@ -261,6 +272,26 @@ export async function updateResume(
     if (!current) throw new Error(`No resume with id ${id}`);
     return current;
   }
+
+  // Only when the DOCUMENT is being replaced. Changing a font or a name is one
+  // click to put back and is not worth a copy of a 40KB document.
+  if (patch.data !== undefined) {
+    const before = await db.resume.findFirst({
+      where: { id, userId },
+      select: { name: true, data: true },
+    });
+    if (before) {
+      await snapshot(
+        userId,
+        "RESUME",
+        id,
+        { name: before.name, doc: before.data },
+        before.name,
+        author,
+      );
+    }
+  }
+
   const { count } = await db.resume.updateMany({ where: { id, userId }, data });
   if (count === 0) throw new Error(`No resume with id ${id}`);
   return db.resume.findFirstOrThrow({ where: { id, userId } });
