@@ -1,7 +1,7 @@
 ---
 title: "Pipeline tools"
 sidebarTitle: "Pipeline"
-description: "Eighty-two tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
+description: "Eighty-eight tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
 icon: "list-check"
 ---
 
@@ -94,6 +94,85 @@ The same capture as capture_job_posting, over a list of URLs — for somebody wh
 | Argument | Type | |
 | --- | --- | --- |
 | `urls` | string[] | **required** — The postings' URLs. Duplicates within the list are collapsed before anything is fetched. |
+
+### `watch_company_board`
+
+_Watch a company's jobs board_
+
+Watch one employer's own jobs board and hear about a role the moment it appears. This is the tool for "tell me when Stripe posts a staff engineer role" — a search that is waiting on a particular company rather than browsing. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON; hand it the board link (boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme) or just the company's careers page, and it follows an embedded board through to the real one. ANY OTHER BOARD IS REFUSED and nothing is saved — Workday, SmartRecruiters and a hand-built careers page publish no feed to read, and the honest answer for those is to browse them and paste the links into capture_job_postings. `title_terms` and `location_terms` narrow it: a role has to contain ANY of the title terms AND ANY of the location terms, matched case-insensitively against the posting's own words, and an empty list means anything. THE FIRST LOOK PROPOSES NOTHING: it records what is on the board today as already seen, because a watch on a six-hundred-role board is otherwise six hundred rows to review. Pass propose_existing true when they want what is already up there, and the first ten matches are queued. After that, every new matching role becomes a proposal on their dashboard with the posting already read into it, which they accept to put it on the wishlist or dismiss. NOTHING IS EVER ADDED TO THE PIPELINE WITHOUT A YES. Returns the watch, which provider was found, and how many roles the board is carrying today — read that number back, because a board of four hundred and filters of none is a watch that will be noisy. Calling it again for the same board changes the filters rather than making a second watch.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `board_url` | string | **required** — The board or careers page — boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme, or acme.com/careers |
+| `company_id` | string | The company on file this board belongs to, from list_companies. Preferred |
+| `company` | string | Their name, when there is no id yet. Matched against the companies on file before anything is created |
+| `title_terms` | string[] | A role's title has to contain ANY of these, e.g. ['staff engineer', 'principal engineer']. Empty means every role on the board |
+| `location_terms` | string[] | And its location or work mode has to contain ANY of these, e.g. ['remote', 'new york']. Empty means anywhere |
+| `propose_existing` | boolean | Queue up to ten roles already on the board as well. Default false, which makes the first look a baseline |
+
+### `list_company_watches`
+
+_Which boards are being watched_
+
+Every company board this person is watching: the employer, which provider it reads, the title and location filters on it, when it was last looked at, how many roles it has proposed, and anything that went wrong the last time. Call it before adding a watch, so you change the filters on the one that already exists instead of making a second. It is also the answer to "why have I not heard anything about Acme" — a watch carrying `lastError` has been failing quietly, and one with a `lastFoundAt` of never almost always has filters narrower than the board's own wording. Read-only.
+
+No arguments.
+
+### `update_company_watch`
+
+_Change a board watch's filters_
+
+Change what a watch is looking for, or park it without losing what it has already seen. `title_terms` and `location_terms` REPLACE the lists they are given — send the whole list, not the one term being added, and call list_company_watches first to see what is on there. Widening the filters does not re-offer roles the watch has already decided about: everything on the board the first time it looked is marked seen for good, so a wider filter finds new postings rather than old ones. Setting enabled false keeps the row and stops the looking, which is what somebody wants during a heavy month; unwatch_company_board is for being done with it.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Watch id, from list_company_watches |
+| `title_terms` | string[] | Replaces the title filter. An empty list means every role |
+| `location_terms` | string[] | Replaces the location filter. An empty list means anywhere |
+| `enabled` | boolean | False parks it without deleting it |
+
+### `unwatch_company_board`
+
+_Stop watching a company's board_
+
+Stop watching a board. The watch is deleted outright — there is no archive for one, and this cannot be undone; watching the same board again starts from a fresh baseline, so nothing already on it will be offered. Proposals it has already queued are left exactly where they are, for them to accept or dismiss, and nothing else about the company, its applications or its people is touched. Say whose board you are about to stop watching before you call it.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Watch id, from list_company_watches |
+
+### `check_company_board`
+
+_Look at a watched board now_
+
+Read a watched board right now instead of waiting for the schedule, and queue anything new on it. This is the tool for "anything new at Acme?". It fetches the board, matches the filters against the roles the watch has not already decided about, and queues up to ten of them as proposals with the posting read into each one. NOTHING REACHES THE PIPELINE: the roles wait in the review queue, and it is accept_proposal that creates an application — so do not follow this with accept_proposal unless the person has said yes to that specific role. Returns how many roles the board carries, how many matched, how many were queued, and how many were skipped as already seen. Pass no id to check every watch they have, the one looked at longest ago first; that makes one request per board a few seconds apart, so twenty watches take a moment. An instance that has /api/sweep/<token> on a schedule gets this without anybody asking, and this tool is how somebody impatient jumps the queue.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | One watch, from list_company_watches. Omit to check them all |
+| `limit` | number | How many watches to check when no id is given. Default 20 |
+
+### `check_posting_live`
+
+_Check whether a posting is still up_
+
+Fetch the job posting behind an application and report whether it is still there. A posting that 404s is the cheapest strong signal in a search that the role was filled or pulled, and it usually happens weeks before anybody writes to say so. Pass application_id for one, or nothing to work through every open application that has a link, the one looked at longest ago first. THIS NEVER MOVES A STAGE AND NEVER LOGS ANYTHING TO A TIMELINE. It writes the posting's state onto the application — LIVE, GONE, UNCLEAR, UNREACHABLE, with the date and what the host actually said — and stops, because a page coming down is a fact about the advert and what it means for the application is theirs to decide. GONE takes TWO looks a day apart that both came back 404, so one bad night at a CDN never tells somebody their live application is dead; a single gone reading shows as UNCLEAR, and so does a page that answers 200 without naming a role, which is what every client-rendered board does whether the job exists or not. UNREACHABLE means the host refused to answer and says nothing at all about the role. Returns a line per application and a count of what is gone. When something comes back GONE, tell them plainly, and offer to log_activity or ask where it stands — do not decide it for them, and do not call move_application_stage off the back of this.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_id` | string | One application. Omit to work through the open ones |
+| `limit` | number | How many applications to check when no id is given. Default 25 |
+| `force` | boolean | Check even one looked at in the last three days. Use when they are asking about a specific job right now |
 
 ### `record_offer`
 

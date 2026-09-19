@@ -190,6 +190,19 @@ export function generateInviteToken() {
   return randomBytes(24).toString("hex");
 }
 
+/**
+ * The capture link's token. Same shape as an MCP token, different prefix, so a
+ * glance at a string says which credential it is and the endpoint can refuse a
+ * connection token pasted into the capture address.
+ *
+ * Here rather than beside the data layer that uses it because this file is
+ * where this codebase mints tokens, and a fourth one somewhere else is how
+ * conventions rot.
+ */
+export function generateCaptureToken() {
+  return `cap_${randomBytes(24).toString("hex")}`;
+}
+
 // ---------------------------------------------------------------------------
 // Instance setup
 // ---------------------------------------------------------------------------

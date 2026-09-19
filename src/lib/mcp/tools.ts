@@ -27,6 +27,9 @@ import * as stageCadence from "@/lib/data/stage-cadence";
 import * as referrals from "@/lib/data/referrals";
 import { REFERRAL_STATUSES } from "@/lib/data/referrals";
 import * as wins from "@/lib/data/wins";
+import * as watch from "@/lib/data/watch";
+import * as mailSweep from "@/lib/data/mail-sweep";
+import * as captureLink from "@/lib/data/capture-link";
 import {
   INTERVIEW_FORMATS,
   INTERVIEW_OUTCOMES,
@@ -2521,6 +2524,155 @@ export const tools: McpTool[] = [
     },
     handler: async (args, ctx) =>
       pipeline.captureJobPostings(ctx.userId, requiredArray(args, "urls")),
+  },
+  {
+    name: "watch_company_board",
+    title: "Watch a company's jobs board",
+    description:
+      "Watch one employer's own jobs board and hear about a role the moment it appears. This is the tool for \"tell me when Stripe posts a staff engineer role\" — a search that is waiting on a particular company rather than browsing. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON; hand it the board link (boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme) or just the company's careers page, and it follows an embedded board through to the real one. ANY OTHER BOARD IS REFUSED and nothing is saved — Workday, SmartRecruiters and a hand-built careers page publish no feed to read, and the honest answer for those is to browse them and paste the links into capture_job_postings. `title_terms` and `location_terms` narrow it: a role has to contain ANY of the title terms AND ANY of the location terms, matched case-insensitively against the posting's own words, and an empty list means anything. THE FIRST LOOK PROPOSES NOTHING: it records what is on the board today as already seen, because a watch on a six-hundred-role board is otherwise six hundred rows to review. Pass propose_existing true when they want what is already up there, and the first ten matches are queued. After that, every new matching role becomes a proposal on their dashboard with the posting already read into it, which they accept to put it on the wishlist or dismiss. NOTHING IS EVER ADDED TO THE PIPELINE WITHOUT A YES. Returns the watch, which provider was found, and how many roles the board is carrying today — read that number back, because a board of four hundred and filters of none is a watch that will be noisy. Calling it again for the same board changes the filters rather than making a second watch.",
+    inputSchema: object(
+      {
+        board_url: str(
+          "The board or careers page — boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme, or acme.com/careers",
+        ),
+        company_id: str("The company on file this board belongs to, from list_companies. Preferred"),
+        company: str(
+          "Their name, when there is no id yet. Matched against the companies on file before anything is created",
+        ),
+        title_terms: strArray(
+          "A role's title has to contain ANY of these, e.g. ['staff engineer', 'principal engineer']. Empty means every role on the board",
+        ),
+        location_terms: strArray(
+          "And its location or work mode has to contain ANY of these, e.g. ['remote', 'new york']. Empty means anywhere",
+        ),
+        propose_existing: bool(
+          "Queue up to ten roles already on the board as well. Default false, which makes the first look a baseline",
+        ),
+      },
+      ["board_url"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      watch.watchCompanyBoard(ctx.userId, {
+        boardUrl: required(args, "board_url"),
+        ...defined({
+          companyId: s(args, "company_id"),
+          company: s(args, "company"),
+          titleTerms: a(args, "title_terms"),
+          locationTerms: a(args, "location_terms"),
+          proposeExisting: b(args, "propose_existing"),
+        }),
+      }),
+  },
+  {
+    name: "list_company_watches",
+    title: "Which boards are being watched",
+    description:
+      "Every company board this person is watching: the employer, which provider it reads, the title and location filters on it, when it was last looked at, how many roles it has proposed, and anything that went wrong the last time. Call it before adding a watch, so you change the filters on the one that already exists instead of making a second. It is also the answer to \"why have I not heard anything about Acme\" — a watch carrying `lastError` has been failing quietly, and one with a `lastFoundAt` of never almost always has filters narrower than the board's own wording. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => watch.listCompanyWatches(ctx.userId),
+  },
+  {
+    name: "update_company_watch",
+    title: "Change a board watch's filters",
+    description:
+      "Change what a watch is looking for, or park it without losing what it has already seen. `title_terms` and `location_terms` REPLACE the lists they are given — send the whole list, not the one term being added, and call list_company_watches first to see what is on there. Widening the filters does not re-offer roles the watch has already decided about: everything on the board the first time it looked is marked seen for good, so a wider filter finds new postings rather than old ones. Setting enabled false keeps the row and stops the looking, which is what somebody wants during a heavy month; unwatch_company_board is for being done with it.",
+    inputSchema: object(
+      {
+        id: str("Watch id, from list_company_watches"),
+        title_terms: strArray("Replaces the title filter. An empty list means every role"),
+        location_terms: strArray("Replaces the location filter. An empty list means anywhere"),
+        enabled: bool("False parks it without deleting it"),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      watch.updateCompanyWatch(
+        ctx.userId,
+        required(args, "id"),
+        defined({
+          titleTerms: a(args, "title_terms"),
+          locationTerms: a(args, "location_terms"),
+          enabled: b(args, "enabled"),
+        }),
+      ),
+  },
+  {
+    name: "unwatch_company_board",
+    title: "Stop watching a company's board",
+    description:
+      "Stop watching a board. The watch is deleted outright — there is no archive for one, and this cannot be undone; watching the same board again starts from a fresh baseline, so nothing already on it will be offered. Proposals it has already queued are left exactly where they are, for them to accept or dismiss, and nothing else about the company, its applications or its people is touched. Say whose board you are about to stop watching before you call it.",
+    inputSchema: object({ id: str("Watch id, from list_company_watches") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => watch.unwatchCompanyBoard(ctx.userId, required(args, "id")),
+  },
+  {
+    name: "check_company_board",
+    title: "Look at a watched board now",
+    description:
+      "Read a watched board right now instead of waiting for the schedule, and queue anything new on it. This is the tool for \"anything new at Acme?\". It fetches the board, matches the filters against the roles the watch has not already decided about, and queues up to ten of them as proposals with the posting read into each one. NOTHING REACHES THE PIPELINE: the roles wait in the review queue, and it is accept_proposal that creates an application — so do not follow this with accept_proposal unless the person has said yes to that specific role. Returns how many roles the board carries, how many matched, how many were queued, and how many were skipped as already seen. Pass no id to check every watch they have, the one looked at longest ago first; that makes one request per board a few seconds apart, so twenty watches take a moment. An instance that has /api/sweep/<token> on a schedule gets this without anybody asking, and this tool is how somebody impatient jumps the queue.",
+    inputSchema: object({
+      id: str("One watch, from list_company_watches. Omit to check them all"),
+      limit: num("How many watches to check when no id is given. Default 20"),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      watch.checkCompanyBoards(ctx.userId, defined({ watchId: s(args, "id"), limit: n(args, "limit") })),
+  },
+  {
+    name: "check_posting_live",
+    title: "Check whether a posting is still up",
+    description:
+      "Fetch the job posting behind an application and report whether it is still there. A posting that 404s is the cheapest strong signal in a search that the role was filled or pulled, and it usually happens weeks before anybody writes to say so. Pass application_id for one, or nothing to work through every open application that has a link, the one looked at longest ago first. THIS NEVER MOVES A STAGE AND NEVER LOGS ANYTHING TO A TIMELINE. It writes the posting's state onto the application — LIVE, GONE, UNCLEAR, UNREACHABLE, with the date and what the host actually said — and stops, because a page coming down is a fact about the advert and what it means for the application is theirs to decide. GONE takes TWO looks a day apart that both came back 404, so one bad night at a CDN never tells somebody their live application is dead; a single gone reading shows as UNCLEAR, and so does a page that answers 200 without naming a role, which is what every client-rendered board does whether the job exists or not. UNREACHABLE means the host refused to answer and says nothing at all about the role. Returns a line per application and a count of what is gone. When something comes back GONE, tell them plainly, and offer to log_activity or ask where it stands — do not decide it for them, and do not call move_application_stage off the back of this.",
+    inputSchema: object({
+      application_id: str("One application. Omit to work through the open ones"),
+      limit: num("How many applications to check when no id is given. Default 25"),
+      force: bool(
+        "Check even one looked at in the last three days. Use when they are asking about a specific job right now",
+      ),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      watch.checkPostings(
+        ctx.userId,
+        defined({
+          applicationId: s(args, "application_id"),
+          limit: n(args, "limit"),
+          force: b(args, "force"),
+        }),
+      ),
   },
   {
     name: "record_offer",
@@ -5582,6 +5734,60 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => accountsData.getEmailThread(ctx.userId, required(args, "threadId")),
   },
   {
+    name: "get_mail_sweep",
+    title: "Is the mail sweep on",
+    description:
+      "Whether this person has asked the app to look through their own mail on a schedule, when it last ran, how far it has read up to, and whether a mailbox is actually connected for it to read. `mailConnected` false means the switch is inert until they connect something under Settings → Connections — say that rather than turning on something that cannot work. `note` is non-empty when the last run was short, usually because the window came back full. Read-only, and it reads nothing from anybody's mailbox.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => mailSweep.getMailSweep(ctx.userId),
+  },
+  {
+    name: "set_mail_sweep",
+    title: "Turn the mail sweep on or off",
+    description:
+      "OFF until somebody asks for it, and this is the only thing that turns it on. On, the app reads the mail that arrives from the companies and people already on their pipeline and queues what it finds on their dashboard: the message to log, the person to add, the meeting that means an interview. IT NEVER WRITES TO THE PIPELINE — every finding is a proposal waiting for a yes — and it never reads anything outside the addresses and domains their own records name. It also looks at a connected calendar, which is where the one stage move comes from, so say that when you offer it. Only offer this when somebody asks for it; nobody wants an assistant signing them up to have their inbox read. Turning it off stops the schedule and leaves everything already queued exactly where it is. Returns the settings as they now stand.",
+    inputSchema: object({ on: bool("True to sweep, false to stop") }, ["on"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => mailSweep.setMailSweep(ctx.userId, args.on === true),
+  },
+  {
+    name: "run_mail_sweep",
+    title: "Read what is new in the mail now",
+    description:
+      "Look through this person's own mailboxes for messages that arrived from the companies and people on their pipeline since the last look, and queue what a rule can prove: the message to log against a job, somebody new at a tracked company to add as a contact, and — when a calendar is connected — a booked meeting that means an application has reached interviewing. NOTHING IS WRITTEN. Every finding is a proposal on their dashboard, and accept_proposal is what applies one; do not accept your own proposals. It deliberately does NOT read what a message MEANS: a rejection, an offer, a take-home and a request to reschedule all come back on `needsReading` instead, with the thread id, because a rule that read the word \"unfortunately\" as a rejection would put \"you have been rejected\" in front of somebody who was only being apologised to. That list is what to work through next — get_email_thread on each, then propose_changes with the line you are reading quoted as the evidence. Returns the window it read, how many threads it saw, what it queued, the ones needing a read, and any account that refused. Pass days to look further back than the watermark, which is what to do the first time somebody asks. This is the same work the schedule does hourly on an instance that has /api/sweep/<token> set up, and it is safe to call either way — a thread already accounted for is never queued twice.",
+    inputSchema: object({
+      days: num(
+        "Look back this many days instead of picking up where the last sweep stopped. Use it for a deliberate wider look",
+      ),
+      include_calendar: bool(
+        "Also look at booked meetings, which is where the one stage move comes from. Default true when a calendar is connected",
+      ),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    handler: async (args, ctx) =>
+      mailSweep.runMailSweep(
+        ctx.userId,
+        defined({ days: n(args, "days"), includeCalendar: b(args, "include_calendar") }),
+      ),
+  },
+
+  {
     name: "search_calendar",
     title: "Search calendars",
     description:
@@ -6014,6 +6220,39 @@ export const tools: McpTool[] = [
           "The old URL is dead. Paste this one into that client or it stays disconnected. It is a password.",
       };
     },
+  },
+  {
+    name: "get_capture_link",
+    title: "The link that captures a posting from a phone",
+    description:
+      "The private address that turns a job posting into an application without opening the app, plus the one-line bookmarklet built around it. This is the answer to \"I find jobs on my phone and I am not going to open a laptop to save one\": tap the bookmark on a posting, the page is read server-side, and the job lands on the wishlist. Returns the URL, the bookmarklet to paste into a bookmark, how many postings it has captured and when it was last used — or `exists` false when none has been minted, which is the default for every account. THE URL IS A CREDENTIAL: anyone holding it can add applications to this workspace. It is far narrower than a connection URL — it cannot read anything and it can do nothing else — but never repeat it anywhere it will be stored, and it is shown in Settings → Connections for them to copy themselves. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => captureLink.getCaptureLink(ctx.userId, ctx.baseUrl),
+  },
+  {
+    name: "set_capture_link",
+    title: "Mint, rotate or revoke the capture link",
+    description:
+      "Create the capture link, replace it, or switch it off. Minting hands back the URL and the bookmarklet; MINTING WHEN ONE ALREADY EXISTS ROTATES IT, which kills the old URL immediately — every bookmark and Shortcut built on it stops working and has to be replaced, so only do it when they say the link has leaked or they want a new one. `off` true revokes it: the address goes back to answering 404 for everybody, and nothing already captured is touched. Tell them which of the three you are about to do, in those words, before you call it. The link is capped at thirty captures an hour, which is generous for a person and useless to anyone who found it, and it should never be pasted anywhere that unfurls links — a preview bot following it would fire it.",
+    inputSchema: object({
+      off: bool("Revoke the link instead of minting one. Nothing already captured is affected"),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      b(args, "off")
+        ? captureLink.revokeCaptureLink(ctx.userId)
+        : captureLink.mintCaptureLink(ctx.userId, ctx.baseUrl),
   },
   {
     name: "delete_connection",
@@ -7101,10 +7340,10 @@ If the research on file is thin, say so and offer to run research_company first.
 Work in this order:
 1. Call list_linked_accounts. If nothing is connected, stop and tell me how to connect (Settings → Connections, or connect_imap_account with an app password); do not guess at my mail.
 2. Call list_applications (open ones) and list_follow_ups.
-3. For each open application, call list_correspondence with its applicationId and days=${args.days ?? "7"}. Where a thread looks like it changed something — a reply from the company, an interview invitation, a rejection, an offer, a take-home — call get_email_thread and read it rather than trusting the snippet.
+3. Call run_mail_sweep with days=${args.days ?? "7"}. That makes ONE request per mailbox for the whole pipeline instead of one per application, queues the things a rule can prove, and hands back a needsReading list of the threads it deliberately would not judge. Then call get_email_thread on each of those and READ it rather than trusting the snippet — a reply from the company, an interview invitation, a rejection, an offer, a take-home. Only fall back to list_correspondence per application if run_mail_sweep says no mailbox is connected.
 4. Call search_calendar for the same window forward ${args.days ?? "7"} days too, and note interviews or calls that are on the calendar but not on the pipeline.
 5. Tell me, application by application, what moved and quote the line that says so. Be specific about dates and numbers; never round a salary or a deadline.
-6. Then call propose_changes with one proposal per thing you found — LOG_ACTIVITY (type INTERVIEW, EMAIL_RECEIVED, REJECTION, OFFER as fits, with the date it happened), MOVE_STAGE, SET_FOLLOW_UP, CREATE_TASK or CREATE_CONTACT — quoting the line from the thread as the evidence on each. That queues them on my dashboard, where I can accept or dismiss them one at a time whenever I get to it. Call list_proposals first so you do not queue the same suggestion twice, and check the refused list in the result.
+6. Then call propose_changes with one proposal per thing the READING turned up — the sweep has already queued what it could prove, so do not queue those again — LOG_ACTIVITY (type INTERVIEW, EMAIL_RECEIVED, REJECTION, OFFER as fits, with the date it happened), MOVE_STAGE, SET_FOLLOW_UP, CREATE_TASK or CREATE_CONTACT — quoting the line from the thread as the evidence on each. That queues them on my dashboard, where I can accept or dismiss them one at a time whenever I get to it. Call list_proposals first so you do not queue the same suggestion twice, and check the refused list in the result.
 7. Do NOT call accept_proposal. Nothing is written until I say so. Then tell me what you queued, and read back anything that was refused.
 
 Skip newsletters, job-board digests and anything automated that does not concern a specific application. If a thread involves a person who is not a contact yet, suggest create_contact with their name and address.`,

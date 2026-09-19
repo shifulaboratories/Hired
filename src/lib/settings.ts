@@ -44,6 +44,10 @@ export const SETTING_KEYS = {
   stripePaymentLink: "stripe_payment_link",
   /// The shared secret the digest sweep URL carries. Minted on demand.
   digestToken: "digest_token",
+  /// The shared secret /api/sweep/<token> carries. Deliberately NOT the digest
+  /// token: a secret that only ever caused mail to be sent must not silently
+  /// become one that fetches URLs and reads mailboxes.
+  sweepToken: "sweep_token",
 } as const;
 
 export type InstanceSettings = {
@@ -99,6 +103,13 @@ export type InstanceSettings = {
    * DATABASE_URL is the only variable and that is a promise the README makes.
    */
   digestToken: string;
+  /**
+   * The secret in the background sweep URL. Empty means the address answers 404
+   * for everybody — not open, off — and watched boards, posting liveness and
+   * the mail sweep only ever run when somebody asks for them by tool. A Setting
+   * rather than an env var, for the reason above.
+   */
+  sweepToken: string;
 };
 
 /**
@@ -339,6 +350,16 @@ export const VARIABLES: VariableDef[] = [
     placeholder: "A long random string",
     fallback: "",
   },
+  {
+    key: SETTING_KEYS.sweepToken,
+    field: "sweepToken",
+    label: "Background sweep token",
+    help: "The secret in /api/sweep/<token>. Point your host's scheduler at that address and watched company boards get checked, job postings get re-read to see whether they came down, and anyone who turned on the mail sweep has their inbox looked at. Add ?only=boards, ?only=postings or ?only=mail to run one on its own schedule. Empty means the address answers 404 — not open, off.",
+    kind: "secret",
+    group: "Instance",
+    placeholder: "A long random string",
+    fallback: "",
+  },
 ];
 
 const BY_KEY = new Map(VARIABLES.map((variable) => [variable.key, variable]));
@@ -390,6 +411,7 @@ export async function getSettings(): Promise<InstanceSettings> {
     stripeWebhookSecret: raw(SETTING_KEYS.stripeWebhookSecret),
     stripePaymentLink: raw(SETTING_KEYS.stripePaymentLink),
     digestToken: raw(SETTING_KEYS.digestToken),
+    sweepToken: raw(SETTING_KEYS.sweepToken),
   };
 }
 

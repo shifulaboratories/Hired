@@ -11,17 +11,19 @@ import { companyKey } from "@/lib/company";
 import { requireUser } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
 import { accountAccess } from "@/lib/data/accounts";
+import { listCompanyWatches } from "@/lib/data/watch";
 
 export const dynamic = "force-dynamic";
 
 export default async function CompanyPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
-  const [company, { companyLogos }, everyCompany, googleConnection] = await Promise.all([
+  const [company, { companyLogos }, everyCompany, googleConnection, watches] = await Promise.all([
     getCompany(user.id, id),
     getSettings(),
     listCompanies(user.id),
     accountAccess(user.id),
+    listCompanyWatches(user.id),
   ]);
   if (!company) notFound();
 
@@ -87,6 +89,20 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
           candidates={candidates}
           suggestedMergeId={suggestedMergeId}
           googleAccess={googleConnection}
+          watch={(() => {
+            const found = watches.find((row) => row.company.id === company.id);
+            return found
+              ? {
+                  id: found.id,
+                  providerLabel: found.providerLabel,
+                  boardUrl: found.boardUrl,
+                  proposed: found.proposed,
+                  enabled: found.enabled,
+                  lastCheckedAt: found.lastCheckedAt?.toISOString() ?? null,
+                  lastError: found.lastError,
+                }
+              : null;
+          })()}
         />
       </FadeIn>
     </PageShell>

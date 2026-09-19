@@ -92,10 +92,10 @@ just *talk* to it.
   pipeline does not know. Answering them in the chat works only if you are at the chat, and
   anything you did not answer is gone. It can queue them instead: they wait on Today, one
   line each, with the sentence from the email that produced it printed underneath, and you
-  accept or dismiss them whenever you get to it. Five things can be queued — log it, move
-  the stage, add a task, change the follow-up date, add a person — and nothing is written
-  until you say yes. A dismissal is an answer too, so it stays on file and a good assistant
-  will not propose it again.
+  accept or dismiss them whenever you get to it. Six things can be queued — log it, move
+  the stage, add a task, change the follow-up date, add a person, add a job to the board —
+  and nothing is written until you say yes. A dismissal is an answer too, so it stays on
+  file and a good assistant will not propose it again.
 - **Stage checklists** — the things you always mean to do and never do. Say once that
   reaching Applied should add "check the posting is still up" in a week, or that every
   interview should put "send a thank-you" on tomorrow's list, and it happens on its own
@@ -106,6 +106,45 @@ just *talk* to it.
   jobs already on the board. Deleting a line leaves the tasks it already made alone —
   deleting a setting should not delete work you are part-way through. A new account has
   none; there is a starting set of six if you would rather not design your own.
+- **Watch a company's board** — say "tell me when Stripe posts a staff engineer role" and
+  it does. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON;
+  hand it the board link or just the company's careers page and it follows an embedded
+  board through to the real one. Anything else — Workday, SmartRecruiters, a hand-built
+  careers page — is refused by name rather than half-supported, because diffing a page that
+  renders its jobs in JavaScript puts invented roles in a queue whose whole value is that
+  its rows can be trusted. The first look proposes nothing: it records what is up today as
+  already seen, because a watch on a six-hundred-role board is otherwise six hundred rows
+  to read. After that every new matching role arrives in the review queue with the posting
+  already read into it, and accepting is what puts it on the wishlist.
+- **Postings that came down** — a 404 on a job you applied for is the cheapest strong signal
+  in a search that the role was filled or pulled, and it usually happens weeks before
+  anybody writes to say so. The check fetches the posting and writes what the host said onto
+  the application. It never moves a stage and never logs anything to the timeline: a page
+  coming down is a fact about the advert, and a robot's fetch must not make a silent
+  application look like it had been chased. Gone takes two looks a day apart that both came
+  back 404, so one bad night at a CDN never tells you a live application is dead.
+- **Your own mail, swept** — off until you ask, in Settings → Connections. On, the app reads
+  what arrives from the companies and people already on your pipeline and queues what a rule
+  can prove: the message to log, somebody new at a tracked employer to add, and — with a
+  calendar connected — a booked meeting that means an application has reached interviewing.
+  It deliberately does not read what a message *means*. A rejection, an offer and a
+  take-home come back on a list to read instead, because a rule that read "unfortunately"
+  as a rejection would put "you have been rejected" in front of somebody who was only being
+  apologised to. Nothing is written to the pipeline; every finding waits for a yes.
+- **Capture a job from your phone** — Settings → Connections can mint one narrow link that
+  does exactly one thing: turn a posting URL into an application. Drag it to a bookmark bar
+  or make it an iOS Shortcut, tap it on a posting, and the job lands on your wishlist
+  without opening the app. It is not a connection URL — it cannot read anything and it can
+  do nothing else — but it is still a password, it is capped at thirty captures an hour, and
+  you can rotate or revoke it on its own. No account has one until somebody asks for it.
+- **The background schedule** — all three of those run when a scheduler asks them to, which
+  keeps the app itself free of timers. An admin puts a long random string into **Background
+  sweep token** under Admin → Configuration and points the host's scheduler at `/api/sweep/`
+  followed by it. `?only=boards`, `?only=postings` and `?only=mail` run one at a time, since
+  the three want different cadences and a self-hoster wanting three crons should not need
+  three tokens. Leave the token empty and that address is off rather than open. It is
+  deliberately not the digest token: a secret that only ever caused mail to be sent should
+  not silently become one that fetches URLs and reads mailboxes.
 - **Nothing is deleted by accident** — pressing Delete on a company, a person or an
   application puts it in an archive rather than destroying it. It leaves every list, board,
   picker, filter and count immediately, and waits thirty days — an instance setting, or zero
@@ -165,7 +204,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  157 tools any MCP client can call (190 if you're an admin). Claude, Claude Code, ChatGPT,
+  198 tools any MCP client can call (231 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -348,9 +387,9 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 157, or 190 if you're an admin.
+then tells you how many tools answered — 198, or 231 if you're an admin.
 
-That is a lot of tools, and spelled out in full they're around 49,000 tokens of context
+That is a lot of tools, and spelled out in full they're around 65,000 tokens of context
 before you've said anything. If your client has tool search — Claude Code does, and has it
 on by default — leave it on: it loads six of them up front, about 1,600 tokens, and looks
 the rest up when they're needed. On a client without it you're paying the full amount every
@@ -575,7 +614,7 @@ By conversation: `admin_list_variables`, `admin_set_variable`, `admin_delete_var
 
 ## What your AI can do once it's connected
 
-157 tools. One hundred and forty-eight of them are the data tools across the five areas, the
+198 tools. One hundred and eighty-nine of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it

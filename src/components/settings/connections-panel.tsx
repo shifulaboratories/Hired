@@ -34,11 +34,16 @@ import {
 } from "@/components/settings/accounts";
 import { cn } from "@/lib/utils";
 import { MCP_CLIENTS, clientName } from "@/lib/mcp/clients";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   createConnectionAction,
   deleteConnectionAction,
+  mintCaptureLinkAction,
   renameConnectionAction,
+  revokeCaptureLinkAction,
   rotateConnectionAction,
+  setMailSweepAction,
   testConnectionAction,
 } from "@/server/actions";
 
@@ -73,6 +78,24 @@ export type AccountsProps = {
   microsoftReady: boolean;
   /** The outcome of a connect that just came back from a provider, if one did. */
   notice: { ok: boolean; message: string } | null;
+  /** The mail sweep, which reads these accounts on a schedule. Off by default. */
+  sweep: {
+    on: boolean;
+    lastRunAt: string | null;
+    note: string;
+    mailConnected: boolean;
+    calendarConnected: boolean;
+  };
+};
+
+/** The one-act credential that captures a posting from a phone. */
+export type CaptureLinkProps = {
+  exists: boolean;
+  url: string;
+  bookmarklet: string;
+  captured: number;
+  lastUsedAt: string | null;
+  note: string;
 };
 
 function ago(iso: string | null) {
@@ -723,6 +746,7 @@ export function ConnectionsPanel({
   isAdmin,
   promptCount,
   accounts,
+  captureLink,
 }: {
   baseUrl: string;
   connections: ConnectionRow[];
@@ -731,8 +755,11 @@ export function ConnectionsPanel({
   isAdmin: boolean;
   promptCount: number;
   accounts: AccountsProps;
+  captureLink: CaptureLinkProps;
 }) {
   const [pending, startTransition] = useTransition();
+  const [sweeping, startSweeping] = useTransition();
+  const [capturing, startCapturing] = useTransition();
   const [picking, setPicking] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [openAccountId, setOpenAccountId] = useState<string | null>(null);
@@ -889,6 +916,136 @@ export function ConnectionsPanel({
           )}
           Add an assistant or an account
         </button>
+      </section>
+
+      {/* Two settings, not two screens.
+          The sweep and the capture link both belong to the wiring above — one
+          reads the accounts, the other is a narrower credential than the
+          connection URLs — so they sit under the list rather than growing a tab
+          apiece. Neither costs a click in its default, off, state. */}
+      <section className="space-y-3 rounded-xl border px-4 py-3.5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <Label htmlFor="mail-sweep" className="text-[13.5px] font-medium">
+              Read new mail and queue what it finds
+            </Label>
+            <p className="text-muted-foreground mt-0.5 text-[13px]">
+              Once an hour, look through the accounts above for mail from the companies and people
+              already on your pipeline{accounts.sweep.calendarConnected ? ", and at meetings booked with them," : ""}{" "}
+              and put what it finds on your dashboard to accept or dismiss. It never writes to your
+              pipeline on its own, and it never looks outside the addresses your own records name.
+            </p>
+            {!accounts.sweep.mailConnected && (
+              <p className="text-faint mt-1 text-[12px]">
+                Connect a mailbox above and this switch starts working.
+              </p>
+            )}
+            {accounts.sweep.on && accounts.sweep.lastRunAt && (
+              <p className="text-faint mt-1 text-[12px]">
+                Last looked {ago(accounts.sweep.lastRunAt)}
+                {accounts.sweep.note ? ` · ${accounts.sweep.note}` : ""}
+              </p>
+            )}
+          </div>
+          <Switch
+            id="mail-sweep"
+            checked={accounts.sweep.on}
+            disabled={!accounts.sweep.mailConnected || sweeping}
+            onCheckedChange={(next) =>
+              startSweeping(async () => {
+                try {
+                  await setMailSweepAction(next);
+                  toast.success(next ? "The sweep is on" : "The sweep is off");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Could not change that.");
+                }
+              })
+            }
+          />
+        </div>
+
+        <div className="border-t pt-3">
+          {captureLink.exists ? (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[13.5px] font-medium">Capture link</p>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    disabled={capturing}
+                    onClick={() =>
+                      startCapturing(async () => {
+                        await mintCaptureLinkAction();
+                        toast.success("Rotated — the old link no longer works");
+                      })
+                    }
+                  >
+                    Rotate
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="text-muted-foreground hover:text-destructive"
+                    disabled={capturing}
+                    onClick={() =>
+                      startCapturing(async () => {
+                        await revokeCaptureLinkAction();
+                        toast.success("Revoked");
+                      })
+                    }
+                  >
+                    Revoke
+                  </Button>
+                </div>
+              </div>
+              <p className="text-muted-foreground text-[13px]">
+                Drag this to your bookmark bar, or make it an iOS Shortcut. Tap it on a job posting
+                and the role lands on your wishlist without opening the app. It is a password —
+                anyone holding it can add applications here — so never paste it anywhere that
+                unfurls links.
+              </p>
+              {captureLink.note ? (
+                <p className="text-faint text-[12px]">{captureLink.note}</p>
+              ) : (
+                <>
+                  <CodeBlock code={captureLink.bookmarklet} label="Bookmarklet" />
+                  <div className="flex items-center gap-2">
+                    <code className="text-faint min-w-0 flex-1 truncate text-[12px]">
+                      {captureLink.url}
+                    </code>
+                    <CopyButton value={captureLink.url} label="Copy URL" variant="ghost" />
+                  </div>
+                </>
+              )}
+              <p className="text-faint text-[12px]">
+                {captureLink.captured === 0
+                  ? "Nothing captured yet"
+                  : `${captureLink.captured} captured`}
+                {captureLink.lastUsedAt ? ` · last used ${ago(captureLink.lastUsedAt)}` : ""}
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-muted-foreground text-[13px]">
+                Capture a posting from your phone with one tap, without opening the app.
+              </p>
+              <Button
+                variant="outline"
+                size="xs"
+                disabled={capturing}
+                onClick={() =>
+                  startCapturing(async () => {
+                    await mintCaptureLinkAction();
+                    toast.success("Capture link created");
+                  })
+                }
+              >
+                Create a capture link
+              </Button>
+            </div>
+          )}
+        </div>
       </section>
 
       <p className="text-muted-foreground text-xs leading-relaxed">

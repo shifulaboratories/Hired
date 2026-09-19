@@ -1,7 +1,7 @@
 ---
 title: "Mail and calendar tools"
 sidebarTitle: "Mail & Calendar"
-description: "Eight tools that read the threads and meetings in your own accounts — Google, Microsoft 365, or any IMAP and CalDAV provider — behind any contact, company, application or resume. Live, read-only, never copied."
+description: "Eleven tools that read the threads and meetings in your own accounts — Google, Microsoft 365, or any IMAP and CalDAV provider — behind any contact, company, application or resume. Live, read-only, never copied."
 icon: "envelope"
 ---
 
@@ -137,6 +137,37 @@ One thread in full, oldest message first: who sent each message, to whom, when, 
 | Argument | Type | |
 | --- | --- | --- |
 | `threadId` | string | **required** — The thread id from list_correspondence or search_email. |
+
+### `get_mail_sweep`
+
+_Is the mail sweep on_
+
+Whether this person has asked the app to look through their own mail on a schedule, when it last ran, how far it has read up to, and whether a mailbox is actually connected for it to read. `mailConnected` false means the switch is inert until they connect something under Settings → Connections — say that rather than turning on something that cannot work. `note` is non-empty when the last run was short, usually because the window came back full. Read-only, and it reads nothing from anybody's mailbox.
+
+No arguments.
+
+### `set_mail_sweep`
+
+_Turn the mail sweep on or off_
+
+OFF until somebody asks for it, and this is the only thing that turns it on. On, the app reads the mail that arrives from the companies and people already on their pipeline and queues what it finds on their dashboard: the message to log, the person to add, the meeting that means an interview. IT NEVER WRITES TO THE PIPELINE — every finding is a proposal waiting for a yes — and it never reads anything outside the addresses and domains their own records name. It also looks at a connected calendar, which is where the one stage move comes from, so say that when you offer it. Only offer this when somebody asks for it; nobody wants an assistant signing them up to have their inbox read. Turning it off stops the schedule and leaves everything already queued exactly where it is. Returns the settings as they now stand.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `on` | boolean | **required** — True to sweep, false to stop |
+
+### `run_mail_sweep`
+
+_Read what is new in the mail now_
+
+Look through this person's own mailboxes for messages that arrived from the companies and people on their pipeline since the last look, and queue what a rule can prove: the message to log against a job, somebody new at a tracked company to add as a contact, and — when a calendar is connected — a booked meeting that means an application has reached interviewing. NOTHING IS WRITTEN. Every finding is a proposal on their dashboard, and accept_proposal is what applies one; do not accept your own proposals. It deliberately does NOT read what a message MEANS: a rejection, an offer, a take-home and a request to reschedule all come back on `needsReading` instead, with the thread id, because a rule that read the word "unfortunately" as a rejection would put "you have been rejected" in front of somebody who was only being apologised to. That list is what to work through next — get_email_thread on each, then propose_changes with the line you are reading quoted as the evidence. Returns the window it read, how many threads it saw, what it queued, the ones needing a read, and any account that refused. Pass days to look further back than the watermark, which is what to do the first time somebody asks. This is the same work the schedule does hourly on an instance that has /api/sweep/<token> set up, and it is safe to call either way — a thread already accounted for is never queued twice.
+
+**Reaches outside this instance.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `days` | number | Look back this many days instead of picking up where the last sweep stopped. Use it for a deliberate wider look |
+| `include_calendar` | boolean | Also look at booked meetings, which is where the one stage move comes from. Default true when a calendar is connected |
 
 ### `search_calendar`
 

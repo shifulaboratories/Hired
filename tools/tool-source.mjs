@@ -101,7 +101,7 @@ const PIPELINE_VIEW_VALUES = ["board", "list", "calendar"];
 const COLUMN_LIST_VALUES = ["pipeline", "companies", "contacts"];
 // Mirrors PROPOSAL_KINDS in src/lib/data/proposals.ts and PROPOSAL_STATUSES in
 // src/lib/mcp/tools.ts. Both checked below.
-const PROPOSAL_KINDS = ["LOG_ACTIVITY", "MOVE_STAGE", "CREATE_TASK", "SET_FOLLOW_UP", "CREATE_CONTACT"];
+const PROPOSAL_KINDS = ["LOG_ACTIVITY", "MOVE_STAGE", "CREATE_TASK", "SET_FOLLOW_UP", "CREATE_CONTACT", "CREATE_APPLICATION"];
 const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"];
 const DIGEST_KINDS = ["weekly", "nudge", "wins"];
 // Mirrors LETTER_KINDS in src/lib/data/letters.ts, checked below.

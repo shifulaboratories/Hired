@@ -78,16 +78,24 @@ function isJobBoard(host: string): boolean {
 }
 
 /**
- * The fetch, with the guard the URL deserves: this runs on the server on
- * behalf of whoever holds a connection token, so it must not be usable to
- * probe the network the server sits on. Loopback, private ranges and bare IP
- * literals are refused outright. (DNS could still rebind between check and
- * fetch — accepted for a tool whose callers are the instance's own members.)
+ * The check every outbound fetch in this app runs before it goes anywhere.
+ *
+ * This runs on the server on behalf of whoever holds a connection token, so it
+ * must not be usable to probe the network the server sits on. Loopback,
+ * private ranges and bare IP literals are refused outright. (DNS could still
+ * rebind between check and fetch — accepted for a tool whose callers are the
+ * instance's own members.)
+ *
+ * Exported because the board watcher and the posting-liveness probe in
+ * src/lib/outbound.ts fetch URLs on exactly these terms, and three copies of a
+ * private-host check is three places for one of them to fall behind.
+ * `withScheme` runs first, so a pasted `boards.greenhouse.io/acme` is
+ * normalised before anything is checked.
  */
-export async function fetchPostingHtml(rawUrl: string): Promise<string> {
+export function assertPublicUrl(rawUrl: string): URL {
   let url: URL;
   try {
-    url = new URL(rawUrl.trim());
+    url = new URL(withScheme(rawUrl));
   } catch {
     throw new Error("That doesn't look like a URL.");
   }
@@ -104,22 +112,53 @@ export async function fetchPostingHtml(rawUrl: string): Promise<string> {
     /^\d+\.\d+\.\d+\.\d+$/.test(host) ||
     host.includes(":"); // IPv6 literal
   if (privateHost) throw new Error("That address points inside a network, not at a posting.");
+  return url;
+}
 
-  const response = await fetch(url, {
-    headers: {
-      // Some boards serve a bot wall to the default fetch UA.
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-      Accept: "text/html,application/xhtml+xml",
-    },
-    redirect: "follow",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!response.ok) {
-    throw new Error(`The posting page answered ${response.status}. Is the link still live?`);
+/** How many Location headers a fetch will follow before giving up. */
+export const MAX_REDIRECT_HOPS = 5;
+
+/**
+ * The fetch, with the guard on every hop rather than only the first.
+ *
+ * `redirect: "follow"` used to do the hop-following, which meant a perfectly
+ * public hostname that 302s to 127.0.0.1 or 169.254.169.254 walked straight
+ * past assertPublicUrl. The redirects are followed by hand now and the guard
+ * runs on each Location, which closes that for capture_job_posting,
+ * capture_job_postings and the capture endpoint at once.
+ */
+export async function fetchPostingHtml(rawUrl: string): Promise<string> {
+  let url = assertPublicUrl(rawUrl);
+
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop += 1) {
+    const response = await fetch(url, {
+      headers: {
+        // Some boards serve a bot wall to the default fetch UA.
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml",
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) throw new Error(`The posting page answered ${response.status} with nowhere to go.`);
+      // Relative Locations are the common case, so resolve against the URL we
+      // asked for, then re-run the whole guard on where it points.
+      url = assertPublicUrl(new URL(location, url).toString());
+      continue;
+    }
+
+    if (!response.ok) {
+      throw new Error(`The posting page answered ${response.status}. Is the link still live?`);
+    }
+    const text = await response.text();
+    return text.length > MAX_HTML_BYTES ? text.slice(0, MAX_HTML_BYTES) : text;
   }
-  const text = await response.text();
-  return text.length > MAX_HTML_BYTES ? text.slice(0, MAX_HTML_BYTES) : text;
+
+  throw new Error(`That link redirected more than ${MAX_REDIRECT_HOPS} times without landing anywhere.`);
 }
 
 /** The entities that actually occur in posting HTML; not a general decoder. */

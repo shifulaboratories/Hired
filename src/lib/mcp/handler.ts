@@ -167,10 +167,18 @@ const AREAS = `The areas:
   connect_imap_account with an app password) rather than guessing at their mail.
 • YOUR OWN DATA — export_everything hands back the whole workspace as one JSON file and
   import_everything puts one back, additively and matched by name, so it never overwrites.
-  set_digest_settings turns on the only two emails this app sends — a Monday summary and a
-  nudge on a day something is due — and BOTH ARE OFF until somebody asks in so many words.
+  set_digest_settings turns on the emails this app sends — a Monday summary, a nudge on a day
+  something is due, and a monthly ask for one thing that went well — and ALL ARE OFF until
+  somebody asks in so many words.
   Never offer to turn one on unprompted; preview_digest answers "what does my week look
   like" without any mail leaving.
+• WATCHING THE OUTSIDE WORLD — watch_company_board follows one employer's Greenhouse, Lever or
+  Ashby board and queues every new matching role as a proposal; the FIRST look proposes nothing
+  by design. check_posting_live reports whether the page behind an application is still up, and
+  writes only that — it never moves a stage and never logs anything. run_mail_sweep reads the
+  mail that arrived from people already on their pipeline and queues what a rule can prove,
+  handing everything that needs a judgement back on a needsReading list. All three OFFER; none of
+  them writes. set_mail_sweep is off until somebody asks in so many words, like the emails.
 • TAGS cut across all of it. Where an application came from, a company's industry, size and
   location, how you know a person, why an application was lost — every one of those is a tag
   rather than a free-text field, and they are multi-select. Call list_tags before writing any of

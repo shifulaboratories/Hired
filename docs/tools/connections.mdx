@@ -1,7 +1,7 @@
 ---
 title: "Account and connection tools"
 sidebarTitle: "Your account"
-description: "Eighteen tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
+description: "Twenty tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
 icon: "plug"
 ---
 
@@ -251,6 +251,26 @@ Kill a connection's URL and issue a fresh one on the same row, keeping its name 
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Connection id, from list_connections |
+
+### `get_capture_link`
+
+_The link that captures a posting from a phone_
+
+The private address that turns a job posting into an application without opening the app, plus the one-line bookmarklet built around it. This is the answer to "I find jobs on my phone and I am not going to open a laptop to save one": tap the bookmark on a posting, the page is read server-side, and the job lands on the wishlist. Returns the URL, the bookmarklet to paste into a bookmark, how many postings it has captured and when it was last used — or `exists` false when none has been minted, which is the default for every account. THE URL IS A CREDENTIAL: anyone holding it can add applications to this workspace. It is far narrower than a connection URL — it cannot read anything and it can do nothing else — but never repeat it anywhere it will be stored, and it is shown in Settings → Connections for them to copy themselves. Read-only.
+
+No arguments.
+
+### `set_capture_link`
+
+_Mint, rotate or revoke the capture link_
+
+Create the capture link, replace it, or switch it off. Minting hands back the URL and the bookmarklet; MINTING WHEN ONE ALREADY EXISTS ROTATES IT, which kills the old URL immediately — every bookmark and Shortcut built on it stops working and has to be replaced, so only do it when they say the link has leaked or they want a new one. `off` true revokes it: the address goes back to answering 404 for everybody, and nothing already captured is touched. Tell them which of the three you are about to do, in those words, before you call it. The link is capped at thirty captures an hour, which is generous for a person and useless to anyone who found it, and it should never be pasted anywhere that unfurls links — a preview bot following it would fire it.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `off` | boolean | Revoke the link instead of minting one. Nothing already captured is affected |
 
 ### `delete_connection`
 

@@ -26,6 +26,7 @@ import {
   deleteCompanyAction,
   restoreRecordsAction,
   saveCompanyAction,
+  stopWatchingCompanyBoardAction,
 } from "@/server/actions";
 import { relativeDay } from "@/lib/utils";
 import { useViewerZone } from "@/components/viewer-zone";
@@ -66,6 +67,7 @@ export function CompanyDetail({
   candidates,
   suggestedMergeId,
   googleAccess,
+  watch,
 }: {
   company: CompanyFields;
   companyTags: CompanyTags;
@@ -90,9 +92,28 @@ export function CompanyDetail({
   candidates: MergeCandidate[];
   /** One of the candidates that looks like the same employer, if any. */
   suggestedMergeId?: string;
+  /**
+   * The board watch on this employer, when there is one.
+   *
+   * There is deliberately no way to CREATE one here. Starting a watch needs a
+   * board URL and two filter lists, which is a sentence in a conversation and a
+   * form nobody wants; stopping one is a button, because something making noise
+   * must never need an assistant to switch off.
+   */
+  watch?: {
+    id: string;
+    providerLabel: string;
+    boardUrl: string;
+    proposed: number;
+    enabled: boolean;
+    lastCheckedAt: string | null;
+    lastError: string;
+  } | null;
 }) {
   const [values, setValues] = useState(company);
   const [tagSets, setTagSets] = useState(companyTags);
+  const [stopping, setStopping] = useState(false);
+  const zone = useViewerZone();
   const [state, setState] = useState<SaveState>("idle");
   const [adding, setAdding] = useState(false);
   const [person, setPerson] = useState({ name: "", title: "", email: "", relationship: "" });
@@ -211,6 +232,36 @@ export function CompanyDetail({
             {[...tagSets.industry, ...tagSets.location].map((tag) => tag.name).join(" · ") ||
               "No industry set"}
           </div>
+          {watch && !stopping && (
+            <div className="text-faint mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[12.5px]">
+              <span>
+                {watch.enabled ? "Watching" : "Paused —"} their {watch.providerLabel} board
+                {watch.proposed > 0
+                  ? ` · ${watch.proposed} ${watch.proposed === 1 ? "role" : "roles"} proposed`
+                  : ""}
+                {watch.lastCheckedAt ? ` · looked ${relativeDay(watch.lastCheckedAt, zone)}` : " · not looked yet"}
+              </span>
+              {watch.lastError && <span className="text-destructive">{watch.lastError}</span>}
+              <button
+                type="button"
+                className="hover:text-foreground underline underline-offset-2"
+                onClick={() => {
+                  setStopping(true);
+                  startTransition(async () => {
+                    try {
+                      await stopWatchingCompanyBoardAction(watch.id);
+                      router.refresh();
+                    } catch (error) {
+                      setStopping(false);
+                      toast.error(error instanceof Error ? error.message : "Could not stop that watch.");
+                    }
+                  });
+                }}
+              >
+                Stop watching
+              </button>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <SaveIndicator state={state} />

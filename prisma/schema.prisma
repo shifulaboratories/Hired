@@ -95,6 +95,8 @@ model User {
   writeLogs          WriteLog[]
   stageCadences      StageCadence[]
   referrals          Referral[]
+  companyWatches     CompanyWatch[]
+  captureLink        CaptureLink?
 
   @@index([role])
   @@index([stripeCustomerId])
@@ -474,31 +476,49 @@ model Profile {
   /// the weekly one is a summary you read on a Monday, the daily one only
   /// arrives on a day something is actually due. Both need the instance to
   /// have email configured; neither is a setting an admin can set for you.
-  weeklyDigest Boolean  @default(false)
-  dailyNudge   Boolean  @default(false)
+  weeklyDigest Boolean @default(false)
+  dailyNudge   Boolean @default(false)
   /// The third promise, and the only one addressed to somebody who is NOT
   /// searching: once a month, name one thing that went well so it lands in Me
   /// while you still remember it. Off until asked, like the other two, and
   /// normally turned on at the moment the other two are turned off — a weekly
   /// summary of an empty pipeline is the mail people filter.
-  winsNudge    Boolean  @default(false)
+  winsNudge    Boolean @default(false)
   /// The civil day it was last sent, in their zone. Same shape and same reason
   /// as lastDigestOn: the question the sweep asks is "have they had this
   /// month's yet", and that is a question about their calendar.
-  lastWinsOn   String   @default("")
+  lastWinsOn   String  @default("")
   /// How many of these have gone out since anything last landed in Me. At three
   /// it stops sending: a mail somebody has ignored three times is a mail they
   /// have declined. Logging a win, or switching it off and on, resets it.
-  winsQuiet    Int      @default(0)
+  winsQuiet    Int     @default(0)
   /// The hour, in THEIR zone, both are sent at. 0-23.
-  digestHour   Int      @default(8)
+  digestHour   Int     @default(8)
   /// The civil day each was last sent, in their zone, as YYYY-MM-DD. A day
   /// string rather than a timestamp because the question the sweep asks is
   /// "have they had today's yet", and that is a question about their calendar.
   /// It is also what makes the sweep safe to run every hour, or twice.
-  lastDigestOn String   @default("")
-  lastNudgeOn  String   @default("")
-  updatedAt    DateTime @updatedAt
+  lastDigestOn String  @default("")
+  lastNudgeOn  String  @default("")
+
+  /// Inbound, and off until somebody turns it on — the same promise the three
+  /// digest switches make. It reads the mailboxes already connected under
+  /// Settings → Connections and files proposals; it writes nothing to the
+  /// pipeline, ever. No admin can turn it on for somebody else.
+  mailSweep      Boolean   @default(false)
+  /// The instant of the newest message this sweep has already accounted for.
+  /// A timestamp rather than a civil day, because unlike a digest the question
+  /// is not "have they had today's" but "what is new since", and the window it
+  /// asks the provider for is derived from it.
+  mailSweptAt    DateTime?
+  /// When the sweep last ran at all, successfully or not. What throttles it to
+  /// once an hour however often the endpoint is hit.
+  mailSweptRunAt DateTime?
+  /// Why the last run was short, in a sentence: a provider refused, or the
+  /// window hit the fifty-thread ceiling. Empty when it was clean.
+  mailSweepNote  String    @default("")
+
+  updatedAt DateTime @updatedAt
 }
 
 model Role {
@@ -832,6 +852,9 @@ model Company {
   tags         CompanyTag[]
   tasks        Task[]
   referrals    Referral[]
+  /// The public jobs boards being watched for this employer. Watches carry no
+  /// archivedAt of their own; see the model.
+  watches      CompanyWatch[]
 
   @@unique([userId, name, archiveKey])
   @@index([userId])
@@ -840,28 +863,48 @@ model Company {
 }
 
 model Application {
-  id             String           @id @default(cuid())
-  userId         String
-  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  companyId      String
-  company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  roleTitle      String
-  stage          Stage            @default(WISHLIST)
+  id               String           @id @default(cuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId        String
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roleTitle        String
+  stage            Stage            @default(WISHLIST)
   /// Which round of interviews this is on, counting from 1. Zero means nobody
   /// has said — which is most of them, and is why the board shows nothing for
   /// it. It is not cleared when an application ends: an offer that came after
   /// four rounds, and a rejection that came after four rounds, are both facts
   /// about how far it got, and the funnel reads exactly this column to build
   /// its rungs.
-  interviewRound Int              @default(0)
+  interviewRound   Int              @default(0)
   /// What that round was called, when it had a name worth keeping — "Phone
   /// screen", "Take-home", "Onsite". Optional, and only ever meaningful while
   /// INTERVIEWING. The three stages this replaced left their names here.
-  roundLabel     String           @default("")
-  jobUrl         String           @default("")
-  jobDescription String           @default("")
-  location       String           @default("")
-  workMode       String           @default("")
+  roundLabel       String           @default("")
+  jobUrl           String           @default("")
+  /// What the last look at `jobUrl` found. Written by the liveness check and by
+  /// nothing else. It NEVER drives `stage`: a posting coming down is a fact
+  /// about the advert, and deciding what that means about the application is
+  /// the person's to make. Nothing writes an Activity for it either — an
+  /// activity would reset quietDays, and a robot's fetch must not make a silent
+  /// application look like it had been chased.
+  postingStatus    PostingStatus    @default(UNKNOWN)
+  /// When the posting was last fetched, whatever the answer was. The sweep's
+  /// cursor — it works through the applications looked at longest ago.
+  postingCheckedAt DateTime?
+  /// The first look that came back gone. Cleared the moment one comes back
+  /// live, so a blip that resolves leaves nothing behind for anyone to read.
+  postingGoneSince DateTime?
+  /// Consecutive looks that came back gone. GONE needs two, at least twenty
+  /// hours apart. A host that would not answer does not increment this.
+  postingMisses    Int              @default(0)
+  /// What the host actually said, in a few words: "404", "answered 200 but the
+  /// page no longer names a role", "redirected to acme.com/careers". Shown
+  /// under the posting link, so it has to read as a sentence to a person.
+  postingNote      String           @default("")
+  jobDescription   String           @default("")
+  location         String           @default("")
+  workMode         String           @default("")
   /// What the POSTING said, in the posting's own words — "$210k – $260k",
   /// "competitive", or nothing at all. Written by capture_job_posting out of
   /// the listing's structured data, and by whoever typed it.
@@ -872,31 +915,31 @@ model Application {
   /// Offer, ever — salaryFloor() guesses a number to SORT by, where being wrong
   /// costs a row position; the same guess inside a comparison table costs a
   /// decision.
-  salaryRange    String           @default("")
+  salaryRange      String           @default("")
   /// Where this one came from, and anything else worth labelling it with.
   /// Rows the person owns rather than free strings, so a label can be renamed,
   /// recoloured and — the point — deleted. The data layer flattens the join
   /// rows back to { id, name, color } before anything else sees them.
-  tags           ApplicationTag[]
-  notes          String           @default("")
-  appliedAt      DateTime?
-  nextFollowUpAt DateTime?
-  closedAt       DateTime?
+  tags             ApplicationTag[]
+  notes            String           @default("")
+  appliedAt        DateTime?
+  nextFollowUpAt   DateTime?
+  closedAt         DateTime?
   /// Null means live. See Company.archivedAt. Its timeline and its tasks follow
   /// it in and out through this column rather than carrying their own, so a
   /// restore brings the whole thread back with no extra bookkeeping.
-  archivedAt     DateTime?
+  archivedAt       DateTime?
   /// The id of the company whose archiving swept this application in. Null when
   /// it was archived on its own — which is the difference that stops restoring
   /// a company from dragging back an application you had already binned
   /// separately. No relation and no foreign key: the company can be destroyed
   /// first, and a dangling breadcrumb is harmless.
-  archivedWith   String?
-  resumeId       String?
-  resume         Resume?          @relation(fields: [resumeId], references: [id], onDelete: SetNull)
-  sortOrder      Int              @default(0)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  archivedWith     String?
+  resumeId         String?
+  resume           Resume?          @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  sortOrder        Int              @default(0)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   activities Activity[]
   contacts   Contact[]
@@ -917,6 +960,8 @@ model Application {
   @@index([userId, stage])
   @@index([userId, nextFollowUpAt])
   @@index([userId, archivedAt])
+  /// The liveness sweep's ordering: the posting looked at longest ago, first.
+  @@index([postingCheckedAt])
 }
 
 /// What someone actually offered, as numbers you can compare.
@@ -1215,6 +1260,14 @@ enum ProposalKind {
   CREATE_TASK
   SET_FOLLOW_UP
   CREATE_CONTACT
+  /// A role found on a watched board that is not on the pipeline yet.
+  ///
+  /// Its payload is the posting ALREADY PARSED — employer, title, url,
+  /// description, location — and never a URL to go and fetch on accept. That is
+  /// the point: the other five kinds are pure database writes, and a sixth that
+  /// made the server fetch a third-party URL at the moment somebody clicked
+  /// Accept would give this queue a property none of the rest of it has.
+  CREATE_APPLICATION
 }
 
 enum ProposalStatus {
@@ -1765,4 +1818,133 @@ model Task {
   @@index([resumeId])
   @@index([roleId])
   @@index([noteId])
+}
+
+/// What the last look at an application's posting URL found.
+enum PostingStatus {
+  /// Nothing has looked, or there is no link to look at.
+  UNKNOWN
+  /// The page answered and still names a role.
+  LIVE
+  /// Two looks a day apart both came back 404 or 410. One never is enough.
+  GONE
+  /// Something changed and it is not clear what: a 200 with no role on the
+  /// page, or a redirect away from the posting. Never treated as gone — a
+  /// client-rendered board answers exactly like this whether the job exists or
+  /// not.
+  UNCLEAR
+  /// The host would not answer — a timeout, a 403, a rate limit. Says nothing
+  /// about the role, and deliberately does not count towards GONE.
+  UNREACHABLE
+}
+
+/// Which public board feed a watch reads. Three, because these are the three
+/// that publish one: a URL built from a constant host and the company's own
+/// slug, with no key and no crawling. Anything else is refused when the watch
+/// is created rather than half-supported afterwards.
+enum BoardProvider {
+  GREENHOUSE
+  LEVER
+  ASHBY
+}
+
+/// A company's public jobs board, watched for roles worth applying for.
+///
+/// One row per board per person. What it finds becomes a CREATE_APPLICATION
+/// proposal in the review queue — never an application — so a watch cannot put
+/// anything on the pipeline without a yes.
+///
+/// No `archivedAt` of its own. Like Offer and Letter, it belongs to an
+/// archivable model and follows Company in and out through ITS column. The cost
+/// is the same one src/lib/data/offers.ts spells out: every read here that does
+/// not start from an already-filtered company has to write
+/// `company: { archivedAt: null }` by hand, and nothing in the toolchain
+/// catches one that forgets. There are FOUR, each numbered at the line in
+/// src/lib/data/watch.ts.
+model CompanyWatch {
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  provider  BoardProvider
+  /// The company's own slug on that provider — "acme" in jobs.lever.co/acme.
+  /// Stored rather than re-derived per run, because the feed URL is built from
+  /// the data layer's constants plus this string: there is no URL from a third
+  /// party for the sweep to follow, which is the whole safety argument.
+  slug      String
+  /// The board page a person would open. For the link on the company card only
+  /// — the sweep never fetches it.
+  boardUrl  String        @default("")
+
+  /// A role's title has to contain ANY of these, case-insensitively. Empty
+  /// means every role, which on a six-hundred-role board is a filter nobody
+  /// wants and is why the tool says so.
+  titleTerms    String[] @default([])
+  /// The same against the posting's location and workplace type together, so
+  /// "remote" matches a Lever workplaceType and an Ashby location alike.
+  locationTerms String[] @default([])
+
+  /// Feed ids this watch has already decided about and will never propose
+  /// again: everything that was on the board the first time it looked, plus
+  /// everything proposed since. Pruned on every run to the ids the board still
+  /// lists, so the array is bounded by the size of the board rather than by
+  /// time. A role that drops off and comes back is a new role, which is right.
+  seenIds  String[] @default([])
+  /// Running total, for the one line on the company card.
+  proposed Int      @default(0)
+  enabled  Boolean  @default(true)
+
+  lastCheckedAt DateTime?
+  /// The last time this watch actually found something. Null on a watch that
+  /// has never matched, which usually means the filters are too narrow.
+  lastFoundAt   DateTime?
+  /// Non-empty when the last look failed. A watch that has been failing quietly
+  /// for a month is the failure mode this column exists to make visible.
+  lastError     String    @default("")
+  lastErrorAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One watch per board per person. Keyed on the board rather than on the
+  /// company, so watching the same board twice through two company rows is
+  /// impossible rather than merely discouraged.
+  @@unique([userId, provider, slug])
+  @@index([userId])
+  @@index([companyId])
+  /// The sweep's ordering: the watch looked at longest ago, first.
+  @@index([enabled, lastCheckedAt])
+}
+
+/// The URL that turns a job posting into an application from a phone.
+///
+/// One per person, and a credential like McpConnection and Session rather than
+/// a field on Profile — it is minted, shown once in Settings, rotated when it
+/// leaks and revoked when it is not wanted, and those verbs belong to a row of
+/// its own. Unlike a connection URL it grants exactly one act, and cannot read
+/// anything at all.
+model CaptureLink {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// "cap_" plus 24 random bytes, the same shape as an MCP token. Unique so the
+  /// database itself refuses a collision, and the endpoint is a lookup on this
+  /// column rather than a comparison — there is no fixed secret here to compare
+  /// in constant time, which is the same reason /api/mcp/[token] does not.
+  token  String @unique
+
+  /// A fixed window rather than a sliding one: cheap, and precise enough for a
+  /// limit whose job is to stop a leaked token being used as a fetch engine.
+  windowStartedAt DateTime @default(now())
+  windowCount     Int      @default(0)
+
+  /// How many postings this link has ever captured, for the line in Settings.
+  captured     Int       @default(0)
+  lastUsedAt   DateTime?
+  /// User-agent of whatever last used it, trimmed. Purely informational, and
+  /// the only way somebody notices a link being used from a device that is not
+  /// theirs. Same column and same reasoning as McpConnection.lastUsedFrom.
+  lastUsedFrom String    @default("")
+  createdAt    DateTime  @default(now())
 }

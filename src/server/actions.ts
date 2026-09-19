@@ -21,6 +21,9 @@ import * as users from "@/lib/data/users";
 import * as waitlist from "@/lib/data/waitlist";
 import * as connections from "@/lib/data/connections";
 import * as accounts from "@/lib/data/accounts";
+import * as watch from "@/lib/data/watch";
+import * as mailSweep from "@/lib/data/mail-sweep";
+import * as captureLink from "@/lib/data/capture-link";
 import * as onboarding from "@/lib/data/onboarding";
 import {
   authenticate,
@@ -1155,6 +1158,61 @@ export async function sendDigestNowAction(kind: digest.DigestKind) {
 }
 
 /**
+ * The mail sweep. Off until somebody turns it on here or over a connection —
+ * the same promise the digest switches make, and for a stronger reason: this
+ * one reads their inbox.
+ */
+export async function setMailSweepAction(on: boolean) {
+  const user = await requireUser();
+  const next = await mailSweep.setMailSweep(user.id, on);
+  revalidatePath("/settings");
+  return next;
+}
+
+/**
+ * The capture link. Minting when one exists ROTATES it, which kills the old
+ * URL — the panel says so beside the button, because a bookmark built on it
+ * stops working the moment this runs.
+ */
+export async function mintCaptureLinkAction() {
+  const user = await requireUser();
+  const next = await captureLink.mintCaptureLink(user.id, await requestBaseUrl());
+  revalidatePath("/settings");
+  return next;
+}
+
+export async function revokeCaptureLinkAction() {
+  const user = await requireUser();
+  const done = await captureLink.revokeCaptureLink(user.id);
+  revalidatePath("/settings");
+  return done;
+}
+
+/**
+ * Stopping a board watch. There is no action to START one: creating a watch
+ * needs a board URL and two filter lists, which is a sentence in a conversation
+ * and a form nobody wants. Stopping one is a button because something making
+ * noise must never need an assistant to switch off.
+ */
+export async function stopWatchingCompanyBoardAction(id: string) {
+  const user = await requireUser();
+  const done = await watch.unwatchCompanyBoard(user.id, id);
+  revalidatePath("/crm");
+  revalidatePath("/settings");
+  return done;
+}
+
+/** The instance's own address, from the request when no public URL is set. */
+async function requestBaseUrl() {
+  const settings = await getSettings();
+  if (settings.publicUrl.trim()) return settings.publicUrl.trim();
+  const headerList = await headers();
+  const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
+  const proto = headerList.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
+/**
  * The review queue. Accepting writes through the same data layer the tool does,
  * so there is exactly one implementation of what "accept" means.
  */
@@ -1847,6 +1905,9 @@ export async function getApplicationForPanelAction(id: string) {
       interviewRound: application.interviewRound,
       roundLabel: application.roundLabel,
       jobUrl: application.jobUrl,
+      postingStatus: application.postingStatus,
+      postingNote: application.postingNote,
+      postingGoneSince: application.postingGoneSince?.toISOString() ?? null,
       jobDescription: application.jobDescription,
       location: application.location,
       workMode: application.workMode,

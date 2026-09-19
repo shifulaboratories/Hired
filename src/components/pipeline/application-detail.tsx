@@ -97,6 +97,14 @@ type Application = {
   /** Why it ended, as LOSS tags. Only shown when LOST. */
   lossTags: TagValue[];
   jobUrl: string;
+  /**
+   * What the last look at the posting found, written by check_posting_live and
+   * by nothing else. Only GONE and UNCLEAR are shown — a green tick on
+   * something that is working is noise.
+   */
+  postingStatus?: string;
+  postingNote?: string;
+  postingGoneSince?: string | null;
   jobDescription: string;
   location: string;
   workMode: string;
@@ -717,6 +725,17 @@ export function ApplicationDetail({
                   onChange={(event) => set({ jobUrl: event.target.value })}
                   placeholder="https://…"
                 />
+                {(application.postingStatus === "GONE" || application.postingStatus === "UNCLEAR") && (
+                  <p className="text-faint text-[12px]">
+                    {application.postingStatus === "GONE"
+                      ? `Posting came down${application.postingNote ? ` — ${application.postingNote}` : ""}${
+                          application.postingGoneSince
+                            ? `, first seen ${relativeDay(application.postingGoneSince, zone)}`
+                            : ""
+                        }.`
+                      : application.postingNote}
+                  </p>
+                )}
               </div>
 
             </CardContent>

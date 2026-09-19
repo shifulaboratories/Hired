@@ -1157,6 +1157,51 @@ const CAPTURE_CONCURRENCY = 4;
  * Nothing is created for a page that did not name an employer and a role, and
  * one bad URL never costs the other nine.
  */
+/**
+ * What makes two applications the same job: employer and role title, trimmed
+ * and lower-cased.
+ *
+ * It lived inside captureJobPostings until a board watch and the capture
+ * endpoint needed the same answer. Two places deciding what a duplicate is, is
+ * how one of them starts creating them.
+ */
+export const applicationKey = (company: string, roleTitle: string) =>
+  `${company.trim().toLowerCase()}\u0000${roleTitle.trim().toLowerCase()}`;
+
+/**
+ * Create an application unless that employer and role title are already live.
+ *
+ * Exists so the two callers that can fire twice for one job — accepting a board
+ * watch's proposal a week after it was queued, and tapping the capture
+ * bookmarklet from a phone and then again from a laptop — cannot make a second
+ * row. Archived rows do not count: somebody who binned a job and then captured
+ * it again meant to.
+ */
+export async function createApplicationIfNew(
+  userId: string,
+  input: ApplicationInput,
+): Promise<
+  | { created: true; application: Awaited<ReturnType<typeof createApplication>> }
+  | { created: false; existingId: string; company: string; roleTitle: string }
+> {
+  const wanted = applicationKey(input.company, input.roleTitle);
+  // Archive filter, spelled by hand: an archived duplicate is not a duplicate.
+  const existing = await db.application.findMany({
+    where: { userId, archivedAt: null },
+    select: { id: true, roleTitle: true, company: { select: { name: true } } },
+  });
+  const already = existing.find((row) => applicationKey(row.company.name, row.roleTitle) === wanted);
+  if (already) {
+    return {
+      created: false,
+      existingId: already.id,
+      company: already.company.name,
+      roleTitle: already.roleTitle,
+    };
+  }
+  return { created: true, application: await createApplication(userId, input) };
+}
+
 export async function captureJobPostings(userId: string, urls: string[]): Promise<BatchCaptureResult> {
   const clean = [...new Set(urls.map((url) => url.trim()).filter(Boolean))];
   const result: BatchCaptureResult = { captured: [], duplicates: [], failed: [] };
@@ -1176,9 +1221,6 @@ export async function captureJobPostings(userId: string, urls: string[]): Promis
     parsedByUrl.push(...batch);
   }
 
-  const key = (company: string, roleTitle: string) =>
-    `${company.trim().toLowerCase()}\u0000${roleTitle.trim().toLowerCase()}`;
-
   // Everything live already on file, so a paste of this morning's browsing does
   // not re-add what last week's did.
   const existing = await db.application.findMany({
@@ -1187,7 +1229,7 @@ export async function captureJobPostings(userId: string, urls: string[]): Promis
   });
   const seen = new Map<string, { id: string; company: string; roleTitle: string }>();
   for (const row of existing) {
-    seen.set(key(row.company.name, row.roleTitle), {
+    seen.set(applicationKey(row.company.name, row.roleTitle), {
       id: row.id,
       company: row.company.name,
       roleTitle: row.roleTitle,
@@ -1210,7 +1252,7 @@ export async function captureJobPostings(userId: string, urls: string[]): Promis
       continue;
     }
 
-    const k = key(parsed.company, parsed.roleTitle);
+    const k = applicationKey(parsed.company, parsed.roleTitle);
     const already = seen.get(k);
     if (already) {
       result.duplicates.push({
