@@ -1,5 +1,14 @@
 import Link from "next/link";
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import {
+  BellIcon,
+  CalendarDaysIcon,
+  CheckSquareIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  HandshakeIcon,
+  HistoryIcon,
+  UsersIcon,
+} from "lucide-react";
 import type { Stage } from "@prisma/client";
 import { STAGE_LABEL, STAGE_TONE, type ScheduleKind } from "@/lib/data/pipeline";
 import { cn } from "@/lib/utils";
@@ -85,6 +94,24 @@ const KIND_LABEL: Record<ScheduleKind, string> = {
   OFFER: "Answer an offer by",
 };
 
+/**
+ * A shape per kind, so the six kinds are not told apart by colour alone.
+ *
+ * Two of the six were already near-identical dots — MEETING and INTERVIEW share
+ * `--stage-interview` — so even with perfect colour vision the legend was the
+ * only way to read them apart, and the legend is at the top of a grid you have
+ * scrolled away from. The dot stays as the colour cue; the icon is what makes
+ * the kind legible on the chip itself.
+ */
+const KIND_ICON: Record<ScheduleKind, typeof BellIcon> = {
+  FOLLOW_UP: BellIcon,
+  TASK: CheckSquareIcon,
+  ACTIVITY: HistoryIcon,
+  MEETING: UsersIcon,
+  INTERVIEW: CalendarDaysIcon,
+  OFFER: HandshakeIcon,
+};
+
 export function PipelineCalendar({
   year,
   month,
@@ -112,6 +139,11 @@ export function PipelineCalendar({
     if (bucket) bucket.push(entry);
     else byDay.set(entry.day, [entry]);
   }
+
+  // In the array's own order, so the legend reads the same every month rather
+  // than reshuffling with whatever happened to be scheduled first.
+  const seen = new Set(entries.map((entry) => entry.kind));
+  const present = (Object.keys(KIND_LABEL) as ScheduleKind[]).filter((kind) => seen.has(kind));
 
   const cells = Array.from({ length: 42 }, (_, i) => {
     const date = new Date(from);
@@ -148,17 +180,23 @@ export function PipelineCalendar({
             Today
           </Link>
         </div>
-        <div className="text-faint ml-auto flex flex-wrap items-center gap-3 text-[11.5px]">
-          {(Object.keys(KIND_LABEL) as ScheduleKind[]).map((kind) => (
-            <span key={kind} className="flex items-center gap-1.5">
-              <span
-                className="size-1.5 rounded-full"
-                style={{ background: KIND_TONE[kind] }}
-              />
-              {KIND_LABEL[kind]}
-            </span>
-          ))}
-        </div>
+        {/* Only the kinds this month actually contains. Six fixed entries was
+            a line of chrome as long as the month header, most of it explaining
+            colours nothing on screen was using — and in an empty month it was
+            the only thing on the card with any ink in it. */}
+        {present.length > 0 && (
+          <div className="text-faint ml-auto flex flex-wrap items-center gap-3 text-[11.5px]">
+            {present.map((kind) => {
+              const Icon = KIND_ICON[kind];
+              return (
+                <span key={kind} className="flex items-center gap-1">
+                  <Icon className="size-3" style={{ color: KIND_TONE[kind] }} />
+                  {KIND_LABEL[kind]}
+                </span>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Seven columns in 360px is 48px a cell, which is not a calendar — it is
@@ -197,15 +235,36 @@ export function PipelineCalendar({
                 {date.getUTCDate()}
               </div>
               <div className="space-y-0.5">
-                {items.slice(0, 4).map((entry) => (
+                {items.slice(0, 3).map((entry) => (
                   <CalendarChip
                     key={`${entry.kind}-${entry.id}`}
                     entry={entry}
                     fields={shows}
                   />
                 ))}
-                {items.length > 4 && (
-                  <div className="text-faint px-1 text-[11px]">+{items.length - 4} more</div>
+                {/* "+3 more" used to be a dead end: the busiest days in the
+                    month were the ones you could not read. A details element
+                    opens the rest in place — no client JavaScript, which this
+                    server component has none of, and it stays keyboard and
+                    screen-reader operable for free. */}
+                {items.length > 3 && (
+                  <details className="group/more">
+                    <summary // list-none handles Firefox and Chrome; Safari needs the webkit marker
+                      // hidden separately or the disclosure triangle stays.
+                      className="text-muted-foreground hover:text-foreground hover:bg-accent rounded-chip cursor-pointer list-none px-1 py-0.5 text-[11px] transition-colors duration-150 [&::-webkit-details-marker]:hidden">
+                      <span className="group-open/more:hidden">+{items.length - 3} more</span>
+                      <span className="hidden group-open/more:inline">Show less</span>
+                    </summary>
+                    <div className="mt-0.5 space-y-0.5">
+                      {items.slice(3).map((entry) => (
+                        <CalendarChip
+                          key={`${entry.kind}-${entry.id}`}
+                          entry={entry}
+                          fields={shows}
+                        />
+                      ))}
+                    </div>
+                  </details>
                 )}
               </div>
             </div>
@@ -219,6 +278,19 @@ export function PipelineCalendar({
 }
 
 function CalendarChip({ entry, fields }: { entry: CalendarEntry; fields: Set<string> }) {
+  const Icon = KIND_ICON[entry.kind];
+  // What the chip cannot show. It used to repeat the title, which is the one
+  // thing already on screen — so hovering a truncated row told you nothing.
+  const tooltip = [
+    KIND_LABEL[entry.kind],
+    entry.title,
+    entry.detail,
+    entry.stage ? STAGE_LABEL[entry.stage] : "",
+    entry.done ? "done" : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   const body = (
     <span
       className={cn(
@@ -227,13 +299,22 @@ function CalendarChip({ entry, fields }: { entry: CalendarEntry; fields: Set<str
         entry.done ? "text-faint line-through" : "text-foreground",
       )}
     >
-      <span
-        className="size-1.5 shrink-0 rounded-full"
-        style={{ background: KIND_TONE[entry.kind] }}
+      <Icon
+        className="size-3 shrink-0"
+        style={{ color: KIND_TONE[entry.kind] }}
+        aria-hidden
       />
-      <span className="truncate">{entry.title}</span>
+      {/* The title takes the room and the detail gets what is left, rather than
+          the two splitting a 130px cell evenly and truncating each other into
+          six characters apiece — which is what "Applie… Wishlist…" was. The
+          detail waits for a genuinely wide screen; below that the tooltip
+          carries it, which is why the tooltip now names the kind and the
+          stage instead of repeating the title. */}
+      <span className="min-w-0 flex-1 truncate">{entry.title}</span>
       {fields.has("detail") && entry.detail && (
-        <span className="text-faint hidden truncate lg:inline">{entry.detail}</span>
+        <span className="text-faint hidden max-w-[45%] shrink truncate 2xl:inline">
+          {entry.detail}
+        </span>
       )}
       {fields.has("stage") && entry.stage && (
         <span
@@ -257,7 +338,7 @@ function CalendarChip({ entry, fields }: { entry: CalendarEntry; fields: Set<str
         href={entry.url}
         target="_blank"
         rel="noreferrer noopener"
-        title={entry.title}
+        title={tooltip}
         className="hover:bg-accent block rounded-chip transition-colors duration-150"
       >
         {body}
@@ -267,13 +348,13 @@ function CalendarChip({ entry, fields }: { entry: CalendarEntry; fields: Set<str
   return href ? (
     <Link
       href={href}
-      title={entry.title}
+      title={tooltip}
       className="hover:bg-accent block rounded-chip transition-colors duration-150"
     >
       {body}
     </Link>
   ) : (
-    <div title={entry.title}>{body}</div>
+    <div title={tooltip}>{body}</div>
   );
 }
 
