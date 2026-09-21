@@ -105,6 +105,8 @@ const PROPOSAL_KINDS = ["LOG_ACTIVITY", "MOVE_STAGE", "CREATE_TASK", "SET_FOLLOW
 const PROPOSAL_STATUSES = ["PENDING", "ACCEPTED", "DISMISSED"];
 // Mirrors SCOPE_VALUES in src/lib/mcp/scopes.ts, checked below.
 const SCOPE_VALUES = ["FULL", "WRITING", "PIPELINE", "READONLY"];
+// Mirrors KEYWORD_POLICIES in src/lib/keyword-policy.ts, checked below.
+const KEYWORD_POLICIES = ["STRICT", "MATCH", "ADJACENT"];
 // Mirrors DEFAULT_ASSISTANT_MODEL in src/lib/settings.ts, checked below. A
 // model id in the manual that is a version behind is worse than none.
 const DEFAULT_ASSISTANT_MODEL = "claude-opus-5";
@@ -187,6 +189,17 @@ for (const [name, values] of [
   }
 }
 {
+  // The three keyword policies live in a pure module that tools.ts imports.
+  const file = readFileSync(join(ROOT, "src", "lib", "keyword-policy.ts"), "utf8");
+  const declared = /export const KEYWORD_POLICIES = \[([\s\S]*?)\] as const;/.exec(file);
+  const found = declared ? [...declared[1].matchAll(/"([A-Z_]+)"/g)].map((m) => m[1]) : [];
+  if (found.join(",") !== KEYWORD_POLICIES.join(",")) {
+    throw new Error(
+      `KEYWORD_POLICIES changed in keyword-policy.ts (${found.join(", ")}) — update tools/tool-source.mjs`,
+    );
+  }
+}
+{
   // The assistant's default model is a plain string constant in settings.ts,
   // which is where the Variables screen reads its placeholder from too.
   const file = readFileSync(join(ROOT, "src", "lib", "settings.ts"), "utf8");
@@ -262,7 +275,7 @@ const scope = {
   str, num, bool, strArray, object, limitArg, SYSTEM_EVENT_SOURCES, LETTER_KINDS,
   INTERVIEW_FORMATS, INTERVIEW_OUTCOMES, QUESTION_KINDS, REFERRAL_STATUSES,
   PROPOSAL_KINDS, PROPOSAL_STATUSES, DIGEST_KINDS, SCOPE_VALUES, OUTBOUND_STATUSES,
-  DEFAULT_ASSISTANT_MODEL,
+  DEFAULT_ASSISTANT_MODEL, KEYWORD_POLICIES,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
   ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,
   COMPANY_MISSING, CONTACT_MISSING, PIPELINE_VIEW_VALUES, COLUMN_LIST_VALUES,

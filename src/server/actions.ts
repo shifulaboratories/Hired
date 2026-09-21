@@ -27,6 +27,7 @@ import * as captureLink from "@/lib/data/capture-link";
 import * as outbound from "@/lib/data/outbound";
 import * as onboarding from "@/lib/data/onboarding";
 import * as assistant from "@/lib/data/assistant";
+import * as transferables from "@/lib/data/transferables";
 import {
   authenticate,
   claimInstance,
@@ -2199,4 +2200,44 @@ export async function renameAssistantThreadAction(id: string, title: string) {
 export async function deleteAssistantThreadAction(id: string) {
   const user = await requireUser();
   await assistant.deleteThread(user.id, id);
+}
+
+// --- transferable skills, and the keyword policy ------------------------------
+
+/**
+ * What they have used, and what it transfers to.
+ *
+ * The policy itself rides on updateProfileAction, because it is a profile
+ * field — one fewer action, and it saves through the same autosave every other
+ * field on that screen uses.
+ */
+export async function listTransferablesAction() {
+  const user = await requireUser();
+  return transferables.listTransferables(user.id);
+}
+
+export async function createTransferableAction(input: {
+  have: string;
+  covers?: string[];
+  note?: string;
+}) {
+  const user = await requireUser();
+  const row = await transferables.createTransferable(user.id, input);
+  revalidatePath("/me");
+  return row;
+}
+
+export async function updateTransferableAction(
+  id: string,
+  patch: { have?: string; covers?: string[]; note?: string },
+) {
+  const user = await requireUser();
+  await transferables.updateTransferable(user.id, id, patch);
+  revalidatePath("/me");
+}
+
+export async function deleteTransferableAction(id: string) {
+  const user = await requireUser();
+  await transferables.deleteTransferable(user.id, id);
+  revalidatePath("/me");
 }

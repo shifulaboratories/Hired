@@ -1,5 +1,13 @@
 import type { NoteKind, Prisma, Profile } from "@prisma/client";
 import {
+  DEFAULT_KEYWORD_POLICY,
+  KEYWORD_POLICIES,
+  isKeywordPolicy,
+  policyInstruction,
+  readPolicy,
+  type KeywordPolicy,
+} from "@/lib/keyword-policy";
+import {
   appendToBackground,
   backgroundExcerpt,
   parseBackground,
@@ -7,6 +15,7 @@ import {
   writingGuidance,
 } from "@/lib/background";
 import { db } from "@/lib/db";
+import { listTransferables } from "@/lib/data/transferables";
 import type { PipelineView } from "@/lib/pipeline-fields";
 import {
   parseWidths,
@@ -92,6 +101,7 @@ function blankProfile(userId: string): Profile {
     twitter: "",
     summary: "",
     background: "",
+    keywordPolicy: DEFAULT_KEYWORD_POLICY,
     boardFields: [],
     listFields: [],
     calendarFields: [],
@@ -208,16 +218,42 @@ export type ProfilePatch = Partial<{
   twitter: string;
   summary: string;
   background: string;
+  /** STRICT, MATCH or ADJACENT. See src/lib/keyword-policy.ts. */
+  keywordPolicy: KeywordPolicy;
 }>;
 
 const PROFILE_COLUMNS = [
   "fullName", "headline", "email", "phone", "location", "website",
-  "linkedin", "github", "twitter", "summary", "background",
+  "linkedin", "github", "twitter", "summary", "background", "keywordPolicy",
 ] as const;
 
 export async function updateProfile(userId: string, patch: ProfilePatch) {
   await ensureProfile(userId);
+  // Validated here rather than at the edges, the same way setTimeZone is: a
+  // typo stored in this column reaches a writer as a policy with no rule text
+  // behind it, and the failure mode of that is SILENCE — no instruction at all,
+  // so the document comes out however the model felt, which is the one outcome
+  // this setting exists to prevent.
+  if (patch.keywordPolicy !== undefined && !isKeywordPolicy(patch.keywordPolicy)) {
+    throw new Error(`keywordPolicy must be one of ${KEYWORD_POLICIES.join(", ")}.`);
+  }
   return db.profile.update({ where: { userId }, data: pick(patch, PROFILE_COLUMNS) });
+}
+
+/**
+ * The rule a writer must follow for this person, read and validated.
+ *
+ * Everything that writes a document goes through here rather than reading the
+ * column, so a value that predates a policy being renamed — or one somebody
+ * wrote straight into the database — comes back as the default instead of as
+ * nothing.
+ */
+export async function keywordPolicyFor(userId: string): Promise<KeywordPolicy> {
+  const profile = await db.profile.findUnique({
+    where: { userId },
+    select: { keywordPolicy: true },
+  });
+  return readPolicy(profile?.keywordPolicy);
 }
 
 /**
@@ -875,6 +911,10 @@ export async function getMeSnapshot(userId: string) {
       listCertifications(userId),
       listNotes(userId),
     ]);
+  const [policy, transferables] = await Promise.all([
+    keywordPolicyFor(userId),
+    listTransferables(userId),
+  ]);
 
   // This payload seeds resumes, so the roles arrive read rather than raw. The
   // full background is still on each one — nothing is hidden from a person
@@ -888,6 +928,19 @@ export async function getMeSnapshot(userId: string) {
 
   return {
     profile,
+    // The rule for this person, spelled out rather than named. A writer that
+    // receives "ADJACENT" and nothing else has to guess what it permits, which
+    // is the same as having no policy.
+    keywordPolicy: {
+      policy,
+      permits: policyInstruction(policy),
+      transferables: transferables.map((row) => ({
+        id: row.id,
+        have: row.have,
+        covers: row.covers,
+        note: row.note,
+      })),
+    },
     roles: readRoles,
     highlights,
     education,

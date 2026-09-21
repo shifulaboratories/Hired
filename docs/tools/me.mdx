@@ -1,7 +1,7 @@
 ---
 title: "Me tools"
 sidebarTitle: "Me"
-description: "Twenty-six tools over roles, backgrounds, highlights, notes, standing rules, the four supporting collections, and importing a resume you already have."
+description: "Thirty-one tools over roles, backgrounds, highlights, notes, standing rules, the four supporting collections, and importing a resume you already have."
 icon: "user"
 ---
 
@@ -44,7 +44,7 @@ Ranked full-text search across everything the user has written about themselves:
 
 _Get everything in Me_
 
-Returns EVERYTHING in Me at once: profile, all roles with their full background text, all highlights, education, projects, skills, certifications and notes. Use when you need complete context (e.g. writing a resume from scratch). Can be large — prefer search_me for targeted lookups. READ `writingRules` AND `neverOnADocument` BEFORE YOU WRITE ANYTHING. The first is the constraints this person has set on how their jobs may be described, gathered across every role; obey them silently rather than mentioning them. The second is their own positioning notes and interview prep — context for you, and it must never appear on a resume, a cover letter or anything an employer sees. Each role also carries `resumeEvidence`, which is the part of its background a document may be written from.
+Returns EVERYTHING in Me at once: profile, all roles with their full background text, all highlights, education, projects, skills, certifications and notes. `keywordPolicy` says how close to a posting's own words you may write, with the rule spelled out in `permits` and their recorded transferable skills beside it — read it before you draft. Use when you need complete context (e.g. writing a resume from scratch). Can be large — prefer search_me for targeted lookups. READ `writingRules` AND `neverOnADocument` BEFORE YOU WRITE ANYTHING. The first is the constraints this person has set on how their jobs may be described, gathered across every role; obey them silently rather than mentioning them. The second is their own positioning notes and interview prep — context for you, and it must never appear on a resume, a cover letter or anything an employer sees. Each role also carries `resumeEvidence`, which is the part of its background a document may be written from.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -80,6 +80,7 @@ Update any subset of the user's profile fields. Only pass the fields you want to
 | `summary` | string | Career summary used as the default resume summary |
 | `background` | string | Long-form personal background. REPLACES the existing text — read it first if you intend to add to it. |
 | `timeZone` | string | IANA time zone the user's dates are computed in, e.g. 'America/Chicago'. Everything dated follows it: what counts as today, when a follow-up is overdue, and the 9am a new follow-up is scheduled for. Pass an empty string to fall back to the server's own clock. Set this when they say where they are or that they have moved; an unrecognised name is refused rather than stored. |
+| `keywordPolicy` | enum | How close to a posting's own words their documents may get. STRICT: never rephrase to match a posting. MATCH (the default): describe work they genuinely did in the posting's vocabulary — the same claim, spelled their way — which is what stops an applicant tracking system missing experience they really have. ADJACENT: also allows a tool they have NOT used to appear in a skills line marked comparable, but only where they have recorded a transferable that covers it. No level permits claiming work at an employer they did not do. Change this only when they ask; get_me_snapshot returns the current one with the rule spelled out.  `STRICT` · `MATCH` · `ADJACENT` |
 
 ### `set_profile_photo`
 
@@ -155,6 +156,63 @@ Update fields on an existing role. WARNING: passing background REPLACES the whol
 | `summary` | string | Scope summary |
 | `background` | string | Replaces the entire background |
 | `tags` | string[] | Tags |
+
+### `list_transferable_skills`
+
+_List transferable skills_
+
+The tools they have ACTUALLY used, and what each one transfers to. This is the answer to 'the posting wants HubSpot and they have only ever run Salesforce'. Each row is `have` — the real thing — plus `covers`, the tools it reaches, spelled the way a posting spells them, plus their own note on why. Read this before writing a document for a posting that names a tool you cannot find in Me: a recorded transfer lets that tool appear in a SKILLS line marked comparable, under their keyword policy. It never lets it appear in a bullet about a job. A transfer that is not on file does not exist — do not infer one.
+
+No arguments.
+
+### `record_transferable_skill`
+
+_Record a transferable skill_
+
+File something they have used and the tools it transfers to. Reach for this when they say a version of 'I have only used X but Y is the same thing' — the sentence people say about CRMs, ticket trackers, cloud providers and BI tools. `have` must be something they genuinely used; `covers` is what it reaches. Ask them rather than guessing the list: the point of storing it is that THEY stand behind it in a room, and a bridge you invented is one they cannot defend. `note` is their own answer to 'how would you pick it up', which is the thing an interviewer actually asks.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `have` | string | **required** — What they have actually used, e.g. 'Salesforce' |
+| `covers` | string[] | What it transfers to, as a posting would name them, e.g. ['HubSpot', 'Pipedrive'] |
+| `note` | string | Their own words on why it transfers and how fast they would be productive |
+
+### `update_transferable_skill`
+
+_Update a transferable skill_
+
+Change a recorded transfer. `covers` REPLACES the whole list — read it with list_transferable_skills first, then write it back entire, or an assistant adding one tool silently drops the rest.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Transferable id, from list_transferable_skills |
+| `have` | string | What they have actually used |
+| `covers` | string[] | The COMPLETE list of what it transfers to. Replaces what is stored. |
+| `note` | string | Their own words on why it transfers |
+
+### `delete_transferable_skill`
+
+_Delete a transferable skill_
+
+Remove a recorded transfer for good. Nothing already written is changed — this only stops the bridge being offered on the next document. Permanent, like deleting a role or a highlight.
+
+**Overwrites or deletes.**
+
+| Argument | Type | |
+| --- | --- | --- |
+| `id` | string | **required** — Transferable id |
+
+### `posting_keywords`
+
+_Where a posting's keywords land_
+
+Read ONE posting on the board and say, term by term, what it lands on: `onFile` with the record that evidences it, `covered` where nothing is on file but a recorded transferable reaches it, and `missing` where there is neither. CALL THIS BEFORE TAILORING ANYTHING — it is the difference between guessing which words the filter wants and knowing. Applicant tracking systems screen on exact tokens, so a term in `onFile` that your draft spells differently is a screen lost over vocabulary, and a term in `covered` is one their keyword policy may let you place as comparable in a skills line. Never move a `covered` term into a bullet about a job, and never invent evidence for a `missing` one — report it as a gap, which is what they need to know. Terms are ordered by how often the posting repeats them, so the top of each list is what the job is actually about. skills_gap answers the same question across every posting and is for deciding what to learn; this one is for deciding what to put on the page.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `application_id` | string | **required** — Application id, from list_applications |
 
 ### `append_role_background`
 

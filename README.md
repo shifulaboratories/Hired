@@ -263,7 +263,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  214 tools any MCP client can call (249 if you're an admin). Claude, Claude Code, ChatGPT,
+  219 tools any MCP client can call (254 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -446,7 +446,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 214, or 249 if you're an admin.
+then tells you how many tools answered — 219, or 254 if you're an admin.
 
 Each connection can also be narrowed to one job, in the panel where you copy its URL:
 **Everything** (the default, and what every connection had before this existed), **Me,
@@ -714,7 +714,7 @@ By conversation: `admin_get_assistant_config`, `admin_set_assistant_config`.
 
 ## What your AI can do once it's connected
 
-214 tools. Two hundred and five of them are the data tools across the five areas, the
+219 tools. Two hundred and ten of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
@@ -760,6 +760,20 @@ box in Claude's apps, which wants a folder rather than a loose file. They're ser
 it has.
 
 ### The five areas
+
+**Keywords** — screening software matches exact words, and a person who has run Salesforce
+for three years gets cut over HubSpot: a tool they could be useful in inside a week. So
+**Me → Profile** carries one setting for how close to a posting's own wording your documents
+may get. *Your words only* never rephrases anything. *Their words for your work* — the
+default — describes work you genuinely did in the posting's vocabulary, which is the same
+claim spelled their way and costs you nothing. *Plus what transfers* also lets a tool you
+have not used appear in a skills line marked comparable, but only where you have recorded
+the transfer yourself: "Salesforce covers HubSpot, Pipedrive", in your words, with your own
+answer to how fast you would pick it up. Nothing is guessed for you, and no setting lets a
+document claim you did work somewhere you didn't. `posting_keywords` reads one job on the
+board and says term by term what it lands on — evidenced, covered by a transfer, or a real
+gap — which is what tells you the difference between a screen you lost on vocabulary and
+one you lost on substance.
 
 **Me** — `search_me`, `get_me_snapshot`, roles with unlimited backgrounds
 (`append_role_background` adds without overwriting), reusable highlights, notes and standing

@@ -6724,3 +6724,72 @@ title and detail split a 130px cell evenly and truncated each other to six chara
 "Applie… Wishlist…". The title takes the room now and the detail waits for a genuinely
 wide screen, with the tooltip carrying it below that. Nothing in typecheck, build or any
 probe would have caught it; it took a browser and looking.
+
+## 2026-09-21 — Keywords: a dial, but not the dial that was asked for
+
+Somebody asked for "a setting for the MCP for exaggerations and such", with a real case
+behind it: applicant tracking systems screen on exact tokens, so a person who has run
+Salesforce for three years is cut over HubSpot — a tool they could be useful in inside a
+week — and the job market is competitive enough that being overqualified does not save you
+from a missing string.
+
+**The problem is real and the obvious build is wrong.** A slider from honest to dishonest
+produces documents that pass a filter and collapse the first time somebody asks a question
+in a room, which costs the job rather than the screen. Decomposed, what was actually being
+asked for is three different things and only the third is a lie:
+
+- Their word for your work. You wrote "CRM", the posting says "Salesforce", Salesforce is
+  what you used. Pure vocabulary, zero risk, and it was already being lost.
+- A tool you have not used but could pick up, named in a skills line as comparable.
+- Claiming you used it at an employer, with dates.
+
+**The first two get essentially all of the benefit.** A filter scans the whole document for
+the token; it does not care whether "HubSpot" sits in a skills line or in a bullet under a
+job. So the skills line passes exactly the same screen AND survives the interview. The
+third buys nothing and costs everything. `src/lib/keyword-policy.ts` says this in the file
+header, because the next person to read it will be tempted to add a fourth level.
+
+**Three named levels, not a number.** STRICT, MATCH, ADJACENT. A 1-to-10 slider tells an
+assistant nothing it can act on; each level here is a paragraph of instructions that goes
+to a writer verbatim. MATCH is the default rather than STRICT, and that is a deliberate
+call: STRICT is the timid choice and it loses screens over vocabulary for no gain.
+
+**The floor is restated at every level, including the top one.** `POLICY_FLOOR` is appended
+to every instruction, and the probe asserts all three carry it. Invariant 6 is not weakened
+by any setting — it could not be, or the setting would be a way to turn off the one rule
+the whole product rests on.
+
+**A transfer is a row, not a sentence.** "Salesforce covers HubSpot" written into a
+background is something a writer has to notice, interpret and trust itself about.
+`TransferableSkill` is something the app can look up, report against a specific posting,
+and show back so the person can disown it before it reaches a document. The rule that falls
+out of the model: a transfer not on file does not exist, and no writer may invent the
+bridge itself. That sentence is in the tool description and in `POLICY_RULE.ADJACENT`.
+
+**`posting_keywords` is the half that makes the policy usable.** A rule somebody has to
+remember at writing time is a rule that gets forgotten. It reads one posting and buckets
+every term: on file with the record that evidences it, covered by a recorded transfer, or
+genuinely missing. `skills_gap` answers the same question across every posting and is for
+deciding what to learn; this is for deciding what to put on the page.
+
+**One extractor, moved to make that possible.** `termsIn` lived in `analytics.ts`.
+Importing it from `transferables.ts` — which `me.ts` now imports — dragged `schedule.ts`,
+`accounts.ts` and imapflow into the client bundle through a type import in
+`contact-detail.tsx`. The build said "Can't resolve 'tls'", which is a long way from the
+edge that caused it. It lives in `src/lib/posting-terms.ts` now: pure text, no database, no
+userId. Two extractors would have been the easy fix and the wrong one — two answers to "does
+this posting want Kubernetes", and the one nobody looks at is the one that drifts.
+
+**The validation belongs at the write, not the read.** `updateProfile` refuses a policy that
+is not one of the three, the same way `setTimeZone` refuses a zone this runtime does not
+know. A typo stored in that column reaches a writer as a policy with no rule text behind it,
+and the failure mode of that is SILENCE — no instruction at all, so the document comes out
+however the model felt, which is the one outcome the setting exists to prevent.
+`keywordPolicyFor` also degrades a hand-written column value to the default rather than to
+nothing, and the probe writes "nonsense" straight into Postgres to prove it.
+
+**The UI add button reproduced a bug the data layer was right about.** `createTransferable`
+refuses a nameless transfer, so the panel's Add — which created with `have: ""` — failed
+silently until a browser was pointed at it. Fixed by matching the pattern the extras panel
+beside it already uses: create with a placeholder and let `revalidatePath` bring the row in,
+rather than keeping a local list that fights the refresh.
