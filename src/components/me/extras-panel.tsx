@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { ChipInput } from "@/components/chip-input";
 import { AnimatePresence, motion } from "framer-motion";
 import { AwardIcon, FolderGitIcon, GraduationCapIcon, PlusIcon, Trash2Icon, WrenchIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -111,15 +112,9 @@ function SkillsCard({ skills }: { skills: SkillGroup[] }) {
 }
 
 function SkillGroupRow({ group, onRemoved }: { group: SkillGroup; onRemoved: () => void }) {
-  const [values, setValues] = useState({ name: group.name, skills: group.skills.join(", ") });
-  const { state, push } = useAutosave<{ name: string; skills: string }>((next) =>
-    updateSkillGroupAction(group.id, {
-      name: next.name,
-      skills: next.skills
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
-    }),
+  const [values, setValues] = useState({ name: group.name, skills: group.skills });
+  const { state, push } = useAutosave<{ name: string; skills: string[] }>((next) =>
+    updateSkillGroupAction(group.id, { name: next.name, skills: next.skills }),
   );
 
   const set = (patch: Partial<typeof values>) => {
@@ -149,9 +144,10 @@ function SkillGroupRow({ group, onRemoved }: { group: SkillGroup; onRemoved: () 
           <Trash2Icon />
         </Button>
       </div>
-      <Input
-        value={values.skills}
-        onChange={(event) => set({ skills: event.target.value })}
+      <ChipInput
+        noun="skill"
+        values={values.skills}
+        onChange={(skills) => set({ skills })}
         placeholder="Python, Go, Rust, TypeScript"
       />
     </motion.div>

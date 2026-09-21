@@ -24,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BackgroundEditor } from "@/components/me/background-editor";
+import { ChipInput } from "@/components/chip-input";
 import { SaveIndicator } from "@/components/save-indicator";
 import { useAutosave } from "@/hooks/use-autosave";
 import { cn } from "@/lib/utils";
@@ -62,17 +63,11 @@ export function RoleEditor({ role, highlights }: { role: Role; highlights: Highl
     isCurrent: role.isCurrent,
     summary: role.summary,
     background: role.background,
-    tags: role.tags.join(", "),
+    tags: role.tags,
   });
 
   const { state, push } = useAutosave<typeof values>((next) =>
-    updateRoleAction(role.id, {
-      ...next,
-      tags: next.tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean),
-    }),
+    updateRoleAction(role.id, next),
   );
 
   const set = (patch: Partial<typeof values>) => {
@@ -214,10 +209,12 @@ Manager said in my review I was "the only person who could hold the whole system
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label>Tags</Label>
-                <Input
-                  value={values.tags}
-                  onChange={(event) => set({ tags: event.target.value })}
+                <Label htmlFor="role-tags">Tags</Label>
+                <ChipInput
+                  id="role-tags"
+                  noun="tag"
+                  values={values.tags}
+                  onChange={(tags) => set({ tags })}
                   placeholder="fintech, python, leadership"
                 />
               </div>

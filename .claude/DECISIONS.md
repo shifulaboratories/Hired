@@ -6665,3 +6665,62 @@ possible saving.
 a heading that is `## Operating scope` as a preview of nothing — and for one that opens with
 a caveat it is somebody's private note about their own tenure, on a list screen. It reads
 from the evidence now, with the syntax stripped.
+
+## 2026-09-21 — Chips where there were commas, and a calendar you can finish reading
+
+**Three places stored a `String[]` and edited it as one comma-joined text box** —
+role tags, skill groups on Me, skill groups on a resume. That box reads as a sentence
+with commas in it rather than as a list: nothing looks removable, a stray comma splits
+one entry into two silently, and a long list is one overflowing line. `ChipInput` in
+`src/components/chip-input.tsx` replaces all three. The stored shape does not change and
+neither does any renderer — a resume still prints "React, TypeScript, Go" — so this is
+the direct-manipulation exception, with no tool work: `update_role` and `update_extra`
+already took the array.
+
+**Deliberately not the tag picker.** That one is backed by the `Tag` table — rows with
+ids, kinds and colours shared across companies, contacts and applications. These are free
+text with no catalogue, and giving them a picker would mean inventing one, which is the
+"don't add a second labelling mechanism" rule pointing the other way.
+
+**Matching the Input primitive is not optional and it is not obvious.** The first version
+used `bg-background`, `rounded-lg`, a `ring-[3px]` focus and `text-[13.5px]`. The house
+field is `bg-inset` + `shadow-field` + `rounded-control` + `ring-2`, and — the one that
+matters — `text-base` below `md`, because iOS Safari zooms the viewport when you focus a
+field under 16px and never zooms back. `input.tsx` carries that comment; a new field that
+ignores it is a bug on a phone that nobody sees on a desktop. The chip itself then had to
+move to `bg-background`: an inset chip inside an inset well is invisible.
+
+**A typed comma and a pasted comma are different events, and both are right.** Typing
+"go, rust" fires an input per character, so the comma commits "go" and leaves "rust" in
+the box still being typed. A paste fires one event with the whole string and splits into
+two chips. The first probe asserted the paste count against typed input and failed — the
+test was wrong, not the component, which is worth writing down because the obvious fix
+would have been to "correct" correct behaviour.
+
+**The calendar's `+N more` was a dead end.** The busiest days in the month were the ones
+you could not read: three chips, then "+3 more" with nothing to click. It is a `<details>`
+disclosure now — the file is a server component with no client JavaScript at all, and a
+details element keeps it that way while staying keyboard and screen-reader operable.
+`list-none` hides the marker in Firefox and Chrome; Safari needs
+`[&::-webkit-details-marker]:hidden` as well.
+
+**Six kinds told apart by colour alone, two of them the same colour.** MEETING and
+INTERVIEW both use `--stage-interview`, so even with perfect colour vision the legend was
+the only way to read them apart — and the legend sits at the top of a grid you have
+scrolled past. Each kind has an icon now; the dot became that icon, so nothing was added
+to the chip's width.
+
+**The legend showed all six kinds always.** In a month containing follow-ups and nothing
+else that is four rows of chrome explaining colours that are not on screen, and in an
+empty month it was the only thing on the card with ink in it. It lists what the month
+actually contains, in the array's own order so it does not reshuffle month to month.
+
+**`title={entry.title}` repeated the one thing already visible.** Hovering a truncated
+chip told you nothing. The tooltip is the kind, the title, the detail, the stage and
+whether it is done — the parts the chip cannot fit.
+
+**Screenshotting the real app found what the build could not.** With the detail field on,
+title and detail split a 130px cell evenly and truncated each other to six characters:
+"Applie… Wishlist…". The title takes the room now and the detail waits for a genuinely
+wide screen, with the tooltip carrying it below that. Nothing in typecheck, build or any
+probe would have caught it; it took a browser and looking.

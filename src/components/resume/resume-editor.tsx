@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ChipInput } from "@/components/chip-input";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -1086,18 +1087,18 @@ function SectionCard({
                   placeholder="Group"
                   className="w-32 shrink-0"
                 />
-                <Input
-                  value={group.skills.join(", ")}
-                  onChange={(event) => {
-                    const skills = [...section.skills];
-                    skills[i] = {
-                      ...group,
-                      skills: event.target.value.split(",").map((s) => s.trim()).filter(Boolean),
-                    };
-                    onChange({ skills });
-                  }}
-                  placeholder="Python, Go, Rust"
-                />
+                <div className="min-w-0 flex-1">
+                  <ChipInput
+                    noun="skill"
+                    values={group.skills}
+                    onChange={(next) => {
+                      const skills = [...section.skills];
+                      skills[i] = { ...group, skills: next };
+                      onChange({ skills });
+                    }}
+                    placeholder="Python, Go, Rust"
+                  />
+                </div>
                 <Button
                   variant="ghost"
                   size="icon"
