@@ -147,7 +147,9 @@ const AREA_PARAGRAPHS: { key: string; needs: string; text: string }[] = [
   (how this job may be described — obey them, do not quote them) and "Caveats" (their own
   positioning notes — for you, NEVER for a document). Everything else in it is evidence.
   There are also notes, projects, education, skills and certifications. search_me is the
-  fastest way in.` },
+  fastest way in. get_me_snapshot carries their keyword policy: how close to a posting's own
+  words a document may get, and the transfers they have recorded. posting_keywords says where
+  one posting's terms land before you write.` },
   { key: 'resumes', needs: 'get_resume_format', text: `• RESUMES — documents assembled from that material. Call get_resume_format before writing one.
   New resumes use the Harvard OCS format by default. Any of them can be published to a public
   link with publish_resume, which is what to use when a form or a recruiter wants a URL.` },
@@ -213,7 +215,9 @@ const AREAS = `The areas:
   (how this job may be described — obey them, do not quote them) and "Caveats" (their own
   positioning notes — for you, NEVER for a document). Everything else in it is evidence.
   There are also notes, projects, education, skills and certifications. search_me is the
-  fastest way in.
+  fastest way in. get_me_snapshot carries their keyword policy: how close to a posting's own
+  words a document may get, and the transfers they have recorded. posting_keywords says where
+  one posting's terms land before you write.
 • RESUMES — documents assembled from that material. Call get_resume_format before writing one.
   New resumes use the Harvard OCS format by default. Any of them can be published to a public
   link with publish_resume, which is what to use when a form or a recruiter wants a URL.

@@ -75,6 +75,7 @@ model User {
   skillGroups        SkillGroup[]
   certifications     Certification[]
   notes              Note[]
+  transferableSkills TransferableSkill[]
   resumes            Resume[]
   letters            Letter[]
   companies          Company[]
@@ -483,6 +484,16 @@ model Profile {
   /// a stored 4000 predates a narrower max, and nothing that renders should
   /// trust a number a client sent months ago.
   columnWidths   Json      @default("{}")
+  /// How close to the posting's own words a document may get. One of STRICT,
+  /// MATCH or ADJACENT — src/lib/keyword-policy.ts is the catalogue and says
+  /// what each one permits. Per person rather than per instance because it is
+  /// a judgement about their own career, not about how the app is deployed.
+  ///
+  /// MATCH by default. STRICT would have been the timid choice and it is the
+  /// wrong one: saying "CRM" when the posting says "Salesforce" — about
+  /// Salesforce work you actually did — loses a screen for nothing. No level
+  /// permits claiming work at an employer you did not do.
+  keywordPolicy  String    @default("MATCH")
   /// A square headshot, held as a data URI ("data:image/jpeg;base64,..."). It
   /// lives in the row rather than an object store so self-hosting still needs
   /// one environment variable, and so a published resume renders the picture
@@ -690,6 +701,37 @@ model Certification {
 enum NoteKind {
   NOTE
   GUARDRAIL
+}
+
+/// Something you have actually used, and the tools it transfers to.
+///
+/// The problem this exists for: applicant tracking systems screen on exact
+/// tokens. Somebody who has run Salesforce for three years is, for the
+/// purposes of the filter, a person who has never heard of HubSpot — and gets
+/// cut before a human reads a line, for a tool they could pick up in a week.
+///
+/// So the transfer is recorded as data rather than left to be inferred. `have`
+/// is the thing you genuinely used; `covers` is what it transfers to, spelled
+/// the way a posting spells it. A writer may then put the posting's word in a
+/// skills line as COMPARABLE — never in a bullet, never with a date, never as
+/// work you did somewhere. That distinction is the whole point of the model:
+/// without it, "list HubSpot" and "claim you used HubSpot at Acme" are the
+/// same instruction, and only one of them survives an interview.
+model TransferableSkill {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// What you have actually used. "Salesforce".
+  have   String
+  /// What it transfers to, as a posting would name them. ["HubSpot", "Pipedrive"]
+  covers String[] @default([])
+  /// Why, in your own words — the answer you would give if asked in a room.
+  note   String   @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Note {

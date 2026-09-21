@@ -18,6 +18,9 @@ import { RolesPanel } from "@/components/me/roles-panel";
 import { ProfileForm } from "@/components/me/profile-form";
 import { NotesPanel } from "@/components/me/notes-panel";
 import { ExtrasPanel } from "@/components/me/extras-panel";
+import { KeywordPolicyPanel } from "@/components/me/keyword-policy-panel";
+import { listTransferables } from "@/lib/data/transferables";
+import { readPolicy } from "@/lib/keyword-policy";
 import { ImportDialog } from "@/components/me/import-dialog";
 import { NewRoleDialog } from "@/components/me/new-role-dialog";
 import { NewResumeDialog } from "@/components/resume/new-resume-dialog";
@@ -185,10 +188,26 @@ async function RolesPanelTab({ userId }: { userId: string }) {
 }
 
 async function ProfileTab({ userId }: { userId: string }) {
-  const profile = await getProfile(userId);
+  const [profile, transferables] = await Promise.all([
+    getProfile(userId),
+    listTransferables(userId),
+  ]);
   return (
     <FadeIn>
-      <ProfileForm profile={profile} />
+      <div className="space-y-6">
+        <ProfileForm profile={profile} />
+        {/* On the profile tab rather than a screen of its own: it is a standing
+            decision about how you are described, which is what this tab is. */}
+        <KeywordPolicyPanel
+          policy={readPolicy(profile.keywordPolicy)}
+          transferables={transferables.map((row) => ({
+            id: row.id,
+            have: row.have,
+            covers: row.covers,
+            note: row.note,
+          }))}
+        />
+      </div>
     </FadeIn>
   );
 }

@@ -87,6 +87,8 @@ import * as onboarding from "@/lib/data/onboarding";
 import * as accountsData from "@/lib/data/accounts";
 import * as schedule from "@/lib/data/schedule";
 import { instanceAssistantUsage } from "@/lib/data/assistant";
+import * as transferables from "@/lib/data/transferables";
+import { KEYWORD_POLICIES, type KeywordPolicy } from "@/lib/keyword-policy";
 import {
   getSettings,
   updateSettings,
@@ -738,7 +740,7 @@ export const tools: McpTool[] = [
     name: "get_me_snapshot",
     title: "Get everything in Me",
     description:
-      "Returns EVERYTHING in Me at once: profile, all roles with their full background text, all highlights, education, projects, skills, certifications and notes. Use when you need complete context (e.g. writing a resume from scratch). Can be large — prefer search_me for targeted lookups. READ `writingRules` AND `neverOnADocument` BEFORE YOU WRITE ANYTHING. The first is the constraints this person has set on how their jobs may be described, gathered across every role; obey them silently rather than mentioning them. The second is their own positioning notes and interview prep — context for you, and it must never appear on a resume, a cover letter or anything an employer sees. Each role also carries `resumeEvidence`, which is the part of its background a document may be written from.",
+      "Returns EVERYTHING in Me at once: profile, all roles with their full background text, all highlights, education, projects, skills, certifications and notes. `keywordPolicy` says how close to a posting's own words you may write, with the rule spelled out in `permits` and their recorded transferable skills beside it — read it before you draft. Use when you need complete context (e.g. writing a resume from scratch). Can be large — prefer search_me for targeted lookups. READ `writingRules` AND `neverOnADocument` BEFORE YOU WRITE ANYTHING. The first is the constraints this person has set on how their jobs may be described, gathered across every role; obey them silently rather than mentioning them. The second is their own positioning notes and interview prep — context for you, and it must never appear on a resume, a cover letter or anything an employer sees. Each role also carries `resumeEvidence`, which is the part of its background a document may be written from.",
     inputSchema: object({
       include_background: bool(
         "Include the full long-form background text for each role (default true). Set false for a lighter payload.",
@@ -807,6 +809,12 @@ export const tools: McpTool[] = [
       timeZone: str(
         "IANA time zone the user's dates are computed in, e.g. 'America/Chicago'. Everything dated follows it: what counts as today, when a follow-up is overdue, and the 9am a new follow-up is scheduled for. Pass an empty string to fall back to the server's own clock. Set this when they say where they are or that they have moved; an unrecognised name is refused rather than stored.",
       ),
+      keywordPolicy: {
+        type: "string",
+        enum: [...KEYWORD_POLICIES],
+        description:
+          "How close to a posting's own words their documents may get. STRICT: never rephrase to match a posting. MATCH (the default): describe work they genuinely did in the posting's vocabulary — the same claim, spelled their way — which is what stops an applicant tracking system missing experience they really have. ADJACENT: also allows a tool they have NOT used to appear in a skills line marked comparable, but only where they have recorded a transferable that covers it. No level permits claiming work at an employer they did not do. Change this only when they ask; get_me_snapshot returns the current one with the rule spelled out.",
+      },
     }),
     annotations: {
       readOnlyHint: false,
@@ -835,6 +843,7 @@ export const tools: McpTool[] = [
             twitter: s(args, "twitter"),
             summary: s(args, "summary"),
             background: s(args, "background"),
+            keywordPolicy: s(args, "keywordPolicy") as KeywordPolicy | undefined,
           }),
         ),
       );
@@ -990,6 +999,105 @@ export const tools: McpTool[] = [
           tags: a(args, "tags"),
         }),
       ),
+  },
+  {
+    name: "list_transferable_skills",
+    title: "List transferable skills",
+    description:
+      "The tools they have ACTUALLY used, and what each one transfers to. This is the answer to 'the posting wants HubSpot and they have only ever run Salesforce'. Each row is `have` — the real thing — plus `covers`, the tools it reaches, spelled the way a posting spells them, plus their own note on why. Read this before writing a document for a posting that names a tool you cannot find in Me: a recorded transfer lets that tool appear in a SKILLS line marked comparable, under their keyword policy. It never lets it appear in a bullet about a job. A transfer that is not on file does not exist — do not infer one.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => transferables.listTransferables(ctx.userId),
+  },
+  {
+    name: "record_transferable_skill",
+    title: "Record a transferable skill",
+    description:
+      "File something they have used and the tools it transfers to. Reach for this when they say a version of 'I have only used X but Y is the same thing' — the sentence people say about CRMs, ticket trackers, cloud providers and BI tools. `have` must be something they genuinely used; `covers` is what it reaches. Ask them rather than guessing the list: the point of storing it is that THEY stand behind it in a room, and a bridge you invented is one they cannot defend. `note` is their own answer to 'how would you pick it up', which is the thing an interviewer actually asks.",
+    inputSchema: object(
+      {
+        have: str("What they have actually used, e.g. 'Salesforce'"),
+        covers: strArray("What it transfers to, as a posting would name them, e.g. ['HubSpot', 'Pipedrive']"),
+        note: str("Their own words on why it transfers and how fast they would be productive"),
+      },
+      ["have"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      transferables.createTransferable(ctx.userId, {
+        have: required(args, "have"),
+        covers: a(args, "covers"),
+        note: s(args, "note"),
+      }),
+  },
+  {
+    name: "update_transferable_skill",
+    title: "Update a transferable skill",
+    description:
+      "Change a recorded transfer. `covers` REPLACES the whole list — read it with list_transferable_skills first, then write it back entire, or an assistant adding one tool silently drops the rest.",
+    inputSchema: object(
+      {
+        id: str("Transferable id, from list_transferable_skills"),
+        have: str("What they have actually used"),
+        covers: strArray("The COMPLETE list of what it transfers to. Replaces what is stored."),
+        note: str("Their own words on why it transfers"),
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      transferables.updateTransferable(
+        ctx.userId,
+        required(args, "id"),
+        defined({ have: s(args, "have"), covers: a(args, "covers"), note: s(args, "note") }),
+      ),
+  },
+  {
+    name: "delete_transferable_skill",
+    title: "Delete a transferable skill",
+    description:
+      "Remove a recorded transfer for good. Nothing already written is changed — this only stops the bridge being offered on the next document. Permanent, like deleting a role or a highlight.",
+    inputSchema: object({ id: str("Transferable id") }, ["id"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      await transferables.deleteTransferable(ctx.userId, required(args, "id"));
+      return { deleted: required(args, "id") };
+    },
+  },
+  {
+    name: "posting_keywords",
+    title: "Where a posting's keywords land",
+    description:
+      "Read ONE posting on the board and say, term by term, what it lands on: `onFile` with the record that evidences it, `covered` where nothing is on file but a recorded transferable reaches it, and `missing` where there is neither. CALL THIS BEFORE TAILORING ANYTHING — it is the difference between guessing which words the filter wants and knowing. Applicant tracking systems screen on exact tokens, so a term in `onFile` that your draft spells differently is a screen lost over vocabulary, and a term in `covered` is one their keyword policy may let you place as comparable in a skills line. Never move a `covered` term into a bullet about a job, and never invent evidence for a `missing` one — report it as a gap, which is what they need to know. Terms are ordered by how often the posting repeats them, so the top of each list is what the job is actually about. skills_gap answers the same question across every posting and is for deciding what to learn; this one is for deciding what to put on the page.",
+    inputSchema: object({ application_id: str("Application id, from list_applications") }, ["application_id"]),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      transferables.postingKeywords(ctx.userId, required(args, "application_id")),
   },
   {
     name: "append_role_background",
@@ -7717,17 +7825,25 @@ ${args.job_description ?? ""}
 Work in this order:
 1. Call get_resume_format so you know the document shape.
 2. Pull out the 8-12 requirements the posting actually cares about, in priority order.
-3. For each one, call search_me to find real evidence. Do not invent anything — if there is no evidence, say so and leave it out.
-4. Call get_me_snapshot for the profile, dates and education you need. Read \`writingRules\` and
-   \`neverOnADocument\` before you draft a line: the first is how this person has said their jobs
-   may be described, and you follow it without mentioning it; the second is their own positioning
-   and interview notes, which are context for you and must never reach the page.
-5. Draft the document, then call preview_resume_text to check it lands near one page.
-6. Save it. If a base resume already exists (list_resumes shows one), duplicate_resume it and
+3. If this job is on the board, call posting_keywords. It says term by term what the posting
+   asks for and what it lands on: evidenced, reached by a recorded transferable, or genuinely
+   missing. Applicant tracking systems screen on exact tokens, so spell an evidenced term the
+   way the POSTING spells it, place a covered term only as their keyword policy allows, and
+   report a missing one as a gap rather than writing around it.
+4. For each requirement, call search_me to find real evidence. Do not invent anything — if there is no evidence, say so and leave it out.
+5. Call get_me_snapshot for the profile, dates and education you need. Read \`keywordPolicy\`
+   before you draft a line — \`permits\` is the rule on how close to the posting's words you may
+   get — and \`writingRules\` and \`neverOnADocument\` too: the first is how this person has said
+   their jobs may be described, and you follow it without mentioning it; the second is their own
+   positioning and interview notes, which are context for you and must never reach the page.
+6. Draft the document, then call preview_resume_text to check it lands near one page.
+7. Save it. If a base resume already exists (list_resumes shows one), duplicate_resume it and
    update_resume the copy — that records the lineage, so compare_resumes can show what this
    tailoring changed. Otherwise create_resume. Either way name it "<Company> — <Role>" and set
    targetRole/targetCompany.
-7. Tell me what you emphasised, what you cut, and which requirements you could not evidence.
+8. Tell me what you emphasised, what you cut, which requirements you could not evidence, and
+   — if you placed any keyword as comparable rather than as experience — exactly which ones, so
+   I can answer for them in a room.
 
 Bullets must lead with a strong verb, name the specific scope, and end in a measurable outcome pulled from the background — from its EVIDENCE, which is what \`resumeEvidence\` on a role returns.
 
