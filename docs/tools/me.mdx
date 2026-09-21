@@ -44,7 +44,7 @@ Ranked full-text search across everything the user has written about themselves:
 
 _Get everything in Me_
 
-Returns EVERYTHING in Me at once: profile, all roles with their full background text, all highlights, education, projects, skills, certifications and notes. Use when you need complete context (e.g. writing a resume from scratch). Can be large — prefer search_me for targeted lookups.
+Returns EVERYTHING in Me at once: profile, all roles with their full background text, all highlights, education, projects, skills, certifications and notes. Use when you need complete context (e.g. writing a resume from scratch). Can be large — prefer search_me for targeted lookups. READ `writingRules` AND `neverOnADocument` BEFORE YOU WRITE ANYTHING. The first is the constraints this person has set on how their jobs may be described, gathered across every role; obey them silently rather than mentioning them. The second is their own positioning notes and interview prep — context for you, and it must never appear on a resume, a cover letter or anything an employer sees. Each role also carries `resumeEvidence`, which is the part of its background a document may be written from.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -109,7 +109,7 @@ List every job/role in the knowledge base with dates and how many highlights eac
 
 _Get a role_
 
-Full detail for one role including its complete background text and all of its achievement highlights.
+Full detail for one role: the complete background text, that background READ INTO SECTIONS, and all of its achievement highlights. A background holds three different kinds of thing and only one of them may reach a document. `resumeEvidence` is the part you may write from. `rules` are binding instructions about how to describe this job — follow them silently rather than quoting them. `caveats` are the person's own positioning notes and interview prep; they are context for YOU and must never appear on a resume, a cover letter or anything an employer sees. `sections` is the whole thing in order, each tagged evidence, rules or caveats. When nothing is marked, everything is evidence, which is what every background written before sections existed means.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -160,13 +160,13 @@ Update fields on an existing role. WARNING: passing background REPLACES the whol
 
 _Append to a role's background_
 
-Safely ADD text to the end of a role's background without touching what is already there. This is the right tool when the user tells you something new about a job they already have on file.
+Safely ADD text to the end of a role's background without touching what is already there. This is the right tool when the user tells you something new about a job they already have on file. Passing a `heading` that the background ALREADY has merges the new lines into that section rather than opening a second one with the same name, so filing three things under one heading over three conversations leaves one tidy section. Two headings are reserved and change what the text MEANS: "Rules" for a binding instruction about how this job may be described ("describe internal software by function only, no product names"), and "Caveats" for positioning and interview prep that must never reach a document ("tenure is short — have the answer ready"). Everything else is evidence and is fair game for resumes. Use the reserved headings when the user is telling you a CONSTRAINT or a WORRY rather than a fact about what they did.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Role id |
 | `text` | string | **required** — The new material to append. Markdown welcome. |
-| `heading` | string | Optional markdown H2 heading to file it under, e.g. 'Q3 platform migration' |
+| `heading` | string | Optional markdown H2 heading to file it under, e.g. 'Q3 platform migration'. Merges into an existing section of the same name. 'Rules' and 'Caveats' are reserved — see the description. |
 
 ### `delete_role`
 

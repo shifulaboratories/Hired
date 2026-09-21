@@ -764,7 +764,11 @@ it has.
 **Me** — `search_me`, `get_me_snapshot`, roles with unlimited backgrounds
 (`append_role_background` adds without overwriting), reusable highlights, notes and standing
 rules, plus education, projects, skills and certifications, which
-`create_extra` / `update_extra` / `delete_extra` maintain. `import_resume` is the way in for
+`create_extra` / `update_extra` / `delete_extra` maintain. A background is markdown and the
+app reads it: anything under a heading called **Rules** is how that job may be described, and
+anything under **Caveats** is yours — interview prep and positioning that never reaches a
+resume or a letter. Everything else is evidence, which is what a background written before
+this existed still means, all of it. `import_resume` is the way in for
 anyone who already has a resume: paste it to your assistant and the whole thing gets filed in
 one call — roles with their bullets, education, skills, contact details — without overwriting
 anything already there.

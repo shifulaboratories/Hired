@@ -6593,3 +6593,75 @@ reads from `build:` onward now, which is what the TypeScript side sees.
 reads as the model being wrong. The eval validates every `expect` and `avoid` against the
 real surface before it spends anything, and that caught `set_follow_up` — a tool this app
 has never had — in a case written the same afternoon.
+
+## 2026-09-21 — A background has three kinds of thing in it
+
+Somebody pasted their own role background and asked for better formatting. It was a
+formatting problem on the surface and a correctness problem underneath.
+
+**The app had no markdown renderer at all.** `Role.background` has been documented as
+"unlimited markdown" since the first commit, `append_role_background` writes `##` headings
+into it, and `import_resume` writes `## From a resume imported <date>` — and the only place
+it was ever shown was a 34rem monospace textarea. People read their own career history as
+source code. Nothing rendered it because nothing in this app renders markdown anywhere.
+
+**The placeholder taught a format the tools then ignored.** It showed loose prose lines
+while every tool that writes there emits headings and bullets, so a person was shown one
+shape and handed back another. It shows both now.
+
+**The real find: one field, three kinds of content.** The pasted background held evidence
+(what they did), a binding rule ("describe internal software by FUNCTION only, no product
+names") and positioning ("tenure is short — have the answer ready"). `getMeSnapshot` is
+commented "used to seed a resume" and hands over the whole string; `get_role` did too.
+Nothing marked any of it, so a tailoring conversation read "tenure is short" with exactly
+the same status as "brought the work in-house". The naming rule only worked because they had
+shouted it in capitals — they had already invented the convention, and the app did not
+understand it.
+
+**Reserved headings, not columns.** `## Rules` and `## Caveats`, classified in
+`src/lib/background.ts`. Columns would have cost a migration, `update_role`'s wholesale
+replace, the export round-trip and the schema's own promise. A convention keeps all of that
+and stays legible to the assistant writing it, which was the stated goal.
+
+**Default is evidence, and that is the whole safety argument.** A section is only
+reclassified when its heading matches the short reserved list, so every background written
+before this means precisely what it meant the day before. Nothing is silently dropped out of
+a resume; a section has to ask to be.
+
+**Which error is worse decided the alias list.** A false rule silently removes real material
+from someone's resumes; a false evidence puts "tenure is short" on one. Both are bad, so the
+list is two spellings and one synonym each rather than generous — and the mitigation is that
+the reader shows every section's kind on the page, so either mistake is visible instead of
+silent. A parenthetical is stripped before matching, because "Naming rule (resolved
+2026-08-17)" is a naming rule and being pedantic about punctuation would just get the answer
+wrong.
+
+**A reserved heading merges by KIND, not by spelling.** Caught by the probe, not by reading:
+appending with heading "Rules" to a background whose rules live under "Naming rule (resolved
+2026-08-17)" opened a bare `## Rules` beside it. Since the tool description teaches
+assistants to pass "Rules", that would have happened every single time. Non-reserved
+headings still match by name, where an exact heading is a literal request.
+
+**The merge splices rather than rebuilding.** Rebuilding the document from its parsed
+sections was a line shorter and normalised everyone's blank lines on the way past — so
+appending one rule rewrote every byte, which version history would show as "the whole
+background changed" and undo would take them back past edits they never made.
+
+**A renderer, not a dependency.** ~120 lines in `src/lib/markdown-lite.ts` covering the
+subset the tools actually emit. The output is React elements built from plain strings, so
+there is no `dangerouslySetInnerHTML` in the path and nothing to sanitise — which is the
+usual reason to take the library. Anything it does not understand comes back as literal
+text; dropping a line of somebody's raw material because the syntax was unusual would be the
+worst bug this file could have. Tables, links or images are the moment to take the
+dependency, and not before.
+
+**The lighter payload keeps the constraints.** `get_me_snapshot` with
+`include_background: false` drops the background and the evidence, and deliberately still
+returns the rules and the caveats. They are a few lines each and they are the part a writer
+must not miss; making the cheap path quietly drop the constraints would be the worst
+possible saving.
+
+**The roles list excerpt was `background.slice(0, 240)`.** For a background that opens with
+a heading that is `## Operating scope` as a preview of nothing — and for one that opens with
+a caveat it is somebody's private note about their own tenure, on a list screen. It reads
+from the evidence now, with the syntax stripped.

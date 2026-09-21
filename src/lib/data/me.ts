@@ -1,4 +1,11 @@
 import type { NoteKind, Prisma, Profile } from "@prisma/client";
+import {
+  appendToBackground,
+  backgroundExcerpt,
+  parseBackground,
+  resumeEvidence,
+  writingGuidance,
+} from "@/lib/background";
 import { db } from "@/lib/db";
 import type { PipelineView } from "@/lib/pipeline-fields";
 import {
@@ -290,10 +297,28 @@ export async function listRoles(userId: string) {
 }
 
 export async function getRole(userId: string, id: string) {
-  return db.role.findFirst({
+  const role = await db.role.findFirst({
     where: { id, userId },
     include: { highlights: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } },
   });
+  if (!role) return null;
+
+  // The background comes back whole AND read. A caller that only ever looked at
+  // `background` behaves exactly as it did; one that is about to write a
+  // document now has to go out of its way to miss the rules and the caveats,
+  // which used to be indistinguishable from the evidence around them.
+  const { rules, caveats } = writingGuidance(role.background);
+  return {
+    ...role,
+    sections: parseBackground(role.background).map(({ kind, heading, body }) => ({
+      kind,
+      heading,
+      body,
+    })),
+    resumeEvidence: resumeEvidence(role.background),
+    rules,
+    caveats,
+  };
 }
 
 export async function createRole(userId: string, input: RoleInput) {
@@ -365,8 +390,9 @@ export async function appendToRoleBackground(
 ) {
   const role = await db.role.findFirst({ where: { id, userId } });
   if (!role) throw new Error(`No role with id ${id}`);
-  const stamp = heading ? `\n\n## ${heading}\n` : "\n\n";
-  const next = `${role.background}${role.background ? stamp : heading ? `## ${heading}\n` : ""}${text}`.trim();
+  // Merges into a section that already carries this heading rather than opening
+  // a second one beside it — see appendToBackground for why.
+  const next = appendToBackground(role.background, text, heading);
   return db.role.update({ where: { id: role.id }, data: { background: next } });
 }
 
@@ -828,7 +854,10 @@ async function recentRoles(userId: string, limit: number): Promise<SearchHit[]> 
     id: role.id,
     title: `${role.title} @ ${role.company}`,
     subtitle: [role.startDate, role.isCurrent ? "Present" : role.endDate].filter(Boolean).join(" – "),
-    excerpt: role.background.slice(0, 240),
+    // Evidence only, with the syntax taken off: a list of roles previewing
+    // somebody's private note about how short their tenure looks would be a
+    // small betrayal, and `## Operating scope` is not a preview of anything.
+    excerpt: backgroundExcerpt(role.background),
     score: 1,
   }));
 }
@@ -846,7 +875,35 @@ export async function getMeSnapshot(userId: string) {
       listCertifications(userId),
       listNotes(userId),
     ]);
-  return { profile, roles, highlights, education, projects, skillGroups, certifications, notes };
+
+  // This payload seeds resumes, so the roles arrive read rather than raw. The
+  // full background is still on each one — nothing is hidden from a person
+  // asking about their own history — but the evidence is separated out and the
+  // rules and caveats are named, so writing from the wrong part of it is now a
+  // decision rather than an accident.
+  const readRoles = roles.map((role) => {
+    const { rules, caveats } = writingGuidance(role.background);
+    return { ...role, resumeEvidence: resumeEvidence(role.background), rules, caveats };
+  });
+
+  return {
+    profile,
+    roles: readRoles,
+    highlights,
+    education,
+    projects,
+    skillGroups,
+    certifications,
+    notes,
+    // Gathered across every role so a writer sees them once, up front, rather
+    // than having to notice them role by role.
+    writingRules: readRoles.flatMap((role) =>
+      role.rules.map((rule) => ({ role: `${role.title} @ ${role.company}`, rule })),
+    ),
+    neverOnADocument: readRoles.flatMap((role) =>
+      role.caveats.map((caveat) => ({ role: `${role.title} @ ${role.company}`, caveat })),
+    ),
+  };
 }
 
 /**
