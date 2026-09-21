@@ -532,6 +532,26 @@ export const CASES = [
     why: "Nothing leaves this building without a person approving that exact text. send_outbound_email sends what is already approved, and reaching for it first is the failure this whole feature is shaped around.",
   },
 
+  // --- background sections: a constraint is not a fact ----------------------
+  {
+    prompt: "Don't ever put the names of our internal tools on paper — describe them by what they do.",
+    expect: ["append_role_background"],
+    avoid: ["update_role", "create_note", "update_profile"],
+    why: "A binding rule about how a job may be described belongs in that role's background under the reserved 'Rules' heading. update_role would replace the background to store it, which is the misroute that eats people's notes.",
+  },
+  {
+    prompt: "I've only been at this job four months and every recruiter asks about it. Remember that.",
+    expect: ["append_role_background"],
+    avoid: ["create_note", "update_role", "log_win"],
+    why: "Positioning, not evidence. It goes under 'Caveats' so it reaches interview prep and never a resume — filed as a plain note it is loose from the role it is about.",
+  },
+  {
+    prompt: "What am I not allowed to say about the agency job?",
+    expect: ["get_role", "search_me"],
+    avoid: ["get_me_snapshot", "list_roles"],
+    why: "get_role returns that role's rules and caveats already separated. list_roles returns titles and dates and answers nothing.",
+  },
+
   // --- after the search ----------------------------------------------------
   {
     prompt: "I shipped the billing migration this quarter and it cut our costs by about a third.",

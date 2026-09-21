@@ -738,7 +738,7 @@ export const tools: McpTool[] = [
     name: "get_me_snapshot",
     title: "Get everything in Me",
     description:
-      "Returns EVERYTHING in Me at once: profile, all roles with their full background text, all highlights, education, projects, skills, certifications and notes. Use when you need complete context (e.g. writing a resume from scratch). Can be large — prefer search_me for targeted lookups.",
+      "Returns EVERYTHING in Me at once: profile, all roles with their full background text, all highlights, education, projects, skills, certifications and notes. Use when you need complete context (e.g. writing a resume from scratch). Can be large — prefer search_me for targeted lookups. READ `writingRules` AND `neverOnADocument` BEFORE YOU WRITE ANYTHING. The first is the constraints this person has set on how their jobs may be described, gathered across every role; obey them silently rather than mentioning them. The second is their own positioning notes and interview prep — context for you, and it must never appear on a resume, a cover letter or anything an employer sees. Each role also carries `resumeEvidence`, which is the part of its background a document may be written from.",
     inputSchema: object({
       include_background: bool(
         "Include the full long-form background text for each role (default true). Set false for a lighter payload.",
@@ -754,10 +754,18 @@ export const tools: McpTool[] = [
       const snapshot = await me.getMeSnapshot(ctx.userId);
       const profile = withoutPhotoBytes(snapshot.profile);
       if (b(args, "include_background") === false) {
+        // The bulk goes; the rules and the caveats stay. They are a few lines
+        // each, and they are the part a writer must not miss — a "lighter
+        // payload" that quietly dropped the constraints would be the worst
+        // possible thing to make cheaper.
         return {
           ...snapshot,
           profile: { ...profile, background: "[omitted]" },
-          roles: snapshot.roles.map((r) => ({ ...r, background: "[omitted]" })),
+          roles: snapshot.roles.map((r) => ({
+            ...r,
+            background: "[omitted]",
+            resumeEvidence: "[omitted]",
+          })),
         };
       }
       return { ...snapshot, profile };
@@ -881,7 +889,7 @@ export const tools: McpTool[] = [
     name: "get_role",
     title: "Get a role",
     description:
-      "Full detail for one role including its complete background text and all of its achievement highlights.",
+      "Full detail for one role: the complete background text, that background READ INTO SECTIONS, and all of its achievement highlights. A background holds three different kinds of thing and only one of them may reach a document. `resumeEvidence` is the part you may write from. `rules` are binding instructions about how to describe this job — follow them silently rather than quoting them. `caveats` are the person's own positioning notes and interview prep; they are context for YOU and must never appear on a resume, a cover letter or anything an employer sees. `sections` is the whole thing in order, each tagged evidence, rules or caveats. When nothing is marked, everything is evidence, which is what every background written before sections existed means.",
     inputSchema: object({ id: str("Role id") }, ["id"]),
     annotations: {
       readOnlyHint: true,
@@ -987,12 +995,14 @@ export const tools: McpTool[] = [
     name: "append_role_background",
     title: "Append to a role's background",
     description:
-      "Safely ADD text to the end of a role's background without touching what is already there. This is the right tool when the user tells you something new about a job they already have on file.",
+      "Safely ADD text to the end of a role's background without touching what is already there. This is the right tool when the user tells you something new about a job they already have on file. Passing a `heading` that the background ALREADY has merges the new lines into that section rather than opening a second one with the same name, so filing three things under one heading over three conversations leaves one tidy section. Two headings are reserved and change what the text MEANS: \"Rules\" for a binding instruction about how this job may be described (\"describe internal software by function only, no product names\"), and \"Caveats\" for positioning and interview prep that must never reach a document (\"tenure is short — have the answer ready\"). Everything else is evidence and is fair game for resumes. Use the reserved headings when the user is telling you a CONSTRAINT or a WORRY rather than a fact about what they did.",
     inputSchema: object(
       {
         id: str("Role id"),
         text: str("The new material to append. Markdown welcome."),
-        heading: str("Optional markdown H2 heading to file it under, e.g. 'Q3 platform migration'"),
+        heading: str(
+          "Optional markdown H2 heading to file it under, e.g. 'Q3 platform migration'. Merges into an existing section of the same name. 'Rules' and 'Caveats' are reserved — see the description.",
+        ),
       },
       ["id", "text"],
     ),
@@ -7708,7 +7718,10 @@ Work in this order:
 1. Call get_resume_format so you know the document shape.
 2. Pull out the 8-12 requirements the posting actually cares about, in priority order.
 3. For each one, call search_me to find real evidence. Do not invent anything — if there is no evidence, say so and leave it out.
-4. Call get_me_snapshot for the profile, dates and education you need.
+4. Call get_me_snapshot for the profile, dates and education you need. Read \`writingRules\` and
+   \`neverOnADocument\` before you draft a line: the first is how this person has said their jobs
+   may be described, and you follow it without mentioning it; the second is their own positioning
+   and interview notes, which are context for you and must never reach the page.
 5. Draft the document, then call preview_resume_text to check it lands near one page.
 6. Save it. If a base resume already exists (list_resumes shows one), duplicate_resume it and
    update_resume the copy — that records the lineage, so compare_resumes can show what this
@@ -7716,7 +7729,7 @@ Work in this order:
    targetRole/targetCompany.
 7. Tell me what you emphasised, what you cut, and which requirements you could not evidence.
 
-Bullets must lead with a strong verb, name the specific scope, and end in a measurable outcome pulled from the background.
+Bullets must lead with a strong verb, name the specific scope, and end in a measurable outcome pulled from the background — from its EVIDENCE, which is what \`resumeEvidence\` on a role returns.
 
 Finish with a gap report: which of the posting's requirements the resume evidences, which it half-covers, and which have nothing behind them. Never paper over the third list — it is what the person needs to see.`,
   },

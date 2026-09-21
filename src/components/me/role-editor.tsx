@@ -23,6 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { BackgroundEditor } from "@/components/me/background-editor";
 import { SaveIndicator } from "@/components/save-indicator";
 import { useAutosave } from "@/hooks/use-autosave";
 import { cn } from "@/lib/utils";
@@ -130,8 +131,9 @@ export function RoleEditor({ role, highlights }: { role: Role; highlights: Highl
               <div>
                 <CardTitle className="text-[15px]">Background</CardTitle>
                 <p className="text-muted-foreground mt-1 text-sm">
-                  Everything. Projects, numbers, tech, politics, praise, screw-ups. No editing, no
-                  structure needed — Claude does that part.
+                  Everything. Projects, numbers, tech, politics, praise, screw-ups. No editing
+                  needed — Claude does that part. Two headings mean something: Rules is how this
+                  job gets described, Caveats is yours and never reaches a document.
                 </p>
               </div>
               <Badge variant="outline" className="shrink-0 tabular-nums">
@@ -139,15 +141,22 @@ export function RoleEditor({ role, highlights }: { role: Role; highlights: Highl
               </Badge>
             </CardHeader>
             <CardContent>
-              <Textarea
+              {/* The placeholder used to teach loose prose while every tool that
+                  writes here emits markdown with headings, so people were shown
+                  one format and handed back another. It shows both shapes now:
+                  a line on its own is fine, and a heading groups them. */}
+              <BackgroundEditor
                 value={values.background}
-                onChange={(event) => set({ background: event.target.value })}
+                onChange={(next) => set({ background: next })}
                 placeholder={`Rebuilt the billing pipeline in Q2 — was taking 6 hours nightly, got it to 20 min.
 Ran the migration off Mongo. 400M documents. Zero downtime, took 4 months.
 Manager said in my review I was "the only person who could hold the whole system in their head".
-Mentored 3 juniors, two got promoted.
-The thing I'm least proud of: shipped the notifications rewrite without a rollback plan…`}
-                className="min-h-[34rem] resize-y font-mono text-[13px] leading-relaxed"
+
+## Mentoring
+- Mentored 3 juniors, two got promoted.
+
+## Caveats
+- The notifications rewrite shipped without a rollback plan. Be ready for that question.`}
               />
             </CardContent>
           </Card>
