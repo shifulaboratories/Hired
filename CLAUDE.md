@@ -340,6 +340,14 @@ bottom, and a later entry supersedes an earlier one on the same subject — so w
 consult it, search or read from the end rather than trusting the first match. It is far
 too long to read whole; don't try.
 
+**Work lands on `main`.** Finished work goes to `main` without waiting to be asked — build it
+on a branch, run the gate, then merge. There is no review step to hold it for; this is one
+person's instance and the branch is bookkeeping, not a queue. The gate is the thing that
+does not move: typecheck, build, the generated tool docs and a real exercise of the change
+all happen BEFORE the merge, never after, because the first thing that compiles `main` is
+the Docker image a self-hoster pulls. A merge commit rather than a fast-forward, which is
+what the log already does.
+
 **Small commits, real messages.** Look at `git log`: each commit is one coherent change
 described in the imperative by what it does for the user ("Make MCP the front door: one
 connection per client, any platform"), not by what files moved.
