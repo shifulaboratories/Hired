@@ -127,8 +127,9 @@ export function RoleEditor({ role, highlights }: { role: Role; highlights: Highl
                 <CardTitle className="text-[15px]">Background</CardTitle>
                 <p className="text-muted-foreground mt-1 text-sm">
                   Everything. Projects, numbers, tech, politics, praise, screw-ups. No editing
-                  needed — Claude does that part. Two headings mean something: Rules is how this
-                  job gets described, Caveats is yours and never reaches a document.
+                  needed — Claude does that part. Three headings mean something: Rules is how
+                  this job gets described, Caveats is yours, and Open questions is what you
+                  haven&rsquo;t settled. The last two never reach a document.
                 </p>
               </div>
               <Badge variant="outline" className="shrink-0 tabular-nums">

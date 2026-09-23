@@ -88,6 +88,7 @@ import * as accountsData from "@/lib/data/accounts";
 import * as schedule from "@/lib/data/schedule";
 import { instanceAssistantUsage } from "@/lib/data/assistant";
 import * as transferables from "@/lib/data/transferables";
+import { standingRulesFit } from "@/lib/mcp/briefing-head";
 import { KEYWORD_POLICIES, type KeywordPolicy } from "@/lib/keyword-policy";
 import {
   getSettings,
@@ -740,7 +741,7 @@ export const tools: McpTool[] = [
     name: "get_me_snapshot",
     title: "Get everything in Me",
     description:
-      "Returns EVERYTHING in Me at once: profile, all roles with their full background text, all highlights, education, projects, skills, certifications and notes. `keywordPolicy` says how close to a posting's own words you may write, with the rule spelled out in `permits` and their recorded transferable skills beside it — read it before you draft. Use when you need complete context (e.g. writing a resume from scratch). Can be large — prefer search_me for targeted lookups. READ `writingRules` AND `neverOnADocument` BEFORE YOU WRITE ANYTHING. The first is the constraints this person has set on how their jobs may be described, gathered across every role; obey them silently rather than mentioning them. The second is their own positioning notes and interview prep — context for you, and it must never appear on a resume, a cover letter or anything an employer sees. Each role also carries `resumeEvidence`, which is the part of its background a document may be written from.",
+      "Returns EVERYTHING in Me at once: profile, all roles with their full background text, all highlights, education, projects, skills, certifications and notes. `keywordPolicy` says how close to a posting's own words you may write, with the rule spelled out in `permits` and their recorded transferable skills beside it — read it before you draft. Use when you need complete context (e.g. writing a resume from scratch). Can be large — prefer search_me for targeted lookups. READ `writingRules`, `neverOnADocument` AND `notSettled` BEFORE YOU WRITE ANYTHING. The first is the constraints this person has set on how their jobs may be described, gathered across every role; obey them silently rather than mentioning them. The second is their own positioning notes and interview prep — context for you, and it must never appear on a resume, a cover letter or anything an employer sees. The third is facts they have marked as not settled yet — a start month they assumed, a number quoted two ways; never state, round off or pick a version of one, and if a document needs it, ask. Each role also carries `resumeEvidence`, which is the part of its background a document may be written from.",
     inputSchema: object({
       include_background: bool(
         "Include the full long-form background text for each role (default true). Set false for a lighter payload.",
@@ -898,7 +899,7 @@ export const tools: McpTool[] = [
     name: "get_role",
     title: "Get a role",
     description:
-      "Full detail for one role: the complete background text, that background READ INTO SECTIONS, and all of its achievement highlights. A background holds three different kinds of thing and only one of them may reach a document. `resumeEvidence` is the part you may write from. `rules` are binding instructions about how to describe this job — follow them silently rather than quoting them. `caveats` are the person's own positioning notes and interview prep; they are context for YOU and must never appear on a resume, a cover letter or anything an employer sees. `sections` is the whole thing in order, each tagged evidence, rules or caveats. When nothing is marked, everything is evidence, which is what every background written before sections existed means.",
+      "Full detail for one role: the complete background text, that background READ INTO SECTIONS, and all of its achievement highlights. A background holds four different kinds of thing and only one of them may reach a document. `resumeEvidence` is the part you may write from. `rules` are binding instructions about how to describe this job — follow them silently rather than quoting them. `caveats` are the person's own positioning notes and interview prep; they are context for YOU and must never appear on a resume, a cover letter or anything an employer sees. `open` is what they have marked as not settled yet — never state, round off or choose a version of one; ask. `sections` is the whole thing in order, each tagged evidence, rules, caveats or open. A section is marked by its heading ('## Rules', '## Caveats', '## Open questions', or a shouted suffix like '## Post-departure — INTERVIEW ONLY'), or a single paragraph or bullet by a shouted label at its start ('NAMING RULE:', '⚠️ OPEN:', '**INTERVIEW ONLY:**'). Lowercase prose is never a marker. When nothing is marked, everything is evidence, which is what every background written before sections existed means.",
     inputSchema: object({ id: str("Role id") }, ["id"]),
     annotations: {
       readOnlyHint: true,
@@ -911,6 +912,20 @@ export const tools: McpTool[] = [
       if (!role) throw new Error(`No role with id ${required(args, "id")}`);
       return role;
     },
+  },
+  {
+    name: "list_open_questions",
+    title: "What they have not settled yet",
+    description:
+      "Every fact they have marked as not settled, across all their roles: a start month they assumed, a number quoted two different ways, a title they have not decided how to describe. Each comes back with the roleId, the role and the question as written. Reach for it when they ask what is left to tidy in Me, before writing a dated or numbered document, or when they say 'let's fix my open questions'. Put the questions to them ONE AT A TIME and never answer one yourself: an open question exists precisely because the honest answer is not on file. When they give an answer, get_role, write the answer into the background as evidence and remove the question, then update_role with the whole background — or append_role_background under a normal heading when they would rather keep the question visible until they have checked. These are already kept out of resumeEvidence, so an empty list does not mean anything was unsafe, only that nothing is pending. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => me.listOpenQuestions(ctx.userId),
   },
   {
     name: "create_role",
@@ -1103,13 +1118,13 @@ export const tools: McpTool[] = [
     name: "append_role_background",
     title: "Append to a role's background",
     description:
-      "Safely ADD text to the end of a role's background without touching what is already there. This is the right tool when the user tells you something new about a job they already have on file. Passing a `heading` that the background ALREADY has merges the new lines into that section rather than opening a second one with the same name, so filing three things under one heading over three conversations leaves one tidy section. Two headings are reserved and change what the text MEANS: \"Rules\" for a binding instruction about how this job may be described (\"describe internal software by function only, no product names\"), and \"Caveats\" for positioning and interview prep that must never reach a document (\"tenure is short — have the answer ready\"). Everything else is evidence and is fair game for resumes. Use the reserved headings when the user is telling you a CONSTRAINT or a WORRY rather than a fact about what they did.",
+      "Safely ADD text to the end of a role's background without touching what is already there. This is the right tool when the user tells you something new about a job they already have on file. Passing a `heading` that the background ALREADY has merges the new lines into that section rather than opening a second one with the same name, so filing three things under one heading over three conversations leaves one tidy section. Three headings are reserved and change what the text MEANS: \"Rules\" for a binding instruction about how this job may be described (\"describe internal software by function only, no product names\"), \"Caveats\" for positioning and interview prep that must never reach a document (\"tenure is short — have the answer ready\"), and \"Open questions\" for a fact they are not sure of yet (\"start month assumed — confirm before it goes on a dated resume\"). Everything else is evidence and is fair game for resumes. Use the reserved headings when the user is telling you a CONSTRAINT, a WORRY or an UNCERTAINTY rather than a fact about what they did. Once they settle an open question, write the answer as evidence and take the question out: get_role, edit the background, update_role with the whole thing.",
     inputSchema: object(
       {
         id: str("Role id"),
         text: str("The new material to append. Markdown welcome."),
         heading: str(
-          "Optional markdown H2 heading to file it under, e.g. 'Q3 platform migration'. Merges into an existing section of the same name. 'Rules' and 'Caveats' are reserved — see the description.",
+          "Optional markdown H2 heading to file it under, e.g. 'Q3 platform migration'. Merges into an existing section of the same name. 'Rules', 'Caveats' and 'Open questions' are reserved — see the description.",
         ),
       },
       ["id", "text"],
@@ -1255,7 +1270,7 @@ export const tools: McpTool[] = [
     name: "list_notes",
     title: "List notes",
     description:
-      "Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything. Capped, and the result says so when it was cut off — except for standing rules, which are never cut. search_me is the better tool when you are looking for something specific.",
+      "Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything. Capped, and the result says so when it was cut off — except for standing rules (kind GUARDRAIL), which are never cut and always come first. Each standing rule carries `inBriefing`: whether it fits in the briefing every client reads on connect. There is room for roughly a line or two per rule; one that is false is still binding, but only reaches a client that comes here for it, so offer to shorten it or split it into several short rules. A note of kind NOTE whose title reads like a rule (\"Guardrails\", \"never do X\") is NOT a standing rule and reaches nobody unasked — say so, and offer update_note with kind GUARDRAIL. search_me is the better tool when you are looking for something specific.",
     inputSchema: object({ limit: limitArg(100) }),
     annotations: {
       readOnlyHint: true,
@@ -1272,8 +1287,17 @@ export const tools: McpTool[] = [
       //
       // Guardrails are few by design and they come first now, whatever the
       // limit. The cap applies to what is left.
-      const notes = await me.listNotes(ctx.userId);
-      const rules = notes.filter((note) => note.kind === "GUARDRAIL");
+      const [notes, fit] = await Promise.all([
+        me.listNotes(ctx.userId),
+        standingRulesFit(ctx.userId, ctx.user),
+      ]);
+      const inBriefing = new Set(fit.rules.filter((rule) => rule.inBriefing).map((rule) => rule.id));
+      // Each standing rule says whether it is actually in the briefing every
+      // client reads on connect. One that is not still counts — the briefing
+      // tells clients to come here for it — but it is worth shortening.
+      const rules = notes
+        .filter((note) => note.kind === "GUARDRAIL")
+        .map((note) => ({ ...note, inBriefing: inBriefing.has(note.id) }));
       const rest = notes.filter((note) => note.kind !== "GUARDRAIL");
       const max = Math.min(Math.max(Math.trunc(n(args, "limit") ?? 100), 1), LIST_CEILING);
       const room = Math.max(max - rules.length, 0);

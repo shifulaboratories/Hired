@@ -263,7 +263,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  219 tools any MCP client can call (254 if you're an admin). Claude, Claude Code, ChatGPT,
+  220 tools any MCP client can call (255 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -446,7 +446,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 219, or 254 if you're an admin.
+then tells you how many tools answered — 220, or 255 if you're an admin.
 
 Each connection can also be narrowed to one job, in the panel where you copy its URL:
 **Everything** (the default, and what every connection had before this existed), **Me,
@@ -714,7 +714,7 @@ By conversation: `admin_get_assistant_config`, `admin_set_assistant_config`.
 
 ## What your AI can do once it's connected
 
-219 tools. Two hundred and ten of them are the data tools across the five areas, the
+220 tools. Two hundred and eleven of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
@@ -779,10 +779,17 @@ one you lost on substance.
 (`append_role_background` adds without overwriting), reusable highlights, notes and standing
 rules, plus education, projects, skills and certifications, which
 `create_extra` / `update_extra` / `delete_extra` maintain. A background is markdown and the
-app reads it: anything under a heading called **Rules** is how that job may be described, and
+app reads it: anything under a heading called **Rules** is how that job may be described,
 anything under **Caveats** is yours — interview prep and positioning that never reaches a
-resume or a letter. Everything else is evidence, which is what a background written before
-this existed still means, all of it. `import_resume` is the way in for
+resume or a letter — and anything under **Open questions** is a fact you haven't settled yet,
+which stays off every document until you answer it. One line can be marked the same way
+without a heading, by starting it with the word in capitals: `NAMING RULE:`, `⚠️ OPEN:`,
+`INTERVIEW ONLY:`, or a heading ending in `— INTERVIEW ONLY`. Lowercase prose is never read
+as a marker. Everything else is evidence, which is what a background written before this
+existed still means, all of it. `list_open_questions` gathers the unsettled ones across every
+role, and the Roles tab shows them at the top so they get answered rather than quietly
+missing. A standing rule — a note marked as one — is handed to every connected client before
+it does anything, and the Notes tab tells you when one is too long to fit that briefing. `import_resume` is the way in for
 anyone who already has a resume: paste it to your assistant and the whole thing gets filed in
 one call — roles with their bullets, education, skills, contact details — without overwriting
 anything already there.

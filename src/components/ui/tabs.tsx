@@ -15,7 +15,11 @@ function TabsList({ className, ...props }: React.ComponentProps<typeof TabsPrimi
         // container and letting the strip scroll keeps every tab reachable
         // without the page moving; scrollbar-none because a visible bar under
         // a 36px control is thicker than the control's own padding.
-        "bg-muted/60 text-muted-foreground no-scrollbar inline-flex h-auto w-fit max-w-full items-center justify-center overflow-x-auto rounded-lg p-1 md:h-9",
+        // justify-start, never center: a centred row that overflows spills
+        // past BOTH edges, and a scroll container cannot scroll to negative
+        // offsets, so the first tab was unreachable on a phone. w-fit means
+        // start and center look identical whenever the row does fit.
+        "bg-muted/60 text-muted-foreground no-scrollbar inline-flex h-auto w-fit max-w-full items-center justify-start overflow-x-auto rounded-lg p-1 md:h-9",
         className,
       )}
       {...props}

@@ -1,11 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LockIcon, MessageSquareWarningIcon, PencilIcon } from "lucide-react";
+import { CircleHelpIcon, LockIcon, MessageSquareWarningIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { CANONICAL, parseBackground, type SectionKind } from "@/lib/background";
+import {
+  CANONICAL,
+  parseBackground,
+  resumeEvidence,
+  type BackgroundSection,
+  type SectionKind,
+} from "@/lib/background";
 import { inlineSegments, toBlocks, type Segment } from "@/lib/markdown-lite";
 
 /**
@@ -21,10 +27,13 @@ import { inlineSegments, toBlocks, type Segment } from "@/lib/markdown-lite";
  * clicked; blur switches back. There is no save button, here or anywhere else
  * in this app — the same autosave the rest of the editor uses carries this.
  *
- * The two reserved sections are shown with their own treatment and said out
+ * The three reserved kinds are shown with their own treatment and said out
  * loud, because a convention nobody can see is a convention that silently goes
  * wrong: a heading typed as "Caveat" instead of "Caveats" is evidence again,
  * and the only honest defence is making the classification visible on the page.
+ * That goes double for shouted markers inside the text — "⚠️ OPEN:" in the
+ * middle of a section — which are easy to write and easy to miss, so each one
+ * is drawn as its own callout exactly where it sits.
  */
 
 const KIND_STYLE: Record<
@@ -43,6 +52,18 @@ const KIND_STYLE: Record<
     icon: MessageSquareWarningIcon,
     className: "border-warning/40 bg-warning-tint border-l-2",
   },
+  open: {
+    label: "Open questions",
+    note: "Not settled. Kept off documents until you answer it.",
+    icon: CircleHelpIcon,
+    className: "border-warning/50 border border-dashed",
+  },
+};
+
+const ADD_LABEL: Record<Exclude<SectionKind, "evidence">, string> = {
+  rules: "Add rules",
+  caveats: "Add caveats",
+  open: "Add open question",
 };
 
 export function BackgroundEditor({
@@ -69,13 +90,23 @@ export function BackgroundEditor({
   }, [editing, caret]);
 
   const sections = parseBackground(value);
+  const evidenceWords = countWords(resumeEvidence(value));
+  const counts = {
+    rules: sections.filter((section) => section.kind === "rules").length,
+    caveats: sections.filter((section) => section.kind === "caveats").length,
+    open: sections.filter((section) => section.kind === "open").length,
+  };
 
   /** Add a reserved section, or jump to it when it is already there. */
   const addSection = (kind: Exclude<SectionKind, "evidence">) => {
     const heading = CANONICAL[kind];
-    const existing = sections.find((section) => section.kind === kind);
+    // A `##` section first; a marked paragraph is somebody's single flagged
+    // line, and the next one belongs under a proper heading.
+    const existing =
+      sections.find((section) => section.kind === kind && !section.inline) ??
+      sections.find((section) => section.kind === kind);
     if (existing) {
-      setCaret(existing.offset + existing.heading.length + 4);
+      setCaret(existing.inline ? existing.offset : existing.offset + existing.heading.length + 4);
       setEditing(true);
       return;
     }
@@ -88,8 +119,8 @@ export function BackgroundEditor({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-1.5">
-        {(["rules", "caveats"] as const).map((kind) => {
-          const has = sections.some((section) => section.kind === kind);
+        {(["rules", "caveats", "open"] as const).map((kind) => {
+          const count = counts[kind];
           const { label, icon: Icon } = KIND_STYLE[kind];
           return (
             <Button
@@ -101,7 +132,14 @@ export function BackgroundEditor({
               onClick={() => addSection(kind)}
             >
               <Icon className="size-3" />
-              {has ? label : `Add ${label.toLowerCase()}`}
+              {count > 0 ? (
+                <>
+                  {label}
+                  <span className="text-muted-foreground tabular-nums">{count}</span>
+                </>
+              ) : (
+                ADD_LABEL[kind]
+              )}
             </Button>
           );
         })}
@@ -109,6 +147,20 @@ export function BackgroundEditor({
           {editing ? "Markdown. Click away to read it." : "Click the text to edit"}
         </span>
       </div>
+      {!editing && sections.length > 0 && (
+        // The one number that says what the markings did: how much of this
+        // Claude may actually write a resume from.
+        <p className="text-muted-foreground text-xs">
+          <span className="text-foreground font-medium tabular-nums">
+            {evidenceWords.toLocaleString()}
+          </span>{" "}
+          words usable on a resume. Rules, caveats and open questions are read by Claude but never
+          written into a document. Mark a line inline with{" "}
+          <code className="bg-inset rounded px-1 font-mono text-[11px]">RULE:</code>,{" "}
+          <code className="bg-inset rounded px-1 font-mono text-[11px]">CAVEAT:</code> or{" "}
+          <code className="bg-inset rounded px-1 font-mono text-[11px]">OPEN:</code> in capitals.
+        </p>
+      )}
 
       {editing ? (
         <Textarea
@@ -120,7 +172,7 @@ export function BackgroundEditor({
             setCaret(null);
           }}
           placeholder={placeholder}
-          className="min-h-[34rem] resize-y font-mono text-[13px] leading-relaxed"
+          className="min-h-[24rem] resize-y font-mono text-[13px] leading-relaxed"
         />
       ) : (
         <div
@@ -140,7 +192,7 @@ export function BackgroundEditor({
             }
           }}
           className={cn(
-            "min-h-[34rem] cursor-text rounded-lg border border-transparent px-1 py-1",
+            "min-h-40 cursor-text rounded-lg border border-transparent px-1 py-1",
             "hover:border-border focus-visible:ring-ring transition-colors focus-visible:ring-2 focus-visible:outline-none",
           )}
         >
@@ -149,12 +201,7 @@ export function BackgroundEditor({
           ) : (
             <div className="space-y-4">
               {sections.map((section, index) => (
-                <Section
-                  key={index}
-                  kind={section.kind}
-                  heading={section.heading}
-                  body={section.body}
-                />
+                <Section key={index} section={section} />
               ))}
             </div>
           )}
@@ -164,15 +211,8 @@ export function BackgroundEditor({
   );
 }
 
-function Section({
-  kind,
-  heading,
-  body,
-}: {
-  kind: SectionKind;
-  heading: string;
-  body: string;
-}) {
+function Section({ section }: { section: BackgroundSection }) {
+  const { kind, heading, body } = section;
   if (kind === "evidence") {
     return (
       <section className="px-2">
@@ -185,12 +225,31 @@ function Section({
   }
 
   const { label, note, icon: Icon, className } = KIND_STYLE[kind];
+  if (section.inline) {
+    // A single marked line inside other text: drawn in place, compact, with
+    // the marker as they wrote it so they can see which word did it.
+    return (
+      <section className={cn("mx-2 rounded-md px-2.5 py-1.5", className)}>
+        <div className="flex items-start gap-1.5 text-[13.5px] leading-relaxed">
+          <Icon className="mt-1 size-3 shrink-0" />
+          <div className="min-w-0">
+            <span className="text-muted-foreground mr-1.5 text-[11px] font-medium tracking-wide uppercase">
+              {heading}
+            </span>
+            <span className="text-muted-foreground text-[11px]">· {note}</span>
+            <Markdown text={body} />
+          </div>
+        </div>
+      </section>
+    );
+  }
   return (
     <section className={cn("rounded-lg px-3 py-2.5", className)}>
-      <div className="mb-1.5 flex items-center gap-1.5">
+      <div className="mb-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
         <Icon className="size-3 shrink-0" />
         <h3 className="text-[13px] font-semibold tracking-tight">{heading || label}</h3>
-        <span className="text-muted-foreground text-[11px]">{note}</span>
+        {/* Its own line on a phone rather than a squeezed column beside the heading. */}
+        <span className="text-muted-foreground basis-full text-[11px] sm:basis-auto">{note}</span>
       </div>
       <Markdown text={body} />
     </section>
@@ -259,4 +318,8 @@ function Inline({ segments }: { segments: Segment[] }) {
       })}
     </>
   );
+}
+
+function countWords(text: string) {
+  return text.replace(/[#*_`>-]/g, " ").split(/\s+/).filter(Boolean).length;
 }
