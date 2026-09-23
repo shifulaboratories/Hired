@@ -10,7 +10,14 @@ import {
   type McpContext,
 } from "@/lib/mcp/tools";
 import { scopeBlurb, scopeLabel } from "@/lib/mcp/scopes";
-import { meIsEmpty, listGuardrails } from "@/lib/data/me";
+import { meIsEmpty } from "@/lib/data/me";
+import {
+  CRITICAL_RULES,
+  HEAD_BUDGET,
+  identityFor,
+  rulesAllowance,
+  standingRulesFor,
+} from "@/lib/mcp/briefing-head";
 import { recordSystemEvent } from "@/lib/data/system";
 import { dispatchTool } from "@/lib/mcp/dispatch";
 import { isAdmin, type McpCaller } from "@/lib/auth";
@@ -86,12 +93,12 @@ const SERVER_INFO = {
  * So the block is built in two parts:
  *   HEAD — who you are connected as, their standing rules, and the handful of
  *          rules that produce a wrong document or an unrecoverable act if they
- *          are missing. Budgeted, measured, and kept under HEAD_BUDGET.
+ *          are missing. Budgeted, measured, and kept under HEAD_BUDGET
+ *          (briefing-head.ts, which owns the head's arithmetic).
  *   TAIL — the area tour and everything a client with room should also know.
  *          A client that truncates loses only detail it can rediscover from
  *          the tool list itself.
  */
-const HEAD_BUDGET = 2000;
 
 
 /**
@@ -144,8 +151,10 @@ const AREA_HEAD = `The areas:`;
 const AREA_PARAGRAPHS: { key: string; needs: string; text: string }[] = [
   { key: 'me', needs: 'search_me', text: `• ME — everything about them. Roles each hold an unlimited free-form "background" of raw
   material, plus polished reusable bullets called highlights. A background can carry "Rules"
-  (how this job may be described — obey them, do not quote them) and "Caveats" (their own
-  positioning notes — for you, NEVER for a document). Everything else in it is evidence.
+  (how this job may be described — obey them, do not quote them), "Caveats" (their own
+  positioning notes — for you, NEVER for a document) and "Open questions" (facts they have
+  not settled — never use one, ask). get_role reads these apart for you, including shouted
+  markers like "NAMING RULE:" or "⚠️ OPEN:". Everything else in it is evidence.
   There are also notes, projects, education, skills and certifications. search_me is the
   fastest way in. get_me_snapshot carries their keyword policy: how close to a posting's own
   words a document may get, and the transfers they have recorded. posting_keywords says where
@@ -212,8 +221,10 @@ const AREA_PARAGRAPHS: { key: string; needs: string; text: string }[] = [
 const AREAS = `The areas:
 • ME — everything about them. Roles each hold an unlimited free-form "background" of raw
   material, plus polished reusable bullets called highlights. A background can carry "Rules"
-  (how this job may be described — obey them, do not quote them) and "Caveats" (their own
-  positioning notes — for you, NEVER for a document). Everything else in it is evidence.
+  (how this job may be described — obey them, do not quote them), "Caveats" (their own
+  positioning notes — for you, NEVER for a document) and "Open questions" (facts they have
+  not settled — never use one, ask). get_role reads these apart for you, including shouted
+  markers like "NAMING RULE:" or "⚠️ OPEN:". Everything else in it is evidence.
   There are also notes, projects, education, skills and certifications. search_me is the
   fastest way in. get_me_snapshot carries their keyword policy: how close to a posting's own
   words a document may get, and the transfers they have recorded. posting_keywords says where
@@ -287,81 +298,6 @@ function areasFor(user: User, scope: McpScope): string {
   ].join("\n");
 }
 
-
-/**
- * The person's own rules, and the reason they are the first thing in the block.
- *
- * "Never invent experience, employers, dates or metrics" does not catch the
- * failure that actually happens. Tailoring to a job req quietly *upgrades*
- * facts — a distribution credit becomes a hire, an unsettled follower count
- * becomes a cited one — and none of it feels like invention to whoever is
- * drafting, because every upgrade maps to a stated responsibility.
- *
- * Guardrails are Note rows, so they could in principle be found with search_me.
- * In practice nobody searches "follower count" before writing a scope bullet,
- * so a rule that has to be looked up is a rule that is absent at the moment it
- * matters. This block is the only place a constraint is guaranteed to be in
- * context — which is exactly why it has to survive a 2KB cut.
- */
-async function standingRulesFor(userId: string, allowance: number) {
-  const guardrails = await listGuardrails(userId).catch(() => []);
-  if (guardrails.length === 0) return "";
-
-  const heading = `\n\nTHEIR STANDING RULES — these override any inference you would otherwise make. They are not
-preferences. Breaking one produces a document that reads as true and is not.`;
-  // Reserved whether or not anything is dropped, and sized against the largest
-  // number that could be, so the section fits its budget in every case rather
-  // than only in the ones where nothing overflows.
-  const notice = (n: number) =>
-    `\n• (${n} more rules are on file and are NOT in this briefing — call list_notes with kind ` +
-    `GUARDRAIL and read them before writing anything.)`;
-  const budget = allowance - heading.length - notice(guardrails.length).length;
-
-  const lines: string[] = [];
-  let used = 0;
-  let dropped = 0;
-  for (const rule of guardrails) {
-    const line = `\n• ${rule.title}${rule.body.trim() ? ` — ${rule.body.trim()}` : ""}`;
-    if (used + line.length > budget) {
-      dropped += 1;
-      continue;
-    }
-    lines.push(line);
-    used += line.length;
-  }
-
-  if (dropped > 0) {
-    // Silently truncating someone's guardrails is the worst failure available
-    // here, so it is at least visible in the server log and admitted in the
-    // briefing itself.
-    console.warn(
-      `[mcp] standing rules truncated for user ${userId}: ${dropped} of ${guardrails.length} omitted past ${budget} chars`,
-    );
-    lines.push(notice(dropped));
-  }
-
-  return `${heading}${lines.join("")}`;
-}
-
-/**
- * The four rules whose absence produces a wrong document or an act nobody can
- * undo. Everything else is in the tail.
- */
-const CRITICAL_RULES = `
-Rules that are never optional:
-- Never invent experience, employers, dates or metrics. Everything on a resume must trace back to
-  something in Me. If evidence is missing, say so and ask.
-- update_resume and update_role REPLACE what you send. Read first, modify, then write back whole.
-  When they tell you something new about a job already on file, append_role_background adds
-  instead of overwriting.
-- Four acts cannot be undone: delete_archived and empty_archive destroy what is in the archive,
-  merge_companies folds one employer into another for good, and admin_delete_user removes an
-  account and everything it owns. Say what will go and get a plain yes before any of them.
-  Deleting a role, highlight, note, resume, letter, offer, task, tag, saved view or checklist
-line is also permanent.
-- Connection URLs are credentials with full read and write over this workspace. Never repeat one
-  anywhere it will be stored.`;
-
 /**
  * The briefing a client gets on connect.
  *
@@ -376,16 +312,10 @@ export async function instructionsFor(user: User, scope: McpScope = "FULL") {
   const empty = await meIsEmpty(user.id).catch(() => false);
 
   // The two fixed halves of the head are measured before the rules are asked
-  // for, and what is left over is their allowance. A constant here drifted the
-  // moment CRITICAL_RULES grew by a sentence: the head was 992 characters, then
-  // 1,131, and an account with seventeen rules on file went 24 over the cap
-  // without anything in the diff looking like it touched the budget. Derived,
-  // it cannot. The name is in there too, and a long one costs its own rules
-  // room, which is the right way round.
-  const identity = `Hired is ${user.name || user.email}'s career knowledge base, resume builder and job-search CRM.
-You are connected as them; every tool reads and writes only their data. search_me is the first
-tool to reach for when the question is about their experience.`;
-  const allowance = HEAD_BUDGET - identity.length - CRITICAL_RULES.length - 1;
+  // for, and what is left over is their allowance. briefing-head.ts owns that
+  // arithmetic, because the Notes screen and list_notes report the same answer.
+  const identity = identityFor(user);
+  const allowance = rulesAllowance(user);
 
   const head = `${identity}${await standingRulesFor(user.id, allowance)}
 ${CRITICAL_RULES}`;

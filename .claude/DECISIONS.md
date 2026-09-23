@@ -6793,3 +6793,40 @@ refuses a nameless transfer, so the panel's Add — which created with `have: ""
 silently until a browser was pointed at it. Fixed by matching the pattern the extras panel
 beside it already uses: create with a placeholder and let `revalidatePath` bring the row in,
 rather than keeping a local list that fights the refresh.
+
+## 2026-09-23 — Me: shouted markers, open questions, and whether a standing rule fits
+
+**Backgrounds are now read for markers inside the text, not only for `##` headings.** A real
+assistant-written background marked things the way people do — `⚠️ OPEN: settle the follower
+count`, `NAMING RULE (resolved …):`, `## Post-departure signal — INTERVIEW ONLY` — and every one
+of those was evidence, so the interview-only paragraph went straight into `resumeEvidence`.
+`src/lib/background.ts` now reads three more shapes: a heading with a shouted suffix after a
+dash, a heading with a shouted prefix and a colon, and a paragraph or single bullet that OPENS
+with a shouted label and a colon. The safety argument is the capitals and whole-label matching:
+`OPEN SOURCE:`, `AWS:` and lowercase `Positioning:` stay evidence, and there is a probe for each.
+A marked paragraph runs to the next blank line (a marked bullet to the next bullet), then the
+evidence under the heading resumes as an unheaded section, so `resumeEvidence` never repeats a
+heading. Markers inside a rules/caveats/open section change nothing — a marker cannot promote a
+caveat back to evidence. `appendToBackground` only ever merges into `##` sections, never into a
+marked paragraph. `NOTE ON DATES:` and `NOTE:` are deliberately NOT markers: too much real prose
+starts that way. Widen the vocabulary only with a probe for the false positive it risks.
+
+**A fourth kind, `open`.** "Open questions" (heading, or `OPEN:`/`TBD:`/`TO CONFIRM:` inline) is a
+fact the person knows they have not settled. Kept out of evidence like a caveat, but it is a to-do
+rather than a secret, so it is surfaced: `list_open_questions`, `notSettled` on the snapshot,
+`open` on `get_role`, and a list at the top of the Roles tab. The instruction to writers is "never
+state, round off or pick a version; ask" — the failure it exists for is an assistant quietly
+choosing 150M over 200M.
+
+**The briefing head's arithmetic moved to `src/lib/mcp/briefing-head.ts`.** The Notes tab and
+`list_notes` now say per standing rule whether it is actually in the briefing (`inBriefing`),
+and that answer has to be the same arithmetic the handler uses, so there is one module and
+three callers; handler.ts can no longer own it because tools.ts cannot import the transport
+(dispatch → tools cycle). The allowance for rules is small — about 520 characters for a
+typical name — which is why a 2.5KB "Guardrails" note is dropped from the head entirely and
+only reaches a client that obeys the overflow notice. The UI says so on the card rather than
+splitting the note for them: splitting is the person's call. Notes of kind NOTE whose title
+reads like a rule get a one-click suggestion, never an automatic change.
+
+**Tab strips are `justify-start`.** `justify-center` in an `overflow-x-auto` row spills past both
+edges and the left one cannot be scrolled to, so on a phone the first tab of Me was unreachable.

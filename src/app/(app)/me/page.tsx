@@ -13,6 +13,8 @@ import {
   listSkillGroups,
 } from "@/lib/data/me";
 import { db } from "@/lib/db";
+import { backgroundExcerpt, writingGuidance } from "@/lib/background";
+import { standingRulesFit } from "@/lib/mcp/briefing-head";
 import { requireUser } from "@/lib/auth";
 import { RolesPanel } from "@/components/me/roles-panel";
 import { ProfileForm } from "@/components/me/profile-form";
@@ -139,7 +141,7 @@ export default async function MePage({
         <TabsContent value={active}>
           {active === "roles" && <RolesPanelTab userId={user.id} />}
           {active === "profile" && <ProfileTab userId={user.id} />}
-          {active === "notes" && <NotesTab userId={user.id} />}
+          {active === "notes" && <NotesTab user={user} />}
           {active === "extras" && <ExtrasTab userId={user.id} />}
           {active === "resumes" && (
             <ResumesPanel
@@ -168,9 +170,20 @@ async function LettersTab({ userId }: { userId: string }) {
 
 async function RolesPanelTab({ userId }: { userId: string }) {
   const roles = await listRoles(userId);
+  // Read once per role here rather than asking the data layer twice: the
+  // classification is background.ts, which is pure, and the list below and
+  // list_open_questions both come out of the same writingGuidance call.
+  const read = roles.map((role) => ({ role, guidance: writingGuidance(role.background) }));
   return (
     <RolesPanel
-      roles={roles.map((role) => ({
+      openQuestions={read.flatMap(({ role, guidance }) =>
+        guidance.open.map((question) => ({
+          roleId: role.id,
+          role: `${role.title} · ${role.company}`,
+          question,
+        })),
+      )}
+      roles={read.map(({ role, guidance }) => ({
         id: role.id,
         company: role.company,
         title: role.title,
@@ -182,6 +195,10 @@ async function RolesPanelTab({ userId }: { userId: string }) {
         tags: role.tags,
         backgroundLength: role.background.length,
         highlightCount: role._count.highlights,
+        excerpt: role.summary ? "" : backgroundExcerpt(role.background, 160),
+        rules: guidance.rules.length,
+        caveats: guidance.caveats.length,
+        open: guidance.open.length,
       }))}
     />
   );
@@ -212,12 +229,15 @@ async function ProfileTab({ userId }: { userId: string }) {
   );
 }
 
-async function NotesTab({ userId }: { userId: string }) {
-  const notes = await listNotes(userId);
+async function NotesTab({ user }: { user: Awaited<ReturnType<typeof requireUser>> }) {
+  const [notes, fit] = await Promise.all([listNotes(user.id), standingRulesFit(user.id, user)]);
+  const inBriefing = new Set(fit.rules.filter((rule) => rule.inBriefing).map((rule) => rule.id));
   return (
     <FadeIn>
       <NotesPanel
+        briefing={{ budget: fit.budget, used: fit.used }}
         notes={notes.map((note) => ({
+          inBriefing: inBriefing.has(note.id),
           id: note.id,
           title: note.title,
           body: note.body,

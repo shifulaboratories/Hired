@@ -107,6 +107,7 @@ src/lib/data/                 THE data layer, one file per area: me, resumes, le
                               read, which its own comment treats accordingly.
 src/lib/mcp/tools.ts          Tool + prompt definitions. One array, one source of truth.
 src/lib/mcp/handler.ts        Streamable HTTP transport + the server instructions block.
+src/lib/mcp/briefing-head.ts  The budgeted head of that block: standing rules and what fits.
 src/lib/mcp/clients.ts        Per-client setup recipes. Adding a client = one array entry.
 src/lib/resume-schema.ts      The resume document contract (zod).
 src/lib/pdf.ts                Server-side PDF rendering. Needs a Chromium on the host;

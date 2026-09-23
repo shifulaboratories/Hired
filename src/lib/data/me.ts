@@ -343,7 +343,7 @@ export async function getRole(userId: string, id: string) {
   // `background` behaves exactly as it did; one that is about to write a
   // document now has to go out of its way to miss the rules and the caveats,
   // which used to be indistinguishable from the evidence around them.
-  const { rules, caveats } = writingGuidance(role.background);
+  const { rules, caveats, open } = writingGuidance(role.background);
   return {
     ...role,
     sections: parseBackground(role.background).map(({ kind, heading, body }) => ({
@@ -354,7 +354,34 @@ export async function getRole(userId: string, id: string) {
     resumeEvidence: resumeEvidence(role.background),
     rules,
     caveats,
+    open,
   };
+}
+
+/**
+ * Everything they have marked as not settled yet, across every role.
+ *
+ * An open question is a fact somebody knows they do not have right — a start
+ * month they assumed, a number quoted two different ways. It is kept out of
+ * resumeEvidence, which stops it reaching a document, but that alone just
+ * makes it quietly absent. This is the other half: a list somebody can work
+ * down, and that an assistant can put to them one at a time.
+ *
+ * Roles come in the same order as everywhere else, current first.
+ */
+export async function listOpenQuestions(userId: string) {
+  const roles = await db.role.findMany({
+    where: { userId },
+    orderBy: [{ isCurrent: "desc" }, { startDate: "desc" }, { sortOrder: "asc" }],
+    select: { id: true, title: true, company: true, background: true },
+  });
+  return roles.flatMap((role) =>
+    writingGuidance(role.background).open.map((question) => ({
+      roleId: role.id,
+      role: `${role.title} @ ${role.company}`,
+      question,
+    })),
+  );
 }
 
 export async function createRole(userId: string, input: RoleInput) {
@@ -922,8 +949,8 @@ export async function getMeSnapshot(userId: string) {
   // rules and caveats are named, so writing from the wrong part of it is now a
   // decision rather than an accident.
   const readRoles = roles.map((role) => {
-    const { rules, caveats } = writingGuidance(role.background);
-    return { ...role, resumeEvidence: resumeEvidence(role.background), rules, caveats };
+    const { rules, caveats, open } = writingGuidance(role.background);
+    return { ...role, resumeEvidence: resumeEvidence(role.background), rules, caveats, open };
   });
 
   return {
@@ -955,6 +982,11 @@ export async function getMeSnapshot(userId: string) {
     ),
     neverOnADocument: readRoles.flatMap((role) =>
       role.caveats.map((caveat) => ({ role: `${role.title} @ ${role.company}`, caveat })),
+    ),
+    // Facts they have not settled. Not to be used, stated or rounded off —
+    // asked about, if the document needs them.
+    notSettled: readRoles.flatMap((role) =>
+      role.open.map((question) => ({ role: `${role.title} @ ${role.company}`, question })),
     ),
   };
 }
