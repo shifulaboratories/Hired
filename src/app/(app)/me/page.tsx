@@ -8,10 +8,14 @@ import {
   listCertifications,
   listEducation,
   listNotes,
+  listOpenQuestions,
   listProjects,
   listRoles,
   listSkillGroups,
 } from "@/lib/data/me";
+import { figureConflicts, unbackedSkills } from "@/lib/data/me-checks";
+import { careerTimeline } from "@/lib/timeline";
+import { CareerTimeline } from "@/components/me/career-timeline";
 import { db } from "@/lib/db";
 import { backgroundExcerpt, writingGuidance } from "@/lib/background";
 import { standingRulesFit } from "@/lib/mcp/briefing-head";
@@ -169,37 +173,62 @@ async function LettersTab({ userId }: { userId: string }) {
 }
 
 async function RolesPanelTab({ userId }: { userId: string }) {
-  const roles = await listRoles(userId);
-  // Read once per role here rather than asking the data layer twice: the
-  // classification is background.ts, which is pure, and the list below and
-  // list_open_questions both come out of the same writingGuidance call.
-  const read = roles.map((role) => ({ role, guidance: writingGuidance(role.background) }));
+  const [roles, openQuestions, conflicts, profile] = await Promise.all([
+    listRoles(userId),
+    listOpenQuestions(userId),
+    figureConflicts(userId, 10),
+    db.profile.findUnique({ where: { userId }, select: { roleOrder: true } }),
+  ]);
+  const now = new Date();
+  const laid = careerTimeline(roles, now);
+  const unconfirmed = new Set(
+    roles.filter((role) => role.startUnconfirmed || role.endUnconfirmed).map((role) => role.id),
+  );
   return (
     <RolesPanel
-      openQuestions={read.flatMap(({ role, guidance }) =>
-        guidance.open.map((question) => ({
-          roleId: role.id,
-          role: `${role.title} · ${role.company}`,
-          question,
-        })),
-      )}
-      roles={read.map(({ role, guidance }) => ({
-        id: role.id,
-        company: role.company,
-        title: role.title,
-        location: role.location,
-        startDate: role.startDate,
-        endDate: role.endDate,
-        isCurrent: role.isCurrent,
-        summary: role.summary,
-        tags: role.tags,
-        backgroundLength: role.background.length,
-        highlightCount: role._count.highlights,
-        excerpt: role.summary ? "" : backgroundExcerpt(role.background, 160),
-        rules: guidance.rules.length,
-        caveats: guidance.caveats.length,
-        open: guidance.open.length,
-      }))}
+      order={profile?.roleOrder === "manual" ? "manual" : "date"}
+      openQuestions={openQuestions}
+      conflicts={conflicts}
+      timeline={
+        laid.span && (
+          <CareerTimeline
+            range={laid.span}
+            gaps={laid.gaps}
+            rows={laid.roles.map((role) => ({
+              id: role.id,
+              title: role.title,
+              company: role.company,
+              group: role.group,
+              start: role.start,
+              end: role.end,
+              isCurrent: role.isCurrent,
+              unconfirmed: unconfirmed.has(role.id),
+            }))}
+          />
+        )
+      }
+      roles={roles.map((role) => {
+        const guidance = writingGuidance(role.background);
+        return {
+          id: role.id,
+          company: role.company,
+          title: role.title,
+          location: role.location,
+          employmentType: role.employmentType,
+          startDate: role.startDate,
+          endDate: role.endDate,
+          isCurrent: role.isCurrent,
+          summary: role.summary,
+          tags: role.tags,
+          backgroundLength: role.background.length,
+          highlightCount: role._count.highlights,
+          excerpt: role.summary ? "" : backgroundExcerpt(role.background, 160),
+          rules: guidance.rules.length,
+          caveats: guidance.caveats.length,
+          open: openQuestions.filter((item) => item.roleId === role.id).length,
+          daysSinceAdded: Math.floor((now.getTime() - role.backgroundUpdatedAt.getTime()) / 86_400_000),
+        };
+      })}
     />
   );
 }
@@ -230,14 +259,20 @@ async function ProfileTab({ userId }: { userId: string }) {
 }
 
 async function NotesTab({ user }: { user: Awaited<ReturnType<typeof requireUser>> }) {
-  const [notes, fit] = await Promise.all([listNotes(user.id), standingRulesFit(user.id, user)]);
+  const [notes, fit, roles] = await Promise.all([
+    listNotes(user.id),
+    standingRulesFit(user.id, user),
+    listRoles(user.id),
+  ]);
   const inBriefing = new Set(fit.rules.filter((rule) => rule.inBriefing).map((rule) => rule.id));
   return (
     <FadeIn>
       <NotesPanel
         briefing={{ budget: fit.budget, used: fit.used }}
+        roles={roles.map((role) => ({ id: role.id, label: `${role.title} · ${role.company}` }))}
         notes={notes.map((note) => ({
           inBriefing: inBriefing.has(note.id),
+          roleId: note.roleId,
           id: note.id,
           title: note.title,
           body: note.body,
@@ -251,11 +286,12 @@ async function NotesTab({ user }: { user: Awaited<ReturnType<typeof requireUser>
 }
 
 async function ExtrasTab({ userId }: { userId: string }) {
-  const [education, projects, skills, certifications] = await Promise.all([
+  const [education, projects, skills, certifications, evidence] = await Promise.all([
     listEducation(userId),
     listProjects(userId),
     listSkillGroups(userId),
     listCertifications(userId),
+    unbackedSkills(userId),
   ]);
   return (
     <FadeIn>
@@ -271,6 +307,7 @@ async function ExtrasTab({ userId }: { userId: string }) {
         }))}
         skills={skills}
         certifications={certifications}
+        unbacked={evidence.unbacked.map((row) => row.skill)}
       />
     </FadeIn>
   );

@@ -1,29 +1,40 @@
 "use client";
 
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import {
+  ArrowDownUpIcon,
   ArrowRightIcon,
   BriefcaseIcon,
+  CheckIcon,
   CircleHelpIcon,
   DownloadIcon,
+  HashIcon,
   LockIcon,
   MapPinIcon,
   MessageSquareWarningIcon,
   PlusIcon,
   SparklesIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/page-header";
 import { Lift, Stagger, StaggerItem } from "@/components/motion";
+import { DragHandle, SortableList, SortableRow } from "@/components/resume/sortable-list";
+import { useAsk } from "@/components/assistant/ask";
 import { cn, dateRange, truncate } from "@/lib/utils";
+import { GROUP_LABEL, GROUP_ORDER, roleGroup, type RoleGroup } from "@/lib/timeline";
+import { reorderRolesAction, resolveOpenQuestionAction } from "@/server/actions";
 
 type RoleCard = {
   id: string;
   company: string;
   title: string;
   location: string;
+  employmentType: string;
   startDate: string;
   endDate: string;
   isCurrent: boolean;
@@ -36,17 +47,43 @@ type RoleCard = {
   rules: number;
   caveats: number;
   open: number;
+  /** Days since anything was written into the background. */
+  daysSinceAdded: number;
 };
 
-type OpenQuestion = { roleId: string; role: string; question: string };
+type OpenQuestion = {
+  roleId: string | null;
+  role: string;
+  question: string;
+  kind: "background" | "start_date" | "end_date";
+};
+
+type Conflict = {
+  roleId: string | null;
+  role: string;
+  key: string;
+  figures: { raw: string; sentence: string; source: { kind: string; id: string; title: string } }[];
+};
+
+/** A current job with nothing added for this long gets a nudge on its card. */
+const STALE_DAYS = 30;
 
 export function RolesPanel({
   roles,
   openQuestions,
+  conflicts,
+  order,
+  timeline,
 }: {
   roles: RoleCard[];
   openQuestions: OpenQuestion[];
+  conflicts: Conflict[];
+  order: "date" | "manual";
+  /** Rendered above the cards; built on the server. */
+  timeline?: React.ReactNode;
 }) {
+  const [reordering, setReordering] = useState(false);
+
   if (roles.length === 0) {
     return (
       <EmptyState
@@ -75,21 +112,83 @@ export function RolesPanel({
     );
   }
 
+  // Grouped by kind of role when there is more than one kind: three advisory
+  // seats listed between two jobs read as job-hopping; under their own
+  // heading they read as what they are.
+  const groups = GROUP_ORDER.map((group) => ({
+    group,
+    roles: roles.filter((role) => roleGroup(role.employmentType) === group),
+  })).filter((entry) => entry.roles.length > 0);
+
   return (
     <div className="space-y-6">
       {openQuestions.length > 0 && <OpenQuestions questions={openQuestions} />}
-      <Stagger className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {roles.map((role) => (
+      {conflicts.length > 0 && <Conflicts conflicts={conflicts} />}
+      {timeline}
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {order === "manual" && !reordering && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground h-7 text-xs"
+            onClick={() => void reorderRolesAction(null).then(() => toast.success("Back in date order."))}
+          >
+            Back to date order
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1.5 text-xs"
+          onClick={() => setReordering((value) => !value)}
+        >
+          {reordering ? (
+            <>
+              <CheckIcon className="size-3" /> Done
+            </>
+          ) : (
+            <>
+              <ArrowDownUpIcon className="size-3" /> Reorder
+            </>
+          )}
+        </Button>
+      </div>
+
+      {reordering ? (
+        <ReorderList roles={roles} />
+      ) : (
+        groups.map(({ group, roles: members }) => (
+          <section key={group} className="space-y-3">
+            {groups.length > 1 && (
+              <h2 className="text-muted-foreground text-[12px] font-medium tracking-wide uppercase">
+                {GROUP_LABEL[group as RoleGroup]}
+                <span className="ml-1.5 tabular-nums">{members.length}</span>
+              </h2>
+            )}
+            <RoleGrid roles={members} />
+          </section>
+        ))
+      )}
+    </div>
+  );
+}
+
+function RoleGrid({ roles }: { roles: RoleCard[] }) {
+  const ask = useAsk();
+  return (
+    <Stagger className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {roles.map((role) => {
+        const stale = role.isCurrent && role.daysSinceAdded >= STALE_DAYS;
+        return (
           <StaggerItem key={role.id}>
             <Lift>
               <Link href={`/me/${role.id}`} className="block h-full">
-                <Card className="group relative h-full overflow-hidden transition-shadow duration-200 ease-[var(--ease-settle)] hover:shadow-raised">
+                <Card className="group hover:shadow-raised relative h-full overflow-hidden transition-shadow duration-200 ease-[var(--ease-settle)]">
                   <CardContent className="relative flex h-full flex-col pt-5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="truncate text-[15px] font-semibold tracking-tight">
-                          {role.title}
-                        </div>
+                        <div className="truncate text-[15px] font-semibold tracking-tight">{role.title}</div>
                         <div className="text-muted-foreground truncate text-sm font-medium">{role.company}</div>
                       </div>
                       {role.isCurrent && (
@@ -125,6 +224,26 @@ export function RolesPanel({
                       </div>
                     )}
 
+                    {stale && (
+                      // The job you are in is the one whose details are
+                      // freshest now and gone by the time a resume is due.
+                      <div className="bg-warning-tint mt-3 flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-xs">
+                        <span>Nothing added in {Math.floor(role.daysSinceAdded / 7)} weeks.</span>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            ask(
+                              `Help me log what I've done lately in my ${role.title} role at ${role.company} (role id ${role.id}). Ask me what I worked on, shipped and learned since I last added to it, then file my answers with append_role_background. Don't invent anything I didn't say.`,
+                            );
+                          }}
+                          className="text-primary shrink-0 font-medium hover:underline"
+                        >
+                          Log recent work
+                        </button>
+                      </div>
+                    )}
+
                     <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-5 text-xs">
                       <span className="flex items-center gap-1.5">
                         <SparklesIcon className="text-muted-foreground size-3" />
@@ -147,9 +266,52 @@ export function RolesPanel({
               </Link>
             </Lift>
           </StaggerItem>
-        ))}
-      </Stagger>
-    </div>
+        );
+      })}
+    </Stagger>
+  );
+}
+
+/**
+ * Drag roles into the order you want them listed. Switching to this is
+ * choosing your own order over date order; "Back to date order" undoes it.
+ * reorder_roles is the same over MCP.
+ */
+function ReorderList({ roles }: { roles: RoleCard[] }) {
+  const [ids, setIds] = useState(roles.map((role) => role.id));
+  const byId = new Map(roles.map((role) => [role.id, role]));
+  return (
+    <SortableList
+      ids={ids}
+      className="space-y-1.5"
+      onReorder={(from, to) => {
+        const next = [...ids];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        setIds(next);
+        void reorderRolesAction(next).catch(() => toast.error("Could not save the new order."));
+      }}
+    >
+      {ids.map((id) => {
+        const role = byId.get(id);
+        if (!role) return null;
+        return (
+          <SortableRow key={id} id={id} label={`Move ${role.title} at ${role.company}`}>
+            <div className="bg-card flex items-center gap-3 rounded-lg border px-3 py-2">
+              <DragHandle className="size-6" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">
+                  {role.title} <span className="text-muted-foreground font-normal">· {role.company}</span>
+                </div>
+                <div className="text-muted-foreground text-xs">
+                  {dateRange(role.startDate, role.endDate, role.isCurrent)} · {role.employmentType}
+                </div>
+              </div>
+            </div>
+          </SortableRow>
+        );
+      })}
+    </SortableList>
   );
 }
 
@@ -183,15 +345,14 @@ function Marks({ role }: { role: RoleCard }) {
 }
 
 /**
- * What they have marked as not settled, across every role, in one place.
- *
- * Each of these is already kept off documents, which on its own only makes a
- * fact quietly absent from every resume. This is the list that gets them
- * answered: the role, the question as they wrote it, and a link to the role.
- * list_open_questions is the same list over MCP.
+ * What they have marked as not settled, across every role and the profile,
+ * with the answer box right there. Answering puts the fact in as evidence
+ * where the doubt was; a date is confirmed or corrected; "Drop" is for a
+ * question that no longer matters. resolve_open_question is the same write.
  */
 function OpenQuestions({ questions }: { questions: OpenQuestion[] }) {
-  const shown = questions.slice(0, 6);
+  const [shownAll, setShownAll] = useState(false);
+  const shown = shownAll ? questions : questions.slice(0, 6);
   return (
     <Card className="border-warning/40 border-dashed">
       <CardContent className="space-y-3 pt-5">
@@ -203,30 +364,173 @@ function OpenQuestions({ questions }: { questions: OpenQuestion[] }) {
             </h2>
           </div>
           <p className="text-muted-foreground text-xs">
-            Kept off every document until you answer. Ask Claude to go through them with you.
+            Kept off every document until you answer. Your answer goes in where the question was.
           </p>
         </div>
         <ul className="divide-border divide-y">
-          {shown.map((item, index) => (
-            <li key={index}>
-              <Link
-                href={`/me/${item.roleId}`}
-                className="hover:bg-accent/50 -mx-2 flex flex-col gap-0.5 rounded-md px-2 py-2 transition-colors sm:flex-row sm:items-start sm:gap-3"
-              >
-                <span className="text-muted-foreground shrink-0 truncate pt-px text-xs sm:w-44">
-                  {item.role}
-                </span>
-                <span className="min-w-0 flex-1 text-sm leading-snug">
-                  {truncate(item.question, 180)}
-                </span>
-              </Link>
+          {shown.map((item) => (
+            <QuestionRow key={`${item.roleId}:${item.question}`} item={item} />
+          ))}
+        </ul>
+        {questions.length > 6 && (
+          <button
+            type="button"
+            onClick={() => setShownAll((value) => !value)}
+            className="text-muted-foreground hover:text-foreground text-xs"
+          >
+            {shownAll ? "Show fewer" : `Show all ${questions.length}`}
+          </button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function QuestionRow({ item }: { item: OpenQuestion }) {
+  const [answering, setAnswering] = useState(false);
+  const [answer, setAnswer] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [gone, setGone] = useState(false);
+  const isDate = item.kind !== "background";
+
+  const settle = (reply?: string) =>
+    startTransition(async () => {
+      try {
+        await resolveOpenQuestionAction(item.roleId, item.question, reply);
+        setGone(true);
+        toast.success(isDate ? "Date confirmed." : reply ? "Answered and filed." : "Dropped.");
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not save that.");
+      }
+    });
+
+  if (gone) return null;
+  return (
+    <li className="py-2">
+      <div className="flex flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-3">
+        {item.roleId ? (
+          <Link
+            href={`/me/${item.roleId}`}
+            className="text-muted-foreground hover:text-foreground shrink-0 truncate pt-px text-xs sm:w-44"
+          >
+            {item.role}
+          </Link>
+        ) : (
+          <Link
+            href="/me?tab=profile"
+            className="text-muted-foreground hover:text-foreground shrink-0 truncate pt-px text-xs sm:w-44"
+          >
+            Profile
+          </Link>
+        )}
+        <span className="min-w-0 flex-1 text-sm leading-snug">{truncate(item.question, 200)}</span>
+        {!answering && (
+          <span className="flex shrink-0 gap-1">
+            {isDate ? (
+              <>
+                <Button variant="outline" size="sm" className="h-7 text-xs" disabled={pending} onClick={() => settle()}>
+                  It&rsquo;s right
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAnswering(true)}>
+                  Correct it
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAnswering(true)}>
+                  Answer
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground h-7 text-xs"
+                  disabled={pending}
+                  onClick={() => settle()}
+                  title="Take the question away without adding anything"
+                >
+                  Drop
+                </Button>
+              </>
+            )}
+          </span>
+        )}
+      </div>
+      {answering && (
+        <form
+          className="mt-2 flex gap-2 sm:pl-47"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (answer.trim()) settle(answer.trim());
+          }}
+        >
+          <Input
+            autoFocus
+            type={isDate ? "month" : "text"}
+            value={answer}
+            onChange={(event) => setAnswer(event.target.value)}
+            placeholder={isDate ? "" : "The answer, written as a fact: “The budget was $40K a month.”"}
+            className="h-9 md:h-8"
+          />
+          <Button type="submit" size="sm" disabled={pending || !answer.trim()}>
+            Save
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setAnswering(false)}>
+            Cancel
+          </Button>
+        </form>
+      )}
+    </li>
+  );
+}
+
+/**
+ * The same thing counted two ways in the same job. Candidates, not verdicts:
+ * the grouping is a heuristic, which is why this lists the sentences and
+ * leaves the judgement to the person. find_figure_conflicts is the same list.
+ */
+function Conflicts({ conflicts }: { conflicts: Conflict[] }) {
+  const [open, setOpen] = useState(false);
+  const shown = open ? conflicts : conflicts.slice(0, 2);
+  return (
+    <Card>
+      <CardContent className="space-y-3 pt-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <div className="flex items-center gap-2">
+            <HashIcon className="text-muted-foreground size-4" />
+            <h2 className="text-[15px] font-semibold tracking-tight">
+              {conflicts.length === 1 ? "A number stated two ways" : `${conflicts.length} numbers stated two ways`}
+            </h2>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Worth a look before anything goes out. Some will be two true numbers.
+          </p>
+        </div>
+        <ul className="space-y-3">
+          {shown.map((conflict, index) => (
+            <li key={index} className="space-y-1">
+              <div className="text-xs">
+                <span className="font-medium">{conflict.key}</span>
+                <span className="text-muted-foreground"> · {conflict.role}</span>
+              </div>
+              <ul className="space-y-0.5">
+                {conflict.figures.map((figure, figureIndex) => (
+                  <li key={figureIndex} className="text-muted-foreground text-[13px] leading-snug">
+                    <span className="text-foreground font-medium tabular-nums">{figure.raw}</span>{" "}
+                    <span className="text-[11px]">in {figure.source.title}:</span> {truncate(figure.sentence, 160)}
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>
-        {questions.length > shown.length && (
-          <p className="text-muted-foreground text-xs">
-            And {questions.length - shown.length} more, on the roles they belong to.
-          </p>
+        {conflicts.length > 2 && (
+          <button
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+            className="text-muted-foreground hover:text-foreground text-xs"
+          >
+            {open ? "Show fewer" : `Show all ${conflicts.length}`}
+          </button>
         )}
       </CardContent>
     </Card>

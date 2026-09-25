@@ -96,7 +96,8 @@ generates resume content inherits that rule and should restate it.
 
 ```
 prisma/schema.prisma          Data model. Migrations in prisma/migrations/, applied on boot.
-src/lib/data/                 THE data layer, one file per area: me, resumes, letters,
+src/lib/data/                 THE data layer, one file per area: me (and me-checks, the
+                              read-only checks across it), resumes, letters,
                               pipeline, offers, stage-templates, proposals, pipeline-share,
                               schedule, views, tags, archive, export, transfer, digest,
                               accounts, onboarding, users, connections, waitlist, audit,

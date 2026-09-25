@@ -138,6 +138,65 @@ export async function listRevisions(
   };
 }
 
+/**
+ * Which lines one version of a background has that another does not. A
+ * multiset compare of trimmed lines rather than a real diff: what a person
+ * wants from a history panel is "what did this edit add and take away", and
+ * the order of lines in a background carries no meaning worth a diff
+ * algorithm. Pure.
+ */
+export function lineChanges(older: string, newer: string, cap = 6) {
+  const count = (text: string) => {
+    const map = new Map<string, number>();
+    for (const line of text.split("\n").map((l) => l.trim()).filter(Boolean)) {
+      map.set(line, (map.get(line) ?? 0) + 1);
+    }
+    return map;
+  };
+  const before = count(older);
+  const after = count(newer);
+  const only = (a: Map<string, number>, b: Map<string, number>) => {
+    const out: string[] = [];
+    for (const [line, n] of a) for (let i = (b.get(line) ?? 0); i < n; i += 1) out.push(line);
+    return out;
+  };
+  const added = only(after, before);
+  const removed = only(before, after);
+  return {
+    added: added.slice(0, cap),
+    removed: removed.slice(0, cap),
+    addedCount: added.length,
+    removedCount: removed.length,
+  };
+}
+
+/**
+ * A role's versions with what changed after each one, for reading rather than
+ * for restoring blind. Row N's `changedSince` compares it with the version
+ * after it — or with the role as it is now, for the newest — so it answers
+ * "what would I lose by going back to this": exactly those lines.
+ */
+export async function roleHistory(userId: string, roleId: string) {
+  const [listed, blobs, current] = await Promise.all([
+    listRevisions(userId, "ROLE", roleId),
+    db.revision.findMany({
+      where: { userId, kind: "ROLE", recordId: roleId },
+      orderBy: { createdAt: "desc" },
+      take: REVISIONS_PER_RECORD,
+      select: { id: true, data: true },
+    }),
+    db.role.findFirst({ where: { id: roleId, userId }, select: { background: true } }),
+  ]);
+  const backgroundOf = new Map(
+    blobs.map((row) => [row.id, String(((row.data ?? {}) as Record<string, unknown>).background ?? "")]),
+  );
+  const rows = listed.rows.map((row, index) => {
+    const newer = index === 0 ? current?.background ?? "" : backgroundOf.get(listed.rows[index - 1].id) ?? "";
+    return { ...row, changedSince: lineChanges(backgroundOf.get(row.id) ?? "", newer) };
+  });
+  return { ...listed, rows };
+}
+
 /** One revision including its blob. */
 export async function getRevision(userId: string, id: string) {
   const row = await db.revision.findFirst({
@@ -257,8 +316,12 @@ export async function restoreRevision(
     orderBy: { createdAt: "desc" },
     select: { id: true },
   });
+  // A key the snapshot does not carry was not restored — a copy taken before
+  // the date flags existed says nothing about them — so it cannot differ.
   const same = ROLE_SNAPSHOT_KEYS.every(
-    (key) => JSON.stringify((current as Record<string, unknown>)[key]) === JSON.stringify(blob[key]),
+    (key) =>
+      !(key in blob) ||
+      JSON.stringify((current as Record<string, unknown>)[key]) === JSON.stringify(blob[key]),
   );
   return {
     kind: "ROLE",
@@ -284,6 +347,8 @@ const ROLE_SNAPSHOT_KEYS = [
   "summary",
   "background",
   "tags",
+  "startUnconfirmed",
+  "endUnconfirmed",
 ] as const;
 
 // ---------------------------------------------------------------------------

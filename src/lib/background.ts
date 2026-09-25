@@ -338,7 +338,7 @@ export function appendToBackground(text: string, addition: string, heading?: str
   if (!body) return text;
 
   const name = heading?.trim();
-  if (!name) return `${text.trim()}\n\n${body}`.trim();
+  if (!name) return appendEvidence(text, body);
 
   // A reserved heading matches by KIND, not by spelling. Somebody whose rules
   // live under "Naming rule (resolved 2026-08-17)" gets the next one filed
@@ -385,4 +385,136 @@ export function backgroundExcerpt(text: string, max = 240): string {
     .replace(/\s+/g, " ")
     .trim();
   return flat.length > max ? `${flat.slice(0, max).trimEnd()}…` : flat;
+}
+
+/**
+ * Add evidence with no heading, and make sure it stays evidence.
+ *
+ * Appending to the end is right almost always. It is wrong when the document
+ * ENDS in a reserved section: text added after "## Caveats" is read as a
+ * caveat, so "file this" would quietly have filed a real achievement where no
+ * document could use it. In that case the text goes in just before the run of
+ * reserved sections at the bottom — still under whatever evidence came last,
+ * which is where it would have gone if the caveats had not been there.
+ */
+function appendEvidence(text: string, body: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return body;
+  const candidate = `${trimmed}\n\n${body}`;
+  // The section the new text falls inside: the last one starting at or before it.
+  const at0 = trimmed.length + 2;
+  const landed = parseBackground(candidate).filter((section) => section.offset <= at0).pop();
+  if (!landed || landed.kind === "evidence") return candidate;
+
+  // Walk back over the trailing `##` sections that are not evidence.
+  const sections = parseBackground(trimmed);
+  let at = -1;
+  for (let i = sections.length - 1; i >= 0; i -= 1) {
+    const section = sections[i];
+    if (section.kind === "evidence") break;
+    if (section.heading && !section.inline) at = section.offset;
+  }
+  if (at <= 0) return `${body}\n\n${trimmed}`;
+  const head = trimmed.slice(0, at).replace(/\s+$/, "");
+  return `${head}\n\n${body}\n\n${trimmed.slice(at)}`;
+}
+
+/** Where a section ends: the start of the next one, or the end of the text. */
+function sectionEnd(sections: BackgroundSection[], index: number, text: string) {
+  return index + 1 < sections.length ? sections[index + 1].offset : text.length;
+}
+
+const BULLET = /^(\s*(?:[-*+]|\d+[.)])\s+)/;
+
+/** Whitespace-insensitive, for matching a question the way it was listed. */
+function same(a: string, b: string) {
+  const norm = (value: string) => value.replace(/\s+/g, " ").trim().toLowerCase();
+  return norm(a) === norm(b);
+}
+
+/**
+ * Settle one open question: take it out, and put the answer in as evidence.
+ *
+ * `question` is the text as writingGuidance / list_open_questions return it.
+ * Where the answer goes depends on where the question was:
+ *
+ *   - a marked line inside evidence ("- ⚠️ OPEN: was it $40K or $45K?") is
+ *     REPLACED in place by the answer, bullet kept, so the settled fact sits
+ *     exactly where the doubt was — next to the work it is about;
+ *   - a line in an "Open questions" section is removed, the heading goes too
+ *     when nothing is left under it, and the answer is added as evidence —
+ *     under `heading` when one is given, otherwise the way appendEvidence adds
+ *     anything.
+ *
+ * No answer means the question is simply dropped, for "that no longer
+ * matters". Everything outside the touched lines comes back byte-identical.
+ * Resolving the same question twice fails the second time rather than doing
+ * something else, because by then it is not there.
+ * Pure: throws when the question is not there, writes nothing.
+ */
+export function resolveOpen(
+  text: string,
+  question: string,
+  answer?: string,
+  heading?: string,
+): string {
+  const sections = parseBackground(text);
+  const reply = answer?.trim() ?? "";
+
+  for (let i = 0; i < sections.length; i += 1) {
+    const section = sections[i];
+    if (section.kind !== "open") continue;
+    const start = section.offset;
+    const end = sectionEnd(sections, i, text);
+    const raw = text.slice(start, end);
+
+    if (section.inline) {
+      const lines = section.body.split("\n");
+      const listed = lines.some((line) => BULLET.test(line));
+      const joined = lines.map((line) => line.trim()).join(" ");
+      if (!(listed ? lines.some((line) => same(line.replace(BULLET, ""), question)) : same(joined, question))) {
+        continue;
+      }
+      // The whole marked paragraph or bullet goes; the answer takes its place.
+      const bullet = BULLET.exec(raw)?.[1] ?? "";
+      const tail = /\s*$/.exec(raw)?.[0] ?? "";
+      if (reply) return `${text.slice(0, start)}${bullet}${reply}${tail}${text.slice(end)}`;
+      // A dropped bullet leaves its list intact; a dropped paragraph leaves one
+      // blank line between its neighbours rather than three.
+      return bullet ? `${text.slice(0, start)}${text.slice(end)}` : splice(text, start, end);
+    }
+
+    // A line inside an "Open questions" section. Find it by its own text, with
+    // any continuation lines that belong to the same bullet.
+    const lines = raw.split("\n");
+    const index = lines.findIndex(
+      (line, n) => n > 0 && same(line.replace(BULLET, ""), question),
+    );
+    if (index < 0) continue;
+    let stop = index + 1;
+    while (stop < lines.length && /^\s{2,}\S/.test(lines[stop]) && !BULLET.test(lines[stop])) stop += 1;
+    const kept = [...lines.slice(0, index), ...lines.slice(stop)];
+    // The heading goes with its last question: an empty "## Open questions"
+    // is a to-do list that says there is something to do.
+    const without = kept.slice(1).every((line) => !line.trim())
+      ? splice(text, start, end)
+      : `${text.slice(0, start)}${kept.join("\n")}${text.slice(end)}`;
+    return reply ? appendToBackground(without, reply, heading) : without;
+  }
+
+  throw new Error(
+    "That open question is not in this background. Call list_open_questions and pass the question exactly as it came back.",
+  );
+}
+
+/**
+ * Cut [start, end) out and close the gap with exactly one blank line, touching
+ * nothing else — so the version history shows the one change that was made.
+ */
+function splice(text: string, start: number, end: number) {
+  const before = text.slice(0, start).replace(/\s+$/, "");
+  const after = text.slice(end).replace(/^\s+/, "");
+  if (!before) return after;
+  if (!after) return before;
+  return `${before}\n\n${after}`;
 }

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SaveIndicator } from "@/components/save-indicator";
+import { BackgroundEditor } from "@/components/me/background-editor";
 import { useAutosave } from "@/hooks/use-autosave";
 import { saveProfileAction } from "@/server/actions";
 
@@ -102,17 +103,22 @@ export function ProfileForm({ profile }: { profile: ProfileValues }) {
             <p className="text-muted-foreground text-sm">
               Not for the resume — this is context for Claude. What you want next, what you refuse to
               do again, comp expectations, how you work, what you are proud of, what you are bad at.
+              A <code className="bg-inset rounded px-1 font-mono text-[12px]">RULE:</code> here binds
+              every document, and an <code className="bg-inset rounded px-1 font-mono text-[12px]">OPEN:</code>{" "}
+              joins your list of things to settle.
             </p>
           </CardHeader>
           <CardContent>
-            <Textarea
+            {/* The same reader the roles use, so it reads as text rather than
+                as source, and a marking here looks like a marking there. */}
+            <BackgroundEditor
+              mode="profile"
               value={values.background}
-              onChange={(event) => set("background")(event.target.value)}
+              onChange={set("background")}
               placeholder={`I want to move from IC to staff-level scope without going into management…
 Comp: targeting $220k+ base, will trade for equity at a Series B.
 Non-negotiable: no on-call rotation under four engineers.
-I'm at my best when…`}
-              className="min-h-[22rem] font-mono text-[13px] leading-relaxed"
+RULE: never put a salary figure in writing.`}
             />
           </CardContent>
         </Card>

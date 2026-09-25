@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import type { ActivityType, McpScope, NoteKind, Stage, TagKind, UserRole } from "@prisma/client";
 import * as me from "@/lib/data/me";
+import * as revisions from "@/lib/data/revisions";
 import * as resumes from "@/lib/data/resumes";
 import * as pipeline from "@/lib/data/pipeline";
 import * as offers from "@/lib/data/offers";
@@ -772,7 +773,12 @@ export async function deleteHighlightAction(id: string) {
   revalidatePath("/me");
 }
 
-export async function createNoteAction(input: { title: string; body?: string; tags?: string[] }) {
+export async function createNoteAction(input: {
+  title: string;
+  body?: string;
+  tags?: string[];
+  roleId?: string | null;
+}) {
   const user = await requireUser();
   const note = await me.createNote(user.id, input);
   revalidatePath("/me");
@@ -781,11 +787,74 @@ export async function createNoteAction(input: { title: string; body?: string; ta
 
 export async function updateNoteAction(
   id: string,
-  patch: Partial<{ title: string; body: string; tags: string[]; pinned: boolean; kind: NoteKind }>,
+  patch: Partial<{
+    title: string;
+    body: string;
+    tags: string[];
+    pinned: boolean;
+    kind: NoteKind;
+    roleId: string | null;
+  }>,
 ) {
   const user = await requireUser();
-  await me.updateNote(user.id, id, patch);
+  const note = await me.updateNote(user.id, id, patch);
   revalidatePath("/me");
+  if (note.roleId) revalidatePath(`/me/${note.roleId}`);
+}
+
+/** The dry run returns drafts; the real one creates the rules. See the tool. */
+export async function splitNoteIntoRulesAction(
+  id: string,
+  options: { dryRun?: boolean; only?: number[] } = {},
+) {
+  const user = await requireUser();
+  const result = await me.splitNoteIntoRules(user.id, id, options);
+  if (!options.dryRun) revalidatePath("/me");
+  return result;
+}
+
+/** Answer one open question, or confirm an assumed date. Null role = profile. */
+export async function resolveOpenQuestionAction(
+  roleId: string | null,
+  question: string,
+  answer?: string,
+) {
+  const user = await requireUser();
+  const result = await me.resolveOpenQuestion(user.id, roleId, question, answer);
+  revalidatePath("/me");
+  if (roleId) revalidatePath(`/me/${roleId}`);
+  return result;
+}
+
+/** Null goes back to date order. */
+export async function reorderRolesAction(ids: string[] | null) {
+  const user = await requireUser();
+  const result = await me.reorderRoles(user.id, ids);
+  revalidatePath("/me");
+  return result;
+}
+
+export async function reorderHighlightsAction(roleId: string, ids: string[]) {
+  const user = await requireUser();
+  await me.reorderHighlights(user.id, roleId, ids);
+  revalidatePath(`/me/${roleId}`);
+}
+
+export async function roleHistoryAction(roleId: string) {
+  const user = await requireUser();
+  return revisions.roleHistory(user.id, roleId);
+}
+
+export async function restoreRoleRevisionAction(roleId: string, revisionId: string) {
+  const user = await requireUser();
+  // The revision must be this role's: restoreRevision finds it by id and user,
+  // and this check stops a stale panel restoring a different record.
+  const revision = await revisions.getRevision(user.id, revisionId);
+  if (!revision || revision.recordId !== roleId) throw new Error("That version is not one of this role's.");
+  const result = await revisions.restoreRevision(user.id, revisionId, { writtenBy: "app" });
+  revalidatePath("/me");
+  revalidatePath(`/me/${roleId}`);
+  return result;
 }
 
 export async function deleteNoteAction(id: string) {
