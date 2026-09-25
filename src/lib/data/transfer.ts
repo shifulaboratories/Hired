@@ -402,6 +402,8 @@ export async function importWorkspace(
         summary: s(row, "summary"),
         background: s(row, "background"),
         tags: strings(row, "tags"),
+        startUnconfirmed: bool(row, "startUnconfirmed"),
+        endUnconfirmed: bool(row, "endUnconfirmed"),
         sortOrder: int(row, "sortOrder"),
       },
     });
@@ -539,6 +541,9 @@ export async function importWorkspace(
         kind: enumOf(NoteKind, s(row, "kind"), NoteKind.NOTE),
         tags: strings(row, "tags"),
         pinned: bool(row, "pinned"),
+        // Roles are put back before notes, so a note about a job lands on
+        // that job again — or on nothing, when the role was not in the file.
+        roleId: real(map.role.get(s(row, "roleId"))),
       },
     });
     noteByKey.set(k, made.id);

@@ -89,6 +89,7 @@ import * as schedule from "@/lib/data/schedule";
 import { instanceAssistantUsage } from "@/lib/data/assistant";
 import * as transferables from "@/lib/data/transferables";
 import { standingRulesFit } from "@/lib/mcp/briefing-head";
+import * as checks from "@/lib/data/me-checks";
 import { KEYWORD_POLICIES, type KeywordPolicy } from "@/lib/keyword-policy";
 import {
   getSettings,
@@ -741,7 +742,7 @@ export const tools: McpTool[] = [
     name: "get_me_snapshot",
     title: "Get everything in Me",
     description:
-      "Returns EVERYTHING in Me at once: profile, all roles with their full background text, all highlights, education, projects, skills, certifications and notes. `keywordPolicy` says how close to a posting's own words you may write, with the rule spelled out in `permits` and their recorded transferable skills beside it — read it before you draft. Use when you need complete context (e.g. writing a resume from scratch). Can be large — prefer search_me for targeted lookups. READ `writingRules`, `neverOnADocument` AND `notSettled` BEFORE YOU WRITE ANYTHING. The first is the constraints this person has set on how their jobs may be described, gathered across every role; obey them silently rather than mentioning them. The second is their own positioning notes and interview prep — context for you, and it must never appear on a resume, a cover letter or anything an employer sees. The third is facts they have marked as not settled yet — a start month they assumed, a number quoted two ways; never state, round off or pick a version of one, and if a document needs it, ask. Each role also carries `resumeEvidence`, which is the part of its background a document may be written from.",
+      "Returns EVERYTHING in Me at once: profile, all roles with their full background text, all highlights, education, projects, skills, certifications and notes. `keywordPolicy` says how close to a posting's own words you may write, with the rule spelled out in `permits` and their recorded transferable skills beside it — read it before you draft. Use when you need complete context (e.g. writing a resume from scratch). Can be large — prefer search_me for targeted lookups. READ `writingRules`, `neverOnADocument` AND `notSettled` BEFORE YOU WRITE ANYTHING. The first is the constraints this person has set on how their jobs may be described, gathered across every role; obey them silently rather than mentioning them. The second is their own positioning notes and interview prep — context for you, and it must never appear on a resume, a cover letter or anything an employer sees. The third is facts they have marked as not settled yet — a start month they assumed, a number quoted two ways; never state, round off or pick a version of one, and if a document needs it, ask. A role with `startUnconfirmed` or `endUnconfirmed` gets the year only for that date. `writingRules` and `notSettled` include the profile's personal background as well as each role. Each role also carries `resumeEvidence`, which is the part of its background a document may be written from.",
     inputSchema: object({
       include_background: bool(
         "Include the full long-form background text for each role (default true). Set false for a lighter payload.",
@@ -899,7 +900,7 @@ export const tools: McpTool[] = [
     name: "get_role",
     title: "Get a role",
     description:
-      "Full detail for one role: the complete background text, that background READ INTO SECTIONS, and all of its achievement highlights. A background holds four different kinds of thing and only one of them may reach a document. `resumeEvidence` is the part you may write from. `rules` are binding instructions about how to describe this job — follow them silently rather than quoting them. `caveats` are the person's own positioning notes and interview prep; they are context for YOU and must never appear on a resume, a cover letter or anything an employer sees. `open` is what they have marked as not settled yet — never state, round off or choose a version of one; ask. `sections` is the whole thing in order, each tagged evidence, rules, caveats or open. A section is marked by its heading ('## Rules', '## Caveats', '## Open questions', or a shouted suffix like '## Post-departure — INTERVIEW ONLY'), or a single paragraph or bullet by a shouted label at its start ('NAMING RULE:', '⚠️ OPEN:', '**INTERVIEW ONLY:**'). Lowercase prose is never a marker. When nothing is marked, everything is evidence, which is what every background written before sections existed means.",
+      "Full detail for one role: the complete background text, that background READ INTO SECTIONS, and all of its achievement highlights. A background holds four different kinds of thing and only one of them may reach a document. `resumeEvidence` is the part you may write from. `rules` are binding instructions about how to describe this job — follow them silently rather than quoting them. `caveats` are the person's own positioning notes and interview prep; they are context for YOU and must never appear on a resume, a cover letter or anything an employer sees. `open` is what they have marked as not settled yet, including a start or end month marked unconfirmed — never state, round off or choose a version of one; ask, and settle it with resolve_open_question. When `startUnconfirmed` or `endUnconfirmed` is true, write the year only for that date. `notes` are the notes filed against this job — STAR stories, interview answers — and are evidence like the background is. `sections` is the whole thing in order, each tagged evidence, rules, caveats or open. A section is marked by its heading ('## Rules', '## Caveats', '## Open questions', or a shouted suffix like '## Post-departure — INTERVIEW ONLY'), or a single paragraph or bullet by a shouted label at its start ('NAMING RULE:', '⚠️ OPEN:', '**INTERVIEW ONLY:**'). Lowercase prose is never a marker. When nothing is marked, everything is evidence, which is what every background written before sections existed means.",
     inputSchema: object({ id: str("Role id") }, ["id"]),
     annotations: {
       readOnlyHint: true,
@@ -917,7 +918,7 @@ export const tools: McpTool[] = [
     name: "list_open_questions",
     title: "What they have not settled yet",
     description:
-      "Every fact they have marked as not settled, across all their roles: a start month they assumed, a number quoted two different ways, a title they have not decided how to describe. Each comes back with the roleId, the role and the question as written. Reach for it when they ask what is left to tidy in Me, before writing a dated or numbered document, or when they say 'let's fix my open questions'. Put the questions to them ONE AT A TIME and never answer one yourself: an open question exists precisely because the honest answer is not on file. When they give an answer, get_role, write the answer into the background as evidence and remove the question, then update_role with the whole background — or append_role_background under a normal heading when they would rather keep the question visible until they have checked. These are already kept out of resumeEvidence, so an empty list does not mean anything was unsafe, only that nothing is pending. Read-only.",
+      "Every fact they have marked as not settled: questions in a role's background ('⚠️ OPEN:', '## Open questions'), questions in their profile's personal background (roleId null), and start or end months marked unconfirmed on a role. Each comes back with roleId, role, the question as written and its `kind` — background, start_date or end_date. Reach for it when they ask what is left to tidy in Me, before writing a dated or numbered document, or when they say 'let's go through my open questions'. Put them ONE AT A TIME and never answer one yourself: an open question exists because the honest answer is not on file. When they answer, call resolve_open_question with the question exactly as it came back. These are already kept off documents, so an empty list means nothing is pending, not that anything was unsafe. Read-only.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -926,6 +927,71 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (_args, ctx) => me.listOpenQuestions(ctx.userId),
+  },
+  {
+    name: "resolve_open_question",
+    title: "Settle an open question",
+    description:
+      "Record their answer to one open question and take the question away. Call it only with an answer THEY gave you in this conversation — never with a guess, a rounding, or the likelier of two figures. Pass the question exactly as list_open_questions returned it. What happens depends on where the question was: a marked line inside the background ('- ⚠️ OPEN: was it $40K or $45K?') is replaced, in place, by the answer, so the settled fact sits beside the work it is about; a line under '## Open questions' is removed (the heading goes with its last line) and the answer is added as evidence — under `heading` when you give one. An unconfirmed start or end month is settled by clearing the flag; pass the corrected month as YYYY-MM (or YYYY if only the year is certain) as the answer, or no answer to confirm the date already on file. Leaving out `answer` on a background question DROPS it — for 'that no longer matters'. The old background is kept in the version history, so undo_change reverses this. Returns what was resolved.",
+    inputSchema: object(
+      {
+        role_id: str("The role the question belongs to. Omit for a question in the profile's personal background."),
+        question: str("The question exactly as list_open_questions returned it."),
+        answer: str(
+          "Their answer, as a fact written the way it should appear in the background. For a date question, YYYY-MM or YYYY. Omit to drop a question that no longer matters, or to confirm a date as it stands.",
+        ),
+        heading: str(
+          "Only for a question from an 'Open questions' section: the evidence heading to file the answer under, e.g. 'Scope'. Merges into an existing section of that name.",
+        ),
+      },
+      ["question"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      me.resolveOpenQuestion(
+        ctx.userId,
+        s(args, "role_id") ?? null,
+        required(args, "question"),
+        s(args, "answer"),
+        s(args, "heading"),
+      ),
+  },
+  {
+    name: "career_timeline",
+    title: "Gaps and overlaps in their career",
+    description:
+      "Their roles laid out in months, grouped as jobs, contract and freelance, advisory and board, or internships — read from each role's employment type — with the GAPS of three months or more between jobs and contracts, and any two jobs that OVERLAPPED by two months or more. Advisory roles run alongside by nature and are never counted as an overlap; an internship before a first job is never a gap. Reach for it before interview prep ('what will they ask me about'), before writing a resume that lists dates, or when they ask whether their history reads cleanly. A gap marked `mayBeADateError` sits against a month they marked unconfirmed, so settle the date before treating the gap as real. Do not explain a gap for them or invent what they did in it; ask, and offer to add what they tell you with append_role_background or a note. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => checks.timelineFor(ctx.userId),
+  },
+  {
+    name: "reorder_roles",
+    title: "Reorder roles",
+    description:
+      "Set the order their roles are listed in — in Me, in get_me_snapshot and in list_roles. By default roles are in date order, current first. Pass `ids` to put those roles first in that order (the rest keep their places after them), which switches the list to their own order; pass `by_date: true` to go back to date order. Resumes are not affected: a resume's order is its own, changed with reorder_resume. Returns which order is now in force.",
+    inputSchema: object({
+      ids: strArray("Role ids in the order wanted. May be a subset."),
+      by_date: bool("True to go back to date order, current first. Ignores ids."),
+    }),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      me.reorderRoles(ctx.userId, b(args, "by_date") ? null : (a(args, "ids") ?? null)),
   },
   {
     name: "create_role",
@@ -946,6 +1012,10 @@ export const tools: McpTool[] = [
           "THE BACKGROUND. Everything raw: projects, metrics, technologies, stories, praise, failures, org context. Markdown welcome. No length limit.",
         ),
         tags: strArray("Freeform tags, e.g. ['fintech','ic','python']"),
+        startUnconfirmed: bool(
+          "True when the start MONTH is a guess. A writer then prints the year only, or asks. Use it rather than writing the doubt into the background.",
+        ),
+        endUnconfirmed: bool("True when the end MONTH is a guess. Same rule."),
       },
       ["company", "title"],
     ),
@@ -968,6 +1038,8 @@ export const tools: McpTool[] = [
           summary: s(args, "summary"),
           background: s(args, "background"),
           tags: a(args, "tags"),
+          startUnconfirmed: b(args, "startUnconfirmed"),
+          endUnconfirmed: b(args, "endUnconfirmed"),
         }),
       }),
   },
@@ -975,7 +1047,7 @@ export const tools: McpTool[] = [
     name: "update_role",
     title: "Update a role",
     description:
-      "Update fields on an existing role. WARNING: passing background REPLACES the whole thing — use append_role_background to add to it safely.",
+      "Update fields on an existing role. WARNING: passing background REPLACES the whole thing — use append_role_background to add to it safely. When they say a start or end month is a guess, set startUnconfirmed / endUnconfirmed rather than noting it in the background: the flag keeps the month off every resume (add_role_to_resume prints the year only) and puts the date on their list of things to settle.",
     inputSchema: object(
       {
         id: str("Role id"),
@@ -989,6 +1061,10 @@ export const tools: McpTool[] = [
         summary: str("Scope summary"),
         background: str("Replaces the entire background"),
         tags: strArray("Tags"),
+        startUnconfirmed: bool(
+          "True when the start MONTH is a guess. A writer then prints the year only, or asks. Use it rather than writing the doubt into the background.",
+        ),
+        endUnconfirmed: bool("True when the end MONTH is a guess. Same rule."),
       },
       ["id"],
     ),
@@ -1012,6 +1088,8 @@ export const tools: McpTool[] = [
           summary: s(args, "summary"),
           background: s(args, "background"),
           tags: a(args, "tags"),
+          startUnconfirmed: b(args, "startUnconfirmed"),
+          endUnconfirmed: b(args, "endUnconfirmed"),
         }),
       ),
   },
@@ -1157,10 +1235,31 @@ export const tools: McpTool[] = [
   // ME — highlights
   // -------------------------------------------------------------------------
   {
+    name: "reorder_highlights",
+    title: "Reorder a role's highlights",
+    description:
+      "Put one role's highlights in the order given — their own ranking of which lines lead. The order is what the role page shows and what add_role_to_resume takes the first few from; strength is unchanged. `ids` may be a subset: those go first in that order and the rest keep their places after them. Get the ids from get_role.",
+    inputSchema: object(
+      {
+        role_id: str("The role whose highlights these are"),
+        ids: strArray("Highlight ids in the order wanted"),
+      },
+      ["role_id", "ids"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) =>
+      me.reorderHighlights(ctx.userId, required(args, "role_id"), a(args, "ids") ?? []),
+  },
+  {
     name: "list_highlights",
     title: "List highlights",
     description:
-      "Reusable, polished achievement bullets, strongest first. These are the distilled lines you pull from when assembling a resume. Capped, and the result says so when it was cut off — pass roleId to narrow it to one job.",
+      "Reusable, polished achievement bullets, strongest first. These are the distilled lines you pull from when assembling a resume. Each carries `usedIn`: the resumes that have a bullet saying the same thing (matched by meaning, the way trace_resume_evidence matches, not by exact text), most recently edited first. A strong highlight with an empty `usedIn` is one they have never put in front of anybody — worth offering when tailoring. Capped, and the result says so when it was cut off — pass roleId to narrow it to one job.",
     inputSchema: object({ roleId: str("Only return highlights for this role id"), limit: limitArg(200) }),
     annotations: {
       readOnlyHint: true,
@@ -1168,8 +1267,17 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (args, ctx) =>
-      capped(await me.listHighlights(ctx.userId, s(args, "roleId")), n(args, "limit"), 200),
+    handler: async (args, ctx) => {
+      const [rows, usage] = await Promise.all([
+        me.listHighlights(ctx.userId, s(args, "roleId")),
+        checks.highlightUsage(ctx.userId),
+      ]);
+      return capped(
+        rows.map((row) => ({ ...row, usedIn: usage.get(row.id) ?? [] })),
+        n(args, "limit"),
+        200,
+      );
+    },
   },
   {
     name: "create_highlights",
@@ -1270,8 +1378,11 @@ export const tools: McpTool[] = [
     name: "list_notes",
     title: "List notes",
     description:
-      "Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything. Capped, and the result says so when it was cut off — except for standing rules (kind GUARDRAIL), which are never cut and always come first. Each standing rule carries `inBriefing`: whether it fits in the briefing every client reads on connect. There is room for roughly a line or two per rule; one that is false is still binding, but only reaches a client that comes here for it, so offer to shorten it or split it into several short rules. A note of kind NOTE whose title reads like a rule (\"Guardrails\", \"never do X\") is NOT a standing rule and reaches nobody unasked — say so, and offer update_note with kind GUARDRAIL. search_me is the better tool when you are looking for something specific.",
-    inputSchema: object({ limit: limitArg(100) }),
+      "Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything. Capped, and the result says so when it was cut off — except for standing rules (kind GUARDRAIL), which are never cut and always come first. Each standing rule carries `inBriefing`: whether it fits in the briefing every client reads on connect. There is room for roughly a line or two per rule; one that is false is still binding, but only reaches a client that comes here for it, so offer to shorten it or split it with split_note_into_rules. A note with a `role` is filed against that job. A note of kind NOTE whose title reads like a rule (\"Guardrails\", \"never do X\") is NOT a standing rule and reaches nobody unasked — say so, and offer update_note with kind GUARDRAIL. search_me is the better tool when you are looking for something specific.",
+    inputSchema: object({
+      limit: limitArg(100),
+      role_id: str("Only the notes filed against this role"),
+    }),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
@@ -1288,7 +1399,7 @@ export const tools: McpTool[] = [
       // Guardrails are few by design and they come first now, whatever the
       // limit. The cap applies to what is left.
       const [notes, fit] = await Promise.all([
-        me.listNotes(ctx.userId),
+        me.listNotes(ctx.userId, defined({ roleId: s(args, "role_id") })),
         standingRulesFit(ctx.userId, ctx.user),
       ]);
       const inBriefing = new Set(fit.rules.filter((rule) => rule.inBriefing).map((rule) => rule.id));
@@ -1320,6 +1431,9 @@ export const tools: McpTool[] = [
         body: str("The note body. Markdown welcome, no length limit."),
         tags: strArray("Tags"),
         pinned: bool("Pin to the top of the notes list"),
+        role_id: str(
+          "The role this note is about — a STAR story from that job, say. It then appears on the role and in get_role. Pass an empty string to detach it. Most notes belong to no one job; leave it out for those.",
+        ),
         kind: {
           type: "string",
           enum: ["NOTE", "GUARDRAIL"],
@@ -1343,6 +1457,7 @@ export const tools: McpTool[] = [
           tags: a(args, "tags"),
           pinned: b(args, "pinned"),
           kind: noteKind(args),
+          roleId: s(args, "role_id"),
         }),
       }),
   },
@@ -1358,6 +1473,9 @@ export const tools: McpTool[] = [
         body: str("New body (replaces existing)"),
         tags: strArray("New tags"),
         pinned: bool("Pinned state"),
+        role_id: str(
+          "The role this note is about — a STAR story from that job, say. It then appears on the role and in get_role. Pass an empty string to detach it. Most notes belong to no one job; leave it out for those.",
+        ),
         kind: {
           type: "string",
           enum: ["NOTE", "GUARDRAIL"],
@@ -1382,8 +1500,70 @@ export const tools: McpTool[] = [
           tags: a(args, "tags"),
           pinned: b(args, "pinned"),
           kind: noteKind(args),
+          roleId: s(args, "role_id"),
         }),
       ),
+  },
+  {
+    name: "split_note_into_rules",
+    title: "Split a note into standing rules",
+    description:
+      "Turn one note that holds many rules — a 'Guardrails, never violate' list — into one standing rule per note. Why it matters: the briefing every client reads on connect has room for about five hundred characters of standing rules, so one long rules note is dropped from it whole and only reaches a client that fetches it; short separate rules fit and travel with every connection. Each bullet becomes a rule; a heading or a line ending in a colon is carried into the titles under it ('Numbers: never cite a figure without a source'); a note with no bullets splits by paragraph. CALL WITH dry_run: true FIRST, show them the drafts, and pass `only` with the positions they want to keep. Not destructive: the original note is kept and becomes an ordinary NOTE, so nothing is said twice and nothing is lost. Refuses a note that holds only one rule — make that one a GUARDRAIL with update_note instead.",
+    inputSchema: object(
+      {
+        id: str("The note to split"),
+        dry_run: bool("Return the drafted rules without creating anything. Do this first."),
+        only: {
+          type: "array",
+          items: { type: "number" },
+          description: "0-based positions of the drafts to keep, from the dry run. Omit to keep them all.",
+        },
+      },
+      ["id"],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => {
+      const only = Array.isArray(args.only)
+        ? (args.only as unknown[]).filter((value): value is number => typeof value === "number")
+        : undefined;
+      return me.splitNoteIntoRules(ctx.userId, required(args, "id"), {
+        dryRun: b(args, "dry_run") ?? false,
+        only,
+      });
+    },
+  },
+  {
+    name: "find_figure_conflicts",
+    title: "Numbers stated two different ways",
+    description:
+      "Figures about the same thing in the same job that disagree across their material — a follower count written as 150M+ in the background and 200M+ on a resume, a budget given as $40K in one bullet and $45K in another. Reads role backgrounds (evidence only), highlights, notes, resumes and the profile summary; a figure is grouped with others about the same noun in the same job, and a note or resume entry that names a company counts as that job. Run it before a resume or a letter goes out, and whenever they ask whether their numbers are consistent. THESE ARE CANDIDATES, NOT VERDICTS: the grouping is a heuristic, so read each group and say which one looks like a real disagreement. Never pick a winner yourself — ask which figure is true, then fix the others (update_highlight, update_resume, update_role) or mark the doubt with append_role_background under 'Open questions'. Two figures in one plain sentence ('from $1M to $3M') are a before-and-after and are never reported. Read-only.",
+    inputSchema: object({ limit: num("How many groups to return. Default 25.") }),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (args, ctx) => checks.figureConflicts(ctx.userId, n(args, "limit") ?? 25),
+  },
+  {
+    name: "skills_without_evidence",
+    title: "Listed skills nothing backs up",
+    description:
+      "Every skill in their Skills groups, split into `unbacked` — nothing they have written about real work mentions it: no role background, highlight, project or note — and `backed`, with the record that does. The profile summary does not count; it is the claim, not the evidence. This is the reverse of posting_keywords: that asks what a posting wants that they cannot show, this asks what they CLAIM that they cannot show — the skill an interviewer asks one question about and it falls over. Reach for it when tidying Me or before a technical interview. For each unbacked skill, ask where they used it and file the answer with append_role_background; if the answer is nowhere, offer to take it off the list with update_extra. Never invent the usage. Matched by the same stemmed full-text search as search_me, so a very short skill name ('Go', 'R') can match unrelated words — say so when one looks backed by something that is plainly not about it. Read-only.",
+    inputSchema: object({}),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: async (_args, ctx) => checks.unbackedSkills(ctx.userId),
   },
   {
     name: "delete_note",
@@ -4777,7 +4957,7 @@ export const tools: McpTool[] = [
     name: "workspace_health",
     title: "What is thin in this workspace",
     description:
-      "The five places this workspace is missing the labels everything else depends on: companies with no industry, applications with no source, people with no relationship recorded, roles with no highlights distilled out of them, and resumes that were never attached to anything. Reach for it when somebody asks how to get more out of the app, when an analysis you just ran came back unconfident, or at the start of a tidy-up — and reach for get_setup_status instead when the question is whether they have started at all, because this one assumes they have. Every check comes back with a count, the total it is out of, one line saying why it matters, the tool that fixes it, and up to five examples WITH IDS, so you can fix them in the same turn rather than reading out a number and asking them to go and click. Work through it conversationally, one check at a time, largest share of a population first — and confirm before writing: a source tag is a claim about where something came from, and guessing one is worse than leaving it blank. `clean` lists the checks that found nothing, so you can say what is already in good shape rather than only what is wrong. Nothing here is a fault; a workspace three days old is supposed to look like this. Archived companies, people and applications are excluded; roles carry no archive of their own, so all of them are counted. Read-only, saves nothing.",
+      "The six places this workspace is missing what everything else depends on: companies with no industry, applications with no source, people with no relationship recorded, roles with no highlights distilled out of them, resumes that were never attached to anything, and a current job nothing has been written into for thirty days — the details that are freshest now and gone by the time a resume is due. Reach for it when somebody asks how to get more out of the app, when an analysis you just ran came back unconfident, or at the start of a tidy-up — and reach for get_setup_status instead when the question is whether they have started at all, because this one assumes they have. Every check comes back with a count, the total it is out of, one line saying why it matters, the tool that fixes it, and up to five examples WITH IDS, so you can fix them in the same turn rather than reading out a number and asking them to go and click. Work through it conversationally, one check at a time, largest share of a population first — and confirm before writing: a source tag is a claim about where something came from, and guessing one is worse than leaving it blank. `clean` lists the checks that found nothing, so you can say what is already in good shape rather than only what is wrong. Nothing here is a fault; a workspace three days old is supposed to look like this. Archived companies, people and applications are excluded; roles carry no archive of their own, so all of them are counted. Read-only, saves nothing.",
     inputSchema: object({
       examples: num("How many examples to return per check. Default 5, ceiling 25."),
     }),
@@ -6669,7 +6849,7 @@ export const tools: McpTool[] = [
     name: "list_revisions",
     title: "Earlier versions of a resume or a role",
     description:
-      "Every stored version of one resume or one role, newest first, with when it was taken and who caused it. These are BEFORE images: each row is what the record looked like before a write replaced it, so the newest row is where an undo lands. Reach for it before update_resume or update_role on something that matters, so you can tell them what they can get back to, and after a write that went wrong. Versions are taken only when the whole thing is replaced — changing a resume's font or its name does not make one — and they are COALESCED: one per record per author per ten minutes, keeping the OLDER image, so a version is the record as it stood before a sitting of work rather than before a keystroke. At most twenty are kept per record and old ones are swept on this instance's schedule, so this is a safety net rather than an archive. `recordExists` false means the record was deleted, and nothing here can be restored to it. Read-only.",
+      "Every stored version of one resume or one role, newest first, with when it was taken and who caused it. These are BEFORE images: each row is what the record looked like before a write replaced it, so the newest row is where an undo lands. Reach for it before update_resume or update_role on something that matters, so you can tell them what they can get back to, and after a write that went wrong. Versions are taken when the whole thing is replaced, and for a role also when something is appended to its background — changing a resume's font or its name does not make one — and they are COALESCED: one per record per author per ten minutes, keeping the OLDER image, so a version is the record as it stood before a sitting of work rather than before a keystroke. At most twenty are kept per record and old ones are swept on this instance's schedule, so this is a safety net rather than an archive. `recordExists` false means the record was deleted, and nothing here can be restored to it. For a ROLE each row also carries `changedSince`: the background lines added and removed after that version, which is exactly what restoring it would undo — read those out before restoring. Read-only.",
     inputSchema: object(
       {
         kind: {
@@ -6688,13 +6868,15 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (args, ctx) =>
-      revisions.listRevisions(
-        ctx.userId,
-        required(args, "kind") as "RESUME" | "ROLE",
-        required(args, "record_id"),
-        n(args, "limit"),
-      ),
+    handler: async (args, ctx) => {
+      const kind = required(args, "kind") as "RESUME" | "ROLE";
+      if (kind === "ROLE") {
+        const history = await revisions.roleHistory(ctx.userId, required(args, "record_id"));
+        const limit = n(args, "limit");
+        return limit ? { ...history, rows: history.rows.slice(0, Math.max(1, limit)) } : history;
+      }
+      return revisions.listRevisions(ctx.userId, kind, required(args, "record_id"), n(args, "limit"));
+    },
   },
   {
     name: "restore_revision",

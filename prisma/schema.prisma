@@ -494,6 +494,10 @@ model Profile {
   /// Salesforce work you actually did — loses a screen for nothing. No level
   /// permits claiming work at an employer you did not do.
   keywordPolicy  String    @default("MATCH")
+  /// How Me lists roles: "date" (current first, then newest start) or
+  /// "manual" (Role.sortOrder, set by dragging or reorder_roles). Date until
+  /// somebody reorders by hand, and back to date whenever they ask.
+  roleOrder      String    @default("date")
   /// A square headshot, held as a data URI ("data:image/jpeg;base64,..."). It
   /// lives in the row rather than an object store so self-hosting still needs
   /// one environment variable, and so a published resume renders the picture
@@ -591,18 +595,27 @@ model Role {
   startDate      String   @default("")
   endDate        String   @default("")
   isCurrent      Boolean  @default(false)
+  /// The start or end month was assumed rather than checked. A writer puts the
+  /// year only, or asks, and never prints a guessed month on a dated resume.
+  startUnconfirmed Boolean @default(false)
+  endUnconfirmed   Boolean @default(false)
   /// One or two sentences describing the scope of the role.
   summary        String   @default("")
   /// THE BACKGROUND. Unlimited markdown: projects, metrics, stories, tech,
   /// politics, wins, failures, praise, numbers. Claude mines this. Stored in
   /// the brainDump column — see the note on Profile.background.
   background     String   @default("") @map("brainDump")
+  /// When something was last written into the background — not updatedAt,
+  /// which also moves when roles are reordered. "Last added 5 weeks ago" on
+  /// the current job reads this.
+  backgroundUpdatedAt DateTime @default(now())
   tags           String[] @default([])
   sortOrder      Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   highlights Highlight[]
+  notes      Note[]
   tasks      Task[]
 
   @@index([userId, sortOrder])
@@ -746,9 +759,15 @@ model Note {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tasks     Task[]
+  /// The job this note is about, when it is about one — a STAR story from a
+  /// role, say. Optional: most notes belong to no single job, which is the
+  /// point of notes. Deleting the role leaves the note, unattached.
+  roleId    String?
+  role      Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([userId, kind])
+  @@index([userId, roleId])
 }
 
 // ---------------------------------------------------------------------------

@@ -34,13 +34,20 @@ export function ChipInput({
   id,
   /** What one entry is called. Names the box for a screen reader. */
   noun = "item",
+  /** Values to mark, compared case-insensitively — e.g. a skill with no evidence. */
+  flagged = [],
+  /** Why a flagged chip is marked, for its tooltip. */
+  flagNote = "",
 }: {
   values: string[];
   onChange: (next: string[]) => void;
   placeholder?: string;
   id?: string;
   noun?: string;
+  flagged?: string[];
+  flagNote?: string;
 }) {
+  const marked = new Set(flagged.map((value) => value.trim().toLowerCase()));
   const [draft, setDraft] = useState("");
   const boxRef = useRef<HTMLInputElement>(null);
 
@@ -85,9 +92,14 @@ export function ChipInput({
       {values.map((value, index) => (
         <span
           key={`${value}-${index}`}
+          title={marked.has(value.trim().toLowerCase()) ? flagNote : undefined}
           // bg-background, not bg-inset: the field itself is the inset, so an
-          // inset chip inside it is invisible.
-          className="bg-background text-foreground rounded-chip flex items-center gap-1 border py-0.5 pr-0.5 pl-2 text-[12.5px]"
+          // inset chip inside it is invisible. A flagged chip gets a dotted
+          // warning border rather than a colour alone.
+          className={cn(
+            "bg-background text-foreground rounded-chip flex items-center gap-1 border py-0.5 pr-0.5 pl-2 text-[12.5px]",
+            marked.has(value.trim().toLowerCase()) && "border-warning border-dotted",
+          )}
         >
           {value}
           <button

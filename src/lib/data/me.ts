@@ -11,10 +11,12 @@ import {
   appendToBackground,
   backgroundExcerpt,
   parseBackground,
+  resolveOpen,
   resumeEvidence,
   writingGuidance,
 } from "@/lib/background";
 import { db } from "@/lib/db";
+import { splitIntoRules } from "@/lib/note-rules";
 import { listTransferables } from "@/lib/data/transferables";
 import type { PipelineView } from "@/lib/pipeline-fields";
 import {
@@ -102,6 +104,7 @@ function blankProfile(userId: string): Profile {
     summary: "",
     background: "",
     keywordPolicy: DEFAULT_KEYWORD_POLICY,
+    roleOrder: "date",
     boardFields: [],
     listFields: [],
     calendarFields: [],
@@ -322,20 +325,85 @@ export type RoleInput = {
   summary?: string;
   background?: string;
   tags?: string[];
+  /** The start month was assumed. A writer prints the year only, or asks. */
+  startUnconfirmed?: boolean;
+  /** The end month was assumed. Same rule. */
+  endUnconfirmed?: boolean;
 };
 
+/**
+ * How this person's roles are ordered: by date, or the order they dragged
+ * them into. Date is the default and what almost everyone wants; "manual"
+ * exists for the person whose advisory work reads better beside the job it
+ * came out of than in strict date order.
+ */
+async function roleOrderFor(userId: string) {
+  const profile = await db.profile.findUnique({ where: { userId }, select: { roleOrder: true } });
+  return profile?.roleOrder === "manual" ? "manual" : "date";
+}
+
+const BY_DATE = [
+  { isCurrent: "desc" as const },
+  { startDate: "desc" as const },
+  { sortOrder: "asc" as const },
+];
+const BY_HAND = [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }];
+
 export async function listRoles(userId: string) {
+  const order = await roleOrderFor(userId);
   return db.role.findMany({
     where: { userId },
-    orderBy: [{ isCurrent: "desc" }, { startDate: "desc" }, { sortOrder: "asc" }],
+    orderBy: order === "manual" ? BY_HAND : BY_DATE,
     include: { _count: { select: { highlights: true } } },
   });
+}
+
+/**
+ * Put roles in the order given, or back in date order.
+ *
+ * `ids` may be a subset: the ones named come first, in that order, and every
+ * other role keeps its place after them — so moving one card never needs the
+ * whole list. An id that is not this person's is refused rather than skipped,
+ * because a reorder that silently drops a card is a reorder that lies.
+ * Passing nothing, or `byDate`, returns to date order and leaves sortOrder
+ * alone so a later switch back to manual finds the old hand order intact.
+ */
+export async function reorderRoles(
+  userId: string,
+  ids: string[] | null,
+): Promise<{ order: "date" | "manual" }> {
+  await ensureProfile(userId);
+  if (!ids || ids.length === 0) {
+    await db.profile.update({ where: { userId }, data: { roleOrder: "date" } });
+    return { order: "date" };
+  }
+  const current = await listRoles(userId);
+  const known = new Set(current.map((role) => role.id));
+  const unknown = ids.filter((id) => !known.has(id));
+  if (unknown.length > 0) throw new Error(`No role with id ${unknown[0]}`);
+  const named = new Set(ids);
+  const next = [...ids, ...current.map((role) => role.id).filter((id) => !named.has(id))];
+  await db.$transaction([
+    ...next.map((id, index) =>
+      db.role.updateMany({ where: { id, userId }, data: { sortOrder: index } }),
+    ),
+    db.profile.update({ where: { userId }, data: { roleOrder: "manual" } }),
+  ]);
+  return { order: "manual" };
 }
 
 export async function getRole(userId: string, id: string) {
   const role = await db.role.findFirst({
     where: { id, userId },
-    include: { highlights: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } },
+    include: {
+      highlights: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+      // Filtered on userId as well as the relation: a note row can only ever
+      // point at its owner's role, but this file does not rely on "can only".
+      notes: {
+        where: { userId },
+        orderBy: [{ kind: "asc" }, { pinned: "desc" }, { updatedAt: "desc" }],
+      },
+    },
   });
   if (!role) return null;
 
@@ -343,9 +411,12 @@ export async function getRole(userId: string, id: string) {
   // `background` behaves exactly as it did; one that is about to write a
   // document now has to go out of its way to miss the rules and the caveats,
   // which used to be indistinguishable from the evidence around them.
-  const { rules, caveats, open } = writingGuidance(role.background);
+  const { rules, caveats } = writingGuidance(role.background);
   return {
     ...role,
+    // Background questions and unconfirmed dates, the same list the Roles tab
+    // and list_open_questions show for this role.
+    open: openItemsFor(role).map((item) => item.question),
     sections: parseBackground(role.background).map(({ kind, heading, body }) => ({
       kind,
       heading,
@@ -354,8 +425,73 @@ export async function getRole(userId: string, id: string) {
     resumeEvidence: resumeEvidence(role.background),
     rules,
     caveats,
-    open,
   };
+}
+
+export type OpenItemKind = "background" | "start_date" | "end_date";
+
+export type OpenItem = {
+  /** Null for a question in the profile's personal background. */
+  roleId: string | null;
+  role: string;
+  question: string;
+  kind: OpenItemKind;
+};
+
+/** How a month reads in a question: "March 2021", or the raw value. */
+function monthLabel(value: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(value.trim());
+  if (!match) return value.trim() || "no date on file";
+  const month = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1));
+  return month.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+/** The prefixes a date question opens with, so resolving can recognise one. */
+const DATE_QUESTION: Record<"start_date" | "end_date", string> = {
+  start_date: "Start month not confirmed",
+  end_date: "End month not confirmed",
+};
+
+/**
+ * Everything unsettled about one role: questions in its background, then any
+ * date marked as assumed. Pure over the row, so the list, the role and the
+ * snapshot cannot disagree about what is open.
+ */
+function openItemsFor(role: {
+  id: string;
+  title: string;
+  company: string;
+  background: string;
+  startDate: string;
+  endDate: string;
+  isCurrent: boolean;
+  startUnconfirmed: boolean;
+  endUnconfirmed: boolean;
+}): OpenItem[] {
+  const name = `${role.title} @ ${role.company}`;
+  const items: OpenItem[] = writingGuidance(role.background).open.map((question) => ({
+    roleId: role.id,
+    role: name,
+    question,
+    kind: "background" as const,
+  }));
+  if (role.startUnconfirmed) {
+    items.push({
+      roleId: role.id,
+      role: name,
+      question: `${DATE_QUESTION.start_date}: ${monthLabel(role.startDate)}`,
+      kind: "start_date",
+    });
+  }
+  if (role.endUnconfirmed && !role.isCurrent) {
+    items.push({
+      roleId: role.id,
+      role: name,
+      question: `${DATE_QUESTION.end_date}: ${monthLabel(role.endDate)}`,
+      kind: "end_date",
+    });
+  }
+  return items;
 }
 
 /**
@@ -369,19 +505,76 @@ export async function getRole(userId: string, id: string) {
  *
  * Roles come in the same order as everywhere else, current first.
  */
-export async function listOpenQuestions(userId: string) {
-  const roles = await db.role.findMany({
-    where: { userId },
-    orderBy: [{ isCurrent: "desc" }, { startDate: "desc" }, { sortOrder: "asc" }],
-    select: { id: true, title: true, company: true, background: true },
-  });
-  return roles.flatMap((role) =>
-    writingGuidance(role.background).open.map((question) => ({
-      roleId: role.id,
-      role: `${role.title} @ ${role.company}`,
-      question,
-    })),
+export async function listOpenQuestions(userId: string): Promise<OpenItem[]> {
+  const [roles, profile] = await Promise.all([
+    listRoles(userId),
+    db.profile.findUnique({ where: { userId }, select: { background: true } }),
+  ]);
+  const fromProfile = writingGuidance(profile?.background ?? "").open.map((question) => ({
+    roleId: null,
+    role: "Profile",
+    question,
+    kind: "background" as const,
+  }));
+  return [...roles.flatMap(openItemsFor), ...fromProfile];
+}
+
+/**
+ * Settle one open item, the write list_open_questions exists to lead to.
+ *
+ * A background question comes out of the text and the answer goes in as
+ * evidence — in place of the question when it was a marked line, so the fact
+ * lands beside the work it is about; see resolveOpen in background.ts. An
+ * unconfirmed date is settled by clearing its flag, and an answer of YYYY-MM
+ * (or YYYY) corrects the date on the way.
+ *
+ * `roleId` null means the profile's personal background. Goes through
+ * updateRole / updateProfile so the version store keeps the copy it keeps for
+ * any other background edit, which is what makes this undoable.
+ */
+export async function resolveOpenQuestion(
+  userId: string,
+  roleId: string | null,
+  question: string,
+  answer?: string,
+  heading?: string,
+  author: WriteAuthor = APP_AUTHOR,
+) {
+  if (!question.trim()) throw new Error("Say which question: pass it exactly as list_open_questions returned it.");
+
+  if (!roleId) {
+    const profile = await getProfile(userId);
+    const background = resolveOpen(profile.background, question, answer, heading);
+    await updateProfile(userId, { background });
+    return { roleId: null, resolved: question, answer: answer?.trim() ?? "" };
+  }
+
+  const role = await db.role.findFirst({ where: { id: roleId, userId } });
+  if (!role) throw new Error(`No role with id ${roleId}`);
+
+  const dateKind = (Object.keys(DATE_QUESTION) as Array<keyof typeof DATE_QUESTION>).find((kind) =>
+    question.trim().toLowerCase().startsWith(DATE_QUESTION[kind].toLowerCase()),
   );
+  if (dateKind) {
+    const flag = dateKind === "start_date" ? "startUnconfirmed" : "endUnconfirmed";
+    const column = dateKind === "start_date" ? "startDate" : "endDate";
+    if (!role[flag]) throw new Error("That date is not marked unconfirmed on this role.");
+    const reply = answer?.trim() ?? "";
+    if (reply && !/^\d{4}(?:-\d{2})?$/.test(reply)) {
+      throw new Error("A date answer is YYYY-MM, or YYYY when only the year is certain. Leave it out to confirm the date already on file.");
+    }
+    await updateRole(
+      userId,
+      roleId,
+      { [flag]: false, ...(reply ? { [column]: reply } : {}) },
+      author,
+    );
+    return { roleId, resolved: question, answer: reply || role[column] };
+  }
+
+  const background = resolveOpen(role.background, question, answer, heading);
+  await updateRole(userId, roleId, { background }, author);
+  return { roleId, resolved: question, answer: answer?.trim() ?? "" };
 }
 
 export async function createRole(userId: string, input: RoleInput) {
@@ -399,6 +592,8 @@ export async function createRole(userId: string, input: RoleInput) {
       summary: input.summary ?? "",
       background: input.background ?? "",
       tags: input.tags ?? [],
+      startUnconfirmed: input.startUnconfirmed ?? false,
+      endUnconfirmed: input.endUnconfirmed ?? false,
       sortOrder: count,
     },
   });
@@ -406,7 +601,7 @@ export async function createRole(userId: string, input: RoleInput) {
 
 const ROLE_COLUMNS = [
   "company", "title", "employmentType", "location", "startDate", "endDate",
-  "isCurrent", "summary", "background", "tags",
+  "isCurrent", "summary", "background", "tags", "startUnconfirmed", "endUnconfirmed",
 ] as const;
 
 export async function updateRole(
@@ -433,7 +628,14 @@ export async function updateRole(
     );
   }
 
-  const { count } = await db.role.updateMany({ where: { id, userId }, data });
+  // Only a real change to the text counts as "added to": a reorder, a tag or
+  // a date fix leaves the freshness of what was written alone.
+  const written =
+    patch.background !== undefined && before !== null && patch.background !== before.background;
+  const { count } = await db.role.updateMany({
+    where: { id, userId },
+    data: written ? { ...data, backgroundUpdatedAt: new Date() } : data,
+  });
   if (count === 0) throw new Error(`No role with id ${id}`);
   return db.role.findFirstOrThrow({ where: { id, userId } });
 }
@@ -450,13 +652,28 @@ export async function appendToRoleBackground(
   id: string,
   text: string,
   heading?: string,
+  author: WriteAuthor = APP_AUTHOR,
 ) {
   const role = await db.role.findFirst({ where: { id, userId } });
   if (!role) throw new Error(`No role with id ${id}`);
+  // Versioned like a replace, now that the role page shows history: an append
+  // is the write an assistant makes most, so it is the one somebody most wants
+  // to see and take back. Coalesced like every other snapshot.
+  await snapshot(
+    userId,
+    "ROLE",
+    id,
+    Object.fromEntries(ROLE_COLUMNS.map((column) => [column, role[column]])),
+    `${role.title} at ${role.company}`,
+    author,
+  );
   // Merges into a section that already carries this heading rather than opening
   // a second one beside it — see appendToBackground for why.
   const next = appendToBackground(role.background, text, heading);
-  return db.role.update({ where: { id: role.id }, data: { background: next } });
+  return db.role.update({
+    where: { id: role.id },
+    data: { background: next, backgroundUpdatedAt: new Date() },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -525,6 +742,32 @@ export async function updateHighlight(
   return db.highlight.findFirstOrThrow({ where: { id, userId } });
 }
 
+/**
+ * Put one role's highlights in the order given. The order is what the role
+ * page shows and what add_role_to_resume takes the first N from, so it is the
+ * person's own ranking — strength stays as it was. `ids` may be a subset; the
+ * rest keep their places after the ones named. Another role's highlight, or
+ * somebody else's, is refused.
+ */
+export async function reorderHighlights(userId: string, roleId: string, ids: string[]) {
+  const role = await db.role.findFirst({ where: { id: roleId, userId }, select: { id: true } });
+  if (!role) throw new Error(`No role with id ${roleId}`);
+  const current = await db.highlight.findMany({
+    where: { userId, roleId },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { id: true },
+  });
+  const known = new Set(current.map((row) => row.id));
+  const stray = ids.find((id) => !known.has(id));
+  if (stray) throw new Error(`No highlight with id ${stray} on that role`);
+  const named = new Set(ids);
+  const next = [...ids, ...current.map((row) => row.id).filter((id) => !named.has(id))];
+  await db.$transaction(
+    next.map((id, index) => db.highlight.updateMany({ where: { id, userId }, data: { sortOrder: index } })),
+  );
+  return { roleId, order: next };
+}
+
 export async function deleteHighlight(userId: string, id: string) {
   const { count } = await db.highlight.deleteMany({ where: { id, userId } });
   if (count === 0) throw new Error(`No highlight with id ${id}`);
@@ -535,11 +778,21 @@ export async function deleteHighlight(userId: string, id: string) {
 // Notes
 // ---------------------------------------------------------------------------
 
-export async function listNotes(userId: string) {
+export async function listNotes(userId: string, options: { roleId?: string } = {}) {
   return db.note.findMany({
-    where: { userId },
+    where: { userId, ...(options.roleId ? { roleId: options.roleId } : {}) },
     orderBy: [{ kind: "asc" }, { pinned: "desc" }, { updatedAt: "desc" }],
+    include: { role: { select: { id: true, title: true, company: true } } },
   });
+}
+
+/** A note may only be about a role the same person owns. Null detaches. */
+async function ownRoleOrNull(userId: string, roleId: string | null | undefined) {
+  if (roleId === undefined) return undefined;
+  if (roleId === null || roleId === "") return null;
+  const role = await db.role.findFirst({ where: { id: roleId, userId }, select: { id: true } });
+  if (!role) throw new Error(`No role with id ${roleId}`);
+  return role.id;
 }
 
 /**
@@ -559,8 +812,16 @@ export async function listGuardrails(userId: string) {
 
 export async function createNote(
   userId: string,
-  input: { title: string; body?: string; tags?: string[]; pinned?: boolean; kind?: NoteKind },
+  input: {
+    title: string;
+    body?: string;
+    tags?: string[];
+    pinned?: boolean;
+    kind?: NoteKind;
+    roleId?: string | null;
+  },
 ) {
+  const roleId = await ownRoleOrNull(userId, input.roleId);
   return db.note.create({
     data: {
       userId,
@@ -569,6 +830,7 @@ export async function createNote(
       tags: input.tags ?? [],
       pinned: input.pinned ?? false,
       kind: input.kind ?? "NOTE",
+      roleId: roleId ?? null,
     },
   });
 }
@@ -576,13 +838,75 @@ export async function createNote(
 export async function updateNote(
   userId: string,
   id: string,
-  patch: Partial<{ title: string; body: string; tags: string[]; pinned: boolean; kind: NoteKind }>,
+  patch: Partial<{
+    title: string;
+    body: string;
+    tags: string[];
+    pinned: boolean;
+    kind: NoteKind;
+    roleId: string | null;
+  }>,
 ) {
-  const data = pick(patch, ["title", "body", "tags", "pinned", "kind"] as const);
+  const data: Record<string, unknown> = pick(patch, ["title", "body", "tags", "pinned", "kind"] as const);
+  const roleId = await ownRoleOrNull(userId, patch.roleId);
+  if (roleId !== undefined) data.roleId = roleId;
   if (Object.keys(data).length === 0) return existingOrThrow(db.note, id, userId, "note");
   const { count } = await db.note.updateMany({ where: { id, userId }, data });
   if (count === 0) throw new Error(`No note with id ${id}`);
   return db.note.findFirstOrThrow({ where: { id, userId } });
+}
+
+/**
+ * Turn one note of many rules into many standing rules, one each.
+ *
+ * Why: the briefing every client reads on connect has room for about five
+ * hundred characters of standing rules (briefing-head.ts), so one long rules
+ * note is dropped from it whole. One rule per note lets the short ones fit.
+ *
+ * NOT destructive. The new rules are created as GUARDRAIL notes about the same
+ * role, if any; the original is kept and becomes an ordinary note, so nothing
+ * is said twice in the briefing and nothing is lost if the split read the note
+ * badly. `dryRun` returns the drafts and writes nothing — show them first.
+ * `only` keeps the drafts at those positions (0-based) and skips the rest.
+ */
+export async function splitNoteIntoRules(
+  userId: string,
+  id: string,
+  options: { dryRun?: boolean; only?: number[] } = {},
+) {
+  const note = await db.note.findFirst({ where: { id, userId } });
+  if (!note) throw new Error(`No note with id ${id}`);
+  const drafts = splitIntoRules(note.body);
+  if (drafts.length < 2) {
+    throw new Error(
+      "There is only one rule in that note, so there is nothing to split. Make the note itself a standing rule instead (update_note with kind GUARDRAIL).",
+    );
+  }
+  const keep = options.only ? new Set(options.only) : null;
+  const chosen = drafts.filter((_, index) => !keep || keep.has(index));
+  if (options.dryRun) return { note: { id: note.id, title: note.title }, rules: drafts, created: [] };
+  if (chosen.length === 0) throw new Error("None of the drafts were kept, so nothing was created.");
+
+  const created = await db.$transaction([
+    ...chosen.map((rule) =>
+      db.note.create({
+        data: {
+          userId,
+          title: rule.title,
+          body: rule.body,
+          kind: "GUARDRAIL",
+          roleId: note.roleId,
+          tags: note.tags,
+        },
+      }),
+    ),
+    db.note.update({ where: { id: note.id }, data: { kind: "NOTE" } }),
+  ]);
+  return {
+    note: { id: note.id, title: note.title, kind: "NOTE" as const },
+    rules: chosen,
+    created: created.slice(0, -1).map((row) => ({ id: row.id, title: (row as { title: string }).title })),
+  };
 }
 
 export async function deleteNote(userId: string, id: string) {
@@ -949,7 +1273,8 @@ export async function getMeSnapshot(userId: string) {
   // rules and caveats are named, so writing from the wrong part of it is now a
   // decision rather than an accident.
   const readRoles = roles.map((role) => {
-    const { rules, caveats, open } = writingGuidance(role.background);
+    const { rules, caveats } = writingGuidance(role.background);
+    const open = openItemsFor(role).map((item) => item.question);
     return { ...role, resumeEvidence: resumeEvidence(role.background), rules, caveats, open };
   });
 
@@ -977,17 +1302,25 @@ export async function getMeSnapshot(userId: string) {
     notes,
     // Gathered across every role so a writer sees them once, up front, rather
     // than having to notice them role by role.
-    writingRules: readRoles.flatMap((role) =>
-      role.rules.map((rule) => ({ role: `${role.title} @ ${role.company}`, rule })),
-    ),
+    // The profile's personal background can carry rules too — "never mention
+    // comp in writing" belongs to no one job — and they bind every document.
+    writingRules: [
+      ...writingGuidance(profile.background).rules.map((rule) => ({ role: "Profile", rule })),
+      ...readRoles.flatMap((role) =>
+        role.rules.map((rule) => ({ role: `${role.title} @ ${role.company}`, rule })),
+      ),
+    ],
     neverOnADocument: readRoles.flatMap((role) =>
       role.caveats.map((caveat) => ({ role: `${role.title} @ ${role.company}`, caveat })),
     ),
     // Facts they have not settled. Not to be used, stated or rounded off —
     // asked about, if the document needs them.
-    notSettled: readRoles.flatMap((role) =>
-      role.open.map((question) => ({ role: `${role.title} @ ${role.company}`, question })),
-    ),
+    notSettled: [
+      ...readRoles.flatMap((role) =>
+        role.open.map((question) => ({ role: `${role.title} @ ${role.company}`, question })),
+      ),
+      ...writingGuidance(profile.background).open.map((question) => ({ role: "Profile", question })),
+    ],
   };
 }
 

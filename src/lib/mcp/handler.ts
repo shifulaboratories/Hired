@@ -154,7 +154,8 @@ const AREA_PARAGRAPHS: { key: string; needs: string; text: string }[] = [
   (how this job may be described — obey them, do not quote them), "Caveats" (their own
   positioning notes — for you, NEVER for a document) and "Open questions" (facts they have
   not settled — never use one, ask). get_role reads these apart for you, including shouted
-  markers like "NAMING RULE:" or "⚠️ OPEN:". Everything else in it is evidence.
+  markers like "NAMING RULE:" or "⚠️ OPEN:". Everything else in it is evidence. A role
+  with startUnconfirmed or endUnconfirmed has a guessed month: print the year only.
   There are also notes, projects, education, skills and certifications. search_me is the
   fastest way in. get_me_snapshot carries their keyword policy: how close to a posting's own
   words a document may get, and the transfers they have recorded. posting_keywords says where
@@ -224,7 +225,8 @@ const AREAS = `The areas:
   (how this job may be described — obey them, do not quote them), "Caveats" (their own
   positioning notes — for you, NEVER for a document) and "Open questions" (facts they have
   not settled — never use one, ask). get_role reads these apart for you, including shouted
-  markers like "NAMING RULE:" or "⚠️ OPEN:". Everything else in it is evidence.
+  markers like "NAMING RULE:" or "⚠️ OPEN:". Everything else in it is evidence. A role
+  with startUnconfirmed or endUnconfirmed has a guessed month: print the year only.
   There are also notes, projects, education, skills and certifications. search_me is the
   fastest way in. get_me_snapshot carries their keyword policy: how close to a posting's own
   words a document may get, and the transfers they have recorded. posting_keywords says where

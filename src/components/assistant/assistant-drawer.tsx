@@ -62,7 +62,18 @@ type ThreadRow = { id: string; title: string; messages: number };
 /** A stored block, as it comes back out of the database. */
 type Block = { type?: string; text?: string; name?: string; id?: string; input?: unknown };
 
-export function AssistantDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function AssistantDrawer({
+  open,
+  onOpenChange,
+  seed = null,
+  onSeedTaken,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** A request handed over by a button elsewhere, put in the box unsent. */
+  seed?: string | null;
+  onSeedTaken?: () => void;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -73,6 +84,14 @@ export function AssistantDrawer({ open, onOpenChange }: { open: boolean; onOpenC
   const [pending, setPending] = useState<Pending>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
+
+  // Put in the box rather than sent: they see exactly what is being asked
+  // and can add to it — "mine this role, and skip the 2022 project".
+  useEffect(() => {
+    if (!open || !seed) return;
+    setDraft(seed);
+    onSeedTaken?.();
+  }, [open, seed, onSeedTaken]);
 
   useEffect(() => {
     if (!open) return;

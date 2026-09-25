@@ -642,7 +642,8 @@ export type HealthCheckKey =
   | "application-source"
   | "contact-relationship"
   | "role-highlights"
-  | "resume-unused";
+  | "resume-unused"
+  | "current-role-stale";
 
 export type HealthCheck = {
   key: HealthCheckKey;
@@ -733,6 +734,18 @@ export async function workspaceHealth(
 
   const [companyTotal, applicationTotal, contactTotal, roleTotal, resumeTotal] = totals;
 
+  // The job you are in is the one whose details are freshest in your head and
+  // fastest to lose: what you shipped last month is what nobody remembers by
+  // the time a resume is due. backgroundUpdatedAt moves only when something is
+  // written into the background, not when the role is reordered or retagged.
+  const current = await db.role.findMany({
+    where: { userId, isCurrent: true },
+    select: { id: true, title: true, company: true, backgroundUpdatedAt: true },
+    orderBy: { backgroundUpdatedAt: "asc" },
+  });
+  const staleBefore = new Date(Date.now() - 30 * DAY);
+  const stale = current.filter((role) => role.backgroundUpdatedAt < staleBefore);
+
   const built: HealthCheck[] = [
     {
       key: "company-industry",
@@ -771,6 +784,18 @@ export async function workspaceHealth(
       why: "A resume is assembled from highlights. A role with none contributes nothing however good the background is.",
       fix: "mine_role_background, then create_highlights",
       examples: roles.slice(0, take).map((row) => ({ id: row.id, name: `${row.title} at ${row.company}` })),
+    },
+    {
+      key: "current-role-stale",
+      label: "Current jobs with nothing added in 30 days",
+      count: stale.length,
+      of: current.length,
+      why: "What you did this month is the easiest thing to lose. A few lines now are a bullet later.",
+      fix: "log_my_week, or append_role_background",
+      examples: stale.slice(0, take).map((row) => ({
+        id: row.id,
+        name: `${row.title} at ${row.company}, last added ${row.backgroundUpdatedAt.toISOString().slice(0, 10)}`,
+      })),
     },
     {
       key: "resume-unused",

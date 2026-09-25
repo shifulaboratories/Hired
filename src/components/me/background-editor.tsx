@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CircleHelpIcon, LockIcon, MessageSquareWarningIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  CircleHelpIcon,
+  LockIcon,
+  MessageSquareWarningIcon,
+  PencilIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -60,24 +66,66 @@ const KIND_STYLE: Record<
   },
 };
 
+/** In the profile a rule binds everything written, not one job. */
+const PROFILE_RULE_NOTE = "Followed in every document.";
+
 const ADD_LABEL: Record<Exclude<SectionKind, "evidence">, string> = {
   rules: "Add rules",
   caveats: "Add caveats",
   open: "Add open question",
 };
 
+/** A `##` section and everything under it until the next one. */
+type Block = {
+  /** The headed section, or null for the untitled opening text. */
+  head: BackgroundSection | null;
+  members: BackgroundSection[];
+  start: number;
+  end: number;
+};
+
+function blocksOf(sections: BackgroundSection[], text: string): Block[] {
+  const blocks: Block[] = [];
+  for (const section of sections) {
+    const opensBlock = Boolean(section.heading) && !section.inline;
+    const last = blocks[blocks.length - 1];
+    if (opensBlock || !last) {
+      blocks.push({ head: opensBlock ? section : null, members: [section], start: section.offset, end: text.length });
+    } else {
+      last.members.push(section);
+    }
+  }
+  for (let i = 0; i < blocks.length - 1; i += 1) blocks[i].end = blocks[i + 1].start;
+  return blocks;
+}
+
+/** Past this many headed sections, an outline to jump between them earns its row. */
+const OUTLINE_AT = 4;
+
 export function BackgroundEditor({
   value,
   onChange,
   placeholder,
+  mode = "role",
 }: {
   value: string;
   onChange: (next: string) => void;
   placeholder: string;
+  /**
+   * "profile" is the personal background: none of it reaches a resume anyway,
+   * so the usable-words line would be a count of nothing. The markings still
+   * mean something there — a RULE in it binds every document.
+   */
+  mode?: "role" | "profile";
 }) {
   const [editing, setEditing] = useState(false);
   const [caret, setCaret] = useState<number | null>(null);
+  // One section open for editing on its own: where it starts and how long it
+  // is right now. The rest of the text is untouched around it.
+  const [slice, setSlice] = useState<{ start: number; length: number } | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const boxRef = useRef<HTMLTextAreaElement>(null);
+  const sliceRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!editing) return;
@@ -89,7 +137,16 @@ export function BackgroundEditor({
     box.setSelectionRange(at, at);
   }, [editing, caret]);
 
+  useEffect(() => {
+    if (slice) sliceRef.current?.focus();
+    // Focus once when a section opens, not on every keystroke inside it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slice?.start]);
+
   const sections = parseBackground(value);
+  const blocks = blocksOf(sections, value);
+  const headed = blocks.filter((block) => block.head);
+  const totalWords = countWords(value);
   const evidenceWords = countWords(resumeEvidence(value));
   const counts = {
     rules: sections.filter((section) => section.kind === "rules").length,
@@ -115,6 +172,16 @@ export function BackgroundEditor({
     setCaret(next.length);
     setEditing(true);
   };
+
+  const keyOf = (block: Block) => `${block.head?.heading ?? ""}@${blocks.indexOf(block)}`;
+  const toggle = (block: Block) =>
+    setCollapsed((old) => {
+      const next = new Set(old);
+      const key = keyOf(block);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   return (
     <div className="space-y-3">
@@ -148,18 +215,57 @@ export function BackgroundEditor({
         </span>
       </div>
       {!editing && sections.length > 0 && (
-        // The one number that says what the markings did: how much of this
+        // The one count on the page: how much is written, and how much of it
         // Claude may actually write a resume from.
         <p className="text-muted-foreground text-xs">
           <span className="text-foreground font-medium tabular-nums">
-            {evidenceWords.toLocaleString()}
+            {totalWords.toLocaleString()}
           </span>{" "}
-          words usable on a resume. Rules, caveats and open questions are read by Claude but never
-          written into a document. Mark a line inline with{" "}
+          words
+          {mode === "role" && (
+            <>
+              ,{" "}
+              <span className="text-foreground font-medium tabular-nums">
+                {evidenceWords.toLocaleString()}
+              </span>{" "}
+              usable on a resume
+            </>
+          )}
+          . Rules, caveats and open questions are read by Claude but never written into a document.
+          Mark one line with{" "}
           <code className="bg-inset rounded px-1 font-mono text-[11px]">RULE:</code>,{" "}
           <code className="bg-inset rounded px-1 font-mono text-[11px]">CAVEAT:</code> or{" "}
           <code className="bg-inset rounded px-1 font-mono text-[11px]">OPEN:</code> in capitals.
         </p>
+      )}
+
+      {!editing && headed.length >= OUTLINE_AT && (
+        <nav aria-label="Sections" className="flex flex-wrap gap-1">
+          {headed.map((block) => {
+            const head = block.head as BackgroundSection;
+            const Icon = head.kind === "evidence" ? null : KIND_STYLE[head.kind].icon;
+            return (
+              <button
+                key={keyOf(block)}
+                type="button"
+                onClick={() => {
+                  setCollapsed((old) => {
+                    const next = new Set(old);
+                    next.delete(keyOf(block));
+                    return next;
+                  });
+                  document
+                    .getElementById(`bg-${blocks.indexOf(block)}`)
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className="bg-inset hover:bg-accent text-muted-foreground hover:text-foreground flex max-w-56 items-center gap-1 truncate rounded-md px-2 py-0.5 text-[11.5px] transition-colors"
+              >
+                {Icon && <Icon className="size-3 shrink-0" />}
+                <span className="truncate">{head.heading}</span>
+              </button>
+            );
+          })}
+        </nav>
       )}
 
       {editing ? (
@@ -179,13 +285,15 @@ export function BackgroundEditor({
           role="textbox"
           tabIndex={0}
           aria-label="Background. Press Enter to edit."
-          onClick={(event) => {
-            // Never steal a click somebody aimed at selecting text.
-            if (!window.getSelection()?.isCollapsed) return;
+          onClick={() => {
+            // Never steal a click somebody aimed at selecting text, and never
+            // swap the whole text in while one section is open on its own.
+            if (!window.getSelection()?.isCollapsed || slice) return;
             setCaret(null);
             setEditing(true);
           }}
           onKeyDown={(event) => {
+            if (event.target !== event.currentTarget) return;
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
               setEditing(true);
@@ -200,9 +308,72 @@ export function BackgroundEditor({
             <p className="text-muted-foreground p-3 text-sm whitespace-pre-wrap">{placeholder}</p>
           ) : (
             <div className="space-y-4">
-              {sections.map((section, index) => (
-                <Section key={index} section={section} />
-              ))}
+              {blocks.map((block, index) => {
+                const key = keyOf(block);
+                const open = slice !== null && slice.start === block.start;
+                if (open) {
+                  return (
+                    <Textarea
+                      key={key}
+                      ref={sliceRef}
+                      id={`bg-${index}`}
+                      value={value.slice(slice.start, slice.start + slice.length)}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={(event) => {
+                        const next = event.target.value;
+                        onChange(
+                          value.slice(0, slice.start) + next + value.slice(slice.start + slice.length),
+                        );
+                        setSlice({ start: slice.start, length: next.length });
+                      }}
+                      onBlur={() => setSlice(null)}
+                      className="min-h-32 resize-y font-mono text-[13px] leading-relaxed"
+                    />
+                  );
+                }
+                const folded = collapsed.has(key);
+                return (
+                  <div key={key} id={`bg-${index}`} className="group/block relative scroll-mt-20">
+                    {block.head && (
+                      <div className="absolute top-1 right-1 z-10 flex gap-0.5 opacity-0 transition-opacity group-hover/block:opacity-100 focus-within:opacity-100">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSlice({ start: block.start, length: block.end - block.start });
+                          }}
+                          className="text-muted-foreground hover:text-foreground hover:bg-accent rounded p-1"
+                          aria-label={`Edit ${block.head.heading} on its own`}
+                          title="Edit this section on its own"
+                        >
+                          <PencilIcon className="size-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggle(block);
+                          }}
+                          className="text-muted-foreground hover:text-foreground hover:bg-accent rounded p-1"
+                          aria-label={folded ? `Show ${block.head.heading}` : `Fold ${block.head.heading}`}
+                          aria-expanded={!folded}
+                        >
+                          <ChevronDownIcon className={cn("size-3 transition-transform", folded && "-rotate-90")} />
+                        </button>
+                      </div>
+                    )}
+                    {folded && block.head ? (
+                      <Section section={{ ...block.head, body: "" }} folded mode={mode} />
+                    ) : (
+                      <div className="space-y-4">
+                        {block.members.map((section, memberIndex) => (
+                          <Section key={memberIndex} section={section} mode={mode} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -211,20 +382,32 @@ export function BackgroundEditor({
   );
 }
 
-function Section({ section }: { section: BackgroundSection }) {
+function Section({
+  section,
+  folded = false,
+  mode = "role",
+}: {
+  section: BackgroundSection;
+  folded?: boolean;
+  mode?: "role" | "profile";
+}) {
   const { kind, heading, body } = section;
   if (kind === "evidence") {
     return (
       <section className="px-2">
         {heading && (
-          <h3 className="mb-1.5 text-[13px] font-semibold tracking-tight">{heading}</h3>
+          <h3 className="mb-1.5 pr-14 text-[13px] font-semibold tracking-tight">
+            {heading}
+            {folded && <span className="text-muted-foreground ml-1.5 font-normal">folded</span>}
+          </h3>
         )}
-        <Markdown text={body} />
+        {!folded && <Markdown text={body} />}
       </section>
     );
   }
 
-  const { label, note, icon: Icon, className } = KIND_STYLE[kind];
+  const { label, icon: Icon, className } = KIND_STYLE[kind];
+  const note = mode === "profile" && kind === "rules" ? PROFILE_RULE_NOTE : KIND_STYLE[kind].note;
   if (section.inline) {
     // A single marked line inside other text: drawn in place, compact, with
     // the marker as they wrote it so they can see which word did it.
@@ -251,7 +434,7 @@ function Section({ section }: { section: BackgroundSection }) {
         {/* Its own line on a phone rather than a squeezed column beside the heading. */}
         <span className="text-muted-foreground basis-full text-[11px] sm:basis-auto">{note}</span>
       </div>
-      <Markdown text={body} />
+      {!folded && <Markdown text={body} />}
     </section>
   );
 }

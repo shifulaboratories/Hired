@@ -764,18 +764,25 @@ export function entryFromRole(
     endDate: string;
     isCurrent: boolean;
     summary: string;
+    startUnconfirmed?: boolean;
+    endUnconfirmed?: boolean;
   },
   highlights: { text: string; impact: string }[],
   limit = 6,
 ) {
+  // A month the person marked as assumed never reaches paper. The year is the
+  // part they are sure of, and a year-only date is normal on a resume; a
+  // guessed month is a small untruth an employment check can catch.
+  const sure = (value: string, unconfirmed?: boolean) =>
+    unconfirmed ? value.trim().slice(0, 4) : value;
   return {
     id: rid("exp"),
     roleId: role.id,
     company: role.company,
     title: role.title,
     location: role.location,
-    startDate: role.startDate,
-    endDate: role.endDate,
+    startDate: sure(role.startDate, role.startUnconfirmed),
+    endDate: sure(role.endDate, role.endUnconfirmed),
     isCurrent: role.isCurrent,
     summary: role.summary,
     bullets: highlights.slice(0, limit).map((highlight) => bulletFor(highlight.text, highlight.impact)),

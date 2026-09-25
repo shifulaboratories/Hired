@@ -6830,3 +6830,66 @@ reads like a rule get a one-click suggestion, never an automatic change.
 
 **Tab strips are `justify-start`.** `justify-center` in an `overflow-x-auto` row spills past both
 edges and the left one cannot be scrolled to, so on a phone the first tab of Me was unreachable.
+
+## 2026-09-25 — Me: settling what is open, and the checks across it
+
+Fifteen changes to Me in one pass. The calls that were not obvious:
+
+**Answering an open question replaces it IN PLACE when it was a marked line.** `resolveOpen` in
+background.ts: a `- ⚠️ OPEN: was it $40K or $45K?` bullet becomes `- <the answer>` at the same
+spot, so the settled fact sits beside the work it is about; a line under `## Open questions` is
+removed (the heading goes with its last line) and the answer is appended as evidence. Splices,
+never rebuilds — the rest of the text is byte-identical, which keeps the history panel honest.
+
+**Appending with no heading no longer lands in a trailing reserved section.** Found while building
+the above: `appendToBackground(text, x)` with no heading did `text + x`, so on a background ending
+in `## Caveats` a real achievement became a caveat and silently left every resume. It now inserts
+before the trailing run of non-evidence `##` sections. Every existing caller benefits.
+
+**Unconfirmed dates are two booleans, not a date format.** `Role.startUnconfirmed/endUnconfirmed`.
+A "~2021-03" string would have broken every parser of startDate. `entryFromRole` prints the YEAR
+only for a flagged date, so add_role_to_resume and buildDocFromMe enforce it mechanically rather
+than relying on an assistant reading a description. Flagged dates are open items with kind
+start_date/end_date; resolving one clears the flag and optionally corrects the month.
+
+**`backgroundUpdatedAt`, not `updatedAt`, for "last added".** updatedAt moves on a reorder or a tag
+change. Set only when the background text actually changes (updateRole compares) or is appended.
+Backfilled from updatedAt, the best estimate for existing rows.
+
+**Role order is a profile setting, date by default.** `Profile.roleOrder` "date" | "manual". Manual
+order uses Role.sortOrder, which createRole already set to creation order — so ordering by
+sortOrder unconditionally would have reshuffled every existing list. "Back to date order" leaves
+sortOrder alone so switching back to manual finds the old hand order.
+
+**Figure conflicts are scoped per job and are candidates.** src/lib/figures.ts keys a figure by the
+HEAD noun of the phrase after it ("$45K monthly paid acquisition budget" is a budget) or the
+nearest noun before it; two values in one plain sentence are a before-and-after and never a
+conflict unless the sentence says "or"/"both". Scope is one role (background evidence, its
+highlights, resume entries naming it by roleId or company, notes naming the company); two jobs'
+budgets are supposed to differ. Open questions and caveats are excluded — an OPEN line is already
+on the list, with its doubt written out. The tool and the card both say "look, don't trust".
+
+**Skills without evidence reuse search_me** (same stemmed FTS, batches of five) and ignore profile
+hits: a summary that says "Python" is the claim, not the evidence. Short names ("Go", "R") can
+false-match; the description says so rather than special-casing them.
+
+**Highlight usage is computed, not recorded**, with the same `backingFor` similarity
+trace_resume_evidence uses, inverted. Same argument as the evidence decision: recorded usage goes
+stale the moment a bullet is reworded.
+
+**Appends are versioned now.** `appendToRoleBackground` snapshots like updateRole (coalesced), because
+the history panel's first question is "what did the assistant just add" and appends are what
+assistants mostly do. `list_revisions` for a ROLE carries `changedSince` — a multiset line compare,
+not a diff algorithm; order of lines in a background carries no meaning worth one.
+
+**Splitting a rules note is non-destructive.** New GUARDRAIL notes are created; the original is
+demoted to NOTE rather than deleted, so a bad split loses nothing. Dry run first, `only` to keep a
+subset — the Notes dialog is exactly that dry run with checkboxes.
+
+**The assistant hand-off is a context, not an event.** `AskContext` (components/assistant/ask.tsx)
+is provided by the Shell: with an assistant configured, "Mine this role" / "Log recent work" open
+the drawer with the request typed but unsent; without one, the same words go to the clipboard.
+Never a feature of its own — the prompt names the tools it expects.
+
+**Notes on roles are SetNull.** Deleting a role leaves its STAR stories, unattached. createNote and
+updateNote validate the role belongs to the caller; the export round-trips it through map.role.

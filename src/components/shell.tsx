@@ -21,7 +21,7 @@ import {
   SettingsIcon,
   ShieldIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -45,6 +45,7 @@ import {
 import { HiredMark } from "@/components/hired-mark";
 import { Notifications, type Notice } from "@/components/notifications";
 import { AssistantDrawer } from "@/components/assistant/assistant-drawer";
+import { AskContext } from "@/components/assistant/ask";
 import { UserAvatar } from "@/components/user-avatar";
 import { logoutAction } from "@/server/actions";
 import { MANUAL_URL } from "@/lib/links";
@@ -123,6 +124,13 @@ export function Shell({
   const { showHelp, setShowHelp } = useKeyboardNav();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
+  // A request another screen handed over ("mine this role"), waiting in the
+  // drawer's box for them to read and send.
+  const [askSeed, setAskSeed] = useState<string | null>(null);
+  const ask = useCallback((message: string) => {
+    setAskSeed(message);
+    setAskOpen(true);
+  }, []);
   const [collapsed, setCollapsed] = useState(false);
   const [openBranches, setOpenBranches] = useState<string[]>([]);
 
@@ -182,272 +190,281 @@ export function Shell({
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   return (
-    <div className="flex min-h-svh">
-      {/* Rail */}
-      <aside
-        className={cn(
-          "bg-sidebar sticky top-0 z-30 hidden h-svh shrink-0 flex-col border-r transition-[width] duration-200 md:flex",
-          collapsed ? "w-[4.5rem]" : "w-[15rem]",
-        )}
-      >
-        <div
+    <AskContext.Provider value={assistant ? ask : null}>
+      <div className="flex min-h-svh">
+        {/* Rail */}
+        <aside
           className={cn(
-            "flex h-16 items-center gap-2.5",
-            collapsed ? "justify-center px-2" : "px-5",
+            "bg-sidebar sticky top-0 z-30 hidden h-svh shrink-0 flex-col border-r transition-[width] duration-200 md:flex",
+            collapsed ? "w-[4.5rem]" : "w-[15rem]",
           )}
         >
-          {collapsed ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={toggleCollapsed}
-                  aria-label="Expand sidebar"
-                  className="hover:bg-accent group relative flex size-9 items-center justify-center rounded-lg transition-colors"
-                >
-                  <HiredMark size={26} className="transition-opacity group-hover:opacity-0" />
-                  <PanelLeftOpenIcon className="text-muted-foreground absolute size-4 opacity-0 transition-opacity group-hover:opacity-100" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right">Expand sidebar</TooltipContent>
-            </Tooltip>
-          ) : (
-            <>
-              <HiredMark size={26} className="shrink-0" />
-              <div className="min-w-0 leading-tight">
-                <div className="truncate text-[15px] font-semibold tracking-tight">Hired</div>
-                {/* 10.5px, not 11px: the line is five pixels too wide for this
-                    rail at 11 and ellipsises to "on the rec…", and a clipped
-                    tagline is worse than a slightly smaller one. */}
-                <div className="text-muted-foreground truncate text-[10.5px] tracking-[-0.004em]">
-                  Your career, on the record
-                </div>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground -mr-1.5 ml-auto"
-                onClick={toggleCollapsed}
-                aria-label="Collapse sidebar"
-              >
-                <PanelLeftCloseIcon />
-              </Button>
-            </>
-          )}
-        </div>
-
-        <div className={cn("pb-2", collapsed ? "px-2" : "px-3")}>
-          {collapsed ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => setPaletteOpen(true)}
-                  className="text-muted-foreground hover:text-foreground hover:bg-accent bg-card flex w-full items-center justify-center rounded-md border py-2 transition-colors"
-                  aria-label="Search"
-                >
-                  <SearchIcon className="size-4" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right">Search · ⌘K</TooltipContent>
-            </Tooltip>
-          ) : (
-            <button
-              onClick={() => setPaletteOpen(true)}
-              className="text-muted-foreground hover:text-foreground hover:bg-accent bg-card flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-[13px] transition-colors"
-            >
-              <SearchIcon className="size-3.5" />
-              <span>Search…</span>
-              <kbd className="bg-muted text-muted-foreground ml-auto rounded px-1.5 py-0.5 font-mono text-[10px]">
-                ⌘K
-              </kbd>
-            </button>
-          )}
-        </div>
-
-        <nav className={cn("flex flex-1 flex-col gap-0.5", collapsed ? "px-2" : "px-3")}>
-          {NAV.map((item) => {
-            const active = isActive(item.href);
-            const link = (
-              <Link
-                href={item.href}
-                aria-label={item.label}
-                className={cn(
-                  "group relative flex items-center rounded-lg py-2 text-sm font-medium transition-colors",
-                  collapsed ? "justify-center px-2" : "gap-3 px-3",
-                  active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="nav-active"
-                    className="bg-accent absolute inset-0 rounded-lg"
-                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                  />
-                )}
-                <item.icon
-                  className={cn(
-                    "relative size-4 shrink-0 transition-colors",
-                    active ? "text-primary" : "group-hover:text-foreground",
-                  )}
-                />
-                {!collapsed && <span className="relative">{item.label}</span>}
-              </Link>
-            );
-
-            if (collapsed) {
-              return (
-                <Tooltip key={item.href}>
-                  <TooltipTrigger asChild>{link}</TooltipTrigger>
-                  <TooltipContent side="right">{item.label}</TooltipContent>
-                </Tooltip>
-              );
-            }
-
-            if (!item.children) return <div key={item.href}>{link}</div>;
-
-            const open = branchOpen(item.href);
-            const branchId = `nav-branch-${item.href.replace(/\W/g, "")}`;
-            return (
-              <div key={item.href} className="flex flex-col gap-0.5">
-                {/* The chevron sits over the link rather than inside it: a
-                    button nested in an anchor is invalid, and the parent has to
-                    stay a real link — clicking CRM should go to CRM, not just
-                    unfold it. */}
-                <div className="relative">
-                  {link}
+          <div
+            className={cn(
+              "flex h-16 items-center gap-2.5",
+              collapsed ? "justify-center px-2" : "px-5",
+            )}
+          >
+            {collapsed ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <button
-                    type="button"
-                    onClick={() => toggleBranch(item.href)}
-                    aria-expanded={open}
-                    aria-controls={branchId}
-                    aria-label={`${open ? "Hide" : "Show"} ${item.label} sections`}
-                    className="text-faint hover:bg-accent hover:text-foreground absolute inset-y-1 right-1 flex w-7 items-center justify-center rounded-md transition-colors"
+                    onClick={toggleCollapsed}
+                    aria-label="Expand sidebar"
+                    className="hover:bg-accent group relative flex size-9 items-center justify-center rounded-lg transition-colors"
                   >
-                    <ChevronDownIcon
-                      className={cn(
-                        "size-3.5 transition-transform duration-200",
-                        open && "rotate-180",
-                      )}
-                    />
+                    <HiredMark size={26} className="transition-opacity group-hover:opacity-0" />
+                    <PanelLeftOpenIcon className="text-muted-foreground absolute size-4 opacity-0 transition-opacity group-hover:opacity-100" />
                   </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Expand sidebar</TooltipContent>
+              </Tooltip>
+            ) : (
+              <>
+                <HiredMark size={26} className="shrink-0" />
+                <div className="min-w-0 leading-tight">
+                  <div className="truncate text-[15px] font-semibold tracking-tight">Hired</div>
+                  {/* 10.5px, not 11px: the line is five pixels too wide for this
+                      rail at 11 and ellipsises to "on the rec…", and a clipped
+                      tagline is worse than a slightly smaller one. */}
+                  <div className="text-muted-foreground truncate text-[10.5px] tracking-[-0.004em]">
+                    Your career, on the record
+                  </div>
                 </div>
-
-                <div id={branchId} hidden={!open} className="flex flex-col gap-0.5">
-                  {item.children.map((child) => {
-                    const childActive = pathname.startsWith(child.href);
-                    return (
-                      <Link
-                        key={child.href}
-                        href={child.href}
-                        aria-current={childActive ? "page" : undefined}
-                        className={cn(
-                          // Indented to sit under the parent's label, not its icon,
-                          // so the hierarchy reads at a glance.
-                          "ml-[2.4rem] flex items-center rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors",
-                          childActive
-                            ? "bg-accent/70 text-foreground"
-                            : "text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        {child.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </nav>
-      </aside>
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Top bar */}
-        <header className="glass sticky top-0 z-20 flex h-16 items-center gap-2 border-b px-4 md:px-7">
-          <div className="flex min-w-0 items-center gap-2 md:hidden">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="size-9"
-              onClick={() => setDrawerOpen(true)}
-              aria-label="Open menu"
-            >
-              <MenuIcon />
-            </Button>
-            {/* Five unlabelled icons told you nothing about where you were.
-                The drawer holds the navigation; the bar just names the page. */}
-            <span className="truncate text-[15px] font-semibold tracking-tight">
-              {NAV.find((item) => isActive(item.href))?.label ?? "Hired"}
-            </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground -mr-1.5 ml-auto"
+                  onClick={toggleCollapsed}
+                  aria-label="Collapse sidebar"
+                >
+                  <PanelLeftCloseIcon />
+                </Button>
+              </>
+            )}
           </div>
 
-          <div className="ml-auto flex items-center gap-1.5">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="size-9 md:hidden"
-              onClick={() => setPaletteOpen(true)}
-              aria-label="Search"
-            >
-              <SearchIcon />
-            </Button>
-            {/* One button, beside the bell. Not a nav item: this is something
-                you ask while looking at a screen, not a place you go. */}
-            {assistant && (
+          <div className={cn("pb-2", collapsed ? "px-2" : "px-3")}>
+            {collapsed ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setPaletteOpen(true)}
+                    className="text-muted-foreground hover:text-foreground hover:bg-accent bg-card flex w-full items-center justify-center rounded-md border py-2 transition-colors"
+                    aria-label="Search"
+                  >
+                    <SearchIcon className="size-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Search · ⌘K</TooltipContent>
+              </Tooltip>
+            ) : (
+              <button
+                onClick={() => setPaletteOpen(true)}
+                className="text-muted-foreground hover:text-foreground hover:bg-accent bg-card flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-[13px] transition-colors"
+              >
+                <SearchIcon className="size-3.5" />
+                <span>Search…</span>
+                <kbd className="bg-muted text-muted-foreground ml-auto rounded px-1.5 py-0.5 font-mono text-[10px]">
+                  ⌘K
+                </kbd>
+              </button>
+            )}
+          </div>
+
+          <nav className={cn("flex flex-1 flex-col gap-0.5", collapsed ? "px-2" : "px-3")}>
+            {NAV.map((item) => {
+              const active = isActive(item.href);
+              const link = (
+                <Link
+                  href={item.href}
+                  aria-label={item.label}
+                  className={cn(
+                    "group relative flex items-center rounded-lg py-2 text-sm font-medium transition-colors",
+                    collapsed ? "justify-center px-2" : "gap-3 px-3",
+                    active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="nav-active"
+                      className="bg-accent absolute inset-0 rounded-lg"
+                      transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                    />
+                  )}
+                  <item.icon
+                    className={cn(
+                      "relative size-4 shrink-0 transition-colors",
+                      active ? "text-primary" : "group-hover:text-foreground",
+                    )}
+                  />
+                  {!collapsed && <span className="relative">{item.label}</span>}
+                </Link>
+              );
+
+              if (collapsed) {
+                return (
+                  <Tooltip key={item.href}>
+                    <TooltipTrigger asChild>{link}</TooltipTrigger>
+                    <TooltipContent side="right">{item.label}</TooltipContent>
+                  </Tooltip>
+                );
+              }
+
+              if (!item.children) return <div key={item.href}>{link}</div>;
+
+              const open = branchOpen(item.href);
+              const branchId = `nav-branch-${item.href.replace(/\W/g, "")}`;
+              return (
+                <div key={item.href} className="flex flex-col gap-0.5">
+                  {/* The chevron sits over the link rather than inside it: a
+                      button nested in an anchor is invalid, and the parent has to
+                      stay a real link — clicking CRM should go to CRM, not just
+                      unfold it. */}
+                  <div className="relative">
+                    {link}
+                    <button
+                      type="button"
+                      onClick={() => toggleBranch(item.href)}
+                      aria-expanded={open}
+                      aria-controls={branchId}
+                      aria-label={`${open ? "Hide" : "Show"} ${item.label} sections`}
+                      className="text-faint hover:bg-accent hover:text-foreground absolute inset-y-1 right-1 flex w-7 items-center justify-center rounded-md transition-colors"
+                    >
+                      <ChevronDownIcon
+                        className={cn(
+                          "size-3.5 transition-transform duration-200",
+                          open && "rotate-180",
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  <div id={branchId} hidden={!open} className="flex flex-col gap-0.5">
+                    {item.children.map((child) => {
+                      const childActive = pathname.startsWith(child.href);
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          aria-current={childActive ? "page" : undefined}
+                          className={cn(
+                            // Indented to sit under the parent's label, not its icon,
+                            // so the hierarchy reads at a glance.
+                            "ml-[2.4rem] flex items-center rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors",
+                            childActive
+                              ? "bg-accent/70 text-foreground"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {child.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </nav>
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Top bar */}
+          <header className="glass sticky top-0 z-20 flex h-16 items-center gap-2 border-b px-4 md:px-7">
+            <div className="flex min-w-0 items-center gap-2 md:hidden">
               <Button
                 variant="ghost"
                 size="icon-sm"
                 className="size-9"
-                onClick={() => setAskOpen(true)}
-                aria-label="Ask the assistant"
+                onClick={() => setDrawerOpen(true)}
+                aria-label="Open menu"
               >
-                <SparklesIcon />
+                <MenuIcon />
               </Button>
-            )}
-            <Notifications items={notices} />
-            <ProfileMenu user={user} canAdmin={canAdmin} />
-          </div>
-        </header>
+              {/* Five unlabelled icons told you nothing about where you were.
+                  The drawer holds the navigation; the bar just names the page. */}
+              <span className="truncate text-[15px] font-semibold tracking-tight">
+                {NAV.find((item) => isActive(item.href))?.label ?? "Hired"}
+              </span>
+            </div>
 
-        <MobileNav
-          open={drawerOpen}
-          onOpenChange={setDrawerOpen}
-          isActive={isActive}
-          canAdmin={canAdmin}
-          branchOpen={branchOpen}
-          onToggleBranch={toggleBranch}
-          onSearch={() => {
-            setDrawerOpen(false);
-            setPaletteOpen(true);
-          }}
-        />
+            <div className="ml-auto flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-9 md:hidden"
+                onClick={() => setPaletteOpen(true)}
+                aria-label="Search"
+              >
+                <SearchIcon />
+              </Button>
+              {/* One button, beside the bell. Not a nav item: this is something
+                  you ask while looking at a screen, not a place you go. */}
+              {assistant && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-9"
+                  onClick={() => setAskOpen(true)}
+                  aria-label="Ask the assistant"
+                >
+                  <SparklesIcon />
+                </Button>
+              )}
+              <Notifications items={notices} />
+              <ProfileMenu user={user} canAdmin={canAdmin} />
+            </div>
+          </header>
 
-        <main className="min-w-0 flex-1">{children}</main>
+          <MobileNav
+            open={drawerOpen}
+            onOpenChange={setDrawerOpen}
+            isActive={isActive}
+            canAdmin={canAdmin}
+            branchOpen={branchOpen}
+            onToggleBranch={toggleBranch}
+            onSearch={() => {
+              setDrawerOpen(false);
+              setPaletteOpen(true);
+            }}
+          />
+
+          <main className="min-w-0 flex-1">{children}</main>
+        </div>
+
+        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+
+        {assistant && (
+          <AssistantDrawer
+            open={askOpen}
+            onOpenChange={setAskOpen}
+            seed={askSeed}
+            onSeedTaken={() => setAskSeed(null)}
+          />
+        )}
+
+        <Dialog open={showHelp} onOpenChange={setShowHelp}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Keyboard</DialogTitle>
+              <DialogDescription className="sr-only">
+                The keys this app answers to.
+              </DialogDescription>
+            </DialogHeader>
+            <ul className="space-y-2">
+              {SHORTCUTS.map((shortcut) => (
+                <li key={shortcut.keys} className="flex items-center gap-3 text-[13px]">
+                  <kbd className="bg-inset rounded-control min-w-14 px-1.5 py-0.5 text-center font-mono text-[11.5px]">
+                    {shortcut.keys}
+                  </kbd>
+                  <span className="text-muted-foreground">{shortcut.what}</span>
+                </li>
+              ))}
+            </ul>
+          </DialogContent>
+        </Dialog>
       </div>
-
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-
-      {assistant && <AssistantDrawer open={askOpen} onOpenChange={setAskOpen} />}
-
-      <Dialog open={showHelp} onOpenChange={setShowHelp}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Keyboard</DialogTitle>
-            <DialogDescription className="sr-only">
-              The keys this app answers to.
-            </DialogDescription>
-          </DialogHeader>
-          <ul className="space-y-2">
-            {SHORTCUTS.map((shortcut) => (
-              <li key={shortcut.keys} className="flex items-center gap-3 text-[13px]">
-                <kbd className="bg-inset rounded-control min-w-14 px-1.5 py-0.5 text-center font-mono text-[11.5px]">
-                  {shortcut.keys}
-                </kbd>
-                <span className="text-muted-foreground">{shortcut.what}</span>
-              </li>
-            ))}
-          </ul>
-        </DialogContent>
-      </Dialog>
-    </div>
+    </AskContext.Provider>
   );
 }
 
