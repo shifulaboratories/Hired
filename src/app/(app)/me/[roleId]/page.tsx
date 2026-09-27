@@ -4,8 +4,7 @@ import { ArrowLeftIcon } from "lucide-react";
 import { PageShell } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { FadeIn } from "@/components/motion";
-import { getRole } from "@/lib/data/me";
-import { highlightUsage } from "@/lib/data/me-checks";
+import { getRole, highlightUsage } from "@/lib/data/me";
 import { requireUser } from "@/lib/auth";
 import { RoleEditor } from "@/components/me/role-editor";
 

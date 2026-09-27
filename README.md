@@ -263,7 +263,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  227 tools any MCP client can call (262 if you're an admin). Claude, Claude Code, ChatGPT,
+  221 tools any MCP client can call (256 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -446,7 +446,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 227, or 262 if you're an admin.
+then tells you how many tools answered — 221, or 256 if you're an admin.
 
 Each connection can also be narrowed to one job, in the panel where you copy its URL:
 **Everything** (the default, and what every connection had before this existed), **Me,
@@ -714,7 +714,7 @@ By conversation: `admin_get_assistant_config`, `admin_set_assistant_config`.
 
 ## What your AI can do once it's connected
 
-227 tools. Two hundred and eighteen of them are the data tools across the five areas, the
+221 tools. Two hundred and twelve of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
@@ -794,19 +794,15 @@ from every role and the profile, along with any start or end month you've ticked
 confirmed — a guessed month is never printed; resumes get the year until you confirm it. The
 Roles tab lists them at the top with an answer box, and `resolve_open_question` is the same
 write: your answer goes in where the question was, as evidence, and the old text stays in the
-role's history. `find_figure_conflicts` looks for the same thing counted two ways in one job —
-$40K here, $45K there — and `skills_without_evidence` for skills you list that nothing you've
-written about real work backs up. Both are prompts to look, not verdicts. `career_timeline`
-shows the gaps and overlaps between jobs, advisory seats kept out of it, and the Roles tab
-draws the same strip and groups roles by kind; drag them into your own order if dates aren't
-how you want them read (`reorder_roles`). A current job you haven't written into for a month
-gets a nudge, and `workspace_health` reports it too.
+role's history. The Roles tab groups roles by kind, so advisory seats sit under their own
+heading rather than between two jobs, and a current job you haven't written into for a month
+gets a nudge — `workspace_health` reports it too. A role's highlights are ranked by their
+stars, strongest first, and that is the order a resume takes them in.
 
 A standing rule — a note marked as one — is handed to every connected client before it does
-anything, and the Notes tab tells you when one is too long to fit that briefing.
-`split_note_into_rules` turns one long list of rules into one rule per note, which is what
-fits; the original stays as an ordinary note. A note can also be filed against the job it's
-about, and shows up on that role. Each role keeps its history — every edit, including what an
+anything, and the Notes tab tells you when one is too long to fit that briefing — one short
+rule per note is what fits, and your assistant can split a long one for you. A note can also
+be filed against the job it's about, and shows up on that role. Each role keeps its history — every edit, including what an
 assistant appended — with what changed since each version, so you can see what Claude did and
 take it back. `import_resume` is the way in for
 anyone who already has a resume: paste it to your assistant and the whole thing gets filed in

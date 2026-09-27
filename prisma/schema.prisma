@@ -494,10 +494,6 @@ model Profile {
   /// Salesforce work you actually did — loses a screen for nothing. No level
   /// permits claiming work at an employer you did not do.
   keywordPolicy  String    @default("MATCH")
-  /// How Me lists roles: "date" (current first, then newest start) or
-  /// "manual" (Role.sortOrder, set by dragging or reorder_roles). Date until
-  /// somebody reorders by hand, and back to date whenever they ask.
-  roleOrder      String    @default("date")
   /// A square headshot, held as a data URI ("data:image/jpeg;base64,..."). It
   /// lives in the row rather than an object store so self-hosting still needs
   /// one environment variable, and so a published resume renders the picture

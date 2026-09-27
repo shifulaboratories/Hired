@@ -16,7 +16,8 @@ import {
   writingGuidance,
 } from "@/lib/background";
 import { db } from "@/lib/db";
-import { splitIntoRules } from "@/lib/note-rules";
+import { backingFor, type EvidenceSource } from "@/lib/resume-evidence";
+import { parseResumeDoc } from "@/lib/resume-schema";
 import { listTransferables } from "@/lib/data/transferables";
 import type { PipelineView } from "@/lib/pipeline-fields";
 import {
@@ -104,7 +105,6 @@ function blankProfile(userId: string): Profile {
     summary: "",
     background: "",
     keywordPolicy: DEFAULT_KEYWORD_POLICY,
-    roleOrder: "date",
     boardFields: [],
     listFields: [],
     calendarFields: [],
@@ -331,72 +331,21 @@ export type RoleInput = {
   endUnconfirmed?: boolean;
 };
 
-/**
- * How this person's roles are ordered: by date, or the order they dragged
- * them into. Date is the default and what almost everyone wants; "manual"
- * exists for the person whose advisory work reads better beside the job it
- * came out of than in strict date order.
- */
-async function roleOrderFor(userId: string) {
-  const profile = await db.profile.findUnique({ where: { userId }, select: { roleOrder: true } });
-  return profile?.roleOrder === "manual" ? "manual" : "date";
-}
-
-const BY_DATE = [
-  { isCurrent: "desc" as const },
-  { startDate: "desc" as const },
-  { sortOrder: "asc" as const },
-];
-const BY_HAND = [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }];
-
 export async function listRoles(userId: string) {
-  const order = await roleOrderFor(userId);
   return db.role.findMany({
     where: { userId },
-    orderBy: order === "manual" ? BY_HAND : BY_DATE,
+    orderBy: [{ isCurrent: "desc" }, { startDate: "desc" }, { sortOrder: "asc" }],
     include: { _count: { select: { highlights: true } } },
   });
-}
-
-/**
- * Put roles in the order given, or back in date order.
- *
- * `ids` may be a subset: the ones named come first, in that order, and every
- * other role keeps its place after them — so moving one card never needs the
- * whole list. An id that is not this person's is refused rather than skipped,
- * because a reorder that silently drops a card is a reorder that lies.
- * Passing nothing, or `byDate`, returns to date order and leaves sortOrder
- * alone so a later switch back to manual finds the old hand order intact.
- */
-export async function reorderRoles(
-  userId: string,
-  ids: string[] | null,
-): Promise<{ order: "date" | "manual" }> {
-  await ensureProfile(userId);
-  if (!ids || ids.length === 0) {
-    await db.profile.update({ where: { userId }, data: { roleOrder: "date" } });
-    return { order: "date" };
-  }
-  const current = await listRoles(userId);
-  const known = new Set(current.map((role) => role.id));
-  const unknown = ids.filter((id) => !known.has(id));
-  if (unknown.length > 0) throw new Error(`No role with id ${unknown[0]}`);
-  const named = new Set(ids);
-  const next = [...ids, ...current.map((role) => role.id).filter((id) => !named.has(id))];
-  await db.$transaction([
-    ...next.map((id, index) =>
-      db.role.updateMany({ where: { id, userId }, data: { sortOrder: index } }),
-    ),
-    db.profile.update({ where: { userId }, data: { roleOrder: "manual" } }),
-  ]);
-  return { order: "manual" };
 }
 
 export async function getRole(userId: string, id: string) {
   const role = await db.role.findFirst({
     where: { id, userId },
     include: {
-      highlights: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+      // Strongest first, the order list_highlights uses and the order resumes
+      // take them in, so there is one ranking of a role's lines: the stars.
+      highlights: { orderBy: [{ strength: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }] },
       // Filtered on userId as well as the relation: a note row can only ever
       // point at its owner's role, but this file does not rely on "can only".
       notes: {
@@ -696,6 +645,52 @@ export async function listHighlights(userId: string, roleId?: string) {
   });
 }
 
+export type HighlightUse = { resumeId: string; name: string; updatedAt: Date };
+
+/**
+ * Which resumes carry each highlight, by the same similarity test
+ * trace_resume_evidence uses in the other direction — so a highlight is "used"
+ * when a bullet is that highlight reworded, not only when it is pasted. Keyed
+ * by highlight id; a highlight missing from the map has never been used.
+ * Computed rather than recorded, for the reason trace_resume_evidence is: a
+ * recorded link goes stale the moment a bullet is reworded.
+ */
+export async function highlightUsage(userId: string): Promise<Map<string, HighlightUse[]>> {
+  const [highlights, resumes] = await Promise.all([
+    listHighlights(userId),
+    db.resume.findMany({
+      where: { userId },
+      select: { id: true, name: true, data: true, updatedAt: true },
+      orderBy: { updatedAt: "desc" },
+    }),
+  ]);
+  const sources: EvidenceSource[] = highlights.map((highlight) => ({
+    id: highlight.id,
+    text: highlight.text,
+    role: "",
+    roleId: highlight.roleId,
+  }));
+  const usage = new Map<string, HighlightUse[]>();
+  for (const resume of resumes) {
+    const seen = new Set<string>();
+    for (const section of parseResumeDoc(resume.data).sections) {
+      for (const item of section.experience) {
+        for (const bullet of item.bullets) {
+          for (const source of backingFor(bullet, sources, item.roleId).sources) {
+            if (seen.has(source.id)) continue;
+            seen.add(source.id);
+            usage.set(source.id, [
+              ...(usage.get(source.id) ?? []),
+              { resumeId: resume.id, name: resume.name, updatedAt: resume.updatedAt },
+            ]);
+          }
+        }
+      }
+    }
+  }
+  return usage;
+}
+
 export async function createHighlight(userId: string, input: HighlightInput) {
   // A highlight may only hang off a role the same user owns.
   if (input.roleId) {
@@ -740,32 +735,6 @@ export async function updateHighlight(
   const { count } = await db.highlight.updateMany({ where: { id, userId }, data });
   if (count === 0) throw new Error(`No highlight with id ${id}`);
   return db.highlight.findFirstOrThrow({ where: { id, userId } });
-}
-
-/**
- * Put one role's highlights in the order given. The order is what the role
- * page shows and what add_role_to_resume takes the first N from, so it is the
- * person's own ranking — strength stays as it was. `ids` may be a subset; the
- * rest keep their places after the ones named. Another role's highlight, or
- * somebody else's, is refused.
- */
-export async function reorderHighlights(userId: string, roleId: string, ids: string[]) {
-  const role = await db.role.findFirst({ where: { id: roleId, userId }, select: { id: true } });
-  if (!role) throw new Error(`No role with id ${roleId}`);
-  const current = await db.highlight.findMany({
-    where: { userId, roleId },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-    select: { id: true },
-  });
-  const known = new Set(current.map((row) => row.id));
-  const stray = ids.find((id) => !known.has(id));
-  if (stray) throw new Error(`No highlight with id ${stray} on that role`);
-  const named = new Set(ids);
-  const next = [...ids, ...current.map((row) => row.id).filter((id) => !named.has(id))];
-  await db.$transaction(
-    next.map((id, index) => db.highlight.updateMany({ where: { id, userId }, data: { sortOrder: index } })),
-  );
-  return { roleId, order: next };
 }
 
 export async function deleteHighlight(userId: string, id: string) {
@@ -854,59 +823,6 @@ export async function updateNote(
   const { count } = await db.note.updateMany({ where: { id, userId }, data });
   if (count === 0) throw new Error(`No note with id ${id}`);
   return db.note.findFirstOrThrow({ where: { id, userId } });
-}
-
-/**
- * Turn one note of many rules into many standing rules, one each.
- *
- * Why: the briefing every client reads on connect has room for about five
- * hundred characters of standing rules (briefing-head.ts), so one long rules
- * note is dropped from it whole. One rule per note lets the short ones fit.
- *
- * NOT destructive. The new rules are created as GUARDRAIL notes about the same
- * role, if any; the original is kept and becomes an ordinary note, so nothing
- * is said twice in the briefing and nothing is lost if the split read the note
- * badly. `dryRun` returns the drafts and writes nothing — show them first.
- * `only` keeps the drafts at those positions (0-based) and skips the rest.
- */
-export async function splitNoteIntoRules(
-  userId: string,
-  id: string,
-  options: { dryRun?: boolean; only?: number[] } = {},
-) {
-  const note = await db.note.findFirst({ where: { id, userId } });
-  if (!note) throw new Error(`No note with id ${id}`);
-  const drafts = splitIntoRules(note.body);
-  if (drafts.length < 2) {
-    throw new Error(
-      "There is only one rule in that note, so there is nothing to split. Make the note itself a standing rule instead (update_note with kind GUARDRAIL).",
-    );
-  }
-  const keep = options.only ? new Set(options.only) : null;
-  const chosen = drafts.filter((_, index) => !keep || keep.has(index));
-  if (options.dryRun) return { note: { id: note.id, title: note.title }, rules: drafts, created: [] };
-  if (chosen.length === 0) throw new Error("None of the drafts were kept, so nothing was created.");
-
-  const created = await db.$transaction([
-    ...chosen.map((rule) =>
-      db.note.create({
-        data: {
-          userId,
-          title: rule.title,
-          body: rule.body,
-          kind: "GUARDRAIL",
-          roleId: note.roleId,
-          tags: note.tags,
-        },
-      }),
-    ),
-    db.note.update({ where: { id: note.id }, data: { kind: "NOTE" } }),
-  ]);
-  return {
-    note: { id: note.id, title: note.title, kind: "NOTE" as const },
-    rules: chosen,
-    created: created.slice(0, -1).map((row) => ({ id: row.id, title: (row as { title: string }).title })),
-  };
 }
 
 export async function deleteNote(userId: string, id: string) {

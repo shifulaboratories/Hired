@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { BriefcaseIcon, PinIcon, PlusIcon, ScissorsIcon, SearchIcon, ShieldIcon, Trash2Icon } from "lucide-react";
+import { BriefcaseIcon, PinIcon, PlusIcon, SearchIcon, ShieldIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,20 +13,10 @@ import { EmptyState } from "@/components/page-header";
 import { SaveIndicator } from "@/components/save-indicator";
 import { useAutosave } from "@/hooks/use-autosave";
 import { cn } from "@/lib/utils";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { splitIntoRules, type RuleDraft } from "@/lib/note-rules";
 import {
   createNoteAction,
   deleteNoteAction,
-  splitNoteIntoRulesAction,
   updateNoteAction,
 } from "@/server/actions";
 import { StickyNoteIcon } from "lucide-react";
@@ -198,10 +188,7 @@ function NoteCard({
     kind: note.kind,
     roleId: note.roleId,
   });
-  const [splitting, setSplitting] = useState(false);
-  // Only offered when the body really holds several rules; splitting one rule
-  // into one rule is not a thing anybody wants a button for.
-  const splittable = splitIntoRules(values.body).length >= 2 && RULE_LIKE.test(`${values.title} ${values.kind === "GUARDRAIL" ? "rule" : ""}`);
+
   const { state, push } = useAutosave<typeof values>((next) => updateNoteAction(note.id, next));
   const isRule = values.kind === "GUARDRAIL";
   // Only while it is still a note: once it is a rule, the suggestion is done.
@@ -303,16 +290,6 @@ function NoteCard({
             className="min-h-24 resize-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
           />
 
-          {splittable && (
-            <button
-              type="button"
-              onClick={() => setSplitting(true)}
-              className="text-primary flex items-center gap-1.5 text-[12px] font-medium hover:underline"
-            >
-              <ScissorsIcon className="size-3" /> Split into separate standing rules
-            </button>
-          )}
-
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-1">
               {note.tags.map((tag) => (
@@ -320,119 +297,44 @@ function NoteCard({
                   {tag}
                 </Badge>
               ))}
+              {/* Shown on a filed note, or on hover like the card's other
+                  controls — a job picker on every note is clutter on the
+                  notes that belong to no job, which is most of them. */}
               {roles.length > 0 && (
-                <Select
-                  value={values.roleId ?? NO_ROLE}
-                  onValueChange={(value) => set({ roleId: value === NO_ROLE ? null : value })}
+                <div
+                  className={cn(
+                    "transition-opacity",
+                    !values.roleId && "opacity-0 group-hover:opacity-100 focus-within:opacity-100",
+                  )}
                 >
-                  <SelectTrigger
-                    size="sm"
-                    aria-label="Which job this note is about"
-                    className="text-muted-foreground h-7 max-w-52 gap-1 border-dashed px-2 text-[11.5px]"
+                  <Select
+                    value={values.roleId ?? NO_ROLE}
+                    onValueChange={(value) => set({ roleId: value === NO_ROLE ? null : value })}
                   >
-                    <BriefcaseIcon className="size-3" />
-                    <SelectValue placeholder="About a job" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NO_ROLE}>Not about one job</SelectItem>
-                    {roles.map((role) => (
-                      <SelectItem key={role.id} value={role.id}>
-                        {role.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    <SelectTrigger
+                      size="sm"
+                      aria-label="Which job this note is about"
+                      className="text-muted-foreground h-7 max-w-52 gap-1 border-dashed px-2 text-[11.5px]"
+                    >
+                      <BriefcaseIcon className="size-3" />
+                      <SelectValue placeholder="About a job" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_ROLE}>Not about one job</SelectItem>
+                      {roles.map((role) => (
+                        <SelectItem key={role.id} value={role.id}>
+                          {role.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               )}
             </div>
             <SaveIndicator state={state} />
           </div>
         </CardContent>
       </Card>
-      {splitting && <SplitDialog noteId={note.id} title={values.title} onClose={() => setSplitting(false)} />}
     </motion.div>
-  );
-}
-
-/**
- * Preview, then split. The drafts come from the server's own dry run, so what
- * is shown is exactly what will be created; unticking one leaves it out. The
- * note itself is kept, as an ordinary note.
- */
-function SplitDialog({ noteId, title, onClose }: { noteId: string; title: string; onClose: () => void }) {
-  const [drafts, setDrafts] = useState<RuleDraft[] | null>(null);
-  const [keep, setKeep] = useState<Set<number>>(new Set());
-  const [pending, startTransition] = useTransition();
-  // Held in a ref so the dry run runs once, not every time the parent renders
-  // a fresh onClose.
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
-
-  useEffect(() => {
-    void splitNoteIntoRulesAction(noteId, { dryRun: true })
-      .then((result) => {
-        setDrafts(result.rules);
-        setKeep(new Set(result.rules.map((_, index) => index)));
-      })
-      .catch((error) => {
-        toast.error(error instanceof Error ? error.message : "Could not read that note.");
-        closeRef.current();
-      });
-  }, [noteId]);
-
-  const create = () =>
-    startTransition(async () => {
-      try {
-        const result = await splitNoteIntoRulesAction(noteId, { only: [...keep].sort((a, b) => a - b) });
-        toast.success(`${result.created.length} standing rules created. The original is kept as a note.`);
-        onClose();
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Could not split that note.");
-      }
-    });
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Split &ldquo;{title}&rdquo;</DialogTitle>
-          <DialogDescription>
-            One rule per note fits in the briefing every AI client reads on connect. Untick anything
-            that is not really a rule. The original stays, as an ordinary note.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="max-h-80 space-y-1.5 overflow-y-auto">
-          {drafts === null && <p className="text-muted-foreground text-sm">Reading it…</p>}
-          {drafts?.map((draft, index) => (
-            <label key={index} className="hover:bg-accent/50 flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5">
-              <input
-                type="checkbox"
-                className="accent-primary mt-1 size-3.5"
-                checked={keep.has(index)}
-                onChange={(event) =>
-                  setKeep((old) => {
-                    const next = new Set(old);
-                    if (event.target.checked) next.add(index);
-                    else next.delete(index);
-                    return next;
-                  })
-                }
-              />
-              <span className="text-sm leading-snug">
-                {draft.title}
-                {draft.body && <span className="text-muted-foreground"> — {draft.body}</span>}
-              </span>
-            </label>
-          ))}
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={create} disabled={pending || !drafts || keep.size === 0}>
-            Create {keep.size} {keep.size === 1 ? "rule" : "rules"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

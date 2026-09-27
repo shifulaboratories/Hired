@@ -89,7 +89,6 @@ import * as schedule from "@/lib/data/schedule";
 import { instanceAssistantUsage } from "@/lib/data/assistant";
 import * as transferables from "@/lib/data/transferables";
 import { standingRulesFit } from "@/lib/mcp/briefing-head";
-import * as checks from "@/lib/data/me-checks";
 import { KEYWORD_POLICIES, type KeywordPolicy } from "@/lib/keyword-policy";
 import {
   getSettings,
@@ -962,38 +961,6 @@ export const tools: McpTool[] = [
       ),
   },
   {
-    name: "career_timeline",
-    title: "Gaps and overlaps in their career",
-    description:
-      "Their roles laid out in months, grouped as jobs, contract and freelance, advisory and board, or internships — read from each role's employment type — with the GAPS of three months or more between jobs and contracts, and any two jobs that OVERLAPPED by two months or more. Advisory roles run alongside by nature and are never counted as an overlap; an internship before a first job is never a gap. Reach for it before interview prep ('what will they ask me about'), before writing a resume that lists dates, or when they ask whether their history reads cleanly. A gap marked `mayBeADateError` sits against a month they marked unconfirmed, so settle the date before treating the gap as real. Do not explain a gap for them or invent what they did in it; ask, and offer to add what they tell you with append_role_background or a note. Read-only.",
-    inputSchema: object({}),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (_args, ctx) => checks.timelineFor(ctx.userId),
-  },
-  {
-    name: "reorder_roles",
-    title: "Reorder roles",
-    description:
-      "Set the order their roles are listed in — in Me, in get_me_snapshot and in list_roles. By default roles are in date order, current first. Pass `ids` to put those roles first in that order (the rest keep their places after them), which switches the list to their own order; pass `by_date: true` to go back to date order. Resumes are not affected: a resume's order is its own, changed with reorder_resume. Returns which order is now in force.",
-    inputSchema: object({
-      ids: strArray("Role ids in the order wanted. May be a subset."),
-      by_date: bool("True to go back to date order, current first. Ignores ids."),
-    }),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) =>
-      me.reorderRoles(ctx.userId, b(args, "by_date") ? null : (a(args, "ids") ?? null)),
-  },
-  {
     name: "create_role",
     title: "Create a role",
     description:
@@ -1235,27 +1202,6 @@ export const tools: McpTool[] = [
   // ME — highlights
   // -------------------------------------------------------------------------
   {
-    name: "reorder_highlights",
-    title: "Reorder a role's highlights",
-    description:
-      "Put one role's highlights in the order given — their own ranking of which lines lead. The order is what the role page shows and what add_role_to_resume takes the first few from; strength is unchanged. `ids` may be a subset: those go first in that order and the rest keep their places after them. Get the ids from get_role.",
-    inputSchema: object(
-      {
-        role_id: str("The role whose highlights these are"),
-        ids: strArray("Highlight ids in the order wanted"),
-      },
-      ["role_id", "ids"],
-    ),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) =>
-      me.reorderHighlights(ctx.userId, required(args, "role_id"), a(args, "ids") ?? []),
-  },
-  {
     name: "list_highlights",
     title: "List highlights",
     description:
@@ -1270,7 +1216,7 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => {
       const [rows, usage] = await Promise.all([
         me.listHighlights(ctx.userId, s(args, "roleId")),
-        checks.highlightUsage(ctx.userId),
+        me.highlightUsage(ctx.userId),
       ]);
       return capped(
         rows.map((row) => ({ ...row, usedIn: usage.get(row.id) ?? [] })),
@@ -1378,7 +1324,7 @@ export const tools: McpTool[] = [
     name: "list_notes",
     title: "List notes",
     description:
-      "Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything. Capped, and the result says so when it was cut off — except for standing rules (kind GUARDRAIL), which are never cut and always come first. Each standing rule carries `inBriefing`: whether it fits in the briefing every client reads on connect. There is room for roughly a line or two per rule; one that is false is still binding, but only reaches a client that comes here for it, so offer to shorten it or split it with split_note_into_rules. A note with a `role` is filed against that job. A note of kind NOTE whose title reads like a rule (\"Guardrails\", \"never do X\") is NOT a standing rule and reaches nobody unasked — say so, and offer update_note with kind GUARDRAIL. search_me is the better tool when you are looking for something specific.",
+      "Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything. Capped, and the result says so when it was cut off — except for standing rules (kind GUARDRAIL), which are never cut and always come first. Each standing rule carries `inBriefing`: whether it fits in the briefing every client reads on connect. There is room for roughly a line or two per rule; one that is false is still binding, but only reaches a client that comes here for it, so offer to shorten it, or to split it into several short rules — create_note with kind GUARDRAIL for each, then update_note to make the original an ordinary NOTE so nothing is said twice. A note with a `role` is filed against that job. A note of kind NOTE whose title reads like a rule (\"Guardrails\", \"never do X\") is NOT a standing rule and reaches nobody unasked — say so, and offer update_note with kind GUARDRAIL. search_me is the better tool when you are looking for something specific.",
     inputSchema: object({
       limit: limitArg(100),
       role_id: str("Only the notes filed against this role"),
@@ -1503,67 +1449,6 @@ export const tools: McpTool[] = [
           roleId: s(args, "role_id"),
         }),
       ),
-  },
-  {
-    name: "split_note_into_rules",
-    title: "Split a note into standing rules",
-    description:
-      "Turn one note that holds many rules — a 'Guardrails, never violate' list — into one standing rule per note. Why it matters: the briefing every client reads on connect has room for about five hundred characters of standing rules, so one long rules note is dropped from it whole and only reaches a client that fetches it; short separate rules fit and travel with every connection. Each bullet becomes a rule; a heading or a line ending in a colon is carried into the titles under it ('Numbers: never cite a figure without a source'); a note with no bullets splits by paragraph. CALL WITH dry_run: true FIRST, show them the drafts, and pass `only` with the positions they want to keep. Not destructive: the original note is kept and becomes an ordinary NOTE, so nothing is said twice and nothing is lost. Refuses a note that holds only one rule — make that one a GUARDRAIL with update_note instead.",
-    inputSchema: object(
-      {
-        id: str("The note to split"),
-        dry_run: bool("Return the drafted rules without creating anything. Do this first."),
-        only: {
-          type: "array",
-          items: { type: "number" },
-          description: "0-based positions of the drafts to keep, from the dry run. Omit to keep them all.",
-        },
-      },
-      ["id"],
-    ),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) => {
-      const only = Array.isArray(args.only)
-        ? (args.only as unknown[]).filter((value): value is number => typeof value === "number")
-        : undefined;
-      return me.splitNoteIntoRules(ctx.userId, required(args, "id"), {
-        dryRun: b(args, "dry_run") ?? false,
-        only,
-      });
-    },
-  },
-  {
-    name: "find_figure_conflicts",
-    title: "Numbers stated two different ways",
-    description:
-      "Figures about the same thing in the same job that disagree across their material — a follower count written as 150M+ in the background and 200M+ on a resume, a budget given as $40K in one bullet and $45K in another. Reads role backgrounds (evidence only), highlights, notes, resumes and the profile summary; a figure is grouped with others about the same noun in the same job, and a note or resume entry that names a company counts as that job. Run it before a resume or a letter goes out, and whenever they ask whether their numbers are consistent. THESE ARE CANDIDATES, NOT VERDICTS: the grouping is a heuristic, so read each group and say which one looks like a real disagreement. Never pick a winner yourself — ask which figure is true, then fix the others (update_highlight, update_resume, update_role) or mark the doubt with append_role_background under 'Open questions'. Two figures in one plain sentence ('from $1M to $3M') are a before-and-after and are never reported. Read-only.",
-    inputSchema: object({ limit: num("How many groups to return. Default 25.") }),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) => checks.figureConflicts(ctx.userId, n(args, "limit") ?? 25),
-  },
-  {
-    name: "skills_without_evidence",
-    title: "Listed skills nothing backs up",
-    description:
-      "Every skill in their Skills groups, split into `unbacked` — nothing they have written about real work mentions it: no role background, highlight, project or note — and `backed`, with the record that does. The profile summary does not count; it is the claim, not the evidence. This is the reverse of posting_keywords: that asks what a posting wants that they cannot show, this asks what they CLAIM that they cannot show — the skill an interviewer asks one question about and it falls over. Reach for it when tidying Me or before a technical interview. For each unbacked skill, ask where they used it and file the answer with append_role_background; if the answer is nowhere, offer to take it off the list with update_extra. Never invent the usage. Matched by the same stemmed full-text search as search_me, so a very short skill name ('Go', 'R') can match unrelated words — say so when one looks backed by something that is plainly not about it. Read-only.",
-    inputSchema: object({}),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (_args, ctx) => checks.unbackedSkills(ctx.userId),
   },
   {
     name: "delete_note",
