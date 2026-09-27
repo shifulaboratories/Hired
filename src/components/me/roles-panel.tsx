@@ -3,13 +3,10 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import {
-  ArrowDownUpIcon,
   ArrowRightIcon,
   BriefcaseIcon,
-  CheckIcon,
   CircleHelpIcon,
   DownloadIcon,
-  HashIcon,
   LockIcon,
   MapPinIcon,
   MessageSquareWarningIcon,
@@ -23,11 +20,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/page-header";
 import { Lift, Stagger, StaggerItem } from "@/components/motion";
-import { DragHandle, SortableList, SortableRow } from "@/components/resume/sortable-list";
 import { useAsk } from "@/components/assistant/ask";
 import { cn, dateRange, truncate } from "@/lib/utils";
-import { GROUP_LABEL, GROUP_ORDER, roleGroup, type RoleGroup } from "@/lib/timeline";
-import { reorderRolesAction, resolveOpenQuestionAction } from "@/server/actions";
+import { GROUP_LABEL, GROUP_ORDER, roleGroup } from "@/lib/role-groups";
+import { resolveOpenQuestionAction } from "@/server/actions";
 
 type RoleCard = {
   id: string;
@@ -58,32 +54,16 @@ type OpenQuestion = {
   kind: "background" | "start_date" | "end_date";
 };
 
-type Conflict = {
-  roleId: string | null;
-  role: string;
-  key: string;
-  figures: { raw: string; sentence: string; source: { kind: string; id: string; title: string } }[];
-};
-
 /** A current job with nothing added for this long gets a nudge on its card. */
 const STALE_DAYS = 30;
 
 export function RolesPanel({
   roles,
   openQuestions,
-  conflicts,
-  order,
-  timeline,
 }: {
   roles: RoleCard[];
   openQuestions: OpenQuestion[];
-  conflicts: Conflict[];
-  order: "date" | "manual";
-  /** Rendered above the cards; built on the server. */
-  timeline?: React.ReactNode;
 }) {
-  const [reordering, setReordering] = useState(false);
-
   if (roles.length === 0) {
     return (
       <EmptyState
@@ -123,53 +103,17 @@ export function RolesPanel({
   return (
     <div className="space-y-6">
       {openQuestions.length > 0 && <OpenQuestions questions={openQuestions} />}
-      {conflicts.length > 0 && <Conflicts conflicts={conflicts} />}
-      {timeline}
-
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {order === "manual" && !reordering && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground h-7 text-xs"
-            onClick={() => void reorderRolesAction(null).then(() => toast.success("Back in date order."))}
-          >
-            Back to date order
-          </Button>
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 gap-1.5 text-xs"
-          onClick={() => setReordering((value) => !value)}
-        >
-          {reordering ? (
-            <>
-              <CheckIcon className="size-3" /> Done
-            </>
-          ) : (
-            <>
-              <ArrowDownUpIcon className="size-3" /> Reorder
-            </>
+      {groups.map(({ group, roles: members }) => (
+        <section key={group} className="space-y-3">
+          {groups.length > 1 && (
+            <h2 className="text-muted-foreground text-[12px] font-medium tracking-wide uppercase">
+              {GROUP_LABEL[group]}
+              <span className="ml-1.5 tabular-nums">{members.length}</span>
+            </h2>
           )}
-        </Button>
-      </div>
-
-      {reordering ? (
-        <ReorderList roles={roles} />
-      ) : (
-        groups.map(({ group, roles: members }) => (
-          <section key={group} className="space-y-3">
-            {groups.length > 1 && (
-              <h2 className="text-muted-foreground text-[12px] font-medium tracking-wide uppercase">
-                {GROUP_LABEL[group as RoleGroup]}
-                <span className="ml-1.5 tabular-nums">{members.length}</span>
-              </h2>
-            )}
-            <RoleGrid roles={members} />
-          </section>
-        ))
-      )}
+          <RoleGrid roles={members} />
+        </section>
+      ))}
     </div>
   );
 }
@@ -269,49 +213,6 @@ function RoleGrid({ roles }: { roles: RoleCard[] }) {
         );
       })}
     </Stagger>
-  );
-}
-
-/**
- * Drag roles into the order you want them listed. Switching to this is
- * choosing your own order over date order; "Back to date order" undoes it.
- * reorder_roles is the same over MCP.
- */
-function ReorderList({ roles }: { roles: RoleCard[] }) {
-  const [ids, setIds] = useState(roles.map((role) => role.id));
-  const byId = new Map(roles.map((role) => [role.id, role]));
-  return (
-    <SortableList
-      ids={ids}
-      className="space-y-1.5"
-      onReorder={(from, to) => {
-        const next = [...ids];
-        const [moved] = next.splice(from, 1);
-        next.splice(to, 0, moved);
-        setIds(next);
-        void reorderRolesAction(next).catch(() => toast.error("Could not save the new order."));
-      }}
-    >
-      {ids.map((id) => {
-        const role = byId.get(id);
-        if (!role) return null;
-        return (
-          <SortableRow key={id} id={id} label={`Move ${role.title} at ${role.company}`}>
-            <div className="bg-card flex items-center gap-3 rounded-lg border px-3 py-2">
-              <DragHandle className="size-6" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">
-                  {role.title} <span className="text-muted-foreground font-normal">· {role.company}</span>
-                </div>
-                <div className="text-muted-foreground text-xs">
-                  {dateRange(role.startDate, role.endDate, role.isCurrent)} · {role.employmentType}
-                </div>
-              </div>
-            </div>
-          </SortableRow>
-        );
-      })}
-    </SortableList>
   );
 }
 
@@ -480,60 +381,6 @@ function QuestionRow({ item }: { item: OpenQuestion }) {
         </form>
       )}
     </li>
-  );
-}
-
-/**
- * The same thing counted two ways in the same job. Candidates, not verdicts:
- * the grouping is a heuristic, which is why this lists the sentences and
- * leaves the judgement to the person. find_figure_conflicts is the same list.
- */
-function Conflicts({ conflicts }: { conflicts: Conflict[] }) {
-  const [open, setOpen] = useState(false);
-  const shown = open ? conflicts : conflicts.slice(0, 2);
-  return (
-    <Card>
-      <CardContent className="space-y-3 pt-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <div className="flex items-center gap-2">
-            <HashIcon className="text-muted-foreground size-4" />
-            <h2 className="text-[15px] font-semibold tracking-tight">
-              {conflicts.length === 1 ? "A number stated two ways" : `${conflicts.length} numbers stated two ways`}
-            </h2>
-          </div>
-          <p className="text-muted-foreground text-xs">
-            Worth a look before anything goes out. Some will be two true numbers.
-          </p>
-        </div>
-        <ul className="space-y-3">
-          {shown.map((conflict, index) => (
-            <li key={index} className="space-y-1">
-              <div className="text-xs">
-                <span className="font-medium">{conflict.key}</span>
-                <span className="text-muted-foreground"> · {conflict.role}</span>
-              </div>
-              <ul className="space-y-0.5">
-                {conflict.figures.map((figure, figureIndex) => (
-                  <li key={figureIndex} className="text-muted-foreground text-[13px] leading-snug">
-                    <span className="text-foreground font-medium tabular-nums">{figure.raw}</span>{" "}
-                    <span className="text-[11px]">in {figure.source.title}:</span> {truncate(figure.sentence, 160)}
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-        {conflicts.length > 2 && (
-          <button
-            type="button"
-            onClick={() => setOpen((value) => !value)}
-            className="text-muted-foreground hover:text-foreground text-xs"
-          >
-            {open ? "Show fewer" : `Show all ${conflicts.length}`}
-          </button>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 

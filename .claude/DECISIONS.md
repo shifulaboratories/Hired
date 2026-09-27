@@ -6893,3 +6893,33 @@ Never a feature of its own — the prompt names the tools it expects.
 
 **Notes on roles are SetNull.** Deleting a role leaves its STAR stories, unattached. createNote and
 updateNote validate the role belongs to the caller; the export round-trips it through map.role.
+
+## 2026-09-27 — Cut half of the 2026-09-25 Me batch
+
+Supersedes the parts of the previous entry about figure conflicts, unbacked skills, the timeline,
+manual role order, dragged highlight order and splitting rules notes. All fifteen were built
+because they were asked for as a list; asked afterwards whether they earned their place, about
+half did not. The test applied, which is worth reusing: does it fix something seen in a real
+workspace, and is it something an assistant could NOT already do with the tools that exist?
+
+Removed, with the tools (seven added → one kept, `resolve_open_question`):
+- `find_figure_conflicts` — a heuristic with false positives; the one real case was already an
+  open question, and an assistant compares numbers when it reads the material anyway.
+- `skills_without_evidence` — `search_me` per skill does it; the dotted chips cost a full-text
+  query per skill on every Extras load.
+- `career_timeline` and the strip — grouping roles by kind (src/lib/role-groups.ts, kept) fixes
+  "advisory reads like job-hopping"; gaps are arithmetic an assistant does from `list_roles`.
+- `reorder_roles` and `Profile.roleOrder` — date order is how everybody reads a career. The
+  column had shipped, so 20260927010000 drops it rather than editing the earlier migration.
+- `reorder_highlights` — two rankings of one list (drag order and stars) is one too many. Stars
+  win: `getRole` and `add_role_to_resume` now take highlights strongest first, and
+  add_role_to_resume skips archived ones, which it never should have taken.
+- `split_note_into_rules` — a one-time cleanup. `list_notes` says how to do it with create_note
+  and update_note, and the Notes tab still says when a rule is too long to fit the briefing.
+
+Kept: settling open questions, unconfirmed months (year-only on resumes), the caveat-append fix,
+role history with changedSince, profile markings, grouping, the current-job nudge, highlight
+"used in" labels, notes filed on a role (picker now shown only on a filed note or on hover),
+the outline / fold / section edit, and the assistant hand-off. Every tool in this array sits in
+every client's tools/list, and more of them make an assistant worse at choosing — a new tool has
+to be worth that, not just possible.

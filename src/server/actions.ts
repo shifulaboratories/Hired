@@ -802,17 +802,6 @@ export async function updateNoteAction(
   if (note.roleId) revalidatePath(`/me/${note.roleId}`);
 }
 
-/** The dry run returns drafts; the real one creates the rules. See the tool. */
-export async function splitNoteIntoRulesAction(
-  id: string,
-  options: { dryRun?: boolean; only?: number[] } = {},
-) {
-  const user = await requireUser();
-  const result = await me.splitNoteIntoRules(user.id, id, options);
-  if (!options.dryRun) revalidatePath("/me");
-  return result;
-}
-
 /** Answer one open question, or confirm an assumed date. Null role = profile. */
 export async function resolveOpenQuestionAction(
   roleId: string | null,
@@ -824,20 +813,6 @@ export async function resolveOpenQuestionAction(
   revalidatePath("/me");
   if (roleId) revalidatePath(`/me/${roleId}`);
   return result;
-}
-
-/** Null goes back to date order. */
-export async function reorderRolesAction(ids: string[] | null) {
-  const user = await requireUser();
-  const result = await me.reorderRoles(user.id, ids);
-  revalidatePath("/me");
-  return result;
-}
-
-export async function reorderHighlightsAction(roleId: string, ids: string[]) {
-  const user = await requireUser();
-  await me.reorderHighlights(user.id, roleId, ids);
-  revalidatePath(`/me/${roleId}`);
 }
 
 export async function roleHistoryAction(roleId: string) {

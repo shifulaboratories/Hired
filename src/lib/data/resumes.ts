@@ -504,7 +504,14 @@ export async function addRoleToResume(
   const roles = await db.role.findMany({
     where: { userId },
     orderBy: [{ isCurrent: "desc" }, { startDate: "desc" }],
-    include: { highlights: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } },
+    // Strongest first, so "six by default" means the six best. Strength is the
+    // one ranking a role's lines have; there is no second, hand-dragged order.
+    include: {
+      highlights: {
+        where: { archived: false },
+        orderBy: [{ strength: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
+      },
+    },
   });
   if (roles.length === 0) {
     throw new Error("There are no roles in Me yet — create_role first, or import a resume.");

@@ -13,9 +13,6 @@ import {
   listRoles,
   listSkillGroups,
 } from "@/lib/data/me";
-import { figureConflicts, unbackedSkills } from "@/lib/data/me-checks";
-import { careerTimeline } from "@/lib/timeline";
-import { CareerTimeline } from "@/components/me/career-timeline";
 import { db } from "@/lib/db";
 import { backgroundExcerpt, writingGuidance } from "@/lib/background";
 import { standingRulesFit } from "@/lib/mcp/briefing-head";
@@ -173,40 +170,11 @@ async function LettersTab({ userId }: { userId: string }) {
 }
 
 async function RolesPanelTab({ userId }: { userId: string }) {
-  const [roles, openQuestions, conflicts, profile] = await Promise.all([
-    listRoles(userId),
-    listOpenQuestions(userId),
-    figureConflicts(userId, 10),
-    db.profile.findUnique({ where: { userId }, select: { roleOrder: true } }),
-  ]);
-  const now = new Date();
-  const laid = careerTimeline(roles, now);
-  const unconfirmed = new Set(
-    roles.filter((role) => role.startUnconfirmed || role.endUnconfirmed).map((role) => role.id),
-  );
+  const [roles, openQuestions] = await Promise.all([listRoles(userId), listOpenQuestions(userId)]);
+  const now = Date.now();
   return (
     <RolesPanel
-      order={profile?.roleOrder === "manual" ? "manual" : "date"}
       openQuestions={openQuestions}
-      conflicts={conflicts}
-      timeline={
-        laid.span && (
-          <CareerTimeline
-            range={laid.span}
-            gaps={laid.gaps}
-            rows={laid.roles.map((role) => ({
-              id: role.id,
-              title: role.title,
-              company: role.company,
-              group: role.group,
-              start: role.start,
-              end: role.end,
-              isCurrent: role.isCurrent,
-              unconfirmed: unconfirmed.has(role.id),
-            }))}
-          />
-        )
-      }
       roles={roles.map((role) => {
         const guidance = writingGuidance(role.background);
         return {
@@ -226,7 +194,7 @@ async function RolesPanelTab({ userId }: { userId: string }) {
           rules: guidance.rules.length,
           caveats: guidance.caveats.length,
           open: openQuestions.filter((item) => item.roleId === role.id).length,
-          daysSinceAdded: Math.floor((now.getTime() - role.backgroundUpdatedAt.getTime()) / 86_400_000),
+          daysSinceAdded: Math.floor((now - role.backgroundUpdatedAt.getTime()) / 86_400_000),
         };
       })}
     />
@@ -286,12 +254,11 @@ async function NotesTab({ user }: { user: Awaited<ReturnType<typeof requireUser>
 }
 
 async function ExtrasTab({ userId }: { userId: string }) {
-  const [education, projects, skills, certifications, evidence] = await Promise.all([
+  const [education, projects, skills, certifications] = await Promise.all([
     listEducation(userId),
     listProjects(userId),
     listSkillGroups(userId),
     listCertifications(userId),
-    unbackedSkills(userId),
   ]);
   return (
     <FadeIn>
@@ -307,7 +274,6 @@ async function ExtrasTab({ userId }: { userId: string }) {
         }))}
         skills={skills}
         certifications={certifications}
-        unbacked={evidence.unbacked.map((row) => row.skill)}
       />
     </FadeIn>
   );

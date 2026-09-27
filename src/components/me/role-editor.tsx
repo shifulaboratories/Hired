@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import {
   HistoryIcon,
@@ -29,7 +29,6 @@ import {
 import { BackgroundEditor } from "@/components/me/background-editor";
 import { RoleHistory } from "@/components/me/role-history";
 import { useAsk } from "@/components/assistant/ask";
-import { DragHandle, SortableList, SortableRow } from "@/components/resume/sortable-list";
 import { resumeEvidence } from "@/lib/background";
 import { ChipInput } from "@/components/chip-input";
 import { SaveIndicator } from "@/components/save-indicator";
@@ -40,7 +39,6 @@ import {
   createNoteAction,
   deleteHighlightAction,
   deleteRoleAction,
-  reorderHighlightsAction,
   updateHighlightAction,
   updateRoleAction,
 } from "@/server/actions";
@@ -377,7 +375,6 @@ function HighlightsCard({
   const [pending, startTransition] = useTransition();
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState("");
-  const [order, setOrder] = useState<string[]>(highlights.map((h) => h.id));
   const ask = useAsk();
 
   const add = () => {
@@ -390,13 +387,7 @@ function HighlightsCard({
     });
   };
 
-  // Local order so a drag lands immediately; new rows from the server go last.
-  const byId = new Map(highlights.map((h) => [h.id, h]));
-  const ids = [
-    ...order.filter((id) => byId.has(id)),
-    ...highlights.map((h) => h.id).filter((id) => !order.includes(id)),
-  ].filter((id) => !removed.has(id));
-  const visible = ids.map((id) => byId.get(id) as Highlight);
+  const visible = highlights.filter((h) => !removed.has(h.id));
 
   const mine = () =>
     ask(
@@ -410,8 +401,8 @@ function HighlightsCard({
           <SparklesIcon className="text-muted-foreground size-4" /> Highlights
         </CardTitle>
         <p className="text-muted-foreground text-sm">
-          Polished, reusable bullets distilled from the background above, in the order you want
-          them used. Claude can write them for you.
+          Polished, reusable bullets distilled from the background above, strongest first — the
+          stars decide which ones a resume takes. Claude can write them for you.
         </p>
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={mine}>
@@ -442,28 +433,17 @@ function HighlightsCard({
         {visible.length === 0 ? (
           <p className="text-muted-foreground py-6 text-center text-sm">No highlights yet.</p>
         ) : (
-          <SortableList
-            ids={ids}
-            className="space-y-1"
-            onReorder={(from, to) => {
-              const next = [...ids];
-              const [moved] = next.splice(from, 1);
-              next.splice(to, 0, moved);
-              setOrder(next);
-              void reorderHighlightsAction(roleId, next).catch(() =>
-                toast.error("Could not save the new order."),
-              );
-            }}
-          >
-            {visible.map((highlight) => (
-              <SortableRow key={highlight.id} id={highlight.id} label={`Move ${highlight.text.slice(0, 40)}`}>
+          <ul className="space-y-1">
+            <AnimatePresence initial={false}>
+              {visible.map((highlight) => (
                 <HighlightRow
+                  key={highlight.id}
                   highlight={highlight}
                   onRemoved={() => setRemoved((prev) => new Set(prev).add(highlight.id))}
                 />
-              </SortableRow>
-            ))}
-          </SortableList>
+              ))}
+            </AnimatePresence>
+          </ul>
         )}
       </CardContent>
     </Card>
@@ -484,12 +464,12 @@ function HighlightRow({
   );
 
   return (
-    <motion.div
+    <motion.li
+      layout
       exit={{ opacity: 0, x: 16, height: 0 }}
       transition={{ duration: 0.22 }}
-      className="group hover:bg-accent/40 flex items-start gap-2 rounded-lg px-1 py-1.5 transition-colors"
+      className="group hover:bg-accent/40 flex items-start gap-2 rounded-lg px-2 py-1.5 transition-colors"
     >
-      <DragHandle className="mt-1.5 size-5" />
       <div className="mt-2 flex shrink-0 gap-0.5">
         {[1, 2, 3, 4, 5].map((level) => (
           <button
@@ -551,6 +531,6 @@ function HighlightRow({
           <Trash2Icon />
         </Button>
       </div>
-    </motion.div>
+    </motion.li>
   );
 }

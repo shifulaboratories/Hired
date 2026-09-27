@@ -1,7 +1,7 @@
 ---
 title: "Me tools"
 sidebarTitle: "Me"
-description: "Thirty-nine tools over roles, backgrounds, highlights, notes, standing rules, the four supporting collections, and importing a resume you already have."
+description: "Thirty-three tools over roles, backgrounds, highlights, notes, standing rules, the four supporting collections, and importing a resume you already have."
 icon: "user"
 ---
 
@@ -137,25 +137,6 @@ Record their answer to one open question and take the question away. Call it onl
 | `answer` | string | Their answer, as a fact written the way it should appear in the background. For a date question, YYYY-MM or YYYY. Omit to drop a question that no longer matters, or to confirm a date as it stands. |
 | `heading` | string | Only for a question from an 'Open questions' section: the evidence heading to file the answer under, e.g. 'Scope'. Merges into an existing section of that name. |
 
-### `career_timeline`
-
-_Gaps and overlaps in their career_
-
-Their roles laid out in months, grouped as jobs, contract and freelance, advisory and board, or internships — read from each role's employment type — with the GAPS of three months or more between jobs and contracts, and any two jobs that OVERLAPPED by two months or more. Advisory roles run alongside by nature and are never counted as an overlap; an internship before a first job is never a gap. Reach for it before interview prep ('what will they ask me about'), before writing a resume that lists dates, or when they ask whether their history reads cleanly. A gap marked `mayBeADateError` sits against a month they marked unconfirmed, so settle the date before treating the gap as real. Do not explain a gap for them or invent what they did in it; ask, and offer to add what they tell you with append_role_background or a note. Read-only.
-
-No arguments.
-
-### `reorder_roles`
-
-_Reorder roles_
-
-Set the order their roles are listed in — in Me, in get_me_snapshot and in list_roles. By default roles are in date order, current first. Pass `ids` to put those roles first in that order (the rest keep their places after them), which switches the list to their own order; pass `by_date: true` to go back to date order. Resumes are not affected: a resume's order is its own, changed with reorder_resume. Returns which order is now in force.
-
-| Argument | Type | |
-| --- | --- | --- |
-| `ids` | string[] | Role ids in the order wanted. May be a subset. |
-| `by_date` | boolean | True to go back to date order, current first. Ignores ids. |
-
 ### `create_role`
 
 _Create a role_
@@ -282,17 +263,6 @@ Destroy a job and everything hanging off it: its background, every highlight dra
 | --- | --- | --- |
 | `id` | string | **required** — Role id |
 
-### `reorder_highlights`
-
-_Reorder a role's highlights_
-
-Put one role's highlights in the order given — their own ranking of which lines lead. The order is what the role page shows and what add_role_to_resume takes the first few from; strength is unchanged. `ids` may be a subset: those go first in that order and the rest keep their places after them. Get the ids from get_role.
-
-| Argument | Type | |
-| --- | --- | --- |
-| `role_id` | string | **required** — The role whose highlights these are |
-| `ids` | string[] | **required** — Highlight ids in the order wanted |
-
 ### `list_highlights`
 
 _List highlights_
@@ -347,7 +317,7 @@ Destroy one achievement bullet. Permanent, with no archive behind it. Prefer upd
 
 _List notes_
 
-Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything. Capped, and the result says so when it was cut off — except for standing rules (kind GUARDRAIL), which are never cut and always come first. Each standing rule carries `inBriefing`: whether it fits in the briefing every client reads on connect. There is room for roughly a line or two per rule; one that is false is still binding, but only reaches a client that comes here for it, so offer to shorten it or split it with split_note_into_rules. A note with a `role` is filed against that job. A note of kind NOTE whose title reads like a rule ("Guardrails", "never do X") is NOT a standing rule and reaches nobody unasked — say so, and offer update_note with kind GUARDRAIL. search_me is the better tool when you are looking for something specific.
+Free-floating notes not tied to any single job: STAR stories, interview prep, references, compensation history, anything. Capped, and the result says so when it was cut off — except for standing rules (kind GUARDRAIL), which are never cut and always come first. Each standing rule carries `inBriefing`: whether it fits in the briefing every client reads on connect. There is room for roughly a line or two per rule; one that is false is still binding, but only reaches a client that comes here for it, so offer to shorten it, or to split it into several short rules — create_note with kind GUARDRAIL for each, then update_note to make the original an ordinary NOTE so nothing is said twice. A note with a `role` is filed against that job. A note of kind NOTE whose title reads like a rule ("Guardrails", "never do X") is NOT a standing rule and reaches nobody unasked — say so, and offer update_note with kind GUARDRAIL. search_me is the better tool when you are looking for something specific.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -386,36 +356,6 @@ Edit an existing note. Passing `body` replaces the whole body. Promote a note to
 | `pinned` | boolean | Pinned state |
 | `role_id` | string | The role this note is about — a STAR story from that job, say. It then appears on the role and in get_role. Pass an empty string to detach it. Most notes belong to no one job; leave it out for those. |
 | `kind` | enum | GUARDRAIL makes this a standing rule: it is carried in the briefing every AI client receives on connect, so it constrains work before any tool is called. Use it for things that must never be got wrong — how they may and may not be described, numbers that are unsettled and must not be cited, credit that must not be overstated. Everything else is a NOTE (the default), which is only found by searching.  `NOTE` · `GUARDRAIL` |
-
-### `split_note_into_rules`
-
-_Split a note into standing rules_
-
-Turn one note that holds many rules — a 'Guardrails, never violate' list — into one standing rule per note. Why it matters: the briefing every client reads on connect has room for about five hundred characters of standing rules, so one long rules note is dropped from it whole and only reaches a client that fetches it; short separate rules fit and travel with every connection. Each bullet becomes a rule; a heading or a line ending in a colon is carried into the titles under it ('Numbers: never cite a figure without a source'); a note with no bullets splits by paragraph. CALL WITH dry_run: true FIRST, show them the drafts, and pass `only` with the positions they want to keep. Not destructive: the original note is kept and becomes an ordinary NOTE, so nothing is said twice and nothing is lost. Refuses a note that holds only one rule — make that one a GUARDRAIL with update_note instead.
-
-| Argument | Type | |
-| --- | --- | --- |
-| `id` | string | **required** — The note to split |
-| `dry_run` | boolean | Return the drafted rules without creating anything. Do this first. |
-| `only` | number[] | 0-based positions of the drafts to keep, from the dry run. Omit to keep them all. |
-
-### `find_figure_conflicts`
-
-_Numbers stated two different ways_
-
-Figures about the same thing in the same job that disagree across their material — a follower count written as 150M+ in the background and 200M+ on a resume, a budget given as $40K in one bullet and $45K in another. Reads role backgrounds (evidence only), highlights, notes, resumes and the profile summary; a figure is grouped with others about the same noun in the same job, and a note or resume entry that names a company counts as that job. Run it before a resume or a letter goes out, and whenever they ask whether their numbers are consistent. THESE ARE CANDIDATES, NOT VERDICTS: the grouping is a heuristic, so read each group and say which one looks like a real disagreement. Never pick a winner yourself — ask which figure is true, then fix the others (update_highlight, update_resume, update_role) or mark the doubt with append_role_background under 'Open questions'. Two figures in one plain sentence ('from $1M to $3M') are a before-and-after and are never reported. Read-only.
-
-| Argument | Type | |
-| --- | --- | --- |
-| `limit` | number | How many groups to return. Default 25. |
-
-### `skills_without_evidence`
-
-_Listed skills nothing backs up_
-
-Every skill in their Skills groups, split into `unbacked` — nothing they have written about real work mentions it: no role background, highlight, project or note — and `backed`, with the record that does. The profile summary does not count; it is the claim, not the evidence. This is the reverse of posting_keywords: that asks what a posting wants that they cannot show, this asks what they CLAIM that they cannot show — the skill an interviewer asks one question about and it falls over. Reach for it when tidying Me or before a technical interview. For each unbacked skill, ask where they used it and file the answer with append_role_background; if the answer is nowhere, offer to take it off the list with update_extra. Never invent the usage. Matched by the same stemmed full-text search as search_me, so a very short skill name ('Go', 'R') can match unrelated words — say so when one looks backed by something that is plainly not about it. Read-only.
-
-No arguments.
 
 ### `delete_note`
 

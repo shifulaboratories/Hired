@@ -47,18 +47,15 @@ export function ExtrasPanel({
   projects,
   skills,
   certifications,
-  unbacked = [],
 }: {
   education: Education[];
   projects: Project[];
   skills: SkillGroup[];
   certifications: Certification[];
-  /** Skills nothing written about real work mentions. See skills_without_evidence. */
-  unbacked?: string[];
 }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      <SkillsCard skills={skills} unbacked={unbacked} />
+      <SkillsCard skills={skills} />
       <EducationCard education={education} />
       <ProjectsCard projects={projects} />
       <CertificationsCard certifications={certifications} />
@@ -68,7 +65,7 @@ export function ExtrasPanel({
 
 // ---------------------------------------------------------------------------
 
-function SkillsCard({ skills, unbacked }: { skills: SkillGroup[]; unbacked: string[] }) {
+function SkillsCard({ skills }: { skills: SkillGroup[] }) {
   const [pending, startTransition] = useTransition();
   const [removed, setRemoved] = useState<Set<string>>(new Set());
 
@@ -93,14 +90,6 @@ function SkillsCard({ skills, unbacked }: { skills: SkillGroup[]; unbacked: stri
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        {unbacked.length > 0 && (
-          // The claim an interviewer asks one question about and it falls over.
-          <p className="text-muted-foreground text-xs leading-snug">
-            <span className="text-warning">Dotted</span> skills appear nowhere in what you have
-            written about real work — no role, highlight, project or note. Say where you used them,
-            or take them off.
-          </p>
-        )}
         {skills.length === 0 && (
           <p className="text-muted-foreground py-4 text-center text-sm">
             Group your skills, e.g. &ldquo;Languages&rdquo;, &ldquo;Infrastructure&rdquo;.
@@ -113,7 +102,6 @@ function SkillsCard({ skills, unbacked }: { skills: SkillGroup[]; unbacked: stri
               <SkillGroupRow
                 key={group.id}
                 group={group}
-                unbacked={unbacked}
                 onRemoved={() => setRemoved((prev) => new Set(prev).add(group.id))}
               />
             ))}
@@ -123,15 +111,7 @@ function SkillsCard({ skills, unbacked }: { skills: SkillGroup[]; unbacked: stri
   );
 }
 
-function SkillGroupRow({
-  group,
-  unbacked,
-  onRemoved,
-}: {
-  group: SkillGroup;
-  unbacked: string[];
-  onRemoved: () => void;
-}) {
+function SkillGroupRow({ group, onRemoved }: { group: SkillGroup; onRemoved: () => void }) {
   const [values, setValues] = useState({ name: group.name, skills: group.skills });
   const { state, push } = useAutosave<{ name: string; skills: string[] }>((next) =>
     updateSkillGroupAction(group.id, { name: next.name, skills: next.skills }),
@@ -169,8 +149,6 @@ function SkillGroupRow({
         values={values.skills}
         onChange={(skills) => set({ skills })}
         placeholder="Python, Go, Rust, TypeScript"
-        flagged={unbacked}
-        flagNote="Nothing you have written about real work mentions this"
       />
     </motion.div>
   );
