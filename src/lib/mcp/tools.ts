@@ -89,6 +89,7 @@ import * as schedule from "@/lib/data/schedule";
 import { instanceAssistantUsage } from "@/lib/data/assistant";
 import * as transferables from "@/lib/data/transferables";
 import { standingRulesFit } from "@/lib/mcp/briefing-head";
+import { backgroundExcerpt } from "@/lib/background";
 import { KEYWORD_POLICIES, type KeywordPolicy } from "@/lib/keyword-policy";
 import {
   getSettings,
@@ -885,7 +886,7 @@ export const tools: McpTool[] = [
     name: "list_roles",
     title: "List roles",
     description:
-      "List every job/role in the knowledge base with dates and how many highlights each has. Does not include the full background — use get_role for that. Capped, and the result says so when it was cut off.",
+      "List every job/role in the knowledge base with dates, how many highlights each has, and a short excerpt of its background — evidence only, never a rule or a caveat. Does not include the full background: use get_role for that, and for the rules, caveats and open questions it carries. Capped, and the result says so when it was cut off.",
     inputSchema: object({ limit: limitArg(100) }),
     annotations: {
       readOnlyHint: true,
@@ -893,7 +894,21 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (args, ctx) => capped(await me.listRoles(ctx.userId), n(args, "limit"), 100),
+    // The background stays out, as the description promises: five long roles
+    // were arriving whole on every "list my jobs", which is the call made most
+    // often and needs it least. The excerpt says what each role is about, so
+    // the next call — get_role on the one that matters — is obvious.
+    handler: async (args, ctx) => {
+      const rows = await me.listRoles(ctx.userId);
+      return capped(
+        rows.map(({ background, userId: _owner, ...role }) => ({
+          ...role,
+          excerpt: backgroundExcerpt(background, 200),
+        })),
+        n(args, "limit"),
+        100,
+      );
+    },
   },
   {
     name: "get_role",
