@@ -129,7 +129,16 @@ function inlineMarker(line: string) {
   if (!match) return null;
   const kind = markerKind(match[2]);
   if (!kind) return null;
-  return { kind, bullet: Boolean(match[1]), label: match[2].trim(), rest: match[3] };
+  const rest = match[3];
+  // Where the marked text stops. A marked bullet, a marked line indented
+  // under somebody else's bullet ("- Pokitomik …\n  FRAMING RULE: …"), or a
+  // marker that states its rule on the same line all end at the next bullet:
+  // the list carries on, and the next bullet is evidence again. Only a bare
+  // label — "RULES:" and nothing after it, or text ending in a colon — owns
+  // the bullets that follow, because that is what a label over a list means.
+  const indented = !match[1] && /^\s+\S/.test(line);
+  const endsAtBullet = Boolean(match[1]) || indented || (rest.trim() !== "" && !/:\s*$/.test(rest));
+  return { kind, bullet: Boolean(match[1]), endsAtBullet, label: match[2].trim(), rest };
 }
 
 /**
@@ -174,8 +183,9 @@ export function sectionKind(heading: string): SectionKind {
  *
  * Inside an EVIDENCE section, a paragraph that opens with a shouted marker
  * ("RULE:", "⚠️ OPEN:", "**INTERVIEW ONLY:**") becomes a section of its own
- * for as long as that paragraph runs — to the next blank line, or for a marked
- * bullet to the next bullet — and the evidence around it carries on under no
+ * for as long as that paragraph runs — to the next blank line, or to the next
+ * bullet unless the marker is a bare label over a list (see inlineMarker) —
+ * and the evidence around it carries on under no
  * heading, so resumeEvidence reassembles it without repeating the one above.
  * Inside a rules, caveats or open section markers change nothing: the heading
  * already said what everything under it is, and a marker cannot promote a
@@ -198,7 +208,7 @@ export function parseBackground(text: string): BackgroundSection[] {
   // The kind of the `##` section we are inside, which a marked paragraph
   // interrupts and then hands back to.
   let headedKind: SectionKind = "evidence";
-  let markedBullet = false;
+  let endsAtBullet = false;
 
   const flush = () => {
     const body = buffer.join("\n").trim();
@@ -225,9 +235,9 @@ export function parseBackground(text: string): BackgroundSection[] {
       kind = headedKind = sectionKind(heading);
       inline = false;
       offset = cursor;
-    } else if (inline && (!line.trim() || (markedBullet && /^\s*(?:[-*+]|\d+[.)])\s+/.test(line)))) {
+    } else if (inline && (!line.trim() || (endsAtBullet && /^\s*(?:[-*+]|\d+[.)])\s+/.test(line)))) {
       // The marked paragraph is over: a blank line ends it, and so does the
-      // next bullet when it was one bullet that was marked.
+      // next bullet unless the marker was a bare label over a list.
       resume(cursor);
       if (line.trim()) {
         const marker = inlineMarker(line);
@@ -236,7 +246,7 @@ export function parseBackground(text: string): BackgroundSection[] {
           heading = marker.label;
           kind = marker.kind;
           inline = true;
-          markedBullet = marker.bullet;
+          endsAtBullet = marker.endsAtBullet;
           offset = cursor;
           buffer.push(marker.rest);
         } else {
@@ -250,7 +260,7 @@ export function parseBackground(text: string): BackgroundSection[] {
         heading = marker.label;
         kind = marker.kind;
         inline = true;
-        markedBullet = marker.bullet;
+        endsAtBullet = marker.endsAtBullet;
         offset = cursor;
         buffer.push(marker.rest);
       } else {

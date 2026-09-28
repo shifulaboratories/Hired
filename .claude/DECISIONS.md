@@ -6923,3 +6923,19 @@ role history with changedSince, profile markings, grouping, the current-job nudg
 the outline / fold / section edit, and the assistant hand-off. Every tool in this array sits in
 every client's tools/list, and more of them make an assistant worse at choosing — a new tool has
 to be worth that, not just possible.
+
+## 2026-09-28 — A marker under a bullet ends at the next bullet
+
+Checking the marker parser against a real background found it dropping real work: a
+`FRAMING RULE:` line indented under one client's bullet ran to the next blank line, so the two
+client bullets after it were read as rules and left resumeEvidence. The span rule is now in
+`inlineMarker`: a marked bullet, a marked line indented under another bullet, or a marker that
+states its rule on the same line all end at the next bullet (or a blank line). Only a bare label
+— "RULES:" with nothing after it, or text ending in a colon — owns the list under it. The markers
+probe carries the shape as synthetic text. The lesson is the one in the 09-23 entry, sharper:
+a parser that decides what reaches a resume has to be exercised on real backgrounds, because the
+failure in one direction (a caveat leaking in) is visible and the other (real work silently
+leaving) is not.
+
+Same pass: `list_roles` said it did not return backgrounds and returned every one in full. It
+now returns an evidence-only excerpt instead, which is what its description promised.
