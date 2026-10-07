@@ -23,7 +23,7 @@ import type { McpScope } from "@prisma/client";
  */
 export const SECTIONS = [
   { key: "me", first: "search_me", last: "preview_resume_import" },
-  { key: "resumes", first: "get_resume_format", last: "preview_resume_text" },
+  { key: "resumes", first: "get_resume_format", last: "check_resume_fit" },
   { key: "letters", first: "prep_letter", last: "delete_letter" },
   { key: "pipeline", first: "pipeline_stats", last: "set_column_widths" },
   { key: "crm", first: "list_companies", last: "schedule_contact_pings" },

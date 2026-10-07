@@ -362,8 +362,8 @@ Also worth knowing:
 - export_csv turns any of the three lists into a spreadsheet, taking the same filters, search and
   sort as list_companies, list_contacts and list_applications. It is the answer to "send me this
   as a file" — do not assemble one by hand from a list call.
-- Prefer creating a tailored copy (duplicate_resume) over editing a resume already attached to an
-  application.
+- For a job on the board, tailor_resume_for_application starts the tailored copy — never edit a
+  resume already attached to another application. Its unbacked list is what to rewrite first.
 - A published resume is readable by anyone holding its link, and unpublish_resume destroys that
   link rather than pausing it. Say which resume you are about to publish, and warn before
   withdrawing a link that may already be out in the world. If it has showPhoto on, that page

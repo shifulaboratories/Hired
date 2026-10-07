@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { assertFresh, StaleWriteError } from "@/lib/data/revision-store";
 import { pick } from "@/lib/data/patch";
 import { toDate } from "@/lib/data/pipeline";
-import { getProfile, searchMe, timeZoneOf } from "@/lib/data/me";
+import { getProfile, searchMe, timeZoneOf, writingConstraints } from "@/lib/data/me";
 
 /**
  * Everything you write that is not a resume.
@@ -236,8 +236,18 @@ export type LetterContext = {
    * the existing headline and summary are the most useful input there is.
    */
   profile: { fullName: string; headline: string; summary: string };
-  /** Material from Me that bears on this posting, ranked. */
+  /**
+   * Material from Me that bears on this posting, ranked — and only material a
+   * document may use. A search hit from a Caveats or Open questions section,
+   * or a standing rule, is left out here; the rules arrive whole below.
+   */
   evidence: Awaited<ReturnType<typeof searchMe>>;
+  /** What binds the draft without being quoted in it. See writingConstraints. */
+  writingRules: { role: string; rule: string }[];
+  /** Their own positioning notes. For you; never on the page. */
+  neverOnADocument: { role: string; caveat: string }[];
+  /** Facts they have not settled. Never use one; ask if the letter needs it. */
+  notSettled: { role: string; question: string }[];
   /** Letters of the same kind already written, newest first. Their own voice. */
   priorLetters: { id: string; title: string; body: string; kind: LetterKind }[];
   /** What is not on file that would make the draft better. */
@@ -293,7 +303,7 @@ export async function letterContext(
         ? `${contact.title} ${contact.relationship}`
         : "";
 
-  const [evidence, priorLetters, profile] = await Promise.all([
+  const [found, priorLetters, profile, constraints] = await Promise.all([
     // Called UNCONDITIONALLY, including with an empty query, and that is the
     // one line here that needed no code: searchMe answers "" with their roles,
     // newest first, which is exactly the material a brag doc or a self-review
@@ -307,7 +317,9 @@ export async function letterContext(
       select: { id: true, title: true, body: true, kind: true },
     }),
     getProfile(userId),
+    writingConstraints(userId),
   ]);
+  const evidence = found.filter((hit) => hit.use === "evidence");
 
   const missing: string[] = [];
   if (application && !application.jobDescription.trim()) {
@@ -369,6 +381,7 @@ export async function letterContext(
       summary: profile.summary,
     },
     evidence,
+    ...constraints,
     priorLetters,
     missing,
   };

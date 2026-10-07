@@ -7,9 +7,6 @@ import {
   BriefcaseIcon,
   GitBranchIcon,
   LoaderCircleIcon,
-  MinusIcon,
-  PencilIcon,
-  PlusIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -193,11 +190,11 @@ export function EvidencePanel({
                     <div className="text-[12.5px]">{row.bullet}</div>
                     {row.evidence.length === 0 ? (
                       <div className="text-[var(--warning)] mt-0.5 text-[11.5px]">
-                        Nothing in your brain says this yet
+                        Nothing in Me says this yet
                       </div>
                     ) : (
                       row.evidence.map((hit) => (
-                        <div key={hit.highlightId} className="text-muted-foreground mt-0.5 text-[11.5px]">
+                        <div key={hit.highlightId ?? hit.text} className="text-muted-foreground mt-0.5 text-[11.5px]">
                           {Math.round(hit.similarity * 100)}% · {hit.text}
                           {hit.role && <span className="text-faint"> · {hit.role}</span>}
                         </div>
@@ -255,65 +252,5 @@ export function EvidencePanel({
         </SheetContent>
       </Sheet>
     </>
-  );
-}
-
-function Count({ n, label, tone }: { n: number; label: string; tone: "add" | "drop" | "edit" }) {
-  if (n === 0) return null;
-  return (
-    <span
-      className={cn(
-        "flex items-center gap-1",
-        tone === "add" && "text-[var(--success)]",
-        tone === "drop" && "text-destructive",
-      )}
-    >
-      <span className="nums font-medium">{n}</span> {label}
-    </span>
-  );
-}
-
-function Block({
-  title,
-  note,
-  children,
-}: {
-  title: string;
-  note?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <h3 className="text-[13px] font-semibold">{title}</h3>
-        {note && <span className="text-faint text-[11px]">{note}</span>}
-      </div>
-      <div className="space-y-2">{children}</div>
-    </div>
-  );
-}
-
-function Bullet({ bullet }: { bullet: { status: string; text: string; from?: string } }) {
-  const icon =
-    bullet.status === "added" ? (
-      <PlusIcon className="mt-0.5 size-3 shrink-0 text-[var(--success)]" />
-    ) : bullet.status === "removed" ? (
-      <MinusIcon className="text-destructive mt-0.5 size-3 shrink-0" />
-    ) : (
-      <PencilIcon className="text-muted-foreground mt-0.5 size-3 shrink-0" />
-    );
-
-  return (
-    <div className="flex gap-1.5 pl-3">
-      {icon}
-      <div className="min-w-0 text-[12.5px] leading-snug">
-        {bullet.from && (
-          <div className="text-muted-foreground line-through">{bullet.from}</div>
-        )}
-        <div className={cn(bullet.status === "removed" && "text-muted-foreground line-through")}>
-          {bullet.text}
-        </div>
-      </div>
-    </div>
   );
 }

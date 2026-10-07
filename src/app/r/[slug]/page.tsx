@@ -29,7 +29,9 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const title = resume.doc.header.title?.trim();
 
   return {
-    title: name ? `${name} — Resume` : resume.name,
+    // Never the document's own name: it is private, and by default it names
+    // the company the resume was tailored for.
+    title: name ? `${name} — Resume` : "Resume",
     description: title || undefined,
     // Unlisted means unlisted. An indexed "unlisted" link is a listed one.
     robots: { index: false, follow: false, nocache: true },

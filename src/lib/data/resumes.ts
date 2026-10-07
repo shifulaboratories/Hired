@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Prisma, Stage } from "@prisma/client";
 import { db } from "@/lib/db";
 import { pick } from "@/lib/data/patch";
+import { resumeEvidence } from "@/lib/background";
 import { snapshot, assertFresh, StaleWriteError, APP_AUTHOR, type WriteAuthor } from "@/lib/data/revision-store";
 import {
   blankSection,
@@ -19,11 +20,10 @@ import { reorderDoc, type ReorderInput } from "@/lib/resume-reorder";
 // bullet being typed: is there anything of this person's behind this?
 import { backingFor, type EvidenceSource } from "@/lib/resume-evidence";
 import { LINES_PER_PAGE, resumeToText } from "@/lib/resume-text";
-import { atsReport } from "@/lib/resume-ats";
 
 // Rendering helpers live in resume-text.ts (client-safe); re-exported so server
 // callers can keep reaching them through this module.
-export { resumeToText, estimateLines, estimatePages, LINES_PER_PAGE } from "@/lib/resume-text";
+export { resumeToText, LINES_PER_PAGE } from "@/lib/resume-text";
 
 export type ResumeMeta = Partial<{
   name: string;
@@ -357,7 +357,11 @@ export type BulletEvidence = {
   bullet: string;
   /** Best matches first, strongest three at most. */
   evidence: {
-    highlightId: string;
+    /** A saved highlight, or a line of the role's own evidence. */
+    source: "highlight" | "background";
+    /** Set for a highlight; null for a background line. */
+    highlightId: string | null;
+    roleId: string | null;
     text: string;
     role: string;
     /** 0-1 word overlap with the bullet. 1 means it was used verbatim. */
@@ -382,9 +386,8 @@ export type BulletEvidence = {
 /**
  * What to cut when a resume runs long.
  *
- * Ranks rather than measures. The page count here is the same estimate
- * preview_resume_text reports and carries the same caveat — it cannot see the
- * type size or the margins, and only a browser can. export_resume_pdf renders
+ * Ranks rather than measures. The page count here is an estimate — it
+ * cannot see the type size or the margins, and only a browser can. export_resume_pdf renders
  * one and reports the real number. What this answers is the question the real
  * number leaves you with: which pieces are big enough to be worth cutting.
  */
@@ -399,32 +402,6 @@ export async function resumeFitReport(userId: string, id: string) {
     fontSize: resume.fontSize,
     lineHeight: resume.lineHeight,
     pageMargin: resume.pageMargin,
-  };
-}
-
-/**
- * What a parser gets out of this resume, and what falls out on the way.
- *
- * The text half is `resumeToText`, which walks the DOCUMENT rather than reading
- * the rendered page — so it is what a well-behaved parser would see if one
- * existed, not a re-extraction of a PDF. The tool adds the rendered half where
- * this instance has a browser; this function deliberately has no browser in it,
- * so the answer is never nothing.
- */
-export async function resumeAtsReport(userId: string, id: string) {
-  const resume = await db.resume.findFirst({ where: { id, userId } });
-  if (!resume) throw new Error(`No resume with id ${id}`);
-  const doc = parseResumeDoc(resume.data);
-  const text = resumeToText(doc);
-  return {
-    resume: {
-      id: resume.id,
-      name: resume.name,
-      template: resume.template,
-      showPhoto: resume.showPhoto,
-    },
-    text,
-    report: atsReport(doc, { template: resume.template, showPhoto: resume.showPhoto }, text),
   };
 }
 
@@ -462,21 +439,62 @@ export async function reorderResume(
 /**
  * The person's own material, in the shape the matcher takes.
  *
- * Highlights only, deliberately: they are the lines somebody chose to keep, and
- * a role's raw background is a wall of text that would match almost anything
- * once it is long enough. The editor's inline marks and this tool have to agree
- * about what counts, so there is one answer to "what is evidence" and it is
- * here.
+ * Highlights first, then each role's EVIDENCE split into lines. Highlights
+ * alone used to be the whole answer, on the grounds that a raw background is a
+ * wall of text that would match almost anything. But the tailoring workflow
+ * tells writers to build bullets from a role's evidence, and wins and appends
+ * land in backgrounds — so a bullet written exactly as instructed read as
+ * unbacked, and a trace at the end of tailoring would have pushed assistants
+ * to cut true lines. One line at a time answers the wall-of-text worry, and
+ * only the evidence goes in: never Rules, Caveats or Open questions, which is
+ * the line the background parser exists to draw. The editor's marks and the
+ * trace tool both read this, so there is still one answer to "what is
+ * evidence".
  */
+type EvidenceRole = { id: string; title: string; company: string; background: string };
+
+/** A role's evidence as separate claims: bullets, lines, and long paragraphs by sentence. */
+function evidenceLines(background: string): string[] {
+  return resumeEvidence(background)
+    .split("\n")
+    .map((line) => line.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "").trim())
+    .filter((line) => line && !line.startsWith("#"))
+    .flatMap((line) => (line.length > 280 ? line.split(/(?<=[.!?])\s+(?=[A-Z0-9$])/) : [line]))
+    .map((line) => line.trim())
+    .filter((line) => line.split(/\s+/).length >= 5);
+}
+
 function evidenceSourcesFrom(
   highlights: Awaited<ReturnType<typeof listHighlights>>,
+  roles: EvidenceRole[] = [],
 ): EvidenceSource[] {
-  return highlights.map((highlight) => ({
-    id: highlight.id,
-    text: highlight.text,
-    role: [highlight.role?.title, highlight.role?.company].filter(Boolean).join(" — "),
-    roleId: highlight.roleId,
-  }));
+  return [
+    ...highlights.map((highlight) => ({
+      id: highlight.id,
+      text: highlight.text,
+      role: [highlight.role?.title, highlight.role?.company].filter(Boolean).join(" — "),
+      roleId: highlight.roleId,
+      kind: "highlight" as const,
+    })),
+    ...roles.flatMap((role) =>
+      evidenceLines(role.background).map((text, index) => ({
+        id: `${role.id}:${index}`,
+        text,
+        role: [role.title, role.company].filter(Boolean).join(" — "),
+        roleId: role.id,
+        kind: "background" as const,
+      })),
+    ),
+  ];
+}
+
+/** Every role's evidence, for the matcher. */
+async function evidenceRoles(userId: string): Promise<EvidenceRole[]> {
+  return db.role.findMany({
+    where: { userId },
+    select: { id: true, title: true, company: true, background: true },
+    orderBy: [{ isCurrent: "desc" }, { startDate: "desc" }],
+  });
 }
 
 /**
@@ -488,9 +506,9 @@ function evidenceSourcesFrom(
  * recent material anyway. The cap is generous enough that hitting it is rare
  * and visible in the number rather than silent.
  */
-export async function evidenceSources(userId: string, limit = 400) {
-  const highlights = await listHighlights(userId);
-  return evidenceSourcesFrom(highlights).slice(0, limit);
+export async function evidenceSources(userId: string, limit = 600) {
+  const [highlights, roles] = await Promise.all([listHighlights(userId), evidenceRoles(userId)]);
+  return evidenceSourcesFrom(highlights, roles).slice(0, limit);
 }
 
 /**
@@ -622,10 +640,10 @@ export async function addRoleToResume(
 export async function traceResumeEvidence(userId: string, id: string) {
   const resume = await db.resume.findFirst({ where: { id, userId } });
   if (!resume) throw new Error(`No resume with id ${id}`);
-  const highlights = await listHighlights(userId);
+  const [highlights, roles] = await Promise.all([listHighlights(userId), evidenceRoles(userId)]);
   const doc = parseResumeDoc(resume.data);
 
-  const sources = evidenceSourcesFrom(highlights);
+  const sources = evidenceSourcesFrom(highlights, roles);
   const rows: BulletEvidence[] = [];
   for (const section of doc.sections) {
     for (const item of section.experience) {
@@ -636,7 +654,9 @@ export async function traceResumeEvidence(userId: string, id: string) {
           entry,
           bullet,
           evidence: found.map((source) => ({
-            highlightId: source.id,
+            source: source.kind ?? "highlight",
+            highlightId: source.kind === "background" ? null : source.id,
+            roleId: source.roleId,
             text: source.text,
             role: source.role,
             similarity: source.similarity,
@@ -712,10 +732,19 @@ export async function createResumeForApplication(
 
   await db.application.update({ where: { id: applicationId }, data: { resumeId: resume.id } });
 
+  // A copy carries every line of its base, including any claim corrected in
+  // Me since the base was written — ten of one person's eleven resumes carried
+  // a retired figure that way. The lines nothing in Me stands behind are named
+  // now, so the first rewrite can fix or drop each one.
+  const trace = await traceResumeEvidence(userId, resume.id);
+
   return {
     resume,
     basedOn: base ? { id: base.id, name: base.name } : null,
     seededFromMe: !base,
+    unbacked: trace.bullets
+      .filter((row) => row.evidence.length === 0)
+      .map((row) => ({ entry: row.entry, bullet: row.bullet })),
     attachedTo: {
       id: application.id,
       company: application.company.name,
@@ -1019,8 +1048,9 @@ export async function getResumeBySlug(slug: string) {
   // suspension otherwise left the page serving from this domain.
   const resume = await db.resume.findFirst({
     where: { slug, visibility: "UNLISTED", user: { isActive: true } },
+    // No `name`: the document's name is private and usually a target company,
+    // and the page never shows it.
     select: {
-      name: true,
       data: true,
       template: true,
       accent: true,

@@ -7039,3 +7039,61 @@ instance. It is now open only when a landing page is configured or the instance 
 signup — the second half because app.hired.tools has eight from hired.tools and no landing_url
 set, and gating on the setting alone would have closed that form on deploy. Email that is not
 configured is no longer a warning; it is a choice.
+
+## 2026-10-07 — What writers are handed: evidence only, from every place a rule lives
+
+The background parser drew the evidence/rules/caveats/open line on 09-21, and the readers that
+feed documents went round it. This batch makes them go through it.
+
+**search_me labels every hit.** Its excerpt is full-text over a whole background, so a search for
+"tenure" came back with three interview-prep lines out of four, labelled only "role". Each hit
+now carries `use` — evidence, rules, caveats or open — found by locating the matched words (read
+off ts_headline's marks before they are stripped) in the parsed background. A standing-rule note
+is "rules"; a highlight is evidence. The profile's own background is no longer searched at all
+(it is the screen that says "not for the resume"; get_profile and the snapshot carry it parsed),
+and migration 20261007020000 rebuilds its index to match.
+
+**One gathering of constraints.** `constraintsFrom` / `writingConstraints` in me.ts read rules,
+caveats and open items from the profile, every role and every project — projects were never
+read, profile caveats were dropped — and both get_me_snapshot and prep_letter return the result.
+prep_letter's `evidence` now holds only `use: evidence` hits, so a positioning note can no
+longer reach a cover letter as a fact. Standing-rule notes are deliberately not copied in; the
+briefing and list_notes carry them.
+
+**Highlights are printed and counted as backing, so the workflows that write them read the rules
+first.** mine_role_background now reads get_role's rules, caveats and open items before anything
+else, mines only resumeEvidence, keeps numbers exactly as written and never attaches a
+company-wide figure to the person, and shows drafts before saving. log_my_week no longer mints
+highlights from a chat update; it files to the background and offers mining.
+
+**The trace counts what writers are told to use.** This SUPERSEDES the highlights-only call in
+evidenceSourcesFrom: the tailoring workflow tells writers to build bullets from a role's
+evidence, so a bullet written exactly as told read as unbacked. Each role's resumeEvidence now
+joins the sources one line at a time (bullets, lines, long paragraphs by sentence, five words or
+more) — never Rules, Caveats or Open questions — and the trace says which kind backed a bullet.
+`roleId` is in RESUME_DOC_SHAPE now, so a document written from scratch can narrow a bullet to
+its own job's material.
+
+**Tailoring copies, so it says what it copied.** Ten of eleven real resumes carried a retired
+figure, because each was a copy of a copy. tailor_resume_for_application now returns `unbacked`:
+the base's bullets nothing in Me stands behind. The tailor_resume workflow is rebuilt on the
+tools made for it — read-only gap report first (the old gap_report workflow, folded in and
+deleted; it is the whole answer when somebody only asks whether to apply), then
+tailor_resume_for_application, the unbacked list, update_resume with roleIds, export_resume_pdf
+for the real page count, and trace_resume_evidence last. prep_for_interview is deleted too:
+prep_interview replaced it, and the eval had been scoring a misroute between the two as correct.
+
+**One length answer.** preview_resume_text and check_resume_fit used two estimators that counted
+different things while one claimed to match the other. preview_resume_text, estimateLines and
+estimatePages are gone; the grid's badge and check_resume_fit share fitReport, and
+export_resume_pdf is the measured count. The dry run existed to guard an expensive mistake that
+a strict, versioned write now guards. preview_ats_text is gone too: its link check could not
+fail, its date check flagged the year-only dates the app prints on purpose, and its phone check
+failed a rule the owner set. The `ats` template stays — it is the actual remedy for a link whose
+address a text extractor cannot see.
+
+**Smaller:** the profile's contact block says it is what gets printed (blank keeps a field off
+paper), because the owner was blanking the phone on every resume by hand. A role merged by
+import_resume now takes a version and moves its freshness date. resolve_open_question no longer
+promises an undo the profile cannot give. The public resume page's title never falls back to
+the document's private name, and the slug lookup no longer selects it.

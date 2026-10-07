@@ -36,8 +36,7 @@ import * as linkedin from "@/lib/data/linkedin";
 import * as sample from "@/lib/data/sample";
 import * as attachments from "@/lib/data/attachments";
 import * as outbound from "@/lib/data/outbound";
-import { DEFAULT_TEMPLATE, RESUME_TEMPLATES } from "@/lib/resume-templates";
-import { textDifferences } from "@/lib/resume-ats";
+import { DEFAULT_TEMPLATE, RESUME_TEMPLATES, TEMPLATE_KEYS } from "@/lib/resume-templates";
 import {
   CORE_TOOLS,
   SCOPE_VALUES,
@@ -110,7 +109,7 @@ import { renderEmailTemplate, sendEmail } from "@/lib/email";
 import { isAdmin, createEphemeralSession, destroySession, SESSION_COOKIE } from "@/lib/auth";
 import { parseResumeDocStrict, RESUME_DOC_SHAPE } from "@/lib/resume-schema";
 import { diffResumeDocs } from "@/lib/resume-diff";
-import { renderPdf, readRenderedText, pdfRenderingAvailable } from "@/lib/pdf";
+import { renderPdf, pdfRenderingAvailable } from "@/lib/pdf";
 import { clientName, clientsById, guessClient } from "@/lib/mcp/clients";
 
 type Json = Record<string, unknown>;
@@ -745,7 +744,7 @@ export const tools: McpTool[] = [
     name: "search_me",
     title: "Search Me",
     description:
-      "Ranked full-text search across everything the user has written about themselves: role backgrounds, achievement highlights, notes, projects and their profile. This is the FIRST tool to call when tailoring a resume or answering a question about their experience. Words are matched by stem, so \"managing engineers\" finds \"managed three engineers\" and a partial word finds the whole one — search the language of the POSTING rather than guessing how they phrased it, and search two or three times with different words before concluding they have no evidence for something. Terms are ORed and ranked, so a record matching two of three comes back above one matching one; nothing is excluded for missing a word. Returns an excerpt centred on the match, with the id and kind of each hit so you can fetch the full record. An empty query returns their roles, newest first.",
+      "Ranked full-text search across everything the user has written about themselves: role backgrounds, achievement highlights, notes, projects and their profile. This is the FIRST tool to call when tailoring a resume or answering a question about their experience. Words are matched by stem, so \"managing engineers\" finds \"managed three engineers\" and a partial word finds the whole one — search the language of the POSTING rather than guessing how they phrased it, and search two or three times with different words before concluding they have no evidence for something. Terms are ORed and ranked, so a record matching two of three comes back above one matching one; nothing is excluded for missing a word. Returns an excerpt centred on the match, with the id and kind of each hit so you can fetch the full record, and `use`: only a hit whose use is \"evidence\" may reach a document. \"rules\" binds you without being quoted, \"caveats\" is their own positioning note — context, never document material — and \"open\" is a fact they have not settled, so ask. The profile's own background is not searched; get_profile has it. An empty query returns their roles, newest first.",
     inputSchema: object(
       {
         query: str("Keywords to search for, e.g. 'kubernetes cost savings' or 'led a team'"),
@@ -820,8 +819,8 @@ export const tools: McpTool[] = [
     inputSchema: object({
       fullName: str("Full name"),
       headline: str("Professional headline, e.g. 'Senior Platform Engineer'"),
-      email: str("Email address"),
-      phone: str("Phone number"),
+      email: str("Email address. Printed on every new resume and letter."),
+      phone: str("Phone number. Printed on every new resume and letter — an empty string keeps it off paper, which is how somebody who wants no phone on their materials says so."),
       location: str("City, State/Country"),
       website: str("Personal website URL"),
       linkedin: str("LinkedIn URL"),
@@ -969,7 +968,7 @@ export const tools: McpTool[] = [
     name: "resolve_open_question",
     title: "Settle an open question",
     description:
-      "Record their answer to one open question and take the question away. Call it only with an answer THEY gave you in this conversation — never with a guess, a rounding, or the likelier of two figures. Pass the question exactly as list_open_questions returned it. What happens depends on where the question was: a marked line inside the background ('- ⚠️ OPEN: was it $40K or $45K?') is replaced, in place, by the answer, so the settled fact sits beside the work it is about; a line under '## Open questions' is removed (the heading goes with its last line) and the answer is added as evidence — under `heading` when you give one. An unconfirmed start or end month is settled by clearing the flag; pass the corrected month as YYYY-MM (or YYYY if only the year is certain) as the answer, or no answer to confirm the date already on file. Leaving out `answer` on a background question DROPS it — for 'that no longer matters'. The old background is kept in the version history, so undo_change reverses this. Returns what was resolved.",
+      "Record their answer to one open question and take the question away. Call it only with an answer THEY gave you in this conversation — never with a guess, a rounding, or the likelier of two figures. Pass the question exactly as list_open_questions returned it. What happens depends on where the question was: a marked line inside the background ('- ⚠️ OPEN: was it $40K or $45K?') is replaced, in place, by the answer, so the settled fact sits beside the work it is about; a line under '## Open questions' is removed (the heading goes with its last line) and the answer is added as evidence — under `heading` when you give one. An unconfirmed start or end month is settled by clearing the flag; pass the corrected month as YYYY-MM (or YYYY if only the year is certain) as the answer, or no answer to confirm the date already on file. Leaving out `answer` on a background question DROPS it — for 'that no longer matters'. For a role, the old background is kept in its version history, so list_revisions and restore_revision can put it back; the profile keeps no versions, so a profile question you settle stays settled. Returns what was resolved.",
     inputSchema: object(
       {
         role_id: str("The role the question belongs to. Omit for a question in the profile's personal background."),
@@ -996,6 +995,7 @@ export const tools: McpTool[] = [
         required(args, "question"),
         s(args, "answer"),
         s(args, "heading"),
+        mcpAuthor(ctx, "resolve_open_question"),
       ),
   },
   {
@@ -1203,7 +1203,7 @@ export const tools: McpTool[] = [
     name: "append_role_background",
     title: "Append to a role's background",
     description:
-      "Safely ADD text to the end of a role's background without touching what is already there. This is the right tool when the user tells you something new about a job they already have on file. Passing a `heading` that the background ALREADY has merges the new lines into that section rather than opening a second one with the same name, so filing three things under one heading over three conversations leaves one tidy section. Three headings are reserved and change what the text MEANS: \"Rules\" for a binding instruction about how this job may be described (\"describe internal software by function only, no product names\"), \"Caveats\" for positioning and interview prep that must never reach a document (\"tenure is short — have the answer ready\"), and \"Open questions\" for a fact they are not sure of yet (\"start month assumed — confirm before it goes on a dated resume\"). Everything else is evidence and is fair game for resumes. Use the reserved headings when the user is telling you a CONSTRAINT, a WORRY or an UNCERTAINTY rather than a fact about what they did. Once they settle an open question, write the answer as evidence and take the question out: get_role, edit the background, update_role with the whole thing.",
+      "Safely ADD text to the end of a role's background without touching what is already there. This is the right tool when the user tells you something new about a job they already have on file. Passing a `heading` that the background ALREADY has merges the new lines into that section rather than opening a second one with the same name, so filing three things under one heading over three conversations leaves one tidy section. Three headings are reserved and change what the text MEANS: \"Rules\" for a binding instruction about how this job may be described (\"describe internal software by function only, no product names\"), \"Caveats\" for positioning and interview prep that must never reach a document (\"tenure is short — have the answer ready\"), and \"Open questions\" for a fact they are not sure of yet (\"start month assumed — confirm before it goes on a dated resume\"). Everything else is evidence and is fair game for resumes. Use the reserved headings when the user is telling you a CONSTRAINT, a WORRY or an UNCERTAINTY rather than a fact about what they did. Once they settle an open question, resolve_open_question takes it out and files the answer — never rewrite the whole background for it.",
     inputSchema: object(
       {
         id: str("Role id"),
@@ -2013,7 +2013,8 @@ export const tools: McpTool[] = [
         showPhoto: false,
       },
       guidance: [
-        "Dates use YYYY-MM. Set isCurrent: true instead of an endDate for the current job.",
+        "Dates use YYYY-MM. Set isCurrent: true instead of an endDate for the current job. A role with startUnconfirmed or endUnconfirmed has a guessed month: write the year alone.",
+        "Every experience entry written from a job in Me carries that job's `roleId`, from list_roles. Keep it when you write a document back. It is how trace_resume_evidence knows which job's material may stand behind a bullet — without it, a bullet about one employer can be \"backed\" by another's.",
         "Bullets: strong verb first, specific scope, quantified outcome. One line each where possible.",
         "Harvard house style: no personal pronouns, each bullet a phrase rather than a full sentence, quantified wherever the background gives you a number.",
         "Harvard renders the organisation on line one and the role on line two, so fill in BOTH `company` and `title` on every experience entry, plus `location`.",
@@ -2022,7 +2023,7 @@ export const tools: McpTool[] = [
         "In Harvard, education `details` render as plain lines (thesis, relevant coursework, honours), not bullets.",
         "Set visible: false to keep a section in the document but off the page.",
         "Sections and entries carry an `id`. Never invent one — leave it out and the app assigns it — but when you have read a document with get_resume and are writing it back, keep the ids you were given: they are how the editor tells one entry from another.",
-        "Aim for roughly 40-48 rendered lines per page; call preview_resume_text to sanity-check length before saving.",
+        "For length, export_resume_pdf measures the real page count; check_resume_fit then says what to cut. Nothing else is more than an estimate.",
         "Photos: off unless asked. showPhoto draws the user's profile picture (set_profile_photo), never one you supply per document. Harvard never renders one — it is a US academic format and a face on it is wrong. US and UK applications generally omit photos; much of Europe and Latin America expects one.",
       ],
     }),
@@ -2031,7 +2032,7 @@ export const tools: McpTool[] = [
     name: "list_resumes",
     title: "List resumes",
     description:
-      "All saved resumes with their target role/company, how many applications each is attached to, and publicUrl — the shareable link, or null if that resume isn't published. Each row carries outcomes: how many applications sent with it actually went out, how many reached at least a screen, and how many reached an offer — so this is the tool that answers 'which resume is working?'. Interview and offer counts include applications that got there and later closed, not just where things stand today. Favourites come first, then most recently updated. Pass search to narrow by name, target role or target company when the user names a specific one — 'my Stripe resume' is a search, not a reason to fetch everything.",
+      "All saved resumes with their target role/company, how many applications each is attached to, and publicUrl — the shareable link, or null if that resume isn't published. Each row carries outcomes: how many applications sent with it actually went out, how many reached at least a screen, and how many reached an offer — which is what the grid shows; for 'which resume is working?', resume_performance is the one answer, with rates. Interview and offer counts include applications that got there and later closed, not just where things stand today. Favourites come first, then most recently updated. Pass search to narrow by name, target role or target company when the user names a specific one — 'my Stripe resume' is a search, not a reason to fetch everything.",
     inputSchema: object({
       search: str("Case-insensitive filter on name, target role and target company. Omit for all."),
     }),
@@ -2078,7 +2079,6 @@ export const tools: McpTool[] = [
         return {
           ...withUrl,
           text: resumes.resumeToText(resume.doc),
-          estimatedLines: resumes.estimateLines(resume.doc),
         };
       }
       return withUrl;
@@ -2094,7 +2094,7 @@ export const tools: McpTool[] = [
         name: str("What to call this resume, e.g. 'Stripe — Staff Engineer'"),
         targetRole: str("The role being targeted"),
         targetCompany: str("The company being targeted"),
-        template: str("harvard (default) | classic | modern | compact | editorial"),
+        template: str(`${TEMPLATE_KEYS.join(" | ")}. Default ${DEFAULT_TEMPLATE}.`),
         accent: str("Accent colour as a hex string. Defaults to '#000000', which is what Harvard expects."),
         fontFamily: str("serif (default) | inter | mono"),
         fontSize: num("Base font size in points, 9-12. Default 10."),
@@ -2152,7 +2152,7 @@ export const tools: McpTool[] = [
         name: str("New name"),
         targetRole: str("Target role"),
         targetCompany: str("Target company"),
-        template: str("harvard | classic | modern | compact | editorial"),
+        template: str(TEMPLATE_KEYS.join(" | ")),
         accent: str("Accent colour hex"),
         fontFamily: str("serif | inter | mono"),
         fontSize: num("Base font size in points"),
@@ -2317,7 +2317,7 @@ export const tools: McpTool[] = [
     name: "duplicate_resume",
     title: "Duplicate a resume",
     description:
-      "Copy an existing resume so you can tailor a variant without losing the original. The usual flow for a new application. The copy records which resume it came from (baseResumeId), so after tailoring, compare_resumes can show exactly what changed — prefer this over building a tailored document with create_resume from scratch, which loses that trail unless you pass baseResumeId yourself.",
+      "Copy an existing resume so you can make a variant without losing the original. For a job that is on the board, tailor_resume_for_application is the call instead: it copies, names, targets and attaches in one go, and names the copied lines nothing in Me backs. The copy records which resume it came from (baseResumeId), so after tailoring, compare_resumes can show exactly what changed — prefer this over building a tailored document with create_resume from scratch, which loses that trail unless you pass baseResumeId yourself.",
     inputSchema: object({ id: str("Resume id to copy"), name: str("Name for the copy") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -2331,7 +2331,7 @@ export const tools: McpTool[] = [
     name: "tailor_resume_for_application",
     title: "Start a tailored resume for one job",
     description:
-      "Copy the base resume, name it for the job, point it at that company and role, and attach it to the application — the four steps this otherwise takes, in one call. Returns the new resume (with its full document, ready to rewrite with update_resume) and what it was based on. The base is worked out for you: the original document, favourite first, the one that has variants rather than one of the variants. Pass baseId to override that. With nothing on file yet it builds the first draft from what is on file instead of refusing, so a new person asking for a tailored resume gets one. Anything already attached to that application is replaced — the old document is not deleted, it just stops being the one on this job.",
+      "Copy the base resume, name it for the job, point it at that company and role, and attach it to the application — the four steps this otherwise takes, in one call. Returns the new resume (with its full document, ready to rewrite with update_resume), what it was based on, and `unbacked`: the copied bullets nothing in Me stands behind. A claim corrected in Me since the base was written is one of those, so rewrite each from Me or drop it in your first update_resume rather than carrying it forward. The base is worked out for you: the original document, favourite first, the one that has variants rather than one of the variants. Pass baseId to override that. With nothing on file yet it builds the first draft from what is on file instead of refusing, so a new person asking for a tailored resume gets one. Anything already attached to that application is replaced — the old document is not deleted, it just stops being the one on this job.",
     inputSchema: object(
       {
         applicationId: str("The job this resume is for"),
@@ -2508,7 +2508,7 @@ export const tools: McpTool[] = [
     name: "check_resume_fit",
     title: "Check what to cut from a resume",
     description:
-      "Reach for this when a resume runs long and the question is what to cut. Returns its bullets ranked longest first — each with the entry it sits under and the path to it — and its sections ranked by how much room they take, so the two obvious levers are in front of you: shorten the worst offenders, or hide a whole section. It RANKS; it does not measure. The page count it reports is the same estimate preview_resume_text gives and carries the same limit — it cannot see the type size, leading or margins, and only a browser can. Call export_resume_pdf for the real number, then call this to decide what goes. Nothing is written: read it, propose the cuts to the user, and make them with update_resume once they agree. Cutting a bullet is deleting something true they did, so say which ones you would drop and why rather than dropping them.",
+      "Reach for this when a resume runs long and the question is what to cut. Returns its bullets ranked longest first — each with the entry it sits under and the path to it — and its sections ranked by how much room they take, so the two obvious levers are in front of you: shorten the worst offenders, or hide a whole section. It RANKS; it does not measure. The page count it reports is an estimate that cannot see the type size, leading or margins — only a browser can. Call export_resume_pdf for the real number, then call this to decide what goes. Nothing is written: read it, propose the cuts to the user, and make them with update_resume once they agree. Cutting a bullet is deleting something true they did, so say which ones you would drop and why rather than dropping them.",
     inputSchema: object({ id: str("Resume id") }, ["id"]),
     annotations: {
       readOnlyHint: true,
@@ -2518,95 +2518,6 @@ export const tools: McpTool[] = [
     },
     handler: async (args, ctx) => resumes.resumeFitReport(ctx.userId, required(args, "id")),
   },
-  {
-    name: "preview_ats_text",
-    title: "See what a machine reads",
-    description:
-      "What a parser gets when it opens this resume, and what falls out on the way. Reach for it when somebody asks whether their resume is \"ATS-friendly\", before they upload one to a portal that will read it rather than a person, or when they are deciding whether to switch to the ats template. Returns `text` — the whole document flattened in reading order, which is what a well-behaved parser sees — and, where this instance has a headless browser, `rendered`: the same document read back off the actual printed page, so anything that exists only as a picture, a colour or a CSS decoration is simply missing from it. `differences` is the honest half: every line in one and not the other. It catches the real ones — a skills group with a name and no skills prints nothing but is in the text, a link whose label is on the page while its address is not, a section that is hidden. `checks` is a short list of flat, checkable facts, each with the reason it matters: is there an email, is there a phone, are the dates YYYY-MM, are the headings the conventional ones, does the document show a photo, and how many columns there are — one, always, because this app has no two-column template. `method` says how each verdict was reached; read it before quoting any of them. THERE IS NO SCORE, deliberately. No two applicant tracking systems parse alike, none of them publishes what it does, and a number here would be a number this app invented — the widely repeated claim that most resumes are auto-rejected by software is not sourced anywhere. Report the facts, say which of them you are unsure about, and let the person decide. Nothing is written and nothing is rewritten: this reads the document, it does not fix it. Use update_resume once they have agreed to a change.",
-    inputSchema: object(
-      {
-        id: str("Resume id"),
-        render: bool(
-          "Also read the text back off the printed page in a headless browser. On by default where one exists; pass false to skip the browser and get the document half instantly",
-        ),
-      },
-      ["id"],
-    ),
-    annotations: {
-      // Not read-only, for the same reason export_resume_pdf is not: rendering
-      // signs in as a short-lived Session row. The document is untouched.
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) => {
-      const base = await resumes.resumeAtsReport(ctx.userId, required(args, "id"));
-      const wantsRender = b(args, "render") ?? true;
-      if (!wantsRender || !pdfRenderingAvailable()) {
-        return {
-          ...base,
-          rendered: null,
-          differences: null,
-          note: wantsRender
-            ? "This instance has no headless browser, so only the document half was read. Every check above still holds; what is missing is the comparison against the printed page."
-            : "The printed page was not read, because render was false.",
-        };
-      }
-      const token = await createEphemeralSession(ctx.userId);
-      try {
-        const rendered = await readRenderedText({
-          url: `${ctx.baseUrl}/print/${required(args, "id")}`,
-          sessionCookie: {
-            name: SESSION_COOKIE,
-            value: token,
-            domain: new URL(ctx.baseUrl).hostname,
-            secure: ctx.baseUrl.startsWith("https:"),
-          },
-        });
-        return { ...base, rendered, differences: textDifferences(base.text, rendered), note: "" };
-      } catch (error) {
-        return {
-          ...base,
-          rendered: null,
-          differences: null,
-          note: `The printed page could not be read (${error instanceof Error ? error.message : "it failed"}), so only the document half is here.`,
-        };
-      } finally {
-        await destroySession(token);
-      }
-    },
-  },
-  {
-    name: "preview_resume_text",
-    title: "Preview a resume document as text",
-    description:
-      "Render a resume document JSON to plain text WITHOUT saving it, and estimate how many lines it will occupy. Use it to check length and flow before committing with create_resume or update_resume.",
-    inputSchema: object(
-      {
-        data: {
-          type: "object",
-          description: "A resume document to render",
-          additionalProperties: true,
-        },
-      },
-      ["data"],
-    ),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) => {
-      const doc = parseResumeDocStrict(args.data);
-      return {
-        text: resumes.resumeToText(doc),
-        estimatedLines: resumes.estimateLines(doc),
-        approxPages: resumes.estimatePages(doc),
-      };
-    },
-  },
 
   // -------------------------------------------------------------------------
   // PIPELINE
@@ -2615,7 +2526,7 @@ export const tools: McpTool[] = [
     name: "prep_letter",
     title: "Gather everything before writing a letter",
     description:
-      "Call this FIRST whenever someone asks for a cover letter, a cold message, a referral ask, a thank-you or a reply. A good letter is built from five things that live five places apart, and this returns all of them in one read: the posting and the company research (`application`), who it is going to (`contact`), the resume it goes out with, `evidence` — the material from Me that actually matches this posting, ranked — and `priorLetters`, up to three of the same kind they have already written. Those last ones matter more than any instruction about tone: two letters somebody wrote themselves are the only reliable description of how they sound. `intent` says what this kind of letter is for, and `missing` names what is not on file — no posting, no research, no named recipient, nothing in Me that matched. Say the missing things out loud rather than writing around them, and never invent an achievement to fill a gap. FOUR OF THE KINDS ARE NOT LETTERS TO ANYBODY — LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW and BRAG_DOC are documents about the person, so there is usually no application, no recipient and nothing in `missing` about either. For those, `profile` carries the headline and summary they have now, `evidence` falls back to their roles newest first when you give no `topic`, and `priorLetters` is the previous version of this same document — which on a brag doc is the record itself, and is the thing to add to rather than replace. Read-only, saves nothing.",
+      "Call this FIRST whenever someone asks for a cover letter, a cold message, a referral ask, a thank-you or a reply. A good letter is built from five things that live five places apart, and this returns all of them in one read: the posting and the company research (`application`), who it is going to (`contact`), the resume it goes out with, `evidence` — the material from Me that actually matches this posting, ranked — and `priorLetters`, up to three of the same kind they have already written. `evidence` holds only what a document may use; `writingRules`, `neverOnADocument` and `notSettled` come from their profile, every role and every project — follow the rules without quoting them, never put a caveat on the page, and never use an unsettled fact. Those last ones matter more than any instruction about tone: two letters somebody wrote themselves are the only reliable description of how they sound. `intent` says what this kind of letter is for, and `missing` names what is not on file — no posting, no research, no named recipient, nothing in Me that matched. Say the missing things out loud rather than writing around them, and never invent an achievement to fill a gap. FOUR OF THE KINDS ARE NOT LETTERS TO ANYBODY — LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW and BRAG_DOC are documents about the person, so there is usually no application, no recipient and nothing in `missing` about either. For those, `profile` carries the headline and summary they have now, `evidence` falls back to their roles newest first when you give no `topic`, and `priorLetters` is the previous version of this same document — which on a brag doc is the record itself, and is the thing to add to rather than replace. Read-only, saves nothing.",
     inputSchema: object({
       kind: {
         type: "string",
@@ -3465,7 +3376,7 @@ export const tools: McpTool[] = [
     name: "prep_interview",
     title: "Gather everything before an interview",
     description:
-      "Call this FIRST whenever somebody has an interview coming up, asks what to expect, or asks you to run prep. Seven things decide an interview and they live seven places apart; this returns all of them in one read. `application` is the posting, the stage and the last ten things logged. `company` is the research on file. `interviewers` is who is in the room. `history` is every earlier round at this employer, with how each went. `employerQuestions` is what THIS employer has already asked — the list nothing in this app could produce before questions were rows, and the first thing to read out. `commonQuestions` is what gets asked everywhere. `weakAnswers` is what is on file with no answer or one they rated badly, which is the homework. `tasks` is whatever the stage checklist already put on their list. `missing` names what is NOT on file — no posting, no research, nobody named, no earlier round — and that list is the most useful thing here: say the gaps out loud rather than writing around them. NEVER invent a story, an employer, a date or a metric to fill one; if it is not in the result, it does not go in an answer. Pass interview_id for a booked round, or application_id to prep a job somebody has not put a date against yet. Read-only, saves nothing.",
+      "Call this FIRST whenever somebody has an interview coming up, asks what to expect, or asks you to run prep. Seven things decide an interview and they live seven places apart; this returns all of them in one read. `application` is the posting, the stage and the last ten things logged. `company` is the research on file. `interviewers` is who is in the room. `history` is every earlier round at this employer, with how each went. `employerQuestions` is what THIS employer has already asked — the list nothing in this app could produce before questions were rows, and the first thing to read out. `commonQuestions` is what gets asked everywhere. `weakAnswers` is what is on file with no answer or one they rated badly, which is the homework. `tasks` is whatever the stage checklist already put on their list. `missing` names what is NOT on file — no posting, no research, nobody named, no earlier round — and that list is the most useful thing here: say the gaps out loud rather than writing around them. NEVER invent a story, an employer, a date or a metric to fill one; if it is not in the result, it does not go in an answer. What to hand back: the three things this employer cares about most, the strongest TRUE story for each with its real numbers, the questions likely to come up and the weak spots to rehearse, questions worth asking them, and any follow-up the timeline says is owed. Pass interview_id for a booked round, or application_id to prep a job somebody has not put a date against yet. Read-only, saves nothing.",
     inputSchema: object({
       application_id: str("The job to prep for. Enough on its own."),
       interview_id: str(
@@ -4822,7 +4733,7 @@ export const tools: McpTool[] = [
     name: "skills_gap",
     title: "What every posting asks for that Me cannot evidence",
     description:
-      "Reads every job posting captured on the pipeline, works out what keeps coming up across them, and asks search_me whether this person has anything on file for each one. This is a LEARNING LIST, not a fit score for one job — check_resume_fit and the gap_report workflow answer 'does this resume suit this posting', and this answers 'what do the jobs I keep applying for want that I have never written down'. Reach for it when somebody asks what to learn next, what to put on a development plan, or why their applications keep stalling in the same place; and after it, ask them about the missing items, because half of what comes back as missing is work they did and never recorded — anything they tell you goes straight into append_role_background and is then evidenced for every future application. Terms are counted by how many DIFFERENT postings they appear in, so a single long posting cannot invent a trend. Three lists come back. `missing` is the one to trust: search_me matches on ANY word of a term and still found nothing, so zero means zero. `thin` is one record — usually a mention rather than a story. `backed` is the weak end: two or more records matched, but a two-word term can match on the common word alone, so treat it as 'probably fine' rather than proof. THE TRAPS. This has no idea what words mean: 'K8s' and 'Kubernetes' are two different terms and one can read missing while the other reads backed, and an acronym in the posting against a spelled-out name in Me reads as a gap that is not one — check before telling anybody they lack something. It reads THEIR postings, which is a biased sample: it describes what the jobs they chose ask for, not what the market asks for. And `confident` is false under five captured postings, where there is no cross-posting pattern to find at all. `method` explains how each verdict was reached; read it before quoting the result. Nothing is written.",
+      "Reads every job posting captured on the pipeline, works out what keeps coming up across them, and asks search_me whether this person has anything on file for each one. This is a LEARNING LIST, not a fit score for one job — posting_keywords and the tailor_resume workflow answer 'does this posting suit me', and this answers 'what do the jobs I keep applying for want that I have never written down'. Reach for it when somebody asks what to learn next, what to put on a development plan, or why their applications keep stalling in the same place; and after it, ask them about the missing items, because half of what comes back as missing is work they did and never recorded — anything they tell you goes straight into append_role_background and is then evidenced for every future application. Terms are counted by how many DIFFERENT postings they appear in, so a single long posting cannot invent a trend. Three lists come back. `missing` is the one to trust: search_me matches on ANY word of a term and still found nothing, so zero means zero. `thin` is one record — usually a mention rather than a story. `backed` is the weak end: two or more records matched, but a two-word term can match on the common word alone, so treat it as 'probably fine' rather than proof. THE TRAPS. This has no idea what words mean: 'K8s' and 'Kubernetes' are two different terms and one can read missing while the other reads backed, and an acronym in the posting against a spelled-out name in Me reads as a gap that is not one — check before telling anybody they lack something. It reads THEIR postings, which is a biased sample: it describes what the jobs they chose ask for, not what the market asks for. And `confident` is false under five captured postings, where there is no cross-posting pattern to find at all. `method` explains how each verdict was reached; read it before quoting the result. Nothing is written.",
     inputSchema: object({
       limit: num("How many terms to test. Default 40, ceiling 80. Each one costs a search of Me."),
       min_postings: num(
@@ -7929,43 +7840,57 @@ export const prompts: McpPrompt[] = [
     name: "tailor_resume",
     title: "Tailor a resume to a job",
     description:
-      "Read a job description, mine the knowledge base for the most relevant evidence, and produce a tailored resume.",
+      "Check a job against the evidence in Me, then — if it is worth it — produce a tailored resume attached to that job. The first half is a read-only gap report (backed, thin, missing) and is the whole answer when they only asked whether to apply.",
     arguments: [
-      { name: "job_description", description: "The full job posting", required: true },
-      { name: "company", description: "Company name" },
+      { name: "application_id", description: "The job on the board, if it is there" },
+      { name: "job_description", description: "The posting, pasted, if it is not on the board" },
+      { name: "company", description: "Company name, for a pasted posting" },
     ],
     build: (args) => `Tailor a resume for this job.
 
-<job_posting company="${args.company ?? ""}">
-${args.job_description ?? ""}
-</job_posting>
+<job application_id="${args.application_id ?? ""}" company="${args.company ?? ""}">
+${args.job_description ?? (args.application_id ? "On the board — read it with get_application." : "No posting given — ask me for it, or for the job on the board.")}
+</job>
 
-Work in this order:
-1. Call get_resume_format so you know the document shape.
-2. Pull out the 8-12 requirements the posting actually cares about, in priority order.
-3. If this job is on the board, call posting_keywords. It says term by term what the posting
-   asks for and what it lands on: evidenced, reached by a recorded transferable, or genuinely
-   missing. Applicant tracking systems screen on exact tokens, so spell an evidenced term the
-   way the POSTING spells it, place a covered term only as their keyword policy allows, and
-   report a missing one as a gap rather than writing around it.
-4. For each requirement, call search_me to find real evidence. Do not invent anything — if there is no evidence, say so and leave it out.
-5. Call get_me_snapshot for the profile, dates and education you need. Read \`keywordPolicy\`
-   before you draft a line — \`permits\` is the rule on how close to the posting's words you may
-   get — and \`writingRules\` and \`neverOnADocument\` too: the first is how this person has said
-   their jobs may be described, and you follow it without mentioning it; the second is their own
-   positioning and interview notes, which are context for you and must never reach the page.
-6. Draft the document, then call preview_resume_text to check it lands near one page.
-7. Save it. If a base resume already exists (list_resumes shows one), duplicate_resume it and
-   update_resume the copy — that records the lineage, so compare_resumes can show what this
-   tailoring changed. Otherwise create_resume. Either way name it "<Company> — <Role>" and set
-   targetRole/targetCompany.
-8. Tell me what you emphasised, what you cut, which requirements you could not evidence, and
-   — if you placed any keyword as comparable rather than as experience — exactly which ones, so
-   I can answer for them in a room.
+The rule that governs everything here: nothing goes on the resume that the evidence in Me
+cannot back. The quiet upgrade — "helped with" becoming "led", a credit becoming a hire — is
+how resumes actually go wrong.
 
-Bullets must lead with a strong verb, name the specific scope, and end in a measurable outcome pulled from the background — from its EVIDENCE, which is what \`resumeEvidence\` on a role returns.
+READ FIRST — nothing is written in this half.
+1. If the job is on the board, get_application for the posting, then posting_keywords: term by
+   term, what the posting asks for and where it lands (evidenced, covered by a recorded
+   transferable, or missing).
+2. get_me_snapshot. Read keywordPolicy.permits (how close to the posting's words you may get),
+   writingRules (bind every line, never quoted), neverOnADocument (never on the page) and
+   notSettled (never used — ask).
+3. Pull out the 8-12 requirements the posting actually rewards, in priority order.
+4. For each, search_me — the posting's own words first, then the words I would have used for
+   the work. Only a hit whose use is "evidence" counts.
+5. Sort every requirement into BACKED (quote the strongest evidence and its role), THIN (say
+   what exists and what the gap is) or MISSING. Never move one to BACKED to be encouraging.
+   If I only asked whether to apply or how well I fit, stop here: give me the three lists and
+   your read on whether tailoring is worth it, and ask one concrete question per THIN or
+   MISSING item — anything I answer goes into Me with append_role_background.
 
-Finish with a gap report: which of the posting's requirements the resume evidences, which it half-covers, and which have nothing behind them. Never paper over the third list — it is what the person needs to see.`,
+THEN WRITE.
+6. If the job is not on the board, offer to put it there (capture_job_posting with the link,
+   or create_application) — do not do it unasked. Then tailor_resume_for_application: it
+   copies my base resume, names and targets it, and attaches it to the job.
+7. Read its \`unbacked\` list: lines copied from the base that nothing in Me stands behind.
+   A claim corrected in Me since the base was written is one of these. Rewrite each from Me
+   or drop it — never carry one forward unread.
+8. get_resume_format if you have not already, then update_resume with the whole document.
+   Every experience entry keeps the roleId of its job in Me. Bullets lead with a strong verb,
+   name the scope and end in an outcome from that role's EVIDENCE; spell an evidenced term the
+   way the posting spells it, and place a covered term only as keywordPolicy allows.
+9. export_resume_pdf for the real page count. If it runs long, check_resume_fit, and propose
+   the cuts to me rather than making them.
+10. trace_resume_evidence last. Any bullet still unbacked is rewritten from Me, dropped, or
+   put to me as a question.
+
+Finish by telling me what you emphasised, what you cut, the requirements nothing backs (the
+MISSING list — never paper over it), and any keyword you placed as comparable rather than as
+experience, so I can answer for it in a room.`,
   },
   {
     name: "write_letter",
@@ -7993,7 +7918,9 @@ Work in this order:
 3. Build the argument out of evidence only. Every specific claim — a number, a system, a
    team size, an outcome — has to trace back to something that came back from Me. Never
    invent an employer, a date, a metric or a project. Where the posting asks for something I
-   cannot evidence, leave it out and tell me afterwards.
+   cannot evidence, leave it out and tell me afterwards. writingRules bind every line
+   without being quoted; nothing in neverOnADocument goes on the page, and nothing in
+   notSettled is used — ask me instead.
 4. Use application.companyNotes and application.recentActivity for the part that is about
    THEM. A letter that could have been sent to any employer is a letter nobody answers.
    If this is a LINKEDIN_ABOUT, HEADLINE, SELF_REVIEW or BRAG_DOC there is nobody to write
@@ -8009,60 +7936,31 @@ Work in this order:
    one better.`,
   },
   {
-    name: "gap_report",
-    title: "Gap report: a posting against Me",
-    description:
-      "Before tailoring — or before deciding whether to apply at all — check a job posting against the evidence that actually exists in Me. Returns three lists: requirements with real evidence behind them, requirements with only thin or indirect signal, and requirements with nothing. Nothing is written or saved; this is the reading that decides what happens next.",
-    arguments: [
-      { name: "job_description", description: "The full job posting, or an application id whose stored posting to use" },
-    ],
-    build: (args) => `Check this posting against what I can actually evidence.
-
-<job_posting>
-${args.job_description ?? "No posting pasted — if this looks like an application id, call get_application and use its jobDescription; otherwise ask for the posting."}
-</job_posting>
-
-The rule that governs everything here: nothing goes on a resume that the evidence in Me cannot back.
-The quiet upgrade — "helped with" becoming "led", a credit becoming a hire — is the way
-resumes actually go wrong, and this report exists to make that impossible to do by accident.
-
-1. Pull out the 8-12 requirements the posting actually rewards, in priority order. Read
-   past the boilerplate: "5+ years of X" and "strong communication" matter less than the
-   two or three lines that describe the actual job.
-2. For each requirement, call search_me with the terms a person would have used when
-   dumping — the tool searches raw notes, not polished bullets, so search for the work,
-   not the buzzword.
-3. Sort every requirement into exactly one of three lists:
-   BACKED — direct evidence exists. Quote the strongest piece and name the role it came from.
-   THIN — something adjacent exists but it would be a stretch to claim the requirement
-   outright. Say precisely what exists and what the gap is.
-   MISSING — there is nothing on file. Say so plainly.
-4. Report the three lists in that order, then say what the report means: roughly how much
-   of the posting's core is covered, and whether tailoring is worth it or the fit isn't there.
-5. For each MISSING and THIN item, ask one concrete question that would surface the
-   evidence if it exists — people forget their own work constantly. Anything they answer
-   goes into Me with append_role_background, and then it is BACKED for every future
-   application, not just this one.
-
-Never move an item to BACKED to be encouraging. A gap named now costs a rewrite; a gap
-discovered in an interview costs the interview.`,
-  },
-  {
     name: "mine_role_background",
     title: "Mine a role's background into highlights",
     description:
-      "Read a role's raw background and distil it into polished, reusable achievement bullets.",
+      "Distil a role's evidence into polished, reusable achievement bullets, under that role's own rules, and save them once they say yes.",
     arguments: [{ name: "role_id", description: "The role id to mine (omit to be asked)" }],
     build: (args) => `Turn a role's raw background into reusable resume bullets.
 
 ${args.role_id ? `Use role id ${args.role_id}.` : "Call list_roles first and ask me which role to mine."}
 
-1. Call get_role to read the full background.
-2. Call list_highlights for that role so you do not duplicate what already exists.
-3. Extract every distinct accomplishment. For each, write one bullet: strong verb, specific scope, quantified outcome. Keep the real numbers from the dump.
-4. Rate each 1-5 on strength and tag it for retrieval.
-5. Save them in one create_highlights call.
-6. Show me the list and flag anything where the dump hints at impact but does not give a number, so I can fill it in.`,
+1. Call get_role. Read \`rules\`, \`caveats\` and \`open\` BEFORE anything else: the rules
+   bind every bullet you write (a figure or a framing a rule forbids never goes in, whatever
+   the background says), caveats are my own positioning notes and never become a bullet, and
+   an open item is a fact I have not settled — never mine one; ask me about it at the end.
+2. Mine ONLY from \`resumeEvidence\`, never from the raw background. A highlight is printed
+   on resumes and counted as backing, so a caveat that becomes one is a caveat on paper.
+3. Call list_highlights for that role so you do not duplicate what already exists.
+4. Extract every distinct accomplishment. For each, write one bullet: strong verb, specific
+   scope, quantified outcome. Keep the real numbers from the evidence, exactly as written —
+   never round one up, and never attach a company-wide figure to me unless the evidence says
+   it was mine.
+5. Rate each 1-5 on strength and tag it for retrieval.
+6. Show me the drafts and get a yes before anything is saved. Then save them in one
+   create_highlights call.
+7. Flag anything where the evidence hints at impact but gives no number, so I can fill it in,
+   and list the open items you skipped.`,
   },
   {
     name: "pipeline_review",
@@ -8125,35 +8023,6 @@ Do not invent facts about the company. If you are working from what I have told 
 are unsure, mark it as unconfirmed in the notes rather than stating it flatly.`,
   },
   {
-    name: "prep_for_interview",
-    title: "Prepare for an interview",
-    description:
-      "Pull the application, the company research, the people involved and my own evidence into one prep sheet.",
-    arguments: [
-      { name: "company", description: "Company name", required: true },
-      { name: "round", description: "Which round, e.g. 'system design', 'final'" },
-    ],
-    build: (args) => `Get me ready for my${args.round ? ` ${args.round}` : ""} interview at ${args.company ?? "this company"}.
-
-Gather first:
-1. list_applications with search: "${args.company ?? ""}", then get_application for the full posting
-   and the whole timeline — what has already been said matters more than the posting does.
-2. list_companies then get_company for the research on file.
-3. list_contacts for that company, so I know who I am meeting and what I know about them.
-4. search_me for the two or three themes the posting leans on hardest, so my answers come from
-   real work rather than from memory under pressure.
-
-Then give me:
-- The three things they most obviously care about, from the posting and the timeline together.
-- For each one, the strongest true story I have, with the specific numbers from my background. Do not
-  invent a metric — if the number is not on file, say the story without one and tell me to check.
-- The questions I am most likely to be asked, and the weak spots in my own history for this role.
-- Five questions worth asking them, drawn from the company research rather than generic ones.
-- Anything in the timeline I should follow up on or refer back to.
-
-If the research on file is thin, say so and offer to run research_company first.`,
-  },
-  {
     name: "inbox_review",
     title: "Inbox review: what moved in Gmail and Calendar",
     description:
@@ -8204,13 +8073,12 @@ Skip newsletters, job-board digests and anything automated that does not concern
 ${args.update ?? ""}
 </update>
 
-1. Anything about my current job or a past job → append_role_background on the right role (call list_roles first to find ids). Keep my numbers and specifics.
-2. Anything that is a clean accomplishment → also create_highlights so it is resume-ready.
-3. Anything about a company I am talking to → log_activity on the application, and move_application_stage if it moved.
-4. Anything I said I would do → create_task with a due date.
-5. Anything that does not fit a role or a company → create_note.
+1. Anything about my current job or a past job → append_role_background on the right role (call list_roles first to find ids). Keep my numbers and specifics, in my words. Do not polish it into a resume bullet here.
+2. Anything about a company I am talking to → log_activity on the application, and move_application_stage if it moved.
+3. Anything I said I would do → create_task with a due date.
+4. Anything that does not fit a role or a company → create_note.
 
-Then confirm what you filed and where, and ask me about anything that was ambiguous.`,
+Then confirm what you filed and where, and ask me about anything that was ambiguous. If a role got something worth printing, offer mine_role_background for it — turning raw material into resume bullets is a separate, deliberate step that reads that role's rules first.`,
   },
 ];
 
@@ -8330,7 +8198,6 @@ const MAX_RESULT_CHARS: Record<string, number> = {
   compare_resumes: 80_000,
   list_archive: 80_000,
   get_resume: 80_000,
-  preview_resume_text: 60_000,
   // Forty terms each carrying up to three excerpts, and a brief that carries a
   // week of the schedule plus the pipeline's stats.
   skills_gap: 60_000,
@@ -8488,7 +8355,7 @@ function buildScope(scopeKey: McpScope, admin: boolean): ScopeTable {
   const names = new Set(served.map((tool) => tool.name));
 
   // A fixed point rather than one pass, because a workflow may name another —
-  // prep_for_interview ends by offering to run research_company. Judged against
+  // log_my_week ends by offering mine_role_background. Judged against
   // the tools alone, a workflow like that could never fit a narrowed scope even
   // when everything it needs is served. So: start from the tools, add the
   // workflows that fit, and go round again until nothing new fits. It

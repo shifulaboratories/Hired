@@ -103,15 +103,15 @@ export const CASES = [
   },
   {
     prompt: "Tailor my main resume to this job description.",
-    expect: ["tailor_resume", "duplicate_resume", "search_me", "list_resumes"],
+    expect: ["tailor_resume", "tailor_resume_for_application", "search_me", "list_resumes"],
     avoid: ["update_resume"],
-    why: "Editing a resume already attached to an application rewrites history. Copy first.",
+    why: "Editing a resume already attached to an application rewrites history. Start a tailored copy first.",
   },
   {
     prompt: "Is this thing over a page?",
-    expect: ["preview_resume_text", "check_resume_fit"],
-    avoid: ["export_resume_pdf"],
-    why: "The dry run answers it without saving or rendering.",
+    expect: ["export_resume_pdf"],
+    avoid: ["check_resume_fit"],
+    why: "Only a render measures pages. check_resume_fit is for what to cut once it runs long.",
   },
   {
     prompt: "The application form wants a link to my resume.",
@@ -122,7 +122,7 @@ export const CASES = [
   {
     prompt: "Send me a PDF of it.",
     expect: ["export_resume_pdf"],
-    avoid: ["publish_resume", "preview_resume_text"],
+    avoid: ["publish_resume", "check_resume_fit"],
     why: "The mirror of the case above.",
   },
   {
@@ -416,7 +416,7 @@ export const CASES = [
   },
   {
     prompt: "I'm interviewing at Vercel on Thursday, get me ready.",
-    expect: ["prep_interview", "prep_for_interview"],
+    expect: ["prep_interview"],
     avoid: ["get_application", "search_me"],
     why: "Seven things decide an interview and they live seven places apart. The tool reads all of them; get_application reads one.",
   },
@@ -443,8 +443,8 @@ export const CASES = [
   {
     prompt: "What should I be learning? The same things keep coming up in jobs I don't get.",
     expect: ["skills_gap"],
-    avoid: ["check_resume_fit", "gap_report", "search_me"],
-    why: "A learning list across every captured posting. check_resume_fit and gap_report answer 'does this resume fit THIS job', which is the other question.",
+    avoid: ["posting_keywords", "tailor_resume", "search_me"],
+    why: "A learning list across every captured posting. posting_keywords and tailor_resume answer 'do I fit THIS job', which is the other question.",
   },
   {
     prompt: "Who should I get back in touch with?",
@@ -509,12 +509,6 @@ export const CASES = [
     expect: ["attach_file"],
     avoid: ["create_note", "capture_job_posting", "update_application"],
     why: "A file is a file. Pasting it into the notes loses the original, which is the thing they asked to keep.",
-  },
-  {
-    prompt: "Will this resume survive an applicant tracking system?",
-    expect: ["preview_ats_text"],
-    avoid: ["preview_resume_text", "check_resume_fit", "export_resume_pdf"],
-    why: "preview_resume_text estimates length. The ATS question is about what a parser can read out of it.",
   },
   {
     prompt: "Fill this thing with fake data so I can see what it looks like before I commit.",

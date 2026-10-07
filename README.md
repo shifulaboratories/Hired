@@ -18,11 +18,7 @@ just *talk* to it.
   the application forms that want a URL instead of a file. One of the five is **Plain
   (ATS)**: one column, black, no photo, and every link printed as its address rather than as
   a word with the address hidden in the markup — which is the only thing on a resume a text
-  extractor genuinely cannot see. `preview_ats_text` shows you what a machine reads, what
-  falls out between the document and the printed page, and a short list of flat checks with
-  the reason each one matters. There is deliberately no score: no two applicant tracking
-  systems parse alike, none of them publishes what it does, and a number would be one this
-  app invented.
+  extractor genuinely cannot see.
 - **Letters** — everything you write that is not a resume: cover letters, cold messages,
   referral asks, thank-yous, replies — and four that are about you rather than to anybody: a
   LinkedIn About, a headline, a self-review and a brag doc. Those four print without a date
@@ -263,7 +259,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  220 tools any MCP client can call (255 if you're an admin). Claude, Claude Code, ChatGPT,
+  216 tools any MCP client can call (251 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -446,7 +442,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 220, or 255 if you're an admin.
+then tells you how many tools answered — 216, or 251 if you're an admin.
 
 Each connection can also be narrowed to one job, in the panel where you copy its URL:
 **Everything** (the default, and what every connection had before this existed), **Me,
@@ -714,12 +710,12 @@ By conversation: `admin_get_assistant_config`, `admin_set_assistant_config`.
 
 ## What your AI can do once it's connected
 
-220 tools. Two hundred and eleven of them are the data tools across the five areas, the
+216 tools. Two hundred and eight of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
-account; the other nine are the workflows below, published as tools as well as prompts,
+account; the other eight are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
 hands back a step-by-step plan that it then follows. Admins get 35 more — 34 data tools and
-a tenth workflow — and members never even see those in the tool list, so nobody is tempted
+a ninth workflow — and members never even see those in the tool list, so nobody is tempted
 by a permission they don't have.
 
 | Workflow | What it does |
@@ -810,9 +806,10 @@ one call — roles with their bullets, education, skills, contact details — wi
 anything already there.
 
 **Resumes** — `get_resume_format` describes the document shape, then `create_resume` /
-`update_resume` / `duplicate_resume` build and tailor them. `preview_resume_text` renders a
-draft and estimates page count *without* saving, so Claude can check length before
-committing, and `check_resume_fit` ranks what to cut when it runs long — the longest
+`update_resume` / `duplicate_resume` build them, and `tailor_resume_for_application` starts a
+tailored copy attached to the job, naming the copied lines nothing in Me backs. A malformed
+document is refused with the field that is wrong rather than saved. `export_resume_pdf`
+measures the real page count, and `check_resume_fit` ranks what to cut when it runs long — the longest
 bullets, and which sections are carrying the most weight. `reorder_resume` moves one
 section, job or bullet without rewriting the document, so "lead with the Stripe job" costs
 one call rather than a full rewrite, and `add_role_to_resume` brings a job in from Me — its
