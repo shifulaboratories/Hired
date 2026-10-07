@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRightIcon } from "lucide-react";
 import type { SearchDiagnosis } from "@/lib/data/pipeline";
+import type { ResumeRow } from "@/lib/data/analytics";
 import { STAGE_LABEL, STAGE_TONE } from "@/lib/stages";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -12,8 +13,20 @@ import { cn } from "@/lib/utils";
  * reading is what every job tracker already shows, and interpreting them is the
  * work — so the tool does that part and shows its working below.
  */
-export function DiagnosisCard({ diagnosis }: { diagnosis: SearchDiagnosis }) {
-  const { steps, weakest, headline, detail, velocity, byResume, bySource, stalled } = diagnosis;
+export function DiagnosisCard({
+  diagnosis,
+  resumes,
+}: {
+  diagnosis: SearchDiagnosis;
+  /**
+   * resume_performance's rows — the one answer to "which resume is working".
+   * The diagnosis used to carry its own per-resume block under a different
+   * rule, and the two disagreed about the same documents.
+   */
+  resumes: ResumeRow[];
+}) {
+  const { steps, weakest, headline, detail, velocity, bySource, stalled } = diagnosis;
+  const byResume = resumes.filter((row) => row.sent > 0).sort((a, b) => b.sent - a.sent);
   const busiest = Math.max(1, ...velocity.map((week) => week.count));
 
   return (
@@ -133,7 +146,7 @@ export function DiagnosisCard({ diagnosis }: { diagnosis: SearchDiagnosis }) {
                       {resume.responded}/{resume.sent}
                     </span>
                     <span className="nums w-10 shrink-0 text-right text-[12.5px] font-medium">
-                      {resume.rate === null ? "—" : `${resume.rate}%`}
+                      {resume.responseRate === null ? "—" : `${resume.responseRate}%`}
                     </span>
                   </li>
                 ))}

@@ -445,8 +445,13 @@ function cacheable(id: JsonRpcId, result: object, era: Era): JsonRpcResponse {
 }
 
 /** Dates need to survive the trip; everything else is plain JSON already. */
+/**
+ * Compact on purpose. Indentation is for a person reading a log, and the
+ * reader here is a model paying for every space: two-space JSON was a quarter
+ * of the bytes of a typical list result.
+ */
 function serialize(value: unknown) {
-  return JSON.stringify(value, (_key, val) => (val instanceof Date ? val.toISOString() : val), 2);
+  return JSON.stringify(value, (_key, val) => (val instanceof Date ? val.toISOString() : val));
 }
 
 async function handleMessage(

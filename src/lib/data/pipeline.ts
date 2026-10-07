@@ -2,6 +2,7 @@ import { ActivityType, Prisma, Stage, type TaskRepeat } from "@prisma/client";
 import { db } from "@/lib/db";
 import { pick } from "@/lib/data/patch";
 import { DAY, hasGoneQuiet, lastTouchAt, quietDaysFor } from "@/lib/quiet";
+import { rateOf } from "@/lib/rates";
 import { readQuickLog } from "@/lib/quick-log";
 import {
   TagKind,
@@ -10,6 +11,7 @@ import {
   flattenTags,
   resolveTagIds,
   tagInclude,
+  tagKey,
 } from "@/lib/data/tags";
 import { archiveRecords } from "@/lib/data/archive";
 import { applyStageTemplates } from "@/lib/data/stage-templates";
@@ -177,6 +179,67 @@ const CONTACT_COLUMNS = [
 /** Cuts of the company list that keep coming up as questions. */
 /** The cut list lives in crm-filters.ts, so there is one of it. */
 export type { CompanyCut as CompanyFilter } from "@/lib/crm-filters";
+
+/**
+ * Labels only, for pickers and the command palette: every live company, with
+ * the industry and location tags its subtitle reads. The full listCompanies
+ * carries counts, tags and application rows per company, and the palette used
+ * to load all of that and then keep the first sixty by name — so a company
+ * after the first sixty could not be found.
+ */
+export async function listCompanyNames(userId: string) {
+  const rows = await db.company.findMany({
+    where: { userId, archivedAt: null },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      website: true,
+      tags: {
+        where: { tag: { kind: { in: [TagKind.INDUSTRY, TagKind.LOCATION] } } },
+        select: { tag: { select: { name: true } } },
+      },
+    },
+  });
+  return rows.map(({ tags, ...row }) => ({ ...row, tagNames: tags.map((link) => link.tag.name) }));
+}
+
+/** Labels only: every live person, their title and their first company. */
+export async function listContactNames(userId: string) {
+  const rows = await db.contact.findMany({
+    where: { userId, archivedAt: null },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      title: true,
+      companies: {
+        where: { company: { archivedAt: null } },
+        orderBy: { createdAt: "asc" },
+        take: 1,
+        select: { company: { select: { name: true } } },
+      },
+    },
+  });
+  return rows.map(({ companies, ...row }) => ({ ...row, company: companies[0]?.company.name ?? "" }));
+}
+
+/** Labels only: every live application, closed ones included, newest touch first. */
+export async function listApplicationNames(userId: string) {
+  return db.application.findMany({
+    where: { userId, archivedAt: null },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true,
+      roleTitle: true,
+      stage: true,
+      jobUrl: true,
+      nextFollowUpAt: true,
+      company: { select: { name: true } },
+    },
+  });
+}
+
 
 /**
  * Every company, cut and ordered.
@@ -1416,6 +1479,10 @@ export async function moveApplicationStage(
   const zone = await timeZoneOf(userId);
   const data: Prisma.ApplicationUpdateInput = { stage };
   if (stage !== "WISHLIST" && !current.appliedAt) data.appliedAt = new Date();
+  // Back to the wishlist means it was not sent after all. A stale appliedAt
+  // kept the funnel counting it as applied while the board said wishlist, and
+  // every backward move needed a second update to undo the date by hand.
+  if (stage === "WISHLIST") data.appliedAt = null;
   if (TERMINAL_STAGES.includes(stage)) {
     data.closedAt = new Date();
     data.nextFollowUpAt = null;
@@ -1465,7 +1532,7 @@ export async function moveApplicationStage(
       data: {
         userId,
         applicationId: id,
-        type: stageActivityType(stage),
+        type: stageActivityType(stage, updated.tags),
         body: note ?? `${STAGE_LABEL[current.stage]} → ${STAGE_LABEL[stage]}`,
         // Recorded separately from the body, which a note is allowed to replace.
         // Without these the funnel is guesswork.
@@ -1497,10 +1564,23 @@ export async function moveApplicationStage(
   return { ...updated, addedTasks, thankYous };
 }
 
-function stageActivityType(stage: Stage): ActivityType {
+/**
+ * The activity a stage move writes.
+ *
+ * A move to LOST is a REJECTION only when the reason given is "Rejected" —
+ * a no is a response. Every other ending (ghosted, withdrew, declined, role
+ * closed) is the person closing the row, and logging it as the employer's
+ * REJECTION made the day somebody gave up on a silent application count as
+ * the day it was answered.
+ */
+function stageActivityType(stage: Stage, tags: TagRef[] = []): ActivityType {
   if (stage === "APPLIED") return "APPLIED";
   if (stage === "OFFER" || stage === "ACCEPTED") return "OFFER";
-  if (stage === "LOST") return "REJECTION";
+  if (stage === "LOST") {
+    return tags.some((tag) => tag.kind === TagKind.LOSS && tagKey(tag.name) === "rejected")
+      ? "REJECTION"
+      : "STAGE_CHANGE";
+  }
   return "STAGE_CHANGE";
 }
 
@@ -1837,8 +1917,27 @@ export async function taskSubject(
 }
 
 /** What a task hands back about its subject, whichever kind it turned out to be. */
+/**
+ * An application as a child row carries it: enough to name it and link to
+ * it, never the posting, the notes or the owner's id. listActivities, tasks,
+ * the schedule and the follow-up list each used to embed the whole row — one
+ * activity came to about 7K characters, nearly all of it a job description
+ * nobody asked for — and get_application is the call for the full record.
+ */
+export const APPLICATION_SUMMARY = {
+  id: true,
+  roleTitle: true,
+  stage: true,
+  interviewRound: true,
+  roundLabel: true,
+  appliedAt: true,
+  nextFollowUpAt: true,
+  jobUrl: true,
+  company: { select: { id: true, name: true, website: true } },
+} satisfies Prisma.ApplicationSelect;
+
 const taskSubjectInclude = {
-  application: { include: { company: { select: { name: true } } } },
+  application: { select: APPLICATION_SUMMARY },
   company: { select: { id: true, name: true } },
   contact: { select: { id: true, name: true } },
   resume: { select: { id: true, name: true } },
@@ -1866,7 +1965,7 @@ export async function listActivities(userId: string, applicationId?: string, lim
     orderBy: { occurredAt: "desc" },
     take: limit,
     include: {
-      application: { include: { company: true } },
+      application: { select: APPLICATION_SUMMARY },
       contact: { select: { id: true, name: true } },
     },
   });
@@ -2335,7 +2434,7 @@ export async function followUpsDue(userId: string, withinDays = 0) {
       stage: { notIn: TERMINAL_STAGES },
     },
     orderBy: { nextFollowUpAt: "asc" },
-    include: { company: true },
+    select: APPLICATION_SUMMARY,
   });
 }
 
@@ -2510,7 +2609,7 @@ export async function listSchedule(
   const [followUps, contactPings, tasks, activities] = await Promise.all([
     db.application.findMany({
       where: { userId, archivedAt: null, nextFollowUpAt: range, stage: { notIn: TERMINAL_STAGES } },
-      include: { company: true },
+      select: APPLICATION_SUMMARY,
     }),
     db.contact.findMany({
       where: { userId, archivedAt: null, nextFollowUpAt: range },
@@ -2523,12 +2622,12 @@ export async function listSchedule(
     }),
     db.task.findMany({
       where: { userId, ...LIVE_TASK_PARENT, dueAt: range },
-      include: { application: { include: { company: true } } },
+      include: { application: { select: APPLICATION_SUMMARY } },
     }),
     db.activity.findMany({
       where: { userId, ...LIVE_ACTIVITY_PARENT, occurredAt: range },
       include: {
-        application: { include: { company: true } },
+        application: { select: APPLICATION_SUMMARY },
         contact: { select: { id: true, name: true } },
       },
     }),
@@ -2708,8 +2807,9 @@ export type Relationships = {
   /** Everyone, richest association first, then longest quiet. */
   contacts: ContactStanding[];
   /**
-   * The ones that earned something and have gone quiet, which is the whole
-   * point of asking. Sorted by what they were worth, not by how quiet.
+   * The ones that earned something — an interview, an offer or a referral —
+   * and have gone quiet, which is the whole point of asking. Sorted by what
+   * silence has cost: value times how far it has faded.
    */
   worthKeepingWarm: ContactStanding[];
   /** Says so plainly when there is not enough here to rank anybody. */
@@ -2729,7 +2829,6 @@ export type SearchDiagnosis = {
   inFlight: number;
   velocity: { weekStart: string; count: number }[];
   stalled: { id: string; company: string; roleTitle: string; stage: Stage; days: number }[];
-  byResume: { id: string; name: string; sent: number; responded: number; rate: number | null }[];
   /**
    * The same question asked of where an application came from rather than what
    * was sent. Referrals converting at four times a job board is the finding
@@ -2933,7 +3032,7 @@ export async function funnelFlows(userId: string): Promise<{
  * a number nobody can act on.
  */
 export async function listRelationships(userId: string, now = new Date()): Promise<Relationships> {
-  const [contacts, applications, stageMoves] = await Promise.all([
+  const [contacts, applications, stageMoves, converted] = await Promise.all([
     db.contact.findMany({
       where: { userId, archivedAt: null },
       select: {
@@ -2957,7 +3056,15 @@ export async function listRelationships(userId: string, now = new Date()): Promi
       where: { userId, toStage: { not: null }, application: { archivedAt: null } },
       select: { applicationId: true, toStage: true },
     }),
+    // A referral they agreed to or put in is something earned, whatever
+    // happened to the application after. Contact archive filter: the contacts
+    // read above already excludes archived people, and this only intersects.
+    db.referral.findMany({
+      where: { userId, status: { in: ["AGREED", "SUBMITTED"] } },
+      select: { contactId: true },
+    }),
   ]);
+  const referred = new Set(converted.map((row) => row.contactId));
 
   // How far each application ever got, by the funnel's own rule: where it sits
   // now, or the furthest it was ever moved to.
@@ -2981,8 +3088,15 @@ export async function listRelationships(userId: string, now = new Date()): Promi
   }
   const liveApplicationIds = new Set(applications.map((application) => application.id));
 
+  // A wishlist row nobody sent is not an association with anybody: being
+  // attached to one used to count as having "earned something".
+  const sent = new Set(
+    applications
+      .filter((application) => application.stage !== "WISHLIST" || reached.get(application.id)?.interview)
+      .map((application) => application.id),
+  );
   const tally = (ids: string[]) => {
-    const seen = new Set(ids);
+    const seen = new Set(ids.filter((id) => sent.has(id)));
     let interviews = 0;
     let offers = 0;
     for (const id of seen) {
@@ -3038,13 +3152,28 @@ export async function listRelationships(userId: string, now = new Date()): Promi
     (a, b) => relationshipWeight(b) - relationshipWeight(a) || b.quietDays - a.quietDays,
   );
 
+  // Earned means something happened: an interview or an offer they are
+  // attached to, directly or at a company they represent, or a referral they
+  // agreed to. Being attached to an application is not it — that made a cold
+  // email nobody answered, and one whose own notes said "do not follow up
+  // again", into somebody worth re-warming.
+  const earned = (row: ContactStanding) =>
+    row.direct.interviews + row.direct.offers + row.atCompany.interviews + row.atCompany.offers > 0 ||
+    referred.has(row.id);
+  // What silence has taken back of what they were worth: the value halves
+  // every WARMTH_HALF_LIFE_DAYS. An order, never a number to read out.
+  const lost = (row: ContactStanding) =>
+    relationshipWeight(row) * (1 - 0.5 ** (row.quietDays / WARMTH_HALF_LIFE_DAYS));
+  const worthKeepingWarm = sorted
+    .filter((row) => earned(row) && (row.pingDue || row.quietDays >= CONTACT_QUIET_AFTER))
+    .sort((a, b) => lost(b) - lost(a));
+
   return {
     contacts: sorted,
-    worthKeepingWarm: sorted.filter(
-      (row) => relationshipWeight(row) > 0 && (row.pingDue || row.quietDays >= CONTACT_QUIET_AFTER),
-    ),
-    // One contact and one application cannot tell anybody who matters.
-    confident: contacts.length >= 3 && applications.length >= 3,
+    worthKeepingWarm,
+    // One contact and one application cannot tell anybody who matters, and
+    // nor can a list where nobody has earned anything yet.
+    confident: contacts.length >= 3 && applications.length >= 3 && sorted.some(earned),
   };
 }
 
@@ -3053,10 +3182,9 @@ export async function listRelationships(userId: string, now = new Date()): Promi
  * company one because the evidence behind it is stronger, and neither is a
  * score anybody is shown — the two counts are.
  *
- * Exported, and hoisted out of `listRelationships` for that, because
- * `contactWarmth` in analytics.ts multiplies it by a decay curve. A second copy
- * of this arithmetic would drift, and then two screens would disagree about who
- * matters, which is the one thing this number exists to settle.
+ * Exported so a screen ordering people can use the same arithmetic. A second
+ * copy would drift, and then two screens would disagree about who matters,
+ * which is the one thing this number exists to settle.
  */
 export function relationshipWeight(row: ContactStanding) {
   return (
@@ -3071,6 +3199,15 @@ export function relationshipWeight(row: ContactStanding) {
 
 /** Days of silence after which a contact who earned something is worth a nudge. */
 const CONTACT_QUIET_AFTER = 30;
+
+/**
+ * How fast a relationship's VALUE fades, for ordering worthKeepingWarm.
+ * Longer than CONTACT_QUIET_AFTER on purpose: silence becomes worth noticing
+ * before the worth of the relationship halves. Forty-five days leaves a
+ * referral at a quarter after three months. Nothing benchmarks it, and no tool
+ * prints it.
+ */
+const WARMTH_HALF_LIFE_DAYS = 45;
 
 export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
   const [applications, transitions] = await Promise.all([
@@ -3175,7 +3312,10 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
       tone: rung.tone,
       reached,
       advanced,
-      rate: reached > 0 ? Math.round((advanced / reached) * 100) : null,
+      // Null under MIN_RATE_BASIS, like every rate the app shows: "100%" off one
+      // application is luck printed as a finding. The verdict reads advanced
+      // and reached itself, under its own thresholds.
+      rate: rateOf(advanced, reached),
       // Timing is measured between STAGE changes, and moving from round two to
       // round three is not one — so every round rung reports how long the
       // interviewing stage takes, which is the only thing the timeline knows.
@@ -3234,26 +3374,9 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
     .filter((row) => hasGoneQuiet(row.stage, row.days, TERMINAL_STAGES))
     .sort((a, b) => b.days - a.days);
 
-  // --- which resume is actually working --------------------------------------
-  const resumeRows = new Map<string, { id: string; name: string; sent: number; responded: number }>();
-  for (const application of applications) {
-    if (!application.resume || (furthest.get(application.id) ?? -1) < 0) continue;
-    const row = resumeRows.get(application.resume.id) ?? {
-      id: application.resume.id,
-      name: application.resume.name,
-      sent: 0,
-      responded: 0,
-    };
-    row.sent += 1;
-    if ((furthest.get(application.id) ?? -1) >= 1) row.responded += 1;
-    resumeRows.set(application.resume.id, row);
-  }
-  const byResume = [...resumeRows.values()]
-    .map((row) => ({ ...row, rate: row.sent > 0 ? Math.round((row.responded / row.sent) * 100) : null }))
-    .sort((a, b) => b.sent - a.sent);
-
   // --- which channel is actually working -------------------------------------
-  // Identical arithmetic to byResume, asked of the source tag instead. An
+  // Per resume is resume_performance's question, and only its: this block used
+  // to answer it too, under a different rule, and the two disagreed. An
   // application wearing two source tags counts into both, so these do not sum
   // to `applied` — which is right: it is evidence about both channels, and
   // splitting it between them would invent a precision nobody recorded.
@@ -3274,12 +3397,15 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
     }
   }
   const bySource = [...sourceRows.values()]
-    .map((row) => ({ ...row, rate: row.sent > 0 ? Math.round((row.responded / row.sent) * 100) : null }))
+    .map((row) => ({ ...row, rate: rateOf(row.responded, row.sent) }))
     .sort((a, b) => b.sent - a.sent);
 
   const applied = [...furthest.values()].filter((value) => value >= 0).length;
+  // The same population pipeline_stats calls active: sent and not closed. A
+  // wishlist row is not in flight, and counting it made this say 11 while
+  // pipeline_stats said 0 about the same board.
   const inFlight = applications.filter(
-    (application) => !TERMINAL_STAGES.includes(application.stage),
+    (application) => application.stage !== "WISHLIST" && !TERMINAL_STAGES.includes(application.stage),
   ).length;
 
   return {
@@ -3289,7 +3415,6 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
     inFlight,
     velocity,
     stalled,
-    byResume,
     bySource,
   };
 }
@@ -3303,6 +3428,9 @@ export async function diagnoseSearch(userId: string): Promise<SearchDiagnosis> {
  * rate is. Under ten applications it says nothing at all, because a diagnosis
  * from four data points is a guess wearing a lab coat.
  */
+/** The verdict's own arithmetic, under its own thresholds — see rateOf for display. */
+const share = (step: FunnelStep) => (step.reached > 0 ? Math.round((step.advanced / step.reached) * 100) : 100);
+
 function verdict(
   steps: FunnelStep[],
   applied: number,
@@ -3316,8 +3444,8 @@ function verdict(
   // round one is upstream of a problem in round three.
   const rounds = steps.filter((candidate) => candidate.key.startsWith("ROUND_"));
   const weakRound = rounds
-    .filter((candidate) => candidate.reached >= 3 && (candidate.rate ?? 100) < 40)
-    .sort((a, b) => (a.rate ?? 100) - (b.rate ?? 100))[0];
+    .filter((candidate) => candidate.reached >= 3 && share(candidate) < 40)
+    .sort((a, b) => share(a) - share(b))[0];
 
   const thisWeek = velocity[velocity.length - 1]?.count ?? 0;
   const previous = velocity.slice(0, -1);
@@ -3336,7 +3464,7 @@ function verdict(
     };
   }
 
-  if (response && response.reached >= 10 && (response.rate ?? 0) < 15) {
+  if (response && response.reached >= 10 && share(response) < 15) {
     return {
       headline: "Almost nothing is coming back.",
       detail: `${response.advanced} of ${response.reached} applications got any response. At this volume that is not bad luck — it is the resume or which jobs you are applying to, and sending more of the same will not fix it.${slowing}`,

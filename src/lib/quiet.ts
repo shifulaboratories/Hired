@@ -33,6 +33,17 @@ export const STALE_AFTER: Partial<Record<string, number>> = {
 };
 
 /**
+ * Whether silence at this stage means anything at all — the stages with a
+ * threshold above. A caller that takes its own day count (morning_brief's
+ * quiet_after_days, the weekly digest's fortnight) still has to ask this
+ * first: filtering on days alone put never-sent wishlist rows at the top of
+ * the brief as "silence this long usually means it is over".
+ */
+export function canGoQuiet(stage: string): boolean {
+  return STALE_AFTER[stage] !== undefined;
+}
+
+/**
  * When a card starts saying how long it has been. Below this the number is
  * noise — everything is a few days quiet — and a badge on every card teaches
  * nothing.

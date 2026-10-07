@@ -24,8 +24,12 @@ type Item = {
   stage: Stage | null;
   due: string;
   overdue: boolean;
-  /** Where the row goes and which snooze applies. */
-  kind: "application" | "contact";
+  /**
+   * Where the row goes and which snooze applies. An offer is an application's
+   * respond-by date: a link and nothing else, because it cannot be snoozed and
+   * answering it is not "logging a chase".
+   */
+  kind: "application" | "contact" | "offer";
 };
 
 export function FollowUpList({
@@ -109,7 +113,11 @@ export function FollowUpList({
               </div>
               <div className="text-faint truncate text-[12px]">{item.roleTitle}</div>
             </Link>
-            {item.stage ? (
+            {item.kind === "offer" ? (
+              <span className="shrink-0 rounded-chip px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+                Answer by
+              </span>
+            ) : item.stage ? (
               <span
                 className="stage-chip shrink-0 rounded-chip px-1.5 py-0.5 text-[11px] font-medium"
                 style={{ ["--tone" as string]: STAGE_TONE[item.stage] }}
@@ -132,7 +140,7 @@ export function FollowUpList({
             {/* Not hidden until hover any more. These are the only actions on
                 the dashboard's main card, and a touch device has no hover: the
                 primary verb was unreachable on a phone. */}
-            <div className="flex gap-1">
+            <div className={cn("flex gap-1", item.kind === "offer" && "invisible")} aria-hidden={item.kind === "offer"}>
               <Button
                 variant="outline"
                 size="xs"

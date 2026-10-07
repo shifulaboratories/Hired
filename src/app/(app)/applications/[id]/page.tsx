@@ -55,7 +55,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
       <FadeIn>
         <Button asChild variant="ghost" size="sm" className="text-muted-foreground -ml-2 mb-4">
           <Link href="/applications">
-            <ArrowLeftIcon /> Pipeline
+            <ArrowLeftIcon /> Board
           </Link>
         </Button>
 

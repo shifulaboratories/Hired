@@ -175,6 +175,16 @@ export async function listLetters(
   });
 }
 
+/**
+ * How many letters the list shows — the same filter, so a badge cannot count
+ * a letter hanging off an archived application that the list below it hides.
+ */
+export async function countLetters(userId: string) {
+  return db.letter.count({
+    where: { userId, OR: [{ applicationId: null }, { application: { archivedAt: null } }] },
+  });
+}
+
 export async function getLetter(userId: string, id: string) {
   return db.letter.findFirst({ where: { id, userId }, include: letterInclude });
 }

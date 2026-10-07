@@ -45,6 +45,7 @@ const analytics = await load("data/analytics.ts");
 const revisions = await load("data/revisions.ts");
 const store = await load("data/revision-store.ts");
 const waitlist = await load("data/waitlist.ts");
+const interviews = await load("data/interviews.ts");
 
 let passed = 0;
 const failures = [];
@@ -268,6 +269,62 @@ try {
     const job = await pipeline.createApplicationIfNew(a.id, { company: "Pendant", roleTitle: "Editor", stage: "WISHLIST" });
     const made = await resumes.createResumeForApplication(a.id, job.application.id, { baseId: base.id });
     ok(made.unbacked.some((row) => row.bullet.includes("$500K")), "the retired claim was not named");
+  });
+
+  // --- The pipeline's numbers -------------------------------------------------
+  const c = await person("c");
+  const old = new Date(Date.now() - 60 * 86_400_000);
+  const quietWish = await pipeline.createApplicationIfNew(c.id, { company: "Wishco", roleTitle: "PM", stage: "WISHLIST" });
+  const quietApplied = await pipeline.createApplicationIfNew(c.id, { company: "Sentco", roleTitle: "PM", stage: "APPLIED" });
+  await db.application.updateMany({ where: { userId: c.id }, data: { createdAt: old, appliedAt: null } });
+  await db.application.update({ where: { id: quietApplied.application.id }, data: { appliedAt: old } });
+  await db.activity.updateMany({ where: { userId: c.id }, data: { occurredAt: old } });
+
+  await check("an unsent wishlist row is never 'gone quiet' in the brief", async () => {
+    const brief = await analytics.morningBrief(c.id, { quietAfterDays: 14 });
+    ok(!brief.quiet.some((row) => row.id === quietWish.application.id), "a wishlist row is in quiet");
+    ok(brief.quiet.some((row) => row.id === quietApplied.application.id), "a silent applied row is missing");
+    ok(!("jobDescription" in (brief.quiet[0] ?? {})), "quiet carries whole rows");
+  });
+
+  await check("in flight means sent and open, the same as pipeline_stats", async () => {
+    const diagnosis = await pipeline.diagnoseSearch(c.id);
+    ok(diagnosis.inFlight === 1, `inFlight is ${diagnosis.inFlight}`);
+    ok(diagnosis.bySource.every((row) => row.rate === null || row.sent >= 5), "a rate from fewer than five");
+    ok(!("byResume" in diagnosis), "per-resume rates are back in the diagnosis");
+  });
+
+  await check("moving back to the wishlist clears the applied date", async () => {
+    const moved = await pipeline.moveApplicationStage(c.id, quietApplied.application.id, "WISHLIST");
+    ok(moved.appliedAt === null, "appliedAt survived");
+    await pipeline.moveApplicationStage(c.id, quietApplied.application.id, "APPLIED");
+  });
+
+  await check("closing as ghosted is not an employer's rejection; closing as rejected is", async () => {
+    const ghost = await pipeline.createApplicationIfNew(c.id, { company: "Ghostco", roleTitle: "PM", stage: "APPLIED" });
+    await pipeline.moveApplicationStage(c.id, ghost.application.id, "LOST", undefined, { lossReasons: ["Ghosted"] });
+    const no = await pipeline.createApplicationIfNew(c.id, { company: "Noco", roleTitle: "PM", stage: "APPLIED" });
+    await pipeline.moveApplicationStage(c.id, no.application.id, "LOST", undefined, { lossReasons: ["Rejected"] });
+    const last = async (id) =>
+      (await db.activity.findFirst({ where: { applicationId: id, toStage: "LOST" }, orderBy: { occurredAt: "desc" } }))?.type;
+    ok((await last(ghost.application.id)) === "STAGE_CHANGE", "ghosted logged as a rejection");
+    ok((await last(no.application.id)) === "REJECTION", "rejected not logged as a rejection");
+  });
+
+  await check("being attached to an unsent application earns nobody a place on the warm list", async () => {
+    await pipeline.createContact(c.id, { name: "Cold Target", applicationId: quietWish.application.id });
+    const contacts = await db.contact.findMany({ where: { userId: c.id } });
+    await db.contact.updateMany({ where: { userId: c.id }, data: { createdAt: old } });
+    const rel = await pipeline.listRelationships(c.id);
+    ok(!rel.worthKeepingWarm.some((row) => row.id === contacts[0].id), "a cold target is worth keeping warm");
+  });
+
+  await check("editing an interview's outcome rewrites its timeline line", async () => {
+    const booked = await interviews.scheduleInterview(c.id, quietApplied.application.id, { format: "VIDEO" });
+    const held = await interviews.recordInterviewOutcome(c.id, booked.interview.id, { outcome: "HELD", debrief: "Went fine" });
+    await interviews.updateInterview(c.id, booked.interview.id, { outcome: "PASSED", debrief: "They moved me on" });
+    const line = await db.activity.findUnique({ where: { id: held.activityId } });
+    ok(line.body.includes("They moved me on"), `the timeline still says: ${line.body}`);
   });
 
   // --- Instance surface -------------------------------------------------------

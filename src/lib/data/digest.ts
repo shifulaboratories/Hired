@@ -1,3 +1,4 @@
+import { canGoQuiet } from "@/lib/quiet";
 import { db } from "@/lib/db";
 import { dueNow, listSchedule } from "@/lib/data/schedule";
 import { diagnoseSearch, listApplications, pipelineStats, STAGE_LABEL } from "@/lib/data/pipeline";
@@ -132,13 +133,16 @@ export async function weeklyContent(userId: string): Promise<DigestContent> {
   const weekAgo = new Date(now.getTime() - 7 * 86_400_000);
   const weekAhead = new Date(now.getTime() + 7 * 86_400_000);
 
-  const [stats, quiet, past, ahead, diagnosis] = await Promise.all([
+  const [stats, quietRows, past, ahead, diagnosis] = await Promise.all([
     pipelineStats(userId),
     listApplications(userId, { quietForDays: 14 }),
     listSchedule(userId, weekAgo, now),
     listSchedule(userId, now, weekAhead),
     diagnoseSearch(userId),
   ]);
+  // The same rule as morning_brief: a wishlist row was never sent, so it has
+  // nobody to chase. See canGoQuiet.
+  const quiet = quietRows.filter((row) => canGoQuiet(row.stage));
 
   const moves = past.filter((entry) => entry.kind === "ACTIVITY");
   const coming = ahead.filter((entry) => entry.kind !== "ACTIVITY");

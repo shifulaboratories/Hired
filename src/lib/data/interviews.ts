@@ -479,9 +479,27 @@ export async function getInterview(userId: string, id: string): Promise<Intervie
   return row ? shapeDetail(row) : null;
 }
 
+/** The line an interview owns on its application's timeline. One wording, two writers. */
+function timelineBody(row: {
+  label: string;
+  round: number;
+  format: InterviewFormat;
+  outcome: InterviewOutcome;
+  debrief: string;
+}) {
+  const label = row.label || `Round ${row.round}`;
+  return [`${label} (${FORMAT_LABEL[row.format]}) — ${OUTCOME_LABEL[row.outcome]}.`, row.debrief.trim()]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 /**
- * Fix a row. Writes no timeline entry — recording how it went is
- * `recordInterviewOutcome`, which is the one write with side effects.
+ * Fix a row. Creates no timeline entry — recording that it happened is
+ * `recordInterviewOutcome`. But when the round already owns a timeline line
+ * and this changes what that line says (its outcome, debrief, label or
+ * format), the line is rewritten to match: the web editor autosaves outcome
+ * and debrief through here, and correcting either used to leave the timeline
+ * saying the old thing.
  *
  * Deliberately does NOT filter on the archive; see the file header.
  */
@@ -512,8 +530,17 @@ export async function updateInterview(
   }
   await raiseApplicationRound(userId, existing.applicationId, patch.label?.trim() ?? "");
 
-  const row = await db.interview.findFirst({ where: { id }, include: detailInclude });
-  return shapeDetail(row!);
+  const touchesLine = ["outcome", "debrief", "label", "format", "round"].some(
+    (key) => patch[key as keyof InterviewInput] !== undefined,
+  );
+  const after = await db.interview.findFirst({ where: { id }, include: detailInclude });
+  if (touchesLine && after?.activityId) {
+    await db.activity.updateMany({
+      where: { id: after.activityId, userId },
+      data: { body: timelineBody(after) },
+    });
+  }
+  return shapeDetail(after!);
 }
 
 /**
@@ -557,13 +584,7 @@ export async function recordInterviewOutcome(
   // The timeline row this interview owns. Rewritten, never duplicated — and
   // re-created when somebody has deleted it from the timeline by hand, which is
   // why activityId carries no foreign key.
-  const label = existing.label || `Round ${existing.round}`;
-  const body = [
-    `${label} (${FORMAT_LABEL[existing.format]}) — ${OUTCOME_LABEL[outcome]}.`,
-    debrief.trim(),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  const body = timelineBody({ ...existing, outcome, debrief });
 
   let activityId = existing.activityId ?? "";
   const owned = activityId

@@ -178,7 +178,7 @@ export default async function ContactsPage({
   return (
     <PageShell>
       <PageHeader
-        eyebrow="CRM"
+        eyebrow="People"
         title="Contacts"
         description="Recruiters, hiring managers, referrals and the friend who might put in a word. Add people from an application, or straight from a company."
         actions={<CrmTabs current="contacts" />}

@@ -15,7 +15,7 @@ import { NewResumeDialog } from "@/components/resume/new-resume-dialog";
 import { ResumeCard } from "@/components/resume/resume-card";
 import { ResumePaper } from "@/components/resume/resume-paper";
 import { PaperThumb } from "@/components/resume/paper-thumb";
-import { db } from "@/lib/db";
+import { chromeProfile } from "@/lib/data/me";
 import { shortDay } from "@/lib/time";
 
 /**
@@ -45,7 +45,7 @@ export async function ResumesPanel({
   const [resumes, profile, headerList] = await Promise.all([
     listResumes(userId, { search, sort }),
     // One read for the whole grid: the thumbnails all draw the same face.
-    db.profile.findUnique({ where: { userId }, select: { photo: true, timeZone: true } }),
+    chromeProfile(userId),
     headers(),
   ]);
   const photo = profile?.photo ?? "";

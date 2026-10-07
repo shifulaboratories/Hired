@@ -77,10 +77,13 @@ type LinkedNote = { id: string; title: string; body: string; kind: "NOTE" | "GUA
 export function RoleEditor({
   role,
   highlights,
+  archived = [],
   notes,
 }: {
   role: Role;
   highlights: Highlight[];
+  /** Retired highlights: never printed, shown apart so they can be restored. */
+  archived?: { id: string; text: string }[];
   notes: LinkedNote[];
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -200,6 +203,7 @@ Manager said in my review I was "the only person who could hold the whole system
             roleName={`${values.title} at ${values.company}`}
             evidenceWords={countWords(resumeEvidence(values.background))}
             highlights={highlights}
+            archived={archived}
           />
           <RoleNotesCard roleId={role.id} notes={notes} />
         </div>
@@ -376,12 +380,20 @@ function HighlightsCard({
   roleName,
   evidenceWords,
   highlights,
+  archived,
 }: {
   roleId: string;
   roleName: string;
   evidenceWords: number;
   highlights: Highlight[];
+  archived: { id: string; text: string }[];
 }) {
+  const [showArchived, setShowArchived] = useState(false);
+  const restore = (id: string) =>
+    startTransition(async () => {
+      await updateHighlightAction(id, { archived: false });
+      toast.success("Restored. It can go on a resume again.");
+    });
   const [pending, startTransition] = useTransition();
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState("");
@@ -454,6 +466,38 @@ function HighlightsCard({
               ))}
             </AnimatePresence>
           </ul>
+        )}
+
+        {archived.length > 0 && (
+          <div className="border-t pt-3">
+            <button
+              type="button"
+              onClick={() => setShowArchived((open) => !open)}
+              className="text-muted-foreground hover:text-foreground text-xs"
+            >
+              Archived ({archived.length}) — never printed{showArchived ? "" : " · show"}
+            </button>
+            {showArchived && (
+              <ul className="mt-2 space-y-1.5">
+                {archived.map((highlight) => (
+                  <li key={highlight.id} className="flex items-start gap-2 text-[13px]">
+                    <span className="text-muted-foreground min-w-0 flex-1 line-through decoration-1">
+                      {highlight.text}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 shrink-0 text-xs"
+                      disabled={pending}
+                      onClick={() => restore(highlight.id)}
+                    >
+                      Restore
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </CardContent>
     </Card>

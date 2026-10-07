@@ -302,6 +302,34 @@ function truncationNotice(shown: number, total: number): string {
   );
 }
 
+/**
+ * One application as a LIST row: what it is, where it stands and how long it
+ * has been quiet — never the posting text (up to 20,000 characters each, a
+ * hundred rows at a time), the owner's id or the sweep's bookkeeping. Notes
+ * are cut to a line, with their length, because they are somebody's working
+ * memory and a hint that there is more is worth a call to get_application.
+ * The board and the CSV export read listApplications directly and keep
+ * everything; only what goes into a conversation is trimmed.
+ */
+function listRow(row: Awaited<ReturnType<typeof pipeline.listApplications>>[number]) {
+  const {
+    userId: _userId,
+    jobDescription: _jobDescription,
+    postingNote: _postingNote,
+    postingMisses: _postingMisses,
+    postingGoneSince: _postingGoneSince,
+    notes,
+    company,
+    ...rest
+  } = row;
+  return {
+    ...rest,
+    company: { id: company.id, name: company.name, website: company.website },
+    notes: notes.length > 280 ? `${notes.slice(0, 280).trimEnd()}…` : notes,
+    notesChars: notes.length,
+  };
+}
+
 /** The `limit` argument every capped list tool takes, worded the same way. */
 const limitArg = (fallback: number) =>
   num(`Max rows to return. Default ${fallback}, hard ceiling ${LIST_CEILING}. Prefer narrowing the filters.`);
@@ -2044,9 +2072,22 @@ export const tools: McpTool[] = [
     },
     handler: async (args, ctx) => {
       const all = await resumes.listResumes(ctx.userId, defined({ search: s(args, "search") }));
-      return all.map((resume) => ({
-        ...resume,
+      // A row, not the document: every resume's whole JSON went out here, eleven
+      // of them at a time. get_resume reads one; the grid reads listResumes
+      // directly and keeps `data` for its thumbnails.
+      return all.map(({ data: _data, userId: _userId, ...resume }) => ({
+        id: resume.id,
+        name: resume.name,
+        targetRole: resume.targetRole,
+        targetCompany: resume.targetCompany,
+        template: resume.template,
+        isFavorite: resume.isFavorite,
+        baseResume: resume.baseResume,
+        applications: resume._count.applications,
+        outcomes: resume.outcomes,
         publicUrl: publicResumeUrl(ctx.baseUrl, resume.slug),
+        createdAt: resume.createdAt,
+        updatedAt: resume.updatedAt,
       }));
     },
   },
@@ -2767,7 +2808,7 @@ export const tools: McpTool[] = [
     name: "list_applications",
     title: "List applications",
     description:
-      "List job applications. By default the closed ones (ACCEPTED and LOST) are excluded. Every row carries two different numbers and they answer different questions: daysInStage is how long it has sat where it is, measured from the last stage change; quietDays is how long since ANYTHING happened to it — a logged call, an email, a stage move. 'What has gone quiet' is quietDays, and lastTouchAt is the date it counts from. Pass quietForDays to return only the ones past that many silent days, which is the fastest way to answer 'what needs chasing'. Capped at 100 rows unless you raise `limit`, and a cut-off result says how many there were before the data, so narrow the filters rather than reporting a short list as everything.",
+      "List job applications, one summary row each — no posting text, and notes cut to a line with their full length in notesChars; get_application returns the whole record, posting included. By default the closed ones (ACCEPTED and LOST) are excluded. Every row carries two different numbers and they answer different questions: daysInStage is how long it has sat where it is, measured from the last stage change; quietDays is how long since ANYTHING happened to it — a logged call, an email, a stage move. 'What has gone quiet' is quietDays, and lastTouchAt is the date it counts from. Pass quietForDays to return only the ones past that many silent days, which is the fastest way to answer 'what needs chasing'. Capped at 100 rows unless you raise `limit`, and a cut-off result says how many there were before the data, so narrow the filters rather than reporting a short list as everything.",
     inputSchema: object({
       stage: { type: "string", enum: STAGE_VALUES, description: "Only this stage" },
       includeClosed: bool("Include accepted / rejected / withdrawn"),
@@ -2783,12 +2824,14 @@ export const tools: McpTool[] = [
     },
     handler: async (args, ctx) =>
       capped(
-        await pipeline.listApplications(ctx.userId, {
-          stage: s(args, "stage") as Stage | undefined,
-          includeClosed: b(args, "includeClosed"),
-          search: s(args, "search"),
-          quietForDays: n(args, "quietForDays"),
-        }),
+        (
+          await pipeline.listApplications(ctx.userId, {
+            stage: s(args, "stage") as Stage | undefined,
+            includeClosed: b(args, "includeClosed"),
+            search: s(args, "search"),
+            quietForDays: n(args, "quietForDays"),
+          })
+        ).map(listRow),
         n(args, "limit"),
         100,
       ),
@@ -3791,7 +3834,7 @@ export const tools: McpTool[] = [
     name: "list_referrals",
     title: "Who vouched for you where",
     description:
-      "Every referral on file, with where it stands and whether it came to anything. Reach for it when somebody asks who has put them forward, who they are still waiting on, or who they owe a thank-you — and reach for list_relationships instead when the question is who is worth talking to at all, because that one covers everybody in the CRM and this one covers only the people who actually asked on your behalf. `converted` is DERIVED from the application's own stage and timeline, not stored, so it cannot disagree with the funnel. `thanksOwed` is the list that matters: it converted and nobody has said thank you, which is the most expensive unclosed loop in a search and is invisible in every other record this app keeps. `waitingDays` counts from the last time the STATUS moved, not from the last edit, so fixing a typo in the notes does not reset the clock. Referrals from an archived person are excluded; one whose application was archived stays, because who put you forward is a fact about the person. Read-only.",
+      "Every referral on file, with where it stands and whether it came to anything. Reach for it when somebody asks who has put them forward, who they are still waiting on, or who they owe a thank-you — and reach for list_relationships instead when the question is who is worth talking to at all, because that one covers everybody in the CRM and this one covers only the people who actually asked on your behalf. `converted` is DERIVED from the application's own stage and timeline, not stored, so it cannot disagree with the funnel. `thanksOwed` is the list that matters: it converted and nobody has said thank you, which is the most expensive unclosed loop in a search and is invisible in every other record this app keeps. `waitingDays` counts from the last time the STATUS moved, not from the last edit, so fixing a typo in the notes does not reset the clock. `byStatus` counts the whole set, whatever the filters, with a line on what each state means for what to do next. For a weekly review, call it twice: thanks_owed true (work through those first — one message each), then waiting_for_days 10 (a nudge is one line, not a second ask). Referrals from an archived person are excluded; one whose application was archived stays, because who put you forward is a fact about the person. Read-only.",
     inputSchema: object({
       contact_id: str("Only referrals from this person"),
       application_id: str("Only referrals for this job"),
@@ -3811,9 +3854,9 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (args, ctx) =>
-      capped(
-        await referrals.listReferrals(
+    handler: async (args, ctx) => {
+      const [rows, byStatus] = await Promise.all([
+        referrals.listReferrals(
           ctx.userId,
           defined({
             contactId: s(args, "contact_id"),
@@ -3825,9 +3868,12 @@ export const tools: McpTool[] = [
             limit: n(args, "limit"),
           }),
         ),
-        n(args, "limit"),
-        100,
-      ),
+        referrals.referralCounts(ctx.userId),
+      ]);
+      const max = Math.min(Math.max(Math.trunc(n(args, "limit") ?? 100), 1), LIST_CEILING);
+      const body = { referrals: rows.slice(0, max), byStatus };
+      return rows.length > max ? withNotice(body, truncationNotice(max, rows.length)) : body;
+    },
   },
   {
     name: "record_referral",
@@ -3917,23 +3963,6 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) => referrals.deleteReferral(ctx.userId, required(args, "id")),
-  },
-  {
-    name: "referral_review",
-    title: "Who you owe a thank-you, and who has gone quiet",
-    description:
-      "The two questions the referral record exists to answer, in one read. `thanksOwed` is anybody whose referral converted and who has never been thanked — work through it first, because it costs one message and it is the difference between a person who refers you once and a person who refers you for the rest of your career. `waiting` is asks that are still ASKED or AGREED and have sat for a while, longest first, so a nudge goes to the right person; a nudge is one line and is not a second ask. `byStatus` counts the whole set and carries a line on what each state means for what to do next. Reach for this in a weekly review, and after any week with several applications. Read-only, saves nothing: update_referral is what records that you acted.",
-    inputSchema: object({
-      waiting_for_days: num("How long counts as waiting. Default 10."),
-    }),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) =>
-      referrals.referralReview(ctx.userId, defined({ waitingForDays: n(args, "waiting_for_days") })),
   },
   {
     name: "log_win",
@@ -4576,7 +4605,7 @@ export const tools: McpTool[] = [
     name: "list_follow_ups",
     title: "List follow-ups that are due",
     description:
-      "The 'what has come round' tool, and the same thing the bell in the app counts. Returns three lists: applications whose follow-up date has arrived or passed, contacts whose ping date has — the people you meant to get back in touch with — and tasks that are due or already late. All three are debts with a date on them; plan a day from the set. Each task carries `overdue`, which separates late from due today. Reach for list_tasks when the date does not matter and list_schedule when the question is about a window of time rather than about what is owed now.",
+      "The 'what has come round' tool, and the same thing the bell in the app counts. Returns four lists: applications whose follow-up date has arrived or passed, contacts whose ping date has — the people you meant to get back in touch with — tasks that are due or already late, and offers whose respond-by date has come round, which are the one date here that cannot be snoozed. All four are debts with a date on them; plan a day from the set. Each task carries `overdue`, which separates late from due today. Reach for list_tasks when the date does not matter and list_schedule when the question is about a window of time rather than about what is owed now.",
     inputSchema: object({
       withinDays: num("Look ahead this many days. 0 = due now, 7 = due within a week."),
     }),
@@ -4588,15 +4617,16 @@ export const tools: McpTool[] = [
     },
     handler: async (args, ctx) => {
       const withinDays = n(args, "withinDays") ?? 0;
-      // The rich rows for the two the caller usually acts on, and dueNow for
-      // the tasks — which is the same function the bell counts from, so the
-      // app and an assistant can never disagree about what is owed.
+      // The rich rows for the two the caller usually acts on, and the bell's
+      // own dueNow for tasks and offer deadlines — the schedule's, not the
+      // pipeline's, which knows nothing of offers. An offer due today was on
+      // the bell and first in the brief, and missing here.
       const [applications, contacts, due] = await Promise.all([
         pipeline.followUpsDue(ctx.userId, withinDays),
         pipeline.contactFollowUpsDue(ctx.userId, withinDays),
-        pipeline.dueNow(ctx.userId, withinDays),
+        schedule.dueNow(ctx.userId, withinDays),
       ]);
-      return { applications, contacts, tasks: due.tasks, total: due.total };
+      return { applications, contacts, tasks: due.tasks, offers: due.offers, total: due.total };
     },
   },
   {
@@ -4660,7 +4690,7 @@ export const tools: McpTool[] = [
     name: "list_relationships",
     title: "Who has been worth something, and who has gone quiet",
     description:
-      "diagnose_search for people. Ranks everyone in the CRM by what they have actually been worth to the search, and says how long since anything was logged against each. Reach for it when somebody asks who to thank, who to nudge, or where their referrals are really coming from — and before a week of cold applications, because the answer is usually that the people already on file outperform them. Two counts per person, kept apart on purpose: `direct` is applications they are attached to, which is somebody who referred you or the recruiter on that thread, and `atCompany` is applications at a company they represent, which is real evidence and much weaker — a recruiter at a five-thousand-person employer did not get you three interviews because you applied three times. Do not add them together and report one number. How far something got is the furthest it ever reached, so a contact on an application rejected after two rounds keeps credit for those two rounds. `worthKeepingWarm` is the subset that earned something and has since gone quiet or has a ping due, which is the actionable list. Archived people and archived applications are excluded. Says confident false when there is too little on file to rank anybody, and you should say so rather than reading the order as meaningful. Read-only.",
+      "diagnose_search for people. Ranks everyone in the CRM by what they have actually been worth to the search, and says how long since anything was logged against each. Reach for it when somebody asks who to thank, who to nudge, or where their referrals are really coming from — and before a week of cold applications, because the answer is usually that the people already on file outperform them. Two counts per person, kept apart on purpose: `direct` is applications they are attached to, which is somebody who referred you or the recruiter on that thread, and `atCompany` is applications at a company they represent, which is real evidence and much weaker — a recruiter at a five-thousand-person employer did not get you three interviews because you applied three times. Do not add them together and report one number. How far something got is the furthest it ever reached, so a contact on an application rejected after two rounds keeps credit for those two rounds. `worthKeepingWarm` is the actionable list: people with an interview or an offer behind them (directly or at their company), or a referral they agreed to, who have since gone quiet or have a ping due — ordered by what silence has cost, so a referral that got an interview and went quiet outranks a recruiter who wrote once. Being attached to an application is not enough, and an unsent wishlist row counts for nothing. Archived people and archived applications are excluded. Says confident false when there is too little on file to rank anybody, and you should say so rather than reading the order as meaningful. Read-only.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -4674,7 +4704,7 @@ export const tools: McpTool[] = [
     name: "diagnose_search",
     title: "Diagnose the job search",
     description:
-      "Works out what is actually going wrong with the search, rather than reporting counts. Returns a one-sentence verdict naming which step of the funnel is losing people — no responses at all is a resume or targeting problem, interviews that do not convert is something else again — plus per-step conversion, median days spent in each stage, weekly volume for the last six weeks, applications that have gone quiet, and the response rate of each resume AND of each source, so you can see both which document is working and which channel is. The source rates are the ones that change what somebody does with a Saturday: referrals converting at four times a job board is an argument for spending it messaging people rather than filling in forms. An application wearing two source tags counts into both, so those rows do not sum to the total applied. Progress is measured by the furthest an application ever got — its `interviewRound` where it has one — so a rejection after a fourth round counts as having got that far. Reach for this before giving advice about a search: it is the difference between 'send more applications' and 'stop sending, the resume is the problem'. Says so plainly when there is not enough data yet. Read-only.",
+      "Works out what is actually going wrong with the search, rather than reporting counts. Returns a one-sentence verdict naming which step of the funnel is losing people — no responses at all is a resume or targeting problem, interviews that do not convert is something else again — plus per-step conversion, median days spent in each stage, weekly volume for the last six weeks, applications that have gone quiet, and the response rate of each source — which channel is working. Per resume is resume_performance's question; it is the one answer to it. Every rate is null under five applications, because a rate off one or two is luck rather than a finding. The source rates are the ones that change what somebody does with a Saturday: referrals converting at four times a job board is an argument for spending it messaging people rather than filling in forms. An application wearing two source tags counts into both, so those rows do not sum to the total applied. Progress is measured by the furthest an application ever got — its `interviewRound` where it has one — so a rejection after a fourth round counts as having got that far. Reach for this before giving advice about a search: it is the difference between 'send more applications' and 'stop sending, the resume is the problem'. Says so plainly when there is not enough data yet. Read-only.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -4751,20 +4781,6 @@ export const tools: McpTool[] = [
         ctx.userId,
         defined({ limit: n(args, "limit"), minPostings: n(args, "min_postings") }),
       ),
-  },
-  {
-    name: "contact_warmth",
-    title: "Who has gone cold that you cannot afford to lose",
-    description:
-      "list_relationships, with time applied to it. It ranks the people in the CRM by what they have actually been worth to the search and then discounts each one by how long since anybody spoke to them, so 'who should I get back in touch with' is one ordered list rather than two columns to combine by eye. Reach for it before a week of cold applications, when somebody asks who to thank or nudge, or when a search has gone quiet and the honest next move is people rather than postings. `cooling` is the list to act on: everyone who earned something — a referral, an introduction, a recruiter on a thread that went somewhere — and has since gone silent or has a ping due, ordered by how much has been LOST rather than by how long it has been, so a referral that produced an onsite three months ago outranks somebody who cold-mailed you once last week. Each person carries the two counts list_relationships gives — `direct`, applications they are attached to, and `atCompany`, applications at a company they represent, which is much weaker evidence — and those are the numbers to quote. THE TRAP: `warmth`, `value` and `decay` are an ORDERING, not a measurement. Never read one out or tell somebody a person is 'at 0.42'; say what they were worth, in the counts, and how long it has been. `confident` false means there is too little on file to rank anybody and the order means nothing — say so rather than reading it as a finding. Archived people and archived applications are excluded. Read-only, saves nothing: schedule_contact_pings puts dates against them and log_follow_up records that you chased one.",
-    inputSchema: object({}),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (_args, ctx) => analytics.contactWarmth(ctx.userId),
   },
   {
     name: "research_freshness",
@@ -6465,7 +6481,7 @@ export const tools: McpTool[] = [
     name: "preview_digest",
     title: "See what a digest would say",
     description:
-      "Build the weekly summary, the due-today nudge or the monthly wins ask and return it WITHOUT sending anything. This is the useful one in a conversation: it is the same read the mail is made from, so 'what does my week look like' and 'what is due today' are answered without anybody's inbox being involved. Returns the subject, the opening line and the sections. `empty` true on a nudge means nothing is due, and on a wins ask means there is no current role for a win to land on — which is why no mail would go out in either case.",
+      "Build the weekly summary, the due-today nudge or the monthly wins ask and return it WITHOUT sending anything. Reach for it beside set_digest_settings, to show somebody what turning one on would send them. For 'what does my week look like' use list_schedule, and for 'what first today' use morning_brief. Returns the subject, the opening line and the sections. `empty` true on a nudge means nothing is due, and on a wins ask means there is no current role for a win to land on — which is why no mail would go out in either case.",
     inputSchema: object({
       kind: {
         type: "string",
@@ -7971,17 +7987,22 @@ ${args.role_id ? `Use role id ${args.role_id}.` : "Call list_roles first and ask
 
 1. Call diagnose_search FIRST. It tells you which step of the funnel is losing people, and the
    whole review should be built around that answer rather than around the counts.
-2. Call pipeline_stats for the shape of the search, and list_follow_ups with withinDays: 7.
-3. Call list_applications and list_activities to see what has actually moved.
-4. Call list_tasks with done: false.
-5. Call list_companies to see who I am talking to, and note any without a website on file.
+2. Call morning_brief with since_days 7, ahead_days 7 and first 15. It carries what is due,
+   what moved this week, what is coming, what has gone quiet by the app's own rule, the
+   pipeline's shape and an ordered list of what to do first — one read, already computed.
+3. Call list_tasks with done: false, for the open tasks that have no date and so are not in
+   the brief.
+4. Call list_referrals with thanks_owed true: a converted referral nobody thanked is the most
+   expensive loop in a search.
 
 Then give me:
 - A two-line summary of where the search stands.
-- Anything stalled: applied over 10 days ago with no movement, or a follow-up date that has passed.
+- What has gone quiet and what is overdue, from the brief — its quiet list is the app's own
+  rule for each stage, so do not apply a stricter one of your own.
 - A prioritised list of what to do this week, most important first, each tied to a specific company.
-- Draft the follow-up messages for anything overdue. Use the timeline so each one refers to what
-  was actually said — a follow-up that mentions the thing the recruiter told me gets answered.
+- Draft the follow-up messages for anything overdue. Read the application's timeline with
+  get_application so each one refers to what was actually said — a follow-up that mentions the
+  thing the recruiter told me gets answered.
 - Create tasks for the actions I should take, with due dates.
 
 Lead with what diagnose_search found. If it says the problem is the resume or the targeting, do not

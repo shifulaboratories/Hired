@@ -17,14 +17,28 @@
  * (`import_resume`). Two implementations of "are these the same bullet" would
  * disagree the first time one of them was tuned.
  */
+/**
+ * The words of one line, remembered. A trace or a usage count compares every
+ * bullet of every resume with every line of evidence, and splitting both
+ * strings again on each comparison was most of the work; the answer is the
+ * same either way. Bounded, so a long session cannot grow it forever.
+ */
+const TOKEN_CACHE = new Map<string, Set<string>>();
+function tokens(value: string): Set<string> {
+  const known = TOKEN_CACHE.get(value);
+  if (known) return known;
+  const found = new Set(
+    value
+      .toLowerCase()
+      .split(/[^a-z0-9+#.]+/)
+      .filter((token) => token.length > 1),
+  );
+  if (TOKEN_CACHE.size >= 5000) TOKEN_CACHE.clear();
+  TOKEN_CACHE.set(value, found);
+  return found;
+}
+
 export function bulletSimilarity(a: string, b: string): number {
-  const tokens = (value: string) =>
-    new Set(
-      value
-        .toLowerCase()
-        .split(/[^a-z0-9+#.]+/)
-        .filter((token) => token.length > 1),
-    );
   const left = tokens(a);
   const right = tokens(b);
   if (left.size === 0 || right.size === 0) return 0;

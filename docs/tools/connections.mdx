@@ -95,7 +95,7 @@ All three are OFF until somebody asks, and this is the only thing that turns the
 
 _See what a digest would say_
 
-Build the weekly summary, the due-today nudge or the monthly wins ask and return it WITHOUT sending anything. This is the useful one in a conversation: it is the same read the mail is made from, so 'what does my week look like' and 'what is due today' are answered without anybody's inbox being involved. Returns the subject, the opening line and the sections. `empty` true on a nudge means nothing is due, and on a wins ask means there is no current role for a win to land on — which is why no mail would go out in either case.
+Build the weekly summary, the due-today nudge or the monthly wins ask and return it WITHOUT sending anything. Reach for it beside set_digest_settings, to show somebody what turning one on would send them. For 'what does my week look like' use list_schedule, and for 'what first today' use morning_brief. Returns the subject, the opening line and the sections. `empty` true on a nudge means nothing is due, and on a wins ask means there is no current role for a win to land on — which is why no mail would go out in either case.
 
 | Argument | Type | |
 | --- | --- | --- |

@@ -13,35 +13,31 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
   const user = await requireUser();
   const headerList = await headers();
   const { id } = await params;
-  const resume = await getResume(user.id, id);
+  // Everything independent in one round: the document, the other documents
+  // by name (so "tailored from" can be set without the full list's outcome
+  // joins), the profile (the photo, so the design toggle previews instantly),
+  // the evidence the editor marks bullets against — the same material and rule
+  // trace_resume_evidence uses — and every job, labels only, to pull one in.
+  const [resume, names, profile, googleConnection, evidence, roleRows] = await Promise.all([
+    getResume(user.id, id),
+    listResumeNames(user.id),
+    getProfile(user.id),
+    accountAccess(user.id),
+    evidenceSources(user.id),
+    listRoles(user.id),
+  ]);
   if (!resume) notFound();
-  // Every other document by name only, so "tailored from" can be set from the
-  // evidence panel without paying for the full list's outcome joins.
-  const siblings = (await listResumeNames(user.id)).filter((row) => row.id !== id);
-
-  // The editor gets the photo whether or not this document shows it, so the
-  // toggle in the design popover previews instantly.
-  const profile = await getProfile(user.id);
-  const googleConnection = await accountAccess(user.id);
+  const siblings = names.filter((row) => row.id !== id);
+  const roles = roleRows.map((role) => ({
+    id: role.id,
+    label: [role.title, role.company].filter(Boolean).join(" — ") || "Untitled role",
+    bullets: role._count.highlights,
+  }));
 
   // The base this variant was tailored from, for the live compare view. A
   // dangling reference (base deleted) resolves to null and the editor simply
   // doesn't offer the comparison.
   const base = resume.baseResumeId ? await getResume(user.id, resume.baseResumeId) : null;
-
-  // The person's own highlights, so the editor can say which bullets are backed
-  // by something they wrote as they type them. The same material and the same
-  // rule trace_resume_evidence uses, so the inline mark and the panel agree.
-  const evidence = await evidenceSources(user.id);
-
-  // Every job on file, so one can be pulled into this document without leaving
-  // the editor. Labels only — the entry itself is built server-side, by the
-  // same code add_role_to_resume runs.
-  const roles = (await listRoles(user.id)).map((role) => ({
-    id: role.id,
-    label: [role.title, role.company].filter(Boolean).join(" — ") || "Untitled role",
-    bullets: role._count.highlights,
-  }));
 
   const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
   const proto =

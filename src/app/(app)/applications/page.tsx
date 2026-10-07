@@ -89,21 +89,30 @@ export default async function ApplicationsPage({
 
   // Resolved once per request: with logos off, no domain reaches the browser
   // at all, so there is nothing for it to go and fetch.
-  const [{ companyLogos }, resumes, savedViews, tagOptions, everyApplication] =
-    await Promise.all([
-      getSettings(),
-      listResumeNames(user.id),
-      listSavedViews(user.id),
-      listTags(user.id, "APPLICATION"),
-      listApplications(user.id, { includeClosed: true }),
-    ]);
-  const bin = await archiveCounts(user.id);
-  // Every view's field set on every load, so the Fields menu paints the change
-  // immediately rather than after a round trip.
-  const profile = await getProfile(user.id);
+  // The profile carries every view's field set, so the Fields menu paints the
+  // change immediately rather than after a round trip. All of it in one round.
+  const [
+    { companyLogos },
+    resumes,
+    savedViews,
+    tagOptions,
+    everyApplication,
+    bin,
+    profile,
+    shares,
+    fieldValues,
+  ] = await Promise.all([
+    getSettings(),
+    listResumeNames(user.id),
+    listSavedViews(user.id),
+    listTags(user.id, "APPLICATION"),
+    listApplications(user.id, { includeClosed: true }),
+    archiveCounts(user.id),
+    getProfile(user.id),
+    listPipelineShares(user.id),
+    applicationFieldValues(user.id),
+  ]);
   const zone = profile.timeZone;
-  const shares = await listPipelineShares(user.id);
-  const fieldValues = await applicationFieldValues(user.id);
   const shareBase = `${headerProto}://${headerHost}`;
 
   // Normalised the same way a view is saved, so "is this the view I am looking
@@ -213,7 +222,7 @@ export default async function ApplicationsPage({
     return (
       <PageShell>
         <PageHeader
-          eyebrow="Pipeline"
+          eyebrow="Board"
           title="Every conversation in flight"
           description="One card per job you are going for. Move it along as things happen, and the follow-up dates set themselves."
         />
@@ -244,7 +253,7 @@ export default async function ApplicationsPage({
     <ApplicationPanelProvider>
       <PageShell className="max-w-none">
         <PageHeader
-          eyebrow={filterLabel(filters) ? `Pipeline · ${filterLabel(filters)}` : "Pipeline"}
+          eyebrow={filterLabel(filters) ? `Board · ${filterLabel(filters)}` : "Board"}
           title="Every conversation in flight"
           description={BLURB[view]}
         />

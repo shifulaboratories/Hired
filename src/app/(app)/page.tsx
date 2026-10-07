@@ -35,7 +35,8 @@ import { listResumeNames } from "@/lib/data/resumes";
 import { getProfile, listNotes, listRoles } from "@/lib/data/me";
 import { taskSubjectOf } from "@/lib/task-subject";
 import { relativeDay } from "@/lib/utils";
-import { civilDay, clockIn } from "@/lib/time";
+import { civilDay, clockIn, endOfDay } from "@/lib/time";
+import { offersDueBy } from "@/lib/data/offers";
 import { timeZoneOf } from "@/lib/data/me";
 import type { Stage } from "@prisma/client";
 
@@ -177,6 +178,7 @@ async function TodayTab({
     queued,
     outboxDrafts,
     outboundSettings,
+    offerDeadlines,
   ] =
     await Promise.all([
       listTasks(userId, { limit: 300 }),
@@ -193,6 +195,7 @@ async function TodayTab({
       listProposals(userId),
       listOutbound(userId, { status: "DRAFT", limit: 10 }),
       getOutboundSettings(userId),
+      offersDueBy(userId, endOfDay(zone, 7)),
     ]);
 
   // Everything a task can be about, in one list for the picker. Built here
@@ -254,6 +257,16 @@ async function TodayTab({
       stage: null,
       dueAt: contact.nextFollowUpAt,
       kind: "contact" as const,
+    })),
+    // The respond-by dates the bell already counts. Today said "what you owe"
+    // and left out the one deadline that cannot be snoozed.
+    ...offerDeadlines.map((offer) => ({
+      id: offer.applicationId,
+      company: offer.application.company.name,
+      roleTitle: offer.application.roleTitle,
+      stage: null,
+      dueAt: offer.respondBy,
+      kind: "offer" as const,
     })),
   ]
     .sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0))
