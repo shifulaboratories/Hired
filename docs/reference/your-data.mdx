@@ -1,0 +1,44 @@
+---
+title: "Taking your data with you"
+sidebarTitle: "Your data"
+description: "One file out holding everything you own, and the same file back in, without overwriting anything."
+icon: "box-archive"
+---
+
+**Settings → Account → Download everything** saves one JSON file holding every record you
+own: Me with its roles, highlights, notes, projects and recorded transfers; your resumes and
+letters; the whole pipeline with its timeline, tasks, offers, interview rounds, question bank,
+referrals, tags and saved views. Over MCP it is `export_everything`. Archived companies,
+people and applications are in the file too, marked as archived, so a restore puts them back
+in the bin rather than on the board.
+
+Handing the file back to `import_everything`, over a connected assistant, restores it.
+There is no Restore button in the app, deliberately: an assistant can dry-run the file first
+and read the report back, and a file picker cannot show you what 1,400 records are about to
+do to a workspace you have already started. The import is matched by natural key: a role by
+employer and title, a company by name, a job by employer and role, an interview by its job
+and round. So it adds what is missing and
+never overwrites what is there, and importing the same file twice does nothing the second
+time. Run it with `dry_run` first on any file you did not write yourself; the report is the
+same, and nothing is written.
+
+## What is deliberately not in the file
+
+| Left out | Why |
+| --- | --- |
+| Connection URLs and their tokens | A connection URL is a credential with full read and write over your workspace. A backup file people email around must not carry one. |
+| Linked mail and calendar accounts | They hold app passwords and refresh tokens. |
+| Published resume and pipeline links | Those are live public addresses. Copying one into a second workspace would either collide or republish your resume at an address somebody else thinks is theirs. |
+| The review queue | A proposal is a question waiting for an answer, not a record of anything. |
+| Attachments | Their bytes would dwarf the file. `pg_dump` is the backup that carries them. |
+| Your profile photo | A data URI nobody restores from a backup, and it would dwarf the rest of the file. |
+| Version history, the change log, built-in assistant conversations | A restore starts its own. |
+
+The export itself lists what it left out, so a file found in six months says so too.
+
+## Spreadsheets
+
+The three CRM lists — companies, people, applications — export as CSV from the **Export**
+button on each list, or with `export_csv`, which takes the same filters, search and sort as
+the list it comes from. Those are for reading in a spreadsheet; the JSON file is the one that
+comes back in.

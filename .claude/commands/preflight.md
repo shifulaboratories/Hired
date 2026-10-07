@@ -1,5 +1,5 @@
 ---
-description: Review uncommitted work against the Resume OS invariants before committing
+description: Review uncommitted work against the Hired invariants before committing
 ---
 
 Review the current diff (`git diff` plus `git diff --staged` plus any untracked files)
@@ -26,7 +26,7 @@ Check each, and say `pass` or `FAIL` with the file and line:
    migration was edited.
 8. **Resume schema** — no field in `src/lib/resume-schema.ts` changed meaning; new fields
    are optional-with-default so old saved documents still render.
-9. **Voice** — README and UI copy match the existing register: plain, second person, no
+9. **Voice** — the manual, the README and UI copy match the existing register: plain, second person, no
    marketing, no emoji, no exclamation marks.
 10. **Build** — `npm run typecheck` and `npm run build` both clean. Actually run them.
 

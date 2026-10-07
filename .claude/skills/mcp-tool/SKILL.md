@@ -1,9 +1,9 @@
 ---
 name: mcp-tool
-description: How to write, name and describe an MCP tool or prompt in Resume OS so an assistant calls it correctly the first time. Use whenever adding, editing or reviewing anything in src/lib/mcp/tools.ts, handler.ts or clients.ts, or when a tool is being called wrongly, ignored, or is producing bad data.
+description: How to write, name and describe an MCP tool or prompt in Hired so an assistant calls it correctly the first time. Use whenever adding, editing or reviewing anything in src/lib/mcp/tools.ts, handler.ts or clients.ts, or when a tool is being called wrongly, ignored, or is producing bad data.
 ---
 
-# Writing MCP tools for Resume OS
+# Writing MCP tools for Hired
 
 The tool list is the product's real API and its real UX. A person's career history gets
 written by whatever an assistant infers from these strings.
@@ -96,12 +96,12 @@ own documentation and keep the `docs` link current, because these formats drift.
 
 ## Before you're done
 
-Bump the tool count in `README.md`, which hardcodes it in three places ("73 tools any MCP
-client can call, 98 if you're an admin" style). The Settings panel derives its number live
-from the tools array, and the Test button reports what actually answered — so a stale
-README is immediately visible to a user as a contradiction. Don't trust any count written
-in prose, this file included — earlier versions of this paragraph hardcoded a number and
-it drifted within a week. The authoritative count is generated on the /docs page; grep
+Run `node tools/gen-tool-docs.mjs`, which rewrites the manual's tool pages and prints the
+member and admin counts, and bump the one paragraph of `README.md` that carries them
+("Connect your AI"). The Settings panel derives its number live from the tools array, and
+the Test button reports what actually answered — so a stale README is immediately visible
+to a user as a contradiction. Don't trust any count written in prose, this file included —
+earlier versions of this paragraph hardcoded a number and it drifted within a week. Grep
 `adminOnly: true` in `tools.ts` for the admin/member split, and remember every prompt is
 also published as a tool, so the callable total is the tools array plus the prompts
 array.
