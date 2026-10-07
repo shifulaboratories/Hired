@@ -337,7 +337,8 @@ ${CRITICAL_RULES}`;
   const admin = isAdmin(user)
     ? `\n\nYou are an ${user.role === "SUPER_ADMIN" ? "instance owner" : "admin"}, so the admin_* tools are
 also available: inviting people, managing accounts and configuring email. Those act on the
-instance, never on another person's career history or resumes.`
+instance, never on another person's career history or resumes. admin_delete_user removes an
+account and everything it owns, for good: name who and what goes, and get a plain yes first.`
     : "";
 
   return `${head}

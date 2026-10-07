@@ -31,7 +31,7 @@ import {
   restoreRecordsAction,
   saveContactAction,
 } from "@/server/actions";
-import { ACTIVITY_LABEL, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
+import { ACTIVITY_LABEL, STAGE_LABEL, STAGE_TONE } from "@/lib/stages";
 import { linkHref } from "@/lib/social";
 import { relativeDay } from "@/lib/utils";
 import { useViewerZone } from "@/components/viewer-zone";

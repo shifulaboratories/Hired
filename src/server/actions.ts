@@ -28,6 +28,8 @@ import * as captureLink from "@/lib/data/capture-link";
 import * as outbound from "@/lib/data/outbound";
 import * as onboarding from "@/lib/data/onboarding";
 import * as assistant from "@/lib/data/assistant";
+import { pendingApproval } from "@/lib/assistant/run";
+import { StaleWriteError } from "@/lib/data/revision-store";
 import * as transferables from "@/lib/data/transferables";
 import {
   authenticate,
@@ -179,18 +181,20 @@ export async function setNewPasswordAction(
 }
 
 export async function changeOwnPasswordAction(
-  _prev: { error?: string; ok?: boolean } | undefined,
+  _prev: { error?: string; ok?: boolean; cut?: boolean } | undefined,
   formData: FormData,
 ) {
   const user = await requireUser();
   const current = String(formData.get("currentPassword") ?? "");
   const next = String(formData.get("newPassword") ?? "");
+  const cut = formData.get("cutConnections") === "on";
   if (next.length < 10) return { error: "Use a password of at least 10 characters." };
   if (!(await authenticate(user.email, current))) return { error: "Your current password is wrong." };
 
-  await users.changePassword(user.id, next);
+  await users.changePassword(user.id, next, { cutConnections: cut });
   await startSession(user.id); // keep this device signed in
-  return { ok: true };
+  revalidatePath("/settings");
+  return { ok: true, cut };
 }
 
 export async function updateOwnAccountAction(patch: { name?: string; email?: string }) {
@@ -736,11 +740,26 @@ export async function createRoleAction(input: me.RoleInput) {
   return role.id;
 }
 
-export async function updateRoleAction(id: string, patch: Partial<me.RoleInput>) {
+/**
+ * `expectedUpdatedAt` is the version the editor last saw. When the role has
+ * moved since — an assistant wrote it — nothing is saved and the answer is
+ * `{ conflict: true }`, which the autosave hook turns into "changed elsewhere".
+ */
+export async function updateRoleAction(
+  id: string,
+  patch: Partial<me.RoleInput>,
+  expectedUpdatedAt?: string,
+): Promise<{ updatedAt: string } | { conflict: true }> {
   const user = await requireUser();
-  await me.updateRole(user.id, id, patch);
-  revalidatePath("/me");
-  revalidatePath(`/me/${id}`);
+  try {
+    const role = await me.updateRole(user.id, id, patch, undefined, { expectedUpdatedAt });
+    revalidatePath("/me");
+    revalidatePath(`/me/${id}`);
+    return { updatedAt: role.updatedAt.toISOString() };
+  } catch (error) {
+    if (error instanceof StaleWriteError) return { conflict: true };
+    throw error;
+  }
 }
 
 export async function deleteRoleAction(id: string) {
@@ -920,11 +939,22 @@ export async function createResumeAction(input: resumes.ResumeMeta & { seedFromM
   return resume.id;
 }
 
-export async function updateResumeAction(id: string, patch: resumes.ResumeMeta & { data?: unknown }) {
+/** See updateRoleAction for `expectedUpdatedAt` and the conflict answer. */
+export async function updateResumeAction(
+  id: string,
+  patch: resumes.ResumeMeta & { data?: unknown },
+  expectedUpdatedAt?: string,
+): Promise<{ updatedAt: string } | { conflict: true }> {
   const user = await requireUser();
-  await resumes.updateResume(user.id, id, patch);
-  revalidatePath("/me");
-  revalidatePath(`/resumes/${id}`);
+  try {
+    const resume = await resumes.updateResume(user.id, id, patch, undefined, { expectedUpdatedAt });
+    revalidatePath("/me");
+    revalidatePath(`/resumes/${id}`);
+    return { updatedAt: resume.updatedAt.toISOString() };
+  } catch (error) {
+    if (error instanceof StaleWriteError) return { conflict: true };
+    throw error;
+  }
 }
 
 /**
@@ -1099,7 +1129,9 @@ export async function addRoleToResumeAction(
   const user = await requireUser();
   const result = await resumes.addRoleToResume(user.id, resumeId, { role, ...options });
   const resume = await resumes.getResume(user.id, resumeId);
-  return { added: result.added, doc: resume!.doc };
+  // The version this write made, so the editor's next save is measured from
+  // it rather than refused as stale.
+  return { added: result.added, doc: resume!.doc, updatedAt: resume!.updatedAt.toISOString() };
 }
 
 export async function duplicateResumeAction(id: string, name?: string) {
@@ -1386,10 +1418,21 @@ export async function createLetterAction(input: letters.LetterInput) {
   return letter.id;
 }
 
-export async function updateLetterAction(id: string, patch: letters.LetterInput) {
+/** See updateRoleAction for `expectedUpdatedAt` and the conflict answer. */
+export async function updateLetterAction(
+  id: string,
+  patch: letters.LetterInput,
+  expectedUpdatedAt?: string,
+): Promise<{ updatedAt: string } | { conflict: true }> {
   const user = await requireUser();
-  const letter = await letters.updateLetter(user.id, id, patch);
-  revalidateLetters(letter.applicationId);
+  try {
+    const letter = await letters.updateLetter(user.id, id, patch, { expectedUpdatedAt });
+    revalidateLetters(letter.applicationId);
+    return { updatedAt: letter.updatedAt.toISOString() };
+  } catch (error) {
+    if (error instanceof StaleWriteError) return { conflict: true };
+    throw error;
+  }
 }
 
 export async function deleteLetterAction(id: string) {
@@ -2225,20 +2268,12 @@ export async function assistantThreadAction(id: string) {
   const user = await requireUser();
   const thread = await assistant.getThread(user.id, id);
   if (!thread) return null;
-  return {
-    id: thread.id,
-    title: thread.title,
-    messages: thread.messages.map((message) => ({
-      id: message.id,
-      role: message.role,
-      content: message.content as unknown[],
-    })),
-  };
-}
-
-export async function renameAssistantThreadAction(id: string, title: string) {
-  const user = await requireUser();
-  await assistant.renameThread(user.id, id, title);
+  const messages = thread.messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content as unknown[],
+  }));
+  return { id: thread.id, title: thread.title, messages, pending: pendingApproval(messages) };
 }
 
 export async function deleteAssistantThreadAction(id: string) {

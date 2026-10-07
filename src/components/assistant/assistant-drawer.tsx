@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { Markdown } from "@/components/markdown";
 import {
   assistantThreadAction,
   assistantThreadsAction,
@@ -225,7 +226,9 @@ export function AssistantDrawer({
     // back rather than silently dropping it — the run settles it either way,
     // but somebody who closed the drawer to think about it should find it
     // where they left it.
-    setPending(unanswered(thread.messages));
+    // Decided on the server, because only it can read which tools are gated:
+    // an ungated call left dangling is not a question to put to anybody.
+    setPending(thread.pending);
   };
 
   const startNew = () => {
@@ -385,7 +388,7 @@ function TurnRow({ turn }: { turn: Turn }) {
     );
   }
   if (turn.kind === "assistant") {
-    return <div className="whitespace-pre-wrap">{turn.text}</div>;
+    return <Markdown text={turn.text} linkPaths />;
   }
   if (turn.kind === "error") {
     return (
@@ -410,24 +413,6 @@ function TurnRow({ turn }: { turn: Turn }) {
 }
 
 /**
- * The irreversible act a stored thread is still waiting on, if any.
- *
- * The last message being the assistant's means nothing answered it. Only the
- * first gated call is offered, which is the same rule the run follows: one
- * click approves one thing.
- */
-function unanswered(messages: { role: string; content: unknown[] }[]): Pending {
-  const last = messages[messages.length - 1];
-  if (!last || last.role !== "assistant") return null;
-  for (const block of (last.content ?? []) as Block[]) {
-    if (block.type === "tool_use" && block.id && block.name) {
-      return { toolUseId: block.id, title: block.name, args: block.input ?? {} };
-    }
-  }
-  return null;
-}
-
-/**
  * A stored transcript, as turns.
  *
  * Only what a person said and what came back. Tool results are stored under the
@@ -440,8 +425,13 @@ function replay(messages: { role: string; content: unknown[] }[]): Turn[] {
   for (const message of messages) {
     if (message.role !== "user" && message.role !== "assistant") continue;
     const blocks = (message.content ?? []) as Block[];
+    // What they typed is a user message's FIRST text block. A second one is the
+    // page they were on, which the loop adds for the model, not for them.
+    let said = false;
     for (const block of blocks) {
       if (block.type === "text" && block.text) {
+        if (message.role === "user" && said) continue;
+        said = true;
         turns.push({ kind: message.role === "assistant" ? "assistant" : "you", text: block.text });
       }
       if (block.type === "tool_use" && block.name) {

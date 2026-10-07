@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRightIcon } from "lucide-react";
 import type { SearchDiagnosis } from "@/lib/data/pipeline";
-import { STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
+import { STAGE_LABEL, STAGE_TONE } from "@/lib/stages";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 

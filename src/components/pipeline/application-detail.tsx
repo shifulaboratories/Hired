@@ -65,7 +65,7 @@ import { ResumePaper, type PaperSettings } from "@/components/resume/resume-pape
 import type { ResumeDoc } from "@/lib/resume-schema";
 import { companyDomain } from "@/lib/company";
 import { useAutosave } from "@/hooks/use-autosave";
-import { ACTIVITY_LABEL, ACTIVITY_OPTIONS, STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
+import { ACTIVITY_LABEL, ACTIVITY_OPTIONS, STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/stages";
 import { cn, describeAdded, relativeDay } from "@/lib/utils";
 import { useViewerZone } from "@/components/viewer-zone";
 import { civilDay, formatIn, shortCivilDay } from "@/lib/time";

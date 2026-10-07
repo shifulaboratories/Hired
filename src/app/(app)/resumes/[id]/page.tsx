@@ -50,6 +50,7 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
   return (
     <ResumeEditor
       id={resume.id}
+      updatedAt={resume.updatedAt.toISOString()}
       canRenderPdf={pdfRenderingAvailable()}
       shareUrl={resume.slug ? `${proto}://${host}/r/${resume.slug}` : null}
       base={base ? { id: base.id, name: base.name, doc: base.doc } : null}

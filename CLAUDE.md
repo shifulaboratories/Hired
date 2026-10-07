@@ -274,7 +274,7 @@ one.
 - **search_me is Postgres FTS now**, OR-ed and stemmed, with expression GIN indexes and an
   immutable `hired_words` wrapper the migration creates.
 - Plus per-source conversion in `diagnose_search`, `list_relationships`, and
-  `capture_job_postings` for a morning of open tabs.
+  `capture_job_posting` taking a list for a morning of open tabs.
 
 What is worth doing next is unglamorous: `.claude/DECISIONS.md` is now long enough that
 its own advice — read from the end — is doing real work.
@@ -307,18 +307,24 @@ it is only stale.
 
 ```bash
 npm run typecheck    # tsc --noEmit — must be clean
+npm run check        # tools/rules.test.mjs: the pure rules, no database (Node 22.18+)
+npm run probe        # tools/probe.mjs: the callers, against a database named *probe*
 npm run build        # must succeed; this is what Railway runs
 ```
 
 If you touched `src/lib/mcp/tools.ts`, also run `node tools/gen-tool-docs.mjs` and commit
 what it rewrites — the manual documents every argument of every tool, and it is generated
-precisely so nobody has to keep a hundred of them right by hand.
+precisely so nobody has to keep a hundred of them right by hand. If you changed a
+description or a workflow, run `node tools/eval-tool-choice.mjs --only=<word>` and compare
+with the last recorded score in the decision log.
 
-These two commands are the *only* gate. There is no CI check on branches or PRs — the
-first thing that compiles your code after you push to main is the Docker image build that
-self-hosters pull — so "it'll get caught later" is false here. There is also no test
-suite; typecheck, build, and actually exercising the change are the whole verification
-story.
+These are the *only* gate. There is no CI check on branches or PRs — the first thing that
+compiles your code after you push to main is the Docker image build that self-hosters
+pull — so "it'll get caught later" is false here. The probe needs its own database
+(`createdb hired_probe`, then `DATABASE_URL=…/hired_probe npx prisma migrate deploy`) and
+refuses any other, because it creates and deletes accounts. When a rule or a guarantee
+changes, change its case in the same commit; a probe that lives only in a session's
+scratch directory guards nothing, which the decision log learned the hard way.
 
 Then the parity check: list what you added, and confirm each item exists in both
 `src/lib/data/` and `src/lib/mcp/tools.ts`.

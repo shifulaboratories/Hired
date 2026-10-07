@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CalendarDaysIcon, KanbanIcon, ListIcon } from "lucide-react";
 import type { Stage } from "@prisma/client";
-import { STAGE_LABEL, TERMINAL_STAGES } from "@/lib/data/pipeline";
+import { STAGE_LABEL, TERMINAL_STAGES } from "@/lib/stages";
 import { SearchBox } from "@/components/crm/search-box";
 import { FilterMenu, type FilterFacets } from "@/components/pipeline/filter-menu";
 import { buildPipelineQuery, type PipelineFilters } from "@/lib/pipeline-filters";

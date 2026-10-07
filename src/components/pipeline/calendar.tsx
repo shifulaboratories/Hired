@@ -10,7 +10,8 @@ import {
   UsersIcon,
 } from "lucide-react";
 import type { Stage } from "@prisma/client";
-import { STAGE_LABEL, STAGE_TONE, type ScheduleKind } from "@/lib/data/pipeline";
+import { STAGE_LABEL, STAGE_TONE } from "@/lib/stages";
+import type { ScheduleKind } from "@/lib/data/pipeline";
 import { cn } from "@/lib/utils";
 import { clockIn, SERVER_ZONE } from "@/lib/time";
 

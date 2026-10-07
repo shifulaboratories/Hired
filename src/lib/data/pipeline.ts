@@ -39,108 +39,19 @@ import { loadPosting, type ParsedPosting } from "@/lib/posting";
 
 /** Like me.ts: userId is the required first argument on every query. */
 
-export const STAGES: Stage[] = [
-  "WISHLIST",
-  "APPLIED",
-  "INTERVIEWING",
-  "OFFER",
-  "ACCEPTED",
-  "LOST",
-];
-
-/** Stages shown as columns on the board. Terminal states get their own view. */
-export const BOARD_STAGES: Stage[] = ["WISHLIST", "APPLIED", "INTERVIEWING", "OFFER"];
-
-export const STAGE_LABEL: Record<Stage, string> = {
-  WISHLIST: "Wishlist",
-  APPLIED: "Applied",
-  INTERVIEWING: "Interviewing",
-  OFFER: "Offer",
-  ACCEPTED: "Accepted",
-  LOST: "Lost",
-};
-
-/**
- * A stage is a position on one path, not a category, so the hue rotates in one
- * direction as an application advances — steel, violet, then gold at the offer.
- * Turning one way is what keeps it a path: you can tell "further along" from
- * two chips without knowing which label is which.
- *
- * The two endings sit outside the rotation because they mean something other
- * than progress. Values are CSS variables so they follow the theme; a fixed
- * colour tuned for one mode goes muddy in the other.
- */
-export const STAGE_TONE: Record<Stage, string> = {
-  WISHLIST: "var(--stage-wishlist)",
-  APPLIED: "var(--stage-applied)",
-  INTERVIEWING: "var(--stage-interview)",
-  OFFER: "var(--stage-offer)",
-  ACCEPTED: "var(--stage-accepted)",
-  LOST: "var(--stage-lost)",
-};
-
-/**
- * How deep into interviewing a card is, as a colour.
- *
- * Screening, interviewing and final round were three stages and therefore three
- * hues, and losing them would have flattened the one thing they got right: you
- * could see from across the board that one job was further along than another.
- * The rounds inherit those hues instead — round 1 wears what screening wore,
- * round 2 what interviewing wore, round 3 and beyond what the final round wore.
- * An application whose round nobody has set gets the base tone, which is most
- * of them and is the point: the board says nothing until you say something.
- */
-export const ROUND_TONE = [
-  "var(--stage-screen)",
-  "var(--stage-interview)",
-  "var(--stage-final)",
-] as const;
-
-export function roundTone(round: number): string {
-  if (round <= 0) return STAGE_TONE.INTERVIEWING;
-  return ROUND_TONE[Math.min(round, ROUND_TONE.length) - 1];
-}
-
-/** "Round 2", or the name it was given. Empty when nobody has said. */
-export function roundLabelOf(round: number, label: string): string {
-  const named = label.trim();
-  if (named) return named;
-  return round > 0 ? `Round ${round}` : "";
-}
-
-export const ACTIVITY_LABEL: Record<ActivityType, string> = {
-  NOTE: "Note",
-  STAGE_CHANGE: "Stage change",
-  EMAIL_SENT: "Email sent",
-  EMAIL_RECEIVED: "Email received",
-  CALL: "Call",
-  INTERVIEW: "Interview",
-  FOLLOW_UP: "Follow-up",
-  APPLIED: "Applied",
-  OFFER: "Offer",
-  REJECTION: "Rejection",
-  REFERRAL: "Referral",
-  OUTREACH: "Outreach",
-};
-
-/**
- * The kinds of touch a person logs by hand, in the order a picker should
- * offer them. The rest of ActivityType is written by the system — a stage
- * change, an application — and offering those invites a timeline that
- * disagrees with the board.
- */
-export const ACTIVITY_OPTIONS: ActivityType[] = [
-  "NOTE",
-  "OUTREACH",
-  "EMAIL_SENT",
-  "EMAIL_RECEIVED",
-  "CALL",
-  "INTERVIEW",
-  "FOLLOW_UP",
-  "REFERRAL",
-];
-
-export const TERMINAL_STAGES: Stage[] = ["ACCEPTED", "LOST"];
+export {
+  STAGES,
+  BOARD_STAGES,
+  STAGE_LABEL,
+  STAGE_TONE,
+  ROUND_TONE,
+  roundTone,
+  roundLabelOf,
+  ACTIVITY_LABEL,
+  ACTIVITY_OPTIONS,
+  TERMINAL_STAGES,
+} from "@/lib/stages";
+import { STAGES, BOARD_STAGES, STAGE_LABEL, STAGE_TONE, ROUND_TONE, roundTone, roundLabelOf, ACTIVITY_LABEL, ACTIVITY_OPTIONS, TERMINAL_STAGES } from "@/lib/stages";
 
 /**
  * Re-exported from src/lib/time.ts, where it moved when referrals.ts needed it.
@@ -644,10 +555,27 @@ export async function upsertCompanyByName(
   // one and every application that went into the archive with it. Restoring
   // the archived one afterwards is refused by name and points at
   // merge_companies, which is the tool for deciding what the one record says.
+  // On an existing company, `extra` only fills what is EMPTY. Its callers pass
+  // what a posting parse or a tool argument guessed, and a guess must not
+  // replace the website or the research somebody filed on purpose — that is
+  // update_company's job, where the replace is the request.
+  const fill = Object.fromEntries(
+    Object.entries(extra ?? {}).filter(([, value]) => typeof value === "string" && value.trim() !== ""),
+  ) as Partial<{ website: string; notes: string }>;
+  const existing = await db.company.findUnique({
+    where: { userId_name_archiveKey: { userId, name: clean, archiveKey: "" } },
+  });
+  if (existing) {
+    const missing = Object.fromEntries(
+      Object.entries(fill).filter(([key]) => !String(existing[key as keyof typeof fill] ?? "").trim()),
+    );
+    if (Object.keys(missing).length === 0) return existing;
+    return db.company.update({ where: { id: existing.id }, data: missing });
+  }
   return db.company.upsert({
     where: { userId_name_archiveKey: { userId, name: clean, archiveKey: "" } },
-    create: { userId, name: clean, ...extra },
-    update: extra ?? {},
+    create: { userId, name: clean, ...fill },
+    update: {},
   });
 }
 
@@ -1073,7 +1001,13 @@ export async function createApplication(userId: string, input: ApplicationInput)
 
 export type CaptureResult =
   | { captured: true; application: Awaited<ReturnType<typeof createApplication>>; parsed: ParsedPosting }
-  | { captured: false; parsed: ParsedPosting; reason: string };
+  | {
+      captured: false;
+      parsed: ParsedPosting;
+      reason: string;
+      /** Set when the job is already on the board: the row they would go looking for. */
+      duplicate?: { existingId: string; company: string; roleTitle: string };
+    };
 
 /**
  * One move from a posting URL to a tracked application: fetch the page, read
@@ -1102,7 +1036,10 @@ export async function captureJobPosting(userId: string, url: string): Promise<Ca
     };
   }
 
-  const application = await createApplication(userId, {
+  // Through the same dedupe the bookmarklet, board watches and batch capture
+  // use. This path created directly, so pasting a link for a job already on
+  // the board made a second row for it.
+  const made = await createApplicationIfNew(userId, {
     company: parsed.company,
     companyWebsite: parsed.companyWebsite || undefined,
     roleTitle: parsed.roleTitle,
@@ -1117,7 +1054,15 @@ export async function captureJobPosting(userId: string, url: string): Promise<Ca
     // unless the parser genuinely says something new.
     sources: parsed.source ? [parsed.source] : [],
   });
-  return { captured: true, application, parsed };
+  if (!made.created) {
+    return {
+      captured: false,
+      parsed,
+      duplicate: { existingId: made.existingId, company: made.company, roleTitle: made.roleTitle },
+      reason: `${made.roleTitle} at ${made.company} is already on the board (${made.existingId}). Nothing was created.`,
+    };
+  }
+  return { captured: true, application: made.application, parsed };
 }
 
 /**

@@ -11,6 +11,8 @@ import { generatePassphrase } from "@/lib/passphrase";
 import { recordAudit } from "@/lib/data/audit";
 import { getSettings } from "@/lib/settings";
 import { inviteEmail, sendEmail } from "@/lib/email";
+import { rotateConnection } from "@/lib/data/connections";
+import { revokeCaptureLink } from "@/lib/data/capture-link";
 
 const INVITE_DAYS = 14;
 
@@ -305,7 +307,19 @@ export async function deleteUser(actor: User, userId: string) {
   return deleted;
 }
 
-export async function changePassword(userId: string, password: string) {
+/**
+ * `cutConnections` also changes every connection URL and withdraws the capture
+ * link. Signing every session out does not evict somebody who copied a
+ * connection URL from Settings while they were in — those never expire — and
+ * "someone got into my account" is the usual reason a password changes. Off
+ * for an admin's reset on purpose: someone who forgot their password would
+ * lose every connected client without being told.
+ */
+export async function changePassword(
+  userId: string,
+  password: string,
+  options: { cutConnections?: boolean } = {},
+) {
   assertUsablePassword(password);
   await db.user.update({
     where: { id: userId },
@@ -316,6 +330,11 @@ export async function changePassword(userId: string, password: string) {
   });
   // Every other device gets signed out; the caller re-establishes its own session.
   await db.session.deleteMany({ where: { userId } });
+  if (options.cutConnections) {
+    const connections = await db.mcpConnection.findMany({ where: { userId }, select: { id: true } });
+    for (const connection of connections) await rotateConnection(userId, connection.id);
+    await revokeCaptureLink(userId);
+  }
 }
 
 export async function updateOwnAccount(userId: string, patch: { name?: string; email?: string }) {

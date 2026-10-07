@@ -1,3 +1,5 @@
+import { guardedFetch } from "@/lib/safe-fetch";
+
 /**
  * Turning whatever someone hands us into a photo we are willing to store.
  *
@@ -83,27 +85,12 @@ export function normalizePhotoDataUri(value: string): PhotoResult {
  * profile photo is never a good enough reason to become somebody's proxy.
  */
 export async function photoFromUrl(url: string): Promise<PhotoResult> {
-  let parsed: URL;
-  try {
-    parsed = new URL(url.trim());
-  } catch {
-    throw new Error("That is not a URL.");
-  }
-  if (parsed.protocol !== "https:") throw new Error("Photo links have to be https.");
-
-  const host = parsed.hostname.toLowerCase();
-  const privateHost =
-    host === "localhost" ||
-    host.endsWith(".local") ||
-    host.endsWith(".internal") ||
-    /^\d+\.\d+\.\d+\.\d+$/.test(host) ||
-    host.includes(":");
-  if (privateHost) throw new Error("That address points inside a network, not at an image.");
-
-  const response = await fetch(parsed, {
+  // The shared guard, redirects and all — see safe-fetch.ts. This used to
+  // follow redirects automatically after checking only the name.
+  const { response } = await guardedFetch(url, {
+    httpsOnly: true,
     headers: { Accept: "image/*" },
-    redirect: "follow",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    timeoutMs: FETCH_TIMEOUT_MS,
   });
   if (!response.ok) throw new Error(`That link answered ${response.status}.`);
 

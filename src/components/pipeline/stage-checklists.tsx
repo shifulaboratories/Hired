@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { SaveIndicator } from "@/components/save-indicator";
 import { useAutosave } from "@/hooks/use-autosave";
-import { STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
+import { STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/stages";
 import { cn } from "@/lib/utils";
 import {
   createStageTemplateAction,

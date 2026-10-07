@@ -13,9 +13,11 @@ export function SaveIndicator({ state, className }: { state: SaveState; classNam
         ? { icon: <CheckIcon className="size-3" />, text: "Saved", tone: "text-[var(--success)]" }
         : state === "error"
           ? { icon: <TriangleAlertIcon className="size-3" />, text: "Save failed", tone: "text-destructive" }
-          : state === "dirty"
-            ? { icon: <span className="bg-muted-foreground/60 size-1.5 rounded-full" />, text: "Unsaved", tone: "text-muted-foreground" }
-            : null;
+          : state === "conflict"
+            ? { icon: <TriangleAlertIcon className="size-3" />, text: "Changed elsewhere — not saved", tone: "text-destructive" }
+            : state === "dirty"
+              ? { icon: <span className="bg-muted-foreground/60 size-1.5 rounded-full" />, text: "Unsaved", tone: "text-muted-foreground" }
+              : null;
 
   return (
     <div className={cn("flex h-4 items-center", className)}>

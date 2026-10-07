@@ -2,11 +2,12 @@ import { randomBytes } from "node:crypto";
 import type { Prisma, Stage } from "@prisma/client";
 import { db } from "@/lib/db";
 import { pick } from "@/lib/data/patch";
-import { snapshot, APP_AUTHOR, type WriteAuthor } from "@/lib/data/revision-store";
+import { snapshot, assertFresh, StaleWriteError, APP_AUTHOR, type WriteAuthor } from "@/lib/data/revision-store";
 import {
   blankSection,
   emptyResumeDoc,
   parseResumeDoc,
+  parseResumeDocStrict,
   rid,
   type ResumeDoc,
 } from "@/lib/resume-schema";
@@ -205,7 +206,7 @@ export async function createResume(
   input: ResumeMeta & { data?: unknown; seedFromMe?: boolean; baseResumeId?: string },
 ) {
   const doc = input.data
-    ? parseResumeDoc(input.data)
+    ? parseResumeDocStrict(input.data)
     : input.seedFromMe
       ? await buildDocFromMe(userId)
       : emptyResumeDoc();
@@ -259,12 +260,14 @@ export async function updateResume(
    * taken on the only path.
    */
   author: WriteAuthor = APP_AUTHOR,
+  /** The editor's last-seen version. See StaleWriteError. */
+  options: { expectedUpdatedAt?: Date | string } = {},
 ) {
   // slug / visibility / publishedAt are deliberately absent: publishing goes
   // through publishResume, which allocates an unguessable slug and keeps the
   // promise that a withdrawn address stays dead.
   const data: Record<string, unknown> = pick(patch, RESUME_COLUMNS);
-  if (patch.data !== undefined) data.data = parseResumeDoc(patch.data) as unknown as object;
+  if (patch.data !== undefined) data.data = parseResumeDocStrict(patch.data) as unknown as object;
   // A patch of nothing-we-recognise leaves Prisma with no columns to write, and
   // updateMany then reports zero rows — which would raise "no such resume" for a
   // resume that plainly exists. Check ownership directly instead.
@@ -272,6 +275,15 @@ export async function updateResume(
     const current = await db.resume.findFirst({ where: { id, userId } });
     if (!current) throw new Error(`No resume with id ${id}`);
     return current;
+  }
+
+  let seen: Date | null = null;
+  if (options.expectedUpdatedAt) {
+    const current = await db.resume.findFirst({ where: { id, userId }, select: { updatedAt: true } });
+    if (current) {
+      assertFresh("resume", current.updatedAt, options.expectedUpdatedAt);
+      seen = current.updatedAt;
+    }
   }
 
   // Only when the DOCUMENT is being replaced. Changing a font or a name is one
@@ -293,7 +305,11 @@ export async function updateResume(
     }
   }
 
-  const { count } = await db.resume.updateMany({ where: { id, userId }, data });
+  const { count } = await db.resume.updateMany({
+    where: { id, userId, ...(seen ? { updatedAt: seen } : {}) },
+    data,
+  });
+  if (count === 0 && seen) throw new StaleWriteError("resume");
   if (count === 0) throw new Error(`No resume with id ${id}`);
   return db.resume.findFirstOrThrow({ where: { id, userId } });
 }
@@ -310,8 +326,12 @@ export async function updateResume(
 export async function setResumeBase(userId: string, id: string, baseResumeId: string | null) {
   const resume = await db.resume.findFirst({ where: { id, userId } });
   if (!resume) throw new Error(`No resume with id ${id}`);
+  // updatedAt is kept, here and in publish and unpublish: these change no
+  // words, and the editor's stale-save check reads updatedAt as "the document
+  // moved". Bumping it would refuse the next keystroke after a click in the
+  // editor's own toolbar.
   if (baseResumeId === null) {
-    return db.resume.update({ where: { id }, data: { baseResumeId: null } });
+    return db.resume.update({ where: { id }, data: { baseResumeId: null, updatedAt: resume.updatedAt } });
   }
   if (baseResumeId === id) throw new Error("A resume cannot be tailored from itself.");
 
@@ -327,7 +347,7 @@ export async function setResumeBase(userId: string, id: string, baseResumeId: st
     if (!next) throw new Error(`No resume with id ${cursor}`);
     cursor = next.baseResumeId;
   }
-  return db.resume.update({ where: { id }, data: { baseResumeId } });
+  return db.resume.update({ where: { id }, data: { baseResumeId, updatedAt: resume.updatedAt } });
 }
 
 /** One bullet, and the material that stands behind it. */
@@ -416,10 +436,18 @@ export async function resumeAtsReport(userId: string, id: string) {
  * memory, and the failure mode is silently dropping half a job. This reads,
  * moves and writes back, so nothing can be lost on the way.
  */
-export async function reorderResume(userId: string, id: string, input: ReorderInput) {
+export async function reorderResume(
+  userId: string,
+  id: string,
+  input: ReorderInput,
+  author: WriteAuthor = APP_AUTHOR,
+) {
   const resume = await db.resume.findFirst({ where: { id, userId } });
   if (!resume) throw new Error(`No resume with id ${id}`);
   const { doc, moved } = reorderDoc(parseResumeDoc(resume.data), input);
+  // Versioned like any other write to the document, so the change log's
+  // offer to undo it is true.
+  await snapshot(userId, "RESUME", id, { name: resume.name, doc: resume.data }, resume.name, author);
   await db.resume.update({ where: { id: resume.id }, data: { data: doc as unknown as object } });
   return {
     resume: { id: resume.id, name: resume.name },
@@ -497,6 +525,7 @@ export async function addRoleToResume(
   userId: string,
   resumeId: string,
   input: { role: string; section?: string; position?: number; bullets?: number },
+  author: WriteAuthor = APP_AUTHOR,
 ) {
   const resume = await db.resume.findFirst({ where: { id: resumeId, userId } });
   if (!resume) throw new Error(`No resume with id ${resumeId}`);
@@ -572,6 +601,7 @@ export async function addRoleToResume(
       index === sectionAt ? { ...each, experience } : each,
     ),
   };
+  await snapshot(userId, "RESUME", resume.id, { name: resume.name, doc: resume.data }, resume.name, author);
   await db.resume.update({
     where: { id: resume.id },
     data: { data: next as unknown as object },
@@ -901,6 +931,12 @@ function randomSuffix(bytes = 12) {
   return out;
 }
 
+/**
+ * The readable half of a public link: the person's own name from the document
+ * header, which the page shows anyway. Never the document's name — that is
+ * private, and by default it is the target company ("Acme — Product Lead"), so
+ * a link sent to one employer named another.
+ */
 function slugStem(name: string) {
   const stem = name
     .toLowerCase()
@@ -928,11 +964,11 @@ export async function publishResume(userId: string, id: string) {
   // The unique index is the real arbiter; retry on the (vanishingly unlikely)
   // collision rather than trusting a pre-check that another request can race.
   for (let attempt = 0; attempt < 5; attempt++) {
-    const slug = `${slugStem(resume.name)}-${randomSuffix()}`;
+    const slug = `${slugStem(parseResumeDoc(resume.data).header.name)}-${randomSuffix()}`;
     try {
       const { count } = await db.resume.updateMany({
         where: { id, userId },
-        data: { slug, visibility: "UNLISTED", publishedAt: new Date() },
+        data: { slug, visibility: "UNLISTED", publishedAt: new Date(), updatedAt: resume.updatedAt },
       });
       if (count === 0) throw new Error(`No resume with id ${id}`);
       return db.resume.findFirstOrThrow({ where: { id, userId } });
@@ -949,9 +985,11 @@ export async function publishResume(userId: string, id: string) {
  * dead for good — publishing again gives a different one.
  */
 export async function unpublishResume(userId: string, id: string) {
+  const current = await db.resume.findFirst({ where: { id, userId }, select: { updatedAt: true } });
+  if (!current) throw new Error(`No resume with id ${id}`);
   const { count } = await db.resume.updateMany({
     where: { id, userId },
-    data: { slug: null, visibility: "PRIVATE", publishedAt: null },
+    data: { slug: null, visibility: "PRIVATE", publishedAt: null, updatedAt: current.updatedAt },
   });
   if (count === 0) throw new Error(`No resume with id ${id}`);
   return db.resume.findFirstOrThrow({ where: { id, userId } });
@@ -976,8 +1014,11 @@ export async function unpublishResume(userId: string, id: string) {
  */
 export async function getResumeBySlug(slug: string) {
   if (!slug) return null;
+  // A suspended owner's link 404s like any unknown slug, and comes back on
+  // reactivation because the slug is untouched. A billing lapse or an admin's
+  // suspension otherwise left the page serving from this domain.
   const resume = await db.resume.findFirst({
-    where: { slug, visibility: "UNLISTED" },
+    where: { slug, visibility: "UNLISTED", user: { isActive: true } },
     select: {
       name: true,
       data: true,

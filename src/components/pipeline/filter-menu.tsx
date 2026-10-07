@@ -1,7 +1,7 @@
 import type { Stage } from "@prisma/client";
 import { FacetMenu, type FacetGroup } from "@/components/filters/facet-menu";
 import { tagTone } from "@/lib/data/tags";
-import { BOARD_STAGES, STAGE_LABEL, STAGE_TONE, TERMINAL_STAGES } from "@/lib/data/pipeline";
+import { BOARD_STAGES, STAGE_LABEL, STAGE_TONE, TERMINAL_STAGES } from "@/lib/stages";
 import { buildPipelineQuery, toggleIn, type PipelineFilters } from "@/lib/pipeline-filters";
 
 export type FilterFacets = {

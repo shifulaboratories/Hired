@@ -1,7 +1,5 @@
-import type { McpScope } from "@prisma/client";
 import { db } from "@/lib/db";
 import { recordAudit } from "@/lib/data/audit";
-import { SCOPE_VALUES } from "@/lib/mcp/scopes";
 
 /**
  * Instance-wide configuration, stored in the database rather than in env vars
@@ -65,7 +63,6 @@ export const SETTING_KEYS = {
   assistantApiKey: "assistant_api_key",
   assistantModel: "assistant_model",
   assistantDailyMessages: "assistant_daily_messages",
-  assistantScope: "assistant_scope",
 } as const;
 
 export type InstanceSettings = {
@@ -147,10 +144,8 @@ export type InstanceSettings = {
    */
   assistantApiKey: string;
   assistantModel: string;
-  /** Messages one person may send in a day. 0 means no cap. */
+  /** Messages one person may send in a day, 1 to 10,000. Unset or 0 reads as 50. */
   assistantDailyMessages: number;
-  /** Which subset of the tools the assistant is served. The same four scopes. */
-  assistantScope: McpScope;
 };
 
 /**
@@ -455,21 +450,11 @@ export const VARIABLES: VariableDef[] = [
     key: SETTING_KEYS.assistantDailyMessages,
     field: "assistantDailyMessages",
     label: "Messages a day, each",
-    help: "How many messages one person may send in a day, counted in their own time zone. 0 means no cap at all, which on a key you are paying for is a decision rather than a default.",
+    help: "How many messages one person may send in a day, counted in their own time zone. Between 1 and 10,000; blank means 50.",
     kind: "text",
     group: "Assistant",
     placeholder: "50",
     fallback: "50",
-  },
-  {
-    key: SETTING_KEYS.assistantScope,
-    field: "assistantScope",
-    label: "Tools it is served",
-    help: "FULL, WRITING, PIPELINE or READONLY — the same four a connection can be narrowed to. This is the one honest cost lever: the whole tool surface is roughly sixty thousand tokens of definitions on every turn, and WRITING is about a quarter of that. It is not a permission; the assistant runs as whoever is signed in.",
-    kind: "text",
-    group: "Assistant",
-    placeholder: "FULL",
-    fallback: "FULL",
   },
 ];
 
@@ -527,7 +512,6 @@ export async function getSettings(): Promise<InstanceSettings> {
     assistantApiKey: raw(SETTING_KEYS.assistantApiKey),
     assistantModel: raw(SETTING_KEYS.assistantModel).trim() || DEFAULT_ASSISTANT_MODEL,
     assistantDailyMessages: byteCap(raw(SETTING_KEYS.assistantDailyMessages), 50, 10_000),
-    assistantScope: readScope(raw(SETTING_KEYS.assistantScope)),
     attachmentMaxBytes: byteCap(raw(SETTING_KEYS.attachmentMaxBytes), 8_000_000, 100_000_000),
     attachmentWorkspaceBytes: byteCap(
       raw(SETTING_KEYS.attachmentWorkspaceBytes),
@@ -552,19 +536,6 @@ export async function getSettings(): Promise<InstanceSettings> {
  * Nonsense falls back to the default rather than to zero: a cap of zero would
  * refuse every attachment with a message about a setting nobody meant to set.
  */
-/**
- * A stored scope, or FULL.
- *
- * Validated rather than cast: a typo saved through admin_set_variable would
- * otherwise reach toolsFor() as a scope nothing matches, and the assistant
- * would quietly be served an empty tool list — which looks like a broken model
- * rather than like a bad setting.
- */
-function readScope(value: string): McpScope {
-  const upper = value.trim().toUpperCase();
-  return (SCOPE_VALUES as readonly string[]).includes(upper) ? (upper as McpScope) : "FULL";
-}
-
 function byteCap(raw: string, fallback: number, ceiling: number): number {
   const parsed = Number.parseInt(raw, 10);
   if (Number.isNaN(parsed) || parsed <= 0) return fallback;

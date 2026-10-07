@@ -534,7 +534,7 @@ export async function skillsGap(
   const caveats: string[] = [];
   if (postings.length < MIN_POSTINGS_FOR_CONFIDENCE) {
     caveats.push(
-      `Only ${postings.length} posting${postings.length === 1 ? " was" : "s were"} captured, so this is not yet a pattern. Capture more with capture_job_postings.`,
+      `Only ${postings.length} posting${postings.length === 1 ? " was" : "s were"} captured, so this is not yet a pattern. Capture more with capture_job_posting.`,
     );
   }
   if (withoutPosting > 0) {

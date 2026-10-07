@@ -40,6 +40,7 @@ export default async function RolePage({ params }: { params: Promise<{ roleId: s
             tags: role.tags,
             startUnconfirmed: role.startUnconfirmed,
             endUnconfirmed: role.endUnconfirmed,
+            updatedAt: role.updatedAt.toISOString(),
           }}
           highlights={role.highlights.map((h) => ({
             id: h.id,

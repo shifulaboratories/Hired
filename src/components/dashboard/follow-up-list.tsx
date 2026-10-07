@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { AlarmClockIcon, CheckIcon, ClockIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
+import { STAGE_LABEL, STAGE_TONE } from "@/lib/stages";
 import type { Stage } from "@prisma/client";
 import {
   logContactFollowUpAction,

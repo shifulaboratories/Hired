@@ -6,7 +6,7 @@ import { useMemo, useState, useTransition } from "react";
 import { ArrowDownIcon, ArrowUpIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { Stage } from "@prisma/client";
-import { STAGES, STAGE_LABEL, STAGE_TONE, TERMINAL_STAGES } from "@/lib/data/pipeline";
+import { STAGES, STAGE_LABEL, STAGE_TONE, TERMINAL_STAGES } from "@/lib/stages";
 import { STALE_AFTER, hasGoneQuiet } from "@/lib/quiet";
 import type { ListRow, ListSort } from "@/lib/pipeline-list";
 import { ApplicationActions } from "@/components/pipeline/application-actions";

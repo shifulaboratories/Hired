@@ -37,7 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { ACTIVITY_LABEL, ACTIVITY_OPTIONS, STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
+import { ACTIVITY_LABEL, ACTIVITY_OPTIONS, STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/stages";
 import type { ActivityType, Stage } from "@prisma/client";
 import {
   addActivityAction,

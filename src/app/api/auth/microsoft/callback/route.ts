@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSettings, microsoftIsConfigured } from "@/lib/settings";
-import { getCurrentUser } from "@/lib/auth";
+import { currentUserForApi } from "@/lib/auth";
 import { unpackState, type GoogleRefusal } from "@/lib/google";
 import {
   MICROSOFT_STATE_COOKIE,
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
   const code = url.searchParams.get("code");
   if (!code) return fail("failed");
 
-  const user = await getCurrentUser();
+  const user = await currentUserForApi();
   if (!user) return fail("expired_state");
 
   const baseUrl = settings.publicUrl || baseUrlFrom(request.headers, request.url);
