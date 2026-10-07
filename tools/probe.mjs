@@ -47,6 +47,9 @@ const store = await load("data/revision-store.ts");
 const waitlist = await load("data/waitlist.ts");
 const interviews = await load("data/interviews.ts");
 const tagsData = await load("data/tags.ts");
+const transfer = await load("data/transfer.ts");
+const referrals = await load("data/referrals.ts");
+const transferables = await load("data/transferables.ts");
 const { tools } = await load("mcp/tools.ts");
 const tool = (name) => {
   const found = tools.find((t) => t.name === name);
@@ -381,6 +384,39 @@ try {
     const who = await tool("whoami")(c, {});
     ok(who.connection?.name === "Probe" && who.connection.scope === "FULL", "no connection in whoami");
     ok(who.setup && typeof who.setup === "object" && !("tourSeenAt" in who.setup), "setup is missing or carries the tour");
+  });
+
+  // --- Moving a workspace ------------------------------------------------------
+  await check("an export carries interview rounds, questions, referrals and transfers, and restores once", async () => {
+    const from = await person("from");
+    const into = await person("into");
+    const job = await pipeline.createApplicationIfNew(from.id, { company: "Roundco", roleTitle: "PM", stage: "INTERVIEWING" });
+    const dana = await pipeline.createContact(from.id, { name: "Dana Round", email: "dana@roundco.invalid" });
+    const booked = await interviews.scheduleInterview(from.id, job.application.id, {
+      label: "Onsite",
+      format: "ONSITE",
+      interviewerIds: [dana.id],
+    });
+    await interviews.addQuestions(from.id, booked.interview.id, [{ question: "Tell me about a launch that slipped", answer: "The billing rewrite" }]);
+    await interviews.recordInterviewOutcome(from.id, booked.interview.id, { outcome: "HELD", debrief: "Went well" });
+    await referrals.createReferral(from.id, { contactId: dana.id, applicationId: job.application.id, status: "AGREED" });
+    await transferables.createTransferable(from.id, { have: "Looker", covers: ["Tableau"] });
+
+    const file = JSON.parse(JSON.stringify(await transfer.exportWorkspace(from.id)));
+    for (const name of ["interviews", "interviewers", "interviewQuestions", "referrals", "transferableSkills"]) {
+      ok(file.counts[name] === 1, `${name} exported ${file.counts[name]}`);
+    }
+    const first = await transfer.importWorkspace(into.id, file);
+    ok(first.problems.length === 0, `problems: ${first.problems.join("; ")}`);
+    const round = await db.interview.findFirst({ where: { userId: into.id }, include: { interviewers: true, questions: true } });
+    ok(round?.label === "Onsite" && round.format === "ONSITE" && round.outcome === "HELD", "the round did not come back as it was");
+    ok(round.interviewers.length === 1 && round.questions.length === 1, "the round lost its interviewer or its question");
+    ok(round.activityId !== null, "the round lost its timeline line");
+    ok((await db.referral.count({ where: { userId: into.id, status: "AGREED" } })) === 1, "the referral did not come back");
+    ok((await db.transferableSkill.count({ where: { userId: into.id } })) === 1, "the transfer did not come back");
+    const second = await transfer.importWorkspace(into.id, file);
+    const again = Object.values(second.created).reduce((sum, n) => sum + n, 0);
+    ok(again === 0, `a second import created ${JSON.stringify(second.created)}`);
   });
 
   // --- Instance surface -------------------------------------------------------
