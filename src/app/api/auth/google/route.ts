@@ -8,7 +8,7 @@ import {
   packState,
 } from "@/lib/google";
 import { baseUrlFrom } from "@/lib/request-url";
-import { getCurrentUser } from "@/lib/auth";
+import { currentUserForApi } from "@/lib/auth";
 
 /**
  * Start a Google sign-in. A GET because it is reached by a link on the sign-in
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   // the session cookie.
   const wantsLink = request.nextUrl.searchParams.get("link") === "1";
   const wantsData = request.nextUrl.searchParams.get("data") === "1";
-  const signedIn = wantsLink || wantsData ? await getCurrentUser() : null;
+  const signedIn = wantsLink || wantsData ? await currentUserForApi() : null;
   if (wantsData && !signedIn) {
     return NextResponse.redirect(new URL("/login?next=/settings?tab=connections", request.url));
   }

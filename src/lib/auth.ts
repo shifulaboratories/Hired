@@ -386,6 +386,20 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 /**
+ * The signed-in person for a route that must answer rather than redirect —
+ * the assistant's stream, the OAuth hops — with requireUser's password gate
+ * kept. An account still on a password somebody handed it gets null here, the
+ * same as no session: otherwise the drawer could drive every tool, and the
+ * Google link route could turn a leaked temporary password into a lasting
+ * sign-in, without the person ever setting their own.
+ */
+export async function currentUserForApi(): Promise<User | null> {
+  const user = await getCurrentUser();
+  if (!user || user.mustChangePassword) return null;
+  return user;
+}
+
+/**
  * Sign in with a password. Deliberately still tests `passwordHash` rather than
  * `isClaimed`: a Google-only account has no password, so there is nothing here
  * for it to match, and saying so is the point.

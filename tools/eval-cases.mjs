@@ -181,9 +181,8 @@ export const CASES = [
   },
   {
     prompt: "I've got eight tabs open from this morning, here are the links.",
-    expect: ["capture_job_postings"],
-    avoid: ["capture_job_posting"],
-    why: "The plural tool exists for a morning of tabs; eight sequential calls is the failure.",
+    expect: ["capture_job_posting"],
+    why: "One call with urls for a morning of tabs; eight sequential calls is the failure.",
   },
   {
     prompt: "What's gone quiet?",

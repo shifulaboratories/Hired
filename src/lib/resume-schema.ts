@@ -172,10 +172,53 @@ export function ensureIds(doc: ResumeDoc): ResumeDoc {
   };
 }
 
+/**
+ * For READING a stored row: never throws, so a damaged document still opens.
+ * Never use it on a write — see parseResumeDocStrict.
+ */
 export function parseResumeDoc(value: unknown): ResumeDoc {
   const parsed = resumeDocSchema.safeParse(value);
   if (parsed.success) return ensureIds(parsed.data);
   return emptyResumeDoc();
+}
+
+/** null means "nothing here" to every assistant; to zod it is a type error. */
+function dropNulls(value: unknown): unknown {
+  if (Array.isArray(value)) return value.filter((item) => item !== null).map(dropNulls);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).filter(([, v]) => v !== null).map(([k, v]) => [k, dropNulls(v)]),
+    );
+  }
+  return value;
+}
+
+/**
+ * For WRITING a document that arrived from a caller: refuses, naming every
+ * field that is wrong, rather than saving anything.
+ *
+ * The lenient parse above returns an empty document on failure, and for a
+ * while every write went through it — so an assistant that sent one null
+ * endDate or `isCurrent: "true"` replaced someone's whole resume with a blank
+ * one and was told it had worked. A refusal that names `sections[2].kind` is
+ * something an assistant fixes on its next call. Nulls are forgiven, because
+ * they mean "empty" and the field's default says the same thing.
+ */
+export function parseResumeDocStrict(value: unknown): ResumeDoc {
+  const parsed = resumeDocSchema.safeParse(dropNulls(value));
+  if (parsed.success) return ensureIds(parsed.data);
+  const problems = parsed.error.issues.slice(0, 8).map((issue) => {
+    const path = issue.path
+      .map((part, i) => (typeof part === "number" ? `[${part}]` : i === 0 ? part : `.${part}`))
+      .join("");
+    return `${path || "(document)"}: ${issue.message}`;
+  });
+  const more = parsed.error.issues.length - problems.length;
+  throw new Error(
+    `That resume document does not match the format, so nothing was saved. ` +
+      `${problems.join("; ")}${more > 0 ? `; and ${more} more` : ""}. ` +
+      `get_resume_format shows the exact shape.`,
+  );
 }
 
 export function emptyResumeDoc(): ResumeDoc {

@@ -1,6 +1,7 @@
 import type { Role } from "@prisma/client";
 import { db } from "@/lib/db";
 import { appendToRoleBackground, timeZoneOf } from "@/lib/data/me";
+import { APP_AUTHOR, type WriteAuthor } from "@/lib/data/revision-store";
 import { civilDay, formatIn, SERVER_ZONE, toDate } from "@/lib/time";
 import type { DigestContent } from "@/lib/data/digest";
 
@@ -85,6 +86,7 @@ export async function resolveWinTarget(
 export async function logWin(
   userId: string,
   input: { text: string; roleId?: string; occurredOn?: Date | string | null },
+  author: WriteAuthor = APP_AUTHOR,
 ): Promise<{ role: Role; heading: string; target: WinTarget }> {
   const text = input.text.trim();
   if (!text) throw new Error("A win needs some words.");
@@ -98,23 +100,16 @@ export async function logWin(
   // rather than twelve.
   const heading = formatIn(when, zone, { month: "long", year: "numeric" });
 
-  // Only write the heading when it is not already the LAST one on the
-  // background. appendToRoleBackground stamps whatever heading it is given, so
-  // logging three wins in September without this check produces three
-  // "## September 2026" headings — which is the opposite of the point, since
-  // the heading exists to group a month's work rather than to date each line.
-  const existing = await db.role.findFirst({
-    where: { id: resolved.target.roleId, userId },
-    select: { background: true },
-  });
-  const headings = [...(existing?.background ?? "").matchAll(/^## (.+)$/gm)].map((m) => m[1].trim());
-  const alreadyOpen = headings.at(-1) === heading;
-
+  // The heading goes on only when it is not already the last one, decided
+  // under appendToRoleBackground's row lock: checked here, two wins logged at
+  // once could both see no heading and write two.
   const role = await appendToRoleBackground(
     userId,
     resolved.target.roleId,
     text,
-    alreadyOpen ? undefined : heading,
+    heading,
+    author,
+    { headingIfNew: true },
   );
   // They answered, so the mail has not been ignored. Start the count again.
   await db.profile.updateMany({ where: { userId }, data: { winsQuiet: 0 } });

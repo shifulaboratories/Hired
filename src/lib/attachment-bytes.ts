@@ -12,6 +12,7 @@
  * which have no magic number to read.
  */
 
+import { guardedFetch } from "@/lib/safe-fetch";
 import { createHash } from "node:crypto";
 
 export type AttachmentBytes = {
@@ -159,32 +160,13 @@ export function normalizeAttachmentDataUri(
 /**
  * Fetch a file from an https link.
  *
- * The host checks are photoFromUrl's, word for word: this runs on the server,
- * and a link naming an address inside the host's network would make the app
- * somebody's proxy. An attachment is not a good enough reason.
+ * Through the shared guard, redirects and all. This followed redirects
+ * automatically after a check of the name alone, so a public link that 302'd
+ * to a metadata service had its answer stored as a text attachment and read
+ * back by read_attachment. See safe-fetch.ts.
  */
 export async function attachmentFromUrl(url: string, capBytes: number): Promise<AttachmentBytes> {
-  let parsed: URL;
-  try {
-    parsed = new URL(url.trim());
-  } catch {
-    throw new Error("That is not a URL.");
-  }
-  if (parsed.protocol !== "https:") throw new Error("File links have to be https.");
-
-  const host = parsed.hostname.toLowerCase();
-  const privateHost =
-    host === "localhost" ||
-    host.endsWith(".local") ||
-    host.endsWith(".internal") ||
-    /^\d+\.\d+\.\d+\.\d+$/.test(host) ||
-    host.includes(":");
-  if (privateHost) throw new Error("That address points inside a network, not at a file.");
-
-  const response = await fetch(parsed, {
-    redirect: "follow",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  const { response } = await guardedFetch(url, { httpsOnly: true, timeoutMs: FETCH_TIMEOUT_MS });
   if (!response.ok) throw new Error(`That link answered ${response.status}.`);
 
   // Content-Length is a hint, not a promise, so the body is measured too.

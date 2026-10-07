@@ -1,5 +1,6 @@
 import { LetterKind, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { assertFresh, StaleWriteError } from "@/lib/data/revision-store";
 import { pick } from "@/lib/data/patch";
 import { toDate } from "@/lib/data/pipeline";
 import { getProfile, searchMe, timeZoneOf } from "@/lib/data/me";
@@ -185,14 +186,22 @@ export async function getLetter(userId: string, id: string) {
  * caller fixing a title cannot lose the body. Sending `body` DOES replace the
  * whole body, which is what editing prose means.
  */
-export async function updateLetter(userId: string, id: string, patch: LetterInput) {
-  const existing = await db.letter.findFirst({ where: { id, userId }, select: { id: true } });
+export async function updateLetter(
+  userId: string,
+  id: string,
+  patch: LetterInput,
+  /** The editor's last-seen version. See StaleWriteError — letters keep no versions, so this is their only guard. */
+  options: { expectedUpdatedAt?: Date | string } = {},
+) {
+  const existing = await db.letter.findFirst({ where: { id, userId }, select: { id: true, updatedAt: true } });
   if (!existing) throw new Error("No such letter");
-  return db.letter.update({
-    where: { id },
+  assertFresh("letter", existing.updatedAt, options.expectedUpdatedAt);
+  const { count } = await db.letter.updateMany({
+    where: { id, userId, ...(options.expectedUpdatedAt ? { updatedAt: existing.updatedAt } : {}) },
     data: await toRow(userId, patch),
-    include: letterInclude,
   });
+  if (count === 0) throw new StaleWriteError("letter");
+  return db.letter.findFirstOrThrow({ where: { id, userId }, include: letterInclude });
 }
 
 export async function deleteLetter(userId: string, id: string) {

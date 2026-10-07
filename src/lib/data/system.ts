@@ -263,9 +263,11 @@ export async function instanceHealth(): Promise<{
     checks.push({
       key: "email",
       label: "Email",
-      status: "warn",
-      summary: "Not configured, so invites have to be sent by hand.",
-      detail: "Add a Resend API key and a from address in the Email tab.",
+      // Off is a choice, not a fault: a friend's instance with no Resend
+      // account was showing a warning dot it could only clear by signing up.
+      status: "ok",
+      summary: "Off — invites are links you copy; digests need it.",
+      detail: "Add a Resend API key and a from address in the Email tab to send invites and digests.",
     });
   } else if (lastEmailFail && (!lastEmail || lastEmailFail.id === lastEmail.id)) {
     checks.push({

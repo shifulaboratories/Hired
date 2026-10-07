@@ -34,7 +34,13 @@ export function titleFrom(message: string): string {
   return clean.length > 60 ? `${clean.slice(0, 60)}…` : clean;
 }
 
-export async function listThreads(userId: string, limit = 30): Promise<AssistantThreadRow[]> {
+/**
+ * How many conversations are kept, and how many the drawer lists — one number,
+ * so every stored thread is one the person can see and delete.
+ */
+export const THREADS_KEPT = 30;
+
+export async function listThreads(userId: string, limit = THREADS_KEPT): Promise<AssistantThreadRow[]> {
   const rows = await db.assistantThread.findMany({
     where: { userId },
     orderBy: { updatedAt: "desc" },
@@ -67,7 +73,19 @@ export async function getThread(
 }
 
 export async function createThread(userId: string, title: string): Promise<AssistantThread> {
-  return db.assistantThread.create({ data: { userId, title: titleFrom(title) } });
+  const created = await db.assistantThread.create({ data: { userId, title: titleFrom(title) } });
+  // Past the list's window a thread could be neither seen nor deleted, so the
+  // oldest go when a new one starts. Their messages cascade with them.
+  const beyond = await db.assistantThread.findMany({
+    where: { userId },
+    orderBy: { updatedAt: "desc" },
+    skip: THREADS_KEPT,
+    select: { id: true },
+  });
+  if (beyond.length > 0) {
+    await db.assistantThread.deleteMany({ where: { userId, id: { in: beyond.map((row) => row.id) } } });
+  }
+  return created;
 }
 
 export async function appendMessage(
@@ -109,14 +127,6 @@ export async function appendMessage(
   return message;
 }
 
-export async function renameThread(userId: string, id: string, title: string): Promise<void> {
-  const { count } = await db.assistantThread.updateMany({
-    where: { id, userId },
-    data: { title: titleFrom(title) },
-  });
-  if (count === 0) throw new Error("No such conversation.");
-}
-
 export async function deleteThread(userId: string, id: string): Promise<void> {
   const { count } = await db.assistantThread.deleteMany({ where: { id, userId } });
   if (count === 0) throw new Error("No such conversation.");
@@ -140,23 +150,6 @@ export async function messagesToday(userId: string, now = new Date()): Promise<n
   });
 }
 
-export async function assistantUsage(
-  userId: string,
-  since: Date,
-): Promise<{ messages: number; inputTokens: number; outputTokens: number; cacheReadTokens: number }> {
-  const totals = await db.assistantMessage.aggregate({
-    where: { userId, createdAt: { gte: since } },
-    _count: { _all: true },
-    _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true },
-  });
-  return {
-    messages: totals._count._all,
-    inputTokens: totals._sum.inputTokens ?? 0,
-    outputTokens: totals._sum.outputTokens ?? 0,
-    cacheReadTokens: totals._sum.cacheReadTokens ?? 0,
-  };
-}
-
 /**
  * Instance-wide totals, and the one function here with no leading userId.
  *
@@ -168,13 +161,22 @@ export async function assistantUsage(
  */
 export async function instanceAssistantUsage(
   since: Date,
-): Promise<{ messages: number; inputTokens: number; outputTokens: number; people: number }> {
-  const [totals, people] = await Promise.all([
+): Promise<{
+  messages: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  people: number;
+}> {
+  const [totals, sent, people] = await Promise.all([
     db.assistantMessage.aggregate({
       where: { createdAt: { gte: since } },
-      _count: { _all: true },
-      _sum: { inputTokens: true, outputTokens: true },
+      _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true },
     }),
+    // Messages somebody SENT. Tool results and the loop's nudge are rows too,
+    // and counting them made one question with five tool calls read as six.
+    db.assistantMessage.count({ where: { createdAt: { gte: since }, role: "user" } }),
     db.assistantMessage.findMany({
       where: { createdAt: { gte: since } },
       distinct: ["userId"],
@@ -182,9 +184,11 @@ export async function instanceAssistantUsage(
     }),
   ]);
   return {
-    messages: totals._count._all,
+    messages: sent,
     inputTokens: totals._sum.inputTokens ?? 0,
     outputTokens: totals._sum.outputTokens ?? 0,
+    cacheReadTokens: totals._sum.cacheReadTokens ?? 0,
+    cacheWriteTokens: totals._sum.cacheWriteTokens ?? 0,
     people: people.length,
   };
 }

@@ -145,12 +145,20 @@ export function AccountPanel({
               />
             </div>
           </div>
+          <label className="text-muted-foreground flex items-start gap-2 text-sm">
+            <input type="checkbox" name="cutConnections" defaultChecked className="mt-1" />
+            <span>
+              Also cut every assistant connection and the capture link. Do this if someone else may
+              have been in your account — you will copy their new URLs into your clients again.
+            </span>
+          </label>
           {passwordState?.error && (
             <p className="text-destructive text-sm">{passwordState.error}</p>
           )}
           {passwordState?.ok && (
             <p className="flex items-center gap-1.5 text-sm text-[var(--success)]">
-              <CheckIcon className="size-3.5" /> Password changed. Other devices were signed out.
+              <CheckIcon className="size-3.5" /> Password changed. Other devices were signed out
+              {passwordState.cut ? ", and every connection URL changed" : ""}.
             </p>
           )}
           <Button type="submit" variant="outline" size="sm">

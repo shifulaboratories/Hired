@@ -1,12 +1,13 @@
 import { db } from "@/lib/db";
-import { addWaitlistSignup } from "@/lib/data/waitlist";
+import { addWaitlistSignup, waitlistIsOpen } from "@/lib/data/waitlist";
 
 /**
  * `POST /api/waitlist` — the one endpoint on this instance an anonymous
  * request may write to.
  *
  * hired.tools is a static site on a different origin, so the "request access"
- * form there posts here. It is open on purpose and it is safe to be: it grants
+ * form there posts here. Only an instance with such a site takes signups at
+ * all: elsewhere this answers 404 (see waitlistIsOpen). It is open on purpose and it is safe to be: it grants
  * nothing, it reads nothing back, and the row it writes does nothing until an
  * admin turns it into an Invite.
  *
@@ -49,6 +50,8 @@ function json(body: unknown, status = 200) {
 }
 
 export async function POST(request: Request) {
+  // Closed on an instance with no site in front of it. See waitlistIsOpen.
+  if (!(await waitlistIsOpen())) return new Response(null, { status: 404, headers: cors() });
   const raw = await request.text();
   if (raw.length > MAX_BODY) return json({ ok: false, error: "That's too long." }, 413);
 

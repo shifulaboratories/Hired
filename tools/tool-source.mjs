@@ -262,12 +262,13 @@ for (const [name, values] of [
   }
 }
 {
-  // STAGES lives in the data layer; tools.ts aliases it as STAGE_VALUES.
-  const pipeline = readFileSync(join(ROOT, "src", "lib", "data", "pipeline.ts"), "utf8");
+  // STAGES lives in src/lib/stages.ts (pipeline.ts re-exports it); tools.ts
+  // aliases it as STAGE_VALUES.
+  const pipeline = readFileSync(join(ROOT, "src", "lib", "stages.ts"), "utf8");
   const declared = /export const STAGES: Stage\[\] = \[([\s\S]*?)\]/.exec(pipeline);
   const found = declared ? [...declared[1].matchAll(/"([A-Z_]+)"/g)].map((m) => m[1]) : [];
   if (found.join(",") !== STAGE_VALUES.join(",")) {
-    throw new Error(`STAGES changed in pipeline.ts (${found.join(", ")}) — update tools/tool-source.mjs`);
+    throw new Error(`STAGES changed in stages.ts (${found.join(", ")}) — update tools/tool-source.mjs`);
   }
 }
 

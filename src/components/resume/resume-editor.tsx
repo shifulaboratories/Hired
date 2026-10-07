@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ChipInput } from "@/components/chip-input";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeftIcon,
@@ -49,6 +49,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SaveIndicator } from "@/components/save-indicator";
+import { StaleNotice } from "@/components/stale-notice";
 import { useAutosave } from "@/hooks/use-autosave";
 import { useHistory } from "@/hooks/use-history";
 import { cn } from "@/lib/utils";
@@ -99,6 +100,7 @@ const ACCENTS = ["#000000", "#B30000", "#0C5B97", "#1f2937", "#6366f1", "#0ea5e9
 
 export function ResumeEditor({
   id,
+  updatedAt,
   doc: initialDoc,
   meta: initialMeta,
   shareUrl,
@@ -112,6 +114,8 @@ export function ResumeEditor({
   roles,
 }: {
   id: string;
+  /** The version this page loaded, ISO. Saves are refused once it is stale. */
+  updatedAt: string;
   doc: ResumeDoc;
   meta: Meta;
   /**
@@ -154,9 +158,15 @@ export function ResumeEditor({
   const [zoom, setZoom] = useState(0.78);
   const [pending, startTransition] = useTransition();
 
-  const { state, push, flush } = useAutosave<{ doc: ResumeDoc; meta: Meta }>((next) =>
-    updateResumeAction(id, { ...next.meta, data: next.doc }),
-  );
+  // The version each save is measured against: the one loaded, then the one
+  // every save hands back. An assistant's update_resume in between makes it
+  // stale, and the save is refused rather than written over the tailoring.
+  const version = useRef(updatedAt);
+  const { state, push, flush } = useAutosave<{ doc: ResumeDoc; meta: Meta }>(async (next) => {
+    const result = await updateResumeAction(id, { ...next.meta, data: next.doc }, version.current);
+    if ("updatedAt" in result) version.current = result.updatedAt;
+    return result;
+  });
 
   // One snapshot of the whole editable state per undo step. `apply` is what
   // undo, redo and a toast's Undo all funnel through, so a restored document
@@ -280,7 +290,8 @@ export function ResumeEditor({
   const addRoleFromMe = (roleId: string) => {
     startTransition(async () => {
       try {
-        const { added, doc: next } = await addRoleToResumeAction(id, roleId);
+        const { added, doc: next, updatedAt: written } = await addRoleToResumeAction(id, roleId);
+        version.current = written;
         undoable(`${added.role} added`);
         commit(next, meta, { step: true });
         const rest = added.available - added.bullets;
@@ -347,6 +358,11 @@ export function ResumeEditor({
 
   return (
     <div className="flex h-[calc(100svh-4rem)] flex-col">
+      {state === "conflict" && (
+        <div className="shrink-0 px-4 pt-3 md:px-6">
+          <StaleNotice what="resume" />
+        </div>
+      )}
       {/* Toolbar */}
       <div className="glass flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2.5 md:px-6">
         <Button asChild variant="ghost" size="icon-sm" className="text-muted-foreground">

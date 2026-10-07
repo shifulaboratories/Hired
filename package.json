@@ -11,7 +11,9 @@
     "start": "prisma migrate deploy && next start",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check": "node --test tools/rules.test.mjs",
+    "probe": "node tools/probe.mjs"
   },
   "//": "Everything lives in dependencies on purpose: Railway builds with NODE_ENV=production, which makes npm skip devDependencies. Putting the build toolchain here means the deploy cannot fail on a missing compiler.",
   "dependencies": {
@@ -45,6 +47,7 @@
     "framer-motion": "^12.15.0",
     "ical.js": "^2.2.1",
     "imapflow": "^1.7.8",
+    "jiti": "^2.7.0",
     "lucide-react": "^0.511.0",
     "mailparser": "^3.9.20",
     "next": "^15.3.2",

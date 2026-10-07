@@ -18,7 +18,7 @@ import { TagChip, type TagValue } from "@/components/tags/tag-chip";
 import { TagPicker } from "@/components/tags/tag-picker";
 import { SaveIndicator } from "@/components/save-indicator";
 import type { SaveState } from "@/hooks/use-autosave";
-import { STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
+import { STAGE_LABEL, STAGE_TONE } from "@/lib/stages";
 import { linkHref } from "@/lib/social";
 import { companyDomain } from "@/lib/company";
 import {

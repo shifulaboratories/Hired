@@ -389,12 +389,25 @@ export async function listChanges(
     take: Math.min(Math.max(options?.limit ?? 50, 1), 500),
   });
 
+  // A version outlives its record on purpose, so a deleted role or resume
+  // still has one — and the log offered to undo it, which undo_change then
+  // refused. One query per kind says which records are still there.
+  const idsOf = (kind: string) =>
+    [...new Set(rows.filter((row) => row.versioned && row.kind === kind && row.recordId).map((row) => row.recordId))];
+  const [liveResumes, liveRoles] = await Promise.all([
+    db.resume.findMany({ where: { userId, id: { in: idsOf("resume") } }, select: { id: true } }),
+    db.role.findMany({ where: { userId, id: { in: idsOf("role") } }, select: { id: true } }),
+  ]);
+  const live = new Set([...liveResumes, ...liveRoles].map((row) => row.id));
+
   // Undoable rows resolve their restore point; the rest cost nothing.
   return Promise.all(
     rows.map(async (row) => {
       const kind = row.kind === "resume" ? "RESUME" : row.kind === "role" ? "ROLE" : null;
       const point =
-        kind && row.recordId ? await revisionAt(userId, kind, row.recordId, row.createdAt) : null;
+        kind && row.versioned && live.has(row.recordId)
+          ? await revisionAt(userId, kind, row.recordId, row.createdAt)
+          : null;
       return {
         id: row.id,
         tool: row.tool,
@@ -428,9 +441,9 @@ export async function undoChange(
 
   const kind: RevisionKindName | null =
     row.kind === "resume" ? "RESUME" : row.kind === "role" ? "ROLE" : null;
-  if (!kind || !row.recordId) {
+  if (!kind || !row.recordId || !row.versioned) {
     throw new Error(
-      `${row.tool} cannot be undone: only writes that replace a resume or a role are versioned. Deleting a company, a person or an application is undone from the archive with restore_records; everything else has to be put back by hand.`,
+      `${row.tool} cannot be undone: only writes that replace or add to a resume or a role are versioned. Deleting a company, a person or an application is undone from the archive with restore_records; everything else has to be put back by hand.`,
     );
   }
 

@@ -15,6 +15,7 @@ import { useAutosave } from "@/hooks/use-autosave";
 import { useViewerZone } from "@/components/viewer-zone";
 import { civilDay, shortCivilDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { parseAmount } from "@/lib/money";
 import { deleteOfferAction, recordOfferAction, updateOfferAction } from "@/server/actions";
 
 /**
@@ -94,26 +95,29 @@ function daysUntil(value: string): number | null {
 }
 
 /**
- * Whole units, and an empty field means zero rather than a failed parse.
- *
- * "215k" means the same thing here as it does over a connection, where the data
- * layer has always read it. Stripping everything but digits turned it into 215
- * — a base a thousand times too small, saved without a murmur into the row a
- * comparison table is built from.
+ * The four amounts, read by the data layer's own parser (src/lib/money.ts). An
+ * emptied field is an explicit 0 — the columns hold a number, and "not sent"
+ * would leave the old figure standing. A figure the parser refuses ("€215.000",
+ * a bare "$") throws with its sentence, which the card shows instead of saving.
  */
-function toNumber(value: string): number {
-  const raw = value.trim().toLowerCase();
-  const k = /k\s*$/.test(raw);
-  const clean = raw.replace(/[^0-9.]/g, "");
-  const parsed = Number(clean);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.round(k ? parsed * 1000 : parsed);
+function amountsOf(draft: Draft) {
+  const read = (text: string, field: string) => (text.trim() === "" ? 0 : (parseAmount(text, field) ?? 0));
+  return {
+    baseAmount: read(draft.baseAmount, "Base"),
+    bonusAmount: read(draft.bonusAmount, "Bonus"),
+    equityAmount: read(draft.equityAmount, "Equity"),
+    signOnAmount: read(draft.signOnAmount, "Sign-on"),
+  };
 }
 
+/** For display only: a figure still being typed counts as nothing yet. */
 function totalOf(draft: Draft) {
-  return (
-    toNumber(draft.baseAmount) + toNumber(draft.bonusAmount) + toNumber(draft.equityAmount)
-  );
+  try {
+    const amounts = amountsOf(draft);
+    return amounts.baseAmount + amounts.bonusAmount + amounts.equityAmount;
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -163,14 +167,22 @@ export function OfferCard({
     setDraft(current ? draftOf(current) : BLANK);
   }
 
+  const [amountError, setAmountError] = useState<string | null>(null);
   const save = useAutosave<Draft>(async (value) => {
     if (!current) return;
+    let amounts: ReturnType<typeof amountsOf>;
+    try {
+      amounts = amountsOf(value);
+      setAmountError(null);
+    } catch (error) {
+      // Not saved, and said so beside the figures, rather than stored as a
+      // number a thousand times off.
+      setAmountError(error instanceof Error ? error.message : "That figure is not a number.");
+      return;
+    }
     await updateOfferAction(current.id, {
       currency: value.currency,
-      baseAmount: toNumber(value.baseAmount),
-      bonusAmount: toNumber(value.bonusAmount),
-      equityAmount: toNumber(value.equityAmount),
-      signOnAmount: toNumber(value.signOnAmount),
+      ...amounts,
       terms: value.terms,
       vesting: value.vesting,
       respondBy: value.respondBy,
@@ -189,10 +201,7 @@ export function OfferCard({
       try {
         await recordOfferAction(applicationId, {
           currency: draft.currency,
-          baseAmount: toNumber(draft.baseAmount),
-          bonusAmount: toNumber(draft.bonusAmount),
-          equityAmount: toNumber(draft.equityAmount),
-          signOnAmount: toNumber(draft.signOnAmount),
+          ...amountsOf(draft),
           terms: draft.terms,
           vesting: draft.vesting,
           respondBy: draft.respondBy,
@@ -221,7 +230,12 @@ export function OfferCard({
   if (stage !== "OFFER" && stage !== "ACCEPTED" && offers.length === 0) return null;
 
   const total = totalOf(draft);
-  const signOn = toNumber(draft.signOnAmount);
+  let signOn = 0;
+  try {
+    signOn = parseAmount(draft.signOnAmount, "Sign-on") ?? 0;
+  } catch {
+    // Still being typed; the save path says what is wrong with it.
+  }
   const days = daysUntil(draft.respondBy);
 
   return (
@@ -236,7 +250,10 @@ export function OfferCard({
             </span>
           )}
         </CardTitle>
-        <SaveIndicator state={save.state} />
+        <div className="flex items-center gap-2">
+          {amountError && <span className="text-destructive text-[11px]">{amountError}</span>}
+          <SaveIndicator state={save.state} />
+        </div>
       </CardHeader>
 
       <CardContent className="space-y-5">

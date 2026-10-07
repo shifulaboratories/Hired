@@ -5,7 +5,7 @@ import { CheckIcon, CornerDownLeftIcon, LoaderCircleIcon, XIcon } from "lucide-r
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ACTIVITY_LABEL, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
+import { ACTIVITY_LABEL, STAGE_LABEL, STAGE_TONE } from "@/lib/stages";
 import { isConfident, type QuickLogMatch, type QuickLogReading } from "@/lib/quick-log";
 import { commitQuickLogAction, readQuickLogAction } from "@/server/actions";
 import type { ActivityType, Stage } from "@prisma/client";

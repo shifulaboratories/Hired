@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Stage } from "@prisma/client";
-import { BOARD_STAGES, STAGE_LABEL, STAGE_TONE, TERMINAL_STAGES } from "@/lib/data/pipeline";
+import { BOARD_STAGES, STAGE_LABEL, STAGE_TONE, TERMINAL_STAGES } from "@/lib/stages";
 import { SHOW_QUIET_AFTER, STALE_AFTER, hasGoneQuiet } from "@/lib/quiet";
 import { ApplicationActions } from "@/components/pipeline/application-actions";
 import { CompanyAvatar } from "@/components/pipeline/company-avatar";

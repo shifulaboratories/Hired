@@ -1675,6 +1675,9 @@ model WriteLog {
   recordId       String   @default("")
   /// One line, already human. Never the call's arguments.
   summary        String
+  /// The tool took a version of the record before writing it, so this row can
+  /// be undone. Declared on the tool, never inferred from timestamps.
+  versioned      Boolean  @default(false)
   createdAt      DateTime @default(now())
 
   /// The list, newest first, optionally filtered by connection.

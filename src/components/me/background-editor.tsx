@@ -18,7 +18,7 @@ import {
   type BackgroundSection,
   type SectionKind,
 } from "@/lib/background";
-import { inlineSegments, toBlocks, type Segment } from "@/lib/markdown-lite";
+import { Markdown } from "@/components/markdown";
 
 /**
  * A role's background: readable by default, editable on a click.
@@ -440,69 +440,6 @@ function Section({
 }
 
 /** The subset of markdown the tools actually write. See markdown-lite.ts. */
-function Markdown({ text }: { text: string }) {
-  return (
-    <div className="space-y-2 text-[13.5px] leading-relaxed">
-      {toBlocks(text).map((block, index) => {
-        if (block.type === "heading") {
-          return (
-            <h4
-              key={index}
-              className={cn(
-                "font-semibold tracking-tight",
-                block.level === 2 ? "text-[13px]" : "text-muted-foreground text-[12px]",
-              )}
-            >
-              {block.text}
-            </h4>
-          );
-        }
-        if (block.type === "bullets" || block.type === "ordered") {
-          const List = block.type === "bullets" ? "ul" : "ol";
-          return (
-            <List
-              key={index}
-              className={cn(
-                "space-y-1 pl-5",
-                block.type === "bullets" ? "list-disc" : "list-decimal",
-              )}
-            >
-              {block.items.map((item, itemIndex) => (
-                <li key={itemIndex} className="marker:text-muted-foreground">
-                  <Inline segments={inlineSegments(item)} />
-                </li>
-              ))}
-            </List>
-          );
-        }
-        return (
-          <p key={index} className="whitespace-pre-wrap">
-            <Inline segments={inlineSegments(block.text)} />
-          </p>
-        );
-      })}
-    </div>
-  );
-}
-
-function Inline({ segments }: { segments: Segment[] }) {
-  return (
-    <>
-      {segments.map((segment, index) => {
-        if (segment.bold) return <strong key={index}>{segment.text}</strong>;
-        if (segment.code) {
-          return (
-            <code key={index} className="bg-inset rounded px-1 py-0.5 font-mono text-[12px]">
-              {segment.text}
-            </code>
-          );
-        }
-        return <span key={index}>{segment.text}</span>;
-      })}
-    </>
-  );
-}
-
 function countWords(text: string) {
   return text.replace(/[#*_`>-]/g, " ").split(/\s+/).filter(Boolean).length;
 }

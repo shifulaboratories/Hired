@@ -54,6 +54,9 @@ export default async function AdminPage() {
   ]);
 
   const emailReady = emailIsConfigured(settings);
+  // The waitlist exists only on an instance with a site in front of it; on
+  // every other one the stat, the section and its dot are noise.
+  const showWaitlist = Boolean(settings.landingUrl.trim()) || waiting.total > 0;
   const billingReady = billingIsConfigured(settings);
   const billedUsers = await billedUserCount();
   const worstCheck = health.checks.some((check) => check.status === "down")
@@ -84,16 +87,18 @@ export default async function AdminPage() {
           value={stats.pendingInvites}
           hint="Not yet accepted"
         />
-        <Stat
-          icon={InboxIcon}
-          label="Waiting for access"
-          value={waiting.waiting}
-          hint={
-            waiting.total === 0
-              ? "Nobody has asked yet"
-              : `${waiting.total} asked · ${waiting.invited} invited`
-          }
-        />
+        {showWaitlist && (
+          <Stat
+            icon={InboxIcon}
+            label="Waiting for access"
+            value={waiting.waiting}
+            hint={
+              waiting.total === 0
+                ? "Nobody has asked yet"
+                : `${waiting.total} asked · ${waiting.invited} invited`
+            }
+          />
+        )}
       </Stagger>
 
       {/* Four tabs, and each is a question rather than a table: who is here,
@@ -110,7 +115,6 @@ export default async function AdminPage() {
           </TabsTrigger>
           <TabsTrigger value="config">
             Configuration
-            {!emailReady && <span className="ml-1 text-[var(--warning)]">&bull;</span>}
           </TabsTrigger>
           {/* The dot is why this tab does not need to be first: a healthy
               instance stays quiet, and a broken one says so from here. */}
@@ -181,6 +185,7 @@ export default async function AdminPage() {
                 />
               </Section>
 
+              {showWaitlist && (
               <Section
                 title="Waiting for access"
                 count={waiting.waiting}
@@ -200,6 +205,7 @@ export default async function AdminPage() {
                   }))}
                 />
               </Section>
+              )}
             </div>
           </FadeIn>
         </TabsContent>

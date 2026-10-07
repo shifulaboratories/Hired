@@ -27,7 +27,7 @@ import {
   type StoredWidths,
 } from "@/lib/column-widths";
 import { pick } from "@/lib/data/patch";
-import { snapshot, APP_AUTHOR, type WriteAuthor } from "@/lib/data/revision-store";
+import { snapshot, assertFresh, StaleWriteError, APP_AUTHOR, type WriteAuthor } from "@/lib/data/revision-store";
 import { resolvePhoto } from "@/lib/photo";
 import { bulletSimilarity, SAME_BULLET } from "@/lib/resume-similarity";
 import { isValidTimeZone, SERVER_ZONE } from "@/lib/time";
@@ -559,6 +559,8 @@ export async function updateRole(
   patch: Partial<RoleInput>,
   /** Who is writing, for the version store. See updateResume's own note. */
   author: WriteAuthor = APP_AUTHOR,
+  /** The editor's last-seen version. See StaleWriteError. */
+  options: { expectedUpdatedAt?: Date | string } = {},
 ) {
   const data = pick(patch, ROLE_COLUMNS);
   if (Object.keys(data).length === 0) return existingOrThrow(db.role, id, userId, "role");
@@ -566,6 +568,7 @@ export async function updateRole(
   // This is the write append_role_background exists because of: it replaces the
   // background wholesale, so the copy is taken on the way past.
   const before = await db.role.findFirst({ where: { id, userId } });
+  if (before) assertFresh("role", before.updatedAt, options.expectedUpdatedAt);
   if (before) {
     await snapshot(
       userId,
@@ -581,10 +584,13 @@ export async function updateRole(
   // a date fix leaves the freshness of what was written alone.
   const written =
     patch.background !== undefined && before !== null && patch.background !== before.background;
+  // The version check again, inside the write: a save that read a fresh row
+  // can still lose a race with an assistant between the read and here.
   const { count } = await db.role.updateMany({
-    where: { id, userId },
+    where: { id, userId, ...(options.expectedUpdatedAt && before ? { updatedAt: before.updatedAt } : {}) },
     data: written ? { ...data, backgroundUpdatedAt: new Date() } : data,
   });
+  if (count === 0 && before && options.expectedUpdatedAt) throw new StaleWriteError("role");
   if (count === 0) throw new Error(`No role with id ${id}`);
   return db.role.findFirstOrThrow({ where: { id, userId } });
 }
@@ -595,33 +601,53 @@ export async function deleteRole(userId: string, id: string) {
   return { id };
 }
 
-/** Non-destructive: adds text to the end of the role's background. */
+/**
+ * Non-destructive: adds text to the end of the role's background.
+ *
+ * Read, merge and write happen under a row lock. Tool calls arrive as
+ * independent requests and assistants do make them in parallel — "log these
+ * three wins" is three calls against one role — and a read-merge-write without
+ * the lock kept only the last of them while every call reported success.
+ *
+ * `headingIfNew` writes the heading only when it is not already the LAST one,
+ * decided under the same lock, so a month's wins collect under one
+ * "## September 2026" rather than one heading each.
+ */
 export async function appendToRoleBackground(
   userId: string,
   id: string,
   text: string,
   heading?: string,
   author: WriteAuthor = APP_AUTHOR,
+  options: { headingIfNew?: boolean } = {},
 ) {
-  const role = await db.role.findFirst({ where: { id, userId } });
-  if (!role) throw new Error(`No role with id ${id}`);
-  // Versioned like a replace, now that the role page shows history: an append
-  // is the write an assistant makes most, so it is the one somebody most wants
-  // to see and take back. Coalesced like every other snapshot.
-  await snapshot(
-    userId,
-    "ROLE",
-    id,
-    Object.fromEntries(ROLE_COLUMNS.map((column) => [column, role[column]])),
-    `${role.title} at ${role.company}`,
-    author,
-  );
-  // Merges into a section that already carries this heading rather than opening
-  // a second one beside it — see appendToBackground for why.
-  const next = appendToBackground(role.background, text, heading);
-  return db.role.update({
-    where: { id: role.id },
-    data: { background: next, backgroundUpdatedAt: new Date() },
+  return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 FROM "Role" WHERE id = ${id} AND "userId" = ${userId} FOR UPDATE`;
+    const role = await tx.role.findFirst({ where: { id, userId } });
+    if (!role) throw new Error(`No role with id ${id}`);
+    // Versioned like a replace, now that the role page shows history: an append
+    // is the write an assistant makes most, so it is the one somebody most wants
+    // to see and take back. Coalesced like every other snapshot.
+    await snapshot(
+      userId,
+      "ROLE",
+      id,
+      Object.fromEntries(ROLE_COLUMNS.map((column) => [column, role[column]])),
+      `${role.title} at ${role.company}`,
+      author,
+    );
+    let useHeading = heading;
+    if (heading && options.headingIfNew) {
+      const headings = [...role.background.matchAll(/^## (.+)$/gm)].map((m) => m[1].trim());
+      if (headings.at(-1) === heading.trim()) useHeading = undefined;
+    }
+    // Merges into a section that already carries this heading rather than opening
+    // a second one beside it — see appendToBackground for why.
+    const next = appendToBackground(role.background, text, useHeading);
+    return tx.role.update({
+      where: { id: role.id },
+      data: { background: next, backgroundUpdatedAt: new Date() },
+    });
   });
 }
 

@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
+import { STAGE_LABEL, STAGE_TONE } from "@/lib/stages";
 import { resumeEvidenceAction, setResumeBaseAction } from "@/server/actions";
 import type { Stage } from "@prisma/client";
 import { cn } from "@/lib/utils";

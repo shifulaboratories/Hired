@@ -1,7 +1,7 @@
 ---
 title: "Pipeline tools"
 sidebarTitle: "Pipeline"
-description: "Ninety-nine tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
+description: "Ninety-eight tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
 icon: "list-check"
 ---
 
@@ -73,33 +73,22 @@ Full detail for one application including the job description, the complete acti
 
 ### `capture_job_posting`
 
-_Capture a job posting from its URL_
+_Capture job postings from their URLs_
 
-The FIRST tool to call when someone shares a link to a job posting. Fetches the page server-side, reads the structured posting data most job boards publish, and creates the application in one move: company matched or created (with its own website when the posting names one, which puts their logo on the pipeline), role title, full description, location, compensation and source all filled, starting on the wishlist. Returns captured true with the new application and its id. When the page doesn't state the employer or the role readably, returns captured false plus whatever WAS parsed and creates NOTHING — in that case show the person what was found, ask for the missing pieces, and use create_application. Never guess an employer's name from a URL. If they applied already, follow with move_application_stage.
+The FIRST tool to call when someone shares a link to a job posting — or twenty of them, from a morning of open tabs. Pass `url` for one or `urls` for several. Fetches each page server-side, reads the structured posting data most job boards publish, and creates the application in one move: company matched or created (with its own website when the posting names one and the company has none on file yet, which puts their logo on the pipeline), role title, full description, location, compensation and source all filled, starting on the wishlist. THE SAME ROLE IS NEVER CREATED TWICE: a job already on the board, matched on employer and role title against live applications, comes back as a duplicate naming the row it matches, and that holds within a list too, so one role on Greenhouse, LinkedIn and the careers page makes one application. When a page doesn't state the employer or the role readably, nothing is created for it and whatever WAS parsed comes back — show the person what was found, ask for the missing pieces, and use create_application. Never guess an employer's name from a URL. A company already on file keeps its website and notes: capture only fills them when they are empty. With `url`: returns captured true and the new application, or captured false with `duplicate` or a reason. With `urls`: returns three lists — captured, duplicates and failed — and every URL appears in exactly one; report all three back rather than a count. Everything lands on the wishlist; if they applied already, follow with move_application_stage.
 
-**Overwrites or deletes.** **Reaches outside this instance.**
-
-| Argument | Type | |
-| --- | --- | --- |
-| `url` | string | **required** — The posting's URL, e.g. a Greenhouse, Lever, Ashby, Workday or LinkedIn job link |
-
-### `capture_job_postings`
-
-_Capture several job postings at once_
-
-The same capture as capture_job_posting, over a list of URLs — for somebody who has spent a morning with twenty tabs open and wants them all on the board. Fetches the pages a few at a time, then creates in order. The SAME ROLE IS NOT CREATED TWICE: a job already on the board, matched on employer and role title against live applications, is reported as a duplicate rather than added again, and that also holds within the batch, so the same role on Greenhouse, LinkedIn and the company's own careers page produces one application and two duplicate lines. Returns three lists — captured with their new ids, duplicates naming what each one already matches, and failures naming the page's own problem — and every URL handed in appears in exactly one of them. Report all three back rather than a count: a duplicate is a thing they can go and look at, and a failure is a page they can paste the description from by hand with create_application. One bad URL never costs the others. Everything lands on the wishlist, so nothing here says they applied.
-
-**Overwrites or deletes.** **Reaches outside this instance.**
+**Reaches outside this instance.**
 
 | Argument | Type | |
 | --- | --- | --- |
-| `urls` | string[] | **required** — The postings' URLs. Duplicates within the list are collapsed before anything is fetched. |
+| `url` | string | One posting's URL, e.g. a Greenhouse, Lever, Ashby, Workday or LinkedIn job link |
+| `urls` | string[] | Several postings' URLs. Duplicates within the list are collapsed before anything is fetched. |
 
 ### `watch_company_board`
 
 _Watch a company's jobs board_
 
-Watch one employer's own jobs board and hear about a role the moment it appears. This is the tool for "tell me when Stripe posts a staff engineer role" — a search that is waiting on a particular company rather than browsing. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON; hand it the board link (boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme) or just the company's careers page, and it follows an embedded board through to the real one. ANY OTHER BOARD IS REFUSED and nothing is saved — Workday, SmartRecruiters and a hand-built careers page publish no feed to read, and the honest answer for those is to browse them and paste the links into capture_job_postings. `title_terms` and `location_terms` narrow it: a role has to contain ANY of the title terms AND ANY of the location terms, matched case-insensitively against the posting's own words, and an empty list means anything. THE FIRST LOOK PROPOSES NOTHING: it records what is on the board today as already seen, because a watch on a six-hundred-role board is otherwise six hundred rows to review. Pass propose_existing true when they want what is already up there, and the first ten matches are queued. After that, every new matching role becomes a proposal on their dashboard with the posting already read into it, which they accept to put it on the wishlist or dismiss. NOTHING IS EVER ADDED TO THE PIPELINE WITHOUT A YES. Returns the watch, which provider was found, and how many roles the board is carrying today — read that number back, because a board of four hundred and filters of none is a watch that will be noisy. Calling it again for the same board changes the filters rather than making a second watch.
+Watch one employer's own jobs board and hear about a role the moment it appears. This is the tool for "tell me when Stripe posts a staff engineer role" — a search that is waiting on a particular company rather than browsing. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON; hand it the board link (boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme) or just the company's careers page, and it follows an embedded board through to the real one. ANY OTHER BOARD IS REFUSED and nothing is saved — Workday, SmartRecruiters and a hand-built careers page publish no feed to read, and the honest answer for those is to browse them and paste the links into capture_job_posting. `title_terms` and `location_terms` narrow it: a role has to contain ANY of the title terms AND ANY of the location terms, matched case-insensitively against the posting's own words, and an empty list means anything. THE FIRST LOOK PROPOSES NOTHING: it records what is on the board today as already seen, because a watch on a six-hundred-role board is otherwise six hundred rows to review. Pass propose_existing true when they want what is already up there, and the first ten matches are queued. After that, every new matching role becomes a proposal on their dashboard with the posting already read into it, which they accept to put it on the wishlist or dismiss. NOTHING IS EVER ADDED TO THE PIPELINE WITHOUT A YES. Returns the watch, which provider was found, and how many roles the board is carrying today — read that number back, because a board of four hundred and filters of none is a watch that will be noisy. Calling it again for the same board changes the filters rather than making a second watch.
 
 **Reaches outside this instance.**
 

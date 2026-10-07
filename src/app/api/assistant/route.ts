@@ -21,12 +21,13 @@ export const maxDuration = 300;
  * an event stream is a broken stream rather than a 401, and the drawer would
  * show a parse error instead of "sign in again".
  *
- * Four answers, and only the last one is a stream:
+ * Five answers, and only the last one is a stream:
  *   no session  -> 401 JSON
+ *   handed-over password not yet changed -> 403 JSON
  *   no API key  -> 503 JSON naming where an admin adds one
  *   over the cap-> 429 JSON naming the cap
  *   otherwise   -> 200 text/event-stream
- * The first three are JSON on purpose: they are about the request, not about
+ * The first four are JSON on purpose: they are about the request, not about
  * the conversation, and the drawer shows them without opening a thread.
  */
 
@@ -40,6 +41,11 @@ function json(payload: unknown, status: number) {
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) return json({ error: "Sign in again — your session has expired." }, 401);
+  // requireUser's gate, without its redirect: an account on a password
+  // somebody handed it sets its own before it can drive any tool from here.
+  if (user.mustChangePassword) {
+    return json({ error: "Set your own password first, then come back to this." }, 403);
+  }
 
   const settings = await getSettings();
   if (!assistantIsConfigured(settings)) {
@@ -83,7 +89,7 @@ export async function POST(request: Request) {
   // with no way to finish it and no way to take it back — and approving sends
   // no new message, so it costs nothing against a cap counted in messages.
   const cap = settings.assistantDailyMessages;
-  if (cap > 0 && !approve) {
+  if (!approve) {
     const today = await messagesToday(user.id);
     if (today >= cap) {
       return json(

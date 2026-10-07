@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { BOARD_STAGES, STAGE_LABEL } from "@/lib/data/pipeline";
+import { BOARD_STAGES, STAGE_LABEL } from "@/lib/stages";
 import type { Stage } from "@prisma/client";
 import { createApplicationAction, parsePostingAction } from "@/server/actions";
 import { TagPicker, type TagOption } from "@/components/tags/tag-picker";

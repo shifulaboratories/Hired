@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSettings, microsoftIsConfigured } from "@/lib/settings";
-import { getCurrentUser } from "@/lib/auth";
+import { currentUserForApi } from "@/lib/auth";
 import { newStateValues, packState } from "@/lib/google";
 import { MICROSOFT_STATE_COOKIE, microsoftAuthUrl, microsoftRedirectUri } from "@/lib/accounts/microsoft";
 import { baseUrlFrom } from "@/lib/request-url";
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   if (!microsoftIsConfigured(settings)) {
     return NextResponse.redirect(new URL("/settings?tab=connections&account=not_set_up", request.url));
   }
-  const user = await getCurrentUser();
+  const user = await currentUserForApi();
   if (!user) {
     return NextResponse.redirect(new URL("/login?next=/settings?tab=connections", request.url));
   }

@@ -159,6 +159,8 @@ export async function recordWrite(input: {
   summary: string;
   kind?: string;
   recordId?: string;
+  /** The tool took a version before it wrote. Only such rows are undoable. */
+  versioned?: boolean;
 }): Promise<void> {
   try {
     await db.writeLog.create({
@@ -170,6 +172,7 @@ export async function recordWrite(input: {
         kind: input.kind ?? subjectOf(input.tool),
         recordId: input.recordId ?? "",
         summary: input.summary.slice(0, 500),
+        versioned: input.versioned ?? false,
       },
     });
   } catch {
@@ -177,3 +180,24 @@ export async function recordWrite(input: {
   }
 }
 
+/**
+ * A save refused because the record moved since the editor loaded it.
+ *
+ * The editors hold the whole record in memory and autosave all of it, so
+ * without this an open tab wrote its stale copy over whatever an assistant had
+ * just written — silently, on the next keystroke. They send the `updatedAt`
+ * they last saw; a write that finds a newer one refuses, and the editor says
+ * so instead. Assistants send nothing and are never refused.
+ */
+export class StaleWriteError extends Error {
+  constructor(what: string) {
+    super(`That ${what} changed since it was opened, so this save was refused rather than written over it. Reload to see the newer version.`);
+    this.name = "StaleWriteError";
+  }
+}
+
+/** Throws StaleWriteError when `expected` is given and the row has moved on. */
+export function assertFresh(what: string, current: Date, expected?: Date | string | null) {
+  if (expected === undefined || expected === null) return;
+  if (current.getTime() !== new Date(expected).getTime()) throw new StaleWriteError(what);
+}

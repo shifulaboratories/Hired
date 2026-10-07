@@ -164,3 +164,21 @@ export async function inviteFromWaitlist(input: {
 export async function removeWaitlistSignup(id: string) {
   await db.waitlistSignup.deleteMany({ where: { id } });
 }
+
+/**
+ * Whether this instance takes signups at all.
+ *
+ * Only an instance with a marketing site in front of it can use the waitlist,
+ * and on every other one the endpoint was an anonymous, database-writing
+ * address that mailed the owner per signup — enough to spend a small Resend
+ * quota, and with it the invites and digests. Open when a landing page is
+ * configured, or when the instance has ever had a signup: that second half is
+ * what keeps a site that was already posting here working without anybody
+ * going back to set a variable. Closed everywhere else, and the admin screens
+ * hide the section with it.
+ */
+export async function waitlistIsOpen(): Promise<boolean> {
+  const settings = await getSettings();
+  if (settings.landingUrl.trim()) return true;
+  return (await db.waitlistSignup.count({ take: 1 })) > 0;
+}

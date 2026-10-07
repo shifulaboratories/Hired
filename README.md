@@ -263,7 +263,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  221 tools any MCP client can call (256 if you're an admin). Claude, Claude Code, ChatGPT,
+  220 tools any MCP client can call (255 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -446,7 +446,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 221, or 256 if you're an admin.
+then tells you how many tools answered — 220, or 255 if you're an admin.
 
 Each connection can also be narrowed to one job, in the panel where you copy its URL:
 **Everything** (the default, and what every connection had before this existed), **Me,
@@ -714,7 +714,7 @@ By conversation: `admin_get_assistant_config`, `admin_set_assistant_config`.
 
 ## What your AI can do once it's connected
 
-221 tools. Two hundred and twelve of them are the data tools across the five areas, the
+220 tools. Two hundred and eleven of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
 account; the other nine are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
@@ -830,9 +830,9 @@ the same kind you have already written, which is what a draft matches for tone. 
 `delete_letter` are the rest. Filter by kind, by job, by person, or by whether it is still a
 draft.
 
-**Pipeline** — `capture_job_posting` turns a posting URL into a tracked application in one
-move, company and description included. `capture_job_postings` does the same for a morning
-of open tabs, and will not put the same role on the board twice. Then applications and stages, an activity timeline,
+**Pipeline** — `capture_job_posting` turns a posting URL, or a morning of open tabs, into
+tracked applications in one move, company and description included, and will not put the
+same role on the board twice. Then applications and stages, an activity timeline,
 tasks — `list_tasks`, `create_task`, `update_task`, `complete_task`, `delete_task`, each
 task about at most one thing and that thing being an application, a company, a person, a
 resume, a role in Me, a note, or nothing at all —

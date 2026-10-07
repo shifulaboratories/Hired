@@ -29,7 +29,7 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
-import { STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/data/pipeline";
+import { STAGES, STAGE_LABEL, STAGE_TONE } from "@/lib/stages";
 import { linkHref } from "@/lib/social";
 import {
   logFollowUpAction,

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSettings, googleIsConfigured } from "@/lib/settings";
-import { getCurrentUser, startSession } from "@/lib/auth";
+import { currentUserForApi, startSession } from "@/lib/auth";
 import {
   GOOGLE_STATE_COOKIE,
   exchangeCode,
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
     // against the account they are in. No account matching happens at all —
     // the inbox they connect need not be the address they sign in with.
     if (stored.data) {
-      const user = await getCurrentUser();
+      const user = await currentUserForApi();
       if (!user) return fail("expired_state");
       if (!identity.grant.refreshToken) return fail("no_refresh_token");
       const features = googleFeatures(identity.grant.scopes);
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
     // Started from Settings by somebody already signed in: attach Google to
     // the account they are in rather than looking for one to sign them into.
     if (stored.link) {
-      const user = await getCurrentUser();
+      const user = await currentUserForApi();
       if (!user) return fail("expired_state");
       const linked = await linkGoogleToUser(user.id, identity);
       if (!linked.ok) return fail(linked.reason);

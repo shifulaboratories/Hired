@@ -108,7 +108,7 @@ import {
 import { billedUserCount, linkBillingCustomer, syncAllBilling } from "@/lib/billing";
 import { renderEmailTemplate, sendEmail } from "@/lib/email";
 import { isAdmin, createEphemeralSession, destroySession, SESSION_COOKIE } from "@/lib/auth";
-import { parseResumeDoc, RESUME_DOC_SHAPE } from "@/lib/resume-schema";
+import { parseResumeDocStrict, RESUME_DOC_SHAPE } from "@/lib/resume-schema";
 import { diffResumeDocs } from "@/lib/resume-diff";
 import { renderPdf, readRenderedText, pdfRenderingAvailable } from "@/lib/pdf";
 import { clientName, clientsById, guessClient } from "@/lib/mcp/clients";
@@ -132,6 +132,22 @@ export type McpContext = {
   /** Where this instance is reachable, for building invite links. */
   baseUrl: string;
 };
+
+/**
+ * Who a write is from, for the version store. Every tool that replaces or
+ * appends to a resume or a role passes it: without it an assistant's write was
+ * filed as "app", coalesced into the editor's ten-minute window, and could end
+ * up in no version at all — and the history sheet's "Before an assistant" never
+ * showed for the writes assistants make most.
+ */
+export function mcpAuthor(ctx: McpContext, tool: string) {
+  return {
+    writtenBy: "mcp" as const,
+    connectionId: ctx.connectionId,
+    connectionName: ctx.connectionName,
+    tool,
+  };
+}
 
 /**
  * What a tool does to the world, in the four hints MCP defines.
@@ -171,6 +187,13 @@ export type McpTool = {
   annotations: McpAnnotations;
   /** Admin-only tools are hidden from tools/list for members, not just refused. */
   adminOnly?: boolean;
+  /**
+   * Takes a version of the resume or role it writes before writing it, so the
+   * change log can offer to undo it. Declared rather than inferred: inferred
+   * from "any version exists from before", the log offered to undo a PDF export
+   * — and undoing a duplicate_resume rolled back the resume it was copied from.
+   */
+  versioned?: true;
   handler: (args: Json, ctx: McpContext) => Promise<unknown>;
 };
 
@@ -1056,6 +1079,7 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
+    versioned: true,
     handler: async (args, ctx) =>
       me.updateRole(ctx.userId, 
         required(args, "id"),
@@ -1073,6 +1097,7 @@ export const tools: McpTool[] = [
           startUnconfirmed: b(args, "startUnconfirmed"),
           endUnconfirmed: b(args, "endUnconfirmed"),
         }),
+        mcpAuthor(ctx, "update_role"),
       ),
   },
   {
@@ -1195,8 +1220,15 @@ export const tools: McpTool[] = [
       idempotentHint: false,
       openWorldHint: false,
     },
+    versioned: true,
     handler: async (args, ctx) =>
-      me.appendToRoleBackground(ctx.userId, required(args, "id"), required(args, "text"), s(args, "heading")),
+      me.appendToRoleBackground(
+        ctx.userId,
+        required(args, "id"),
+        required(args, "text"),
+        s(args, "heading"),
+        mcpAuthor(ctx, "append_role_background"),
+      ),
   },
   {
     name: "delete_role",
@@ -2144,6 +2176,7 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
+    versioned: true,
     handler: async (args, ctx) =>
       resumes.updateResume(ctx.userId, required(args, "id"), {
         ...(args.data !== undefined ? { data: args.data } : {}),
@@ -2160,7 +2193,7 @@ export const tools: McpTool[] = [
           isFavorite: b(args, "isFavorite"),
           showPhoto: b(args, "showPhoto"),
         }),
-      }),
+      }, mcpAuthor(ctx, "update_resume")),
   },
   {
     name: "export_resume_pdf",
@@ -2426,6 +2459,7 @@ export const tools: McpTool[] = [
       idempotentHint: false,
       openWorldHint: false,
     },
+    versioned: true,
     handler: async (args, ctx) =>
       resumes.addRoleToResume(ctx.userId, required(args, "id"), {
         role: required(args, "role"),
@@ -2434,7 +2468,7 @@ export const tools: McpTool[] = [
           position: n(args, "position"),
           bullets: n(args, "bullets"),
         }),
-      }),
+      }, mcpAuthor(ctx, "add_role_to_resume")),
   },
   {
     name: "reorder_resume",
@@ -2461,13 +2495,14 @@ export const tools: McpTool[] = [
       idempotentHint: false,
       openWorldHint: false,
     },
+    versioned: true,
     handler: async (args, ctx) =>
       resumes.reorderResume(ctx.userId, required(args, "id"), {
         section: required(args, "section"),
         entry: args.entry === undefined ? undefined : String(args.entry),
         bullet: args.bullet === undefined ? undefined : String(args.bullet),
         position: Number(args.position),
-      }),
+      }, mcpAuthor(ctx, "reorder_resume")),
   },
   {
     name: "check_resume_fit",
@@ -2564,7 +2599,7 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) => {
-      const doc = parseResumeDoc(args.data);
+      const doc = parseResumeDocStrict(args.data);
       return {
         text: resumes.resumeToText(doc),
         estimatedLines: resumes.estimateLines(doc),
@@ -2867,45 +2902,32 @@ export const tools: McpTool[] = [
   },
   {
     name: "capture_job_posting",
-    title: "Capture a job posting from its URL",
+    title: "Capture job postings from their URLs",
     description:
-      "The FIRST tool to call when someone shares a link to a job posting. Fetches the page server-side, reads the structured posting data most job boards publish, and creates the application in one move: company matched or created (with its own website when the posting names one, which puts their logo on the pipeline), role title, full description, location, compensation and source all filled, starting on the wishlist. Returns captured true with the new application and its id. When the page doesn't state the employer or the role readably, returns captured false plus whatever WAS parsed and creates NOTHING — in that case show the person what was found, ask for the missing pieces, and use create_application. Never guess an employer's name from a URL. If they applied already, follow with move_application_stage.",
-    inputSchema: object({ url: str("The posting's URL, e.g. a Greenhouse, Lever, Ashby, Workday or LinkedIn job link") }, ["url"]),
+      "The FIRST tool to call when someone shares a link to a job posting — or twenty of them, from a morning of open tabs. Pass `url` for one or `urls` for several. Fetches each page server-side, reads the structured posting data most job boards publish, and creates the application in one move: company matched or created (with its own website when the posting names one and the company has none on file yet, which puts their logo on the pipeline), role title, full description, location, compensation and source all filled, starting on the wishlist. THE SAME ROLE IS NEVER CREATED TWICE: a job already on the board, matched on employer and role title against live applications, comes back as a duplicate naming the row it matches, and that holds within a list too, so one role on Greenhouse, LinkedIn and the careers page makes one application. When a page doesn't state the employer or the role readably, nothing is created for it and whatever WAS parsed comes back — show the person what was found, ask for the missing pieces, and use create_application. Never guess an employer's name from a URL. A company already on file keeps its website and notes: capture only fills them when they are empty. With `url`: returns captured true and the new application, or captured false with `duplicate` or a reason. With `urls`: returns three lists — captured, duplicates and failed — and every URL appears in exactly one; report all three back rather than a count. Everything lands on the wishlist; if they applied already, follow with move_application_stage.",
+    inputSchema: object({
+      url: str("One posting's URL, e.g. a Greenhouse, Lever, Ashby, Workday or LinkedIn job link"),
+      urls: strArray("Several postings' URLs. Duplicates within the list are collapsed before anything is fetched."),
+    }),
     annotations: {
       readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: true,
     },
-    handler: async (args, ctx) => pipeline.captureJobPosting(ctx.userId, required(args, "url")),
-  },
-  {
-    name: "capture_job_postings",
-    title: "Capture several job postings at once",
-    description:
-      "The same capture as capture_job_posting, over a list of URLs — for somebody who has spent a morning with twenty tabs open and wants them all on the board. Fetches the pages a few at a time, then creates in order. The SAME ROLE IS NOT CREATED TWICE: a job already on the board, matched on employer and role title against live applications, is reported as a duplicate rather than added again, and that also holds within the batch, so the same role on Greenhouse, LinkedIn and the company's own careers page produces one application and two duplicate lines. Returns three lists — captured with their new ids, duplicates naming what each one already matches, and failures naming the page's own problem — and every URL handed in appears in exactly one of them. Report all three back rather than a count: a duplicate is a thing they can go and look at, and a failure is a page they can paste the description from by hand with create_application. One bad URL never costs the others. Everything lands on the wishlist, so nothing here says they applied.",
-    inputSchema: object(
-      {
-        urls: strArray(
-          "The postings' URLs. Duplicates within the list are collapsed before anything is fetched.",
-        ),
-      },
-      ["urls"],
-    ),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: false,
-      openWorldHint: true,
+    handler: async (args, ctx) => {
+      const many = Array.isArray(args.urls) ? (args.urls as unknown[]).map(String) : [];
+      const one = s(args, "url");
+      if (many.length > 0) return pipeline.captureJobPostings(ctx.userId, one ? [one, ...many] : many);
+      if (one) return pipeline.captureJobPosting(ctx.userId, one);
+      throw new Error("Pass url for one posting, or urls for several.");
     },
-    handler: async (args, ctx) =>
-      pipeline.captureJobPostings(ctx.userId, requiredArray(args, "urls")),
   },
   {
     name: "watch_company_board",
     title: "Watch a company's jobs board",
     description:
-      "Watch one employer's own jobs board and hear about a role the moment it appears. This is the tool for \"tell me when Stripe posts a staff engineer role\" — a search that is waiting on a particular company rather than browsing. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON; hand it the board link (boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme) or just the company's careers page, and it follows an embedded board through to the real one. ANY OTHER BOARD IS REFUSED and nothing is saved — Workday, SmartRecruiters and a hand-built careers page publish no feed to read, and the honest answer for those is to browse them and paste the links into capture_job_postings. `title_terms` and `location_terms` narrow it: a role has to contain ANY of the title terms AND ANY of the location terms, matched case-insensitively against the posting's own words, and an empty list means anything. THE FIRST LOOK PROPOSES NOTHING: it records what is on the board today as already seen, because a watch on a six-hundred-role board is otherwise six hundred rows to review. Pass propose_existing true when they want what is already up there, and the first ten matches are queued. After that, every new matching role becomes a proposal on their dashboard with the posting already read into it, which they accept to put it on the wishlist or dismiss. NOTHING IS EVER ADDED TO THE PIPELINE WITHOUT A YES. Returns the watch, which provider was found, and how many roles the board is carrying today — read that number back, because a board of four hundred and filters of none is a watch that will be noisy. Calling it again for the same board changes the filters rather than making a second watch.",
+      "Watch one employer's own jobs board and hear about a role the moment it appears. This is the tool for \"tell me when Stripe posts a staff engineer role\" — a search that is waiting on a particular company rather than browsing. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON; hand it the board link (boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme) or just the company's careers page, and it follows an embedded board through to the real one. ANY OTHER BOARD IS REFUSED and nothing is saved — Workday, SmartRecruiters and a hand-built careers page publish no feed to read, and the honest answer for those is to browse them and paste the links into capture_job_posting. `title_terms` and `location_terms` narrow it: a role has to contain ANY of the title terms AND ANY of the location terms, matched case-insensitively against the posting's own words, and an empty list means anything. THE FIRST LOOK PROPOSES NOTHING: it records what is on the board today as already seen, because a watch on a six-hundred-role board is otherwise six hundred rows to review. Pass propose_existing true when they want what is already up there, and the first ten matches are queued. After that, every new matching role becomes a proposal on their dashboard with the posting already read into it, which they accept to put it on the wishlist or dismiss. NOTHING IS EVER ADDED TO THE PIPELINE WITHOUT A YES. Returns the watch, which provider was found, and how many roles the board is carrying today — read that number back, because a board of four hundred and filters of none is a watch that will be noisy. Calling it again for the same board changes the filters rather than making a second watch.",
     inputSchema: object(
       {
         board_url: str(
@@ -3199,7 +3221,7 @@ export const tools: McpTool[] = [
             letterId: s(args, "letter_id"),
           }),
         },
-        { writtenBy: "mcp", connectionId: ctx.connectionId, connectionName: ctx.connectionName, tool: "draft_outbound_email" },
+        mcpAuthor(ctx, "draft_outbound_email"),
       ),
   },
   {
@@ -4021,12 +4043,13 @@ export const tools: McpTool[] = [
       idempotentHint: false,
       openWorldHint: false,
     },
+    versioned: true,
     handler: async (args, ctx) => {
       const result = await wins.logWin(ctx.userId, {
         text: required(args, "text"),
         roleId: s(args, "role_id"),
         occurredOn: s(args, "occurred_on"),
-      });
+      }, mcpAuthor(ctx, "log_win"));
       return {
         roleId: result.target.roleId,
         role: `${result.target.title} at ${result.target.company}`,
@@ -6790,6 +6813,7 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
+    versioned: true,
     handler: async (args, ctx) =>
       revisions.restoreRevision(ctx.userId, required(args, "id"), {
         writtenBy: "mcp",
@@ -6810,6 +6834,7 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
+    versioned: true,
     handler: async (args, ctx) =>
       revisions.undoChange(ctx.userId, required(args, "id"), {
         writtenBy: "mcp",
@@ -7601,7 +7626,7 @@ export const tools: McpTool[] = [
     name: "admin_get_assistant_config",
     title: "Check the built-in assistant",
     description:
-      "Whether the chat built into this app is turned on, which model answers, the daily message cap, the tool scope it is served, and what it has cost in tokens over the last thirty days. The API key comes back masked. Empty key means the whole feature is off and the button is never rendered — which is the right setting for an instance whose people connect Claude or another MCP client instead, because that costs this instance nothing. The usage figures are counts and sums across the instance; there is deliberately no way for an admin to read anybody's conversation.",
+      "Whether the chat built into this app is turned on, which model answers, the daily message cap, and what it has cost in tokens over the last thirty days: messages people sent, and input, output, cache-read and cache-write tokens. The API key comes back masked. Empty key means the whole feature is off and the button is never rendered — which is the right setting for an instance whose people connect Claude or another MCP client instead, because that costs this instance nothing. The usage figures are counts and sums across the instance; there is deliberately no way for an admin to read anybody's conversation.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -7619,9 +7644,8 @@ export const tools: McpTool[] = [
         anthropicApiKey: maskSecret(settings.assistantApiKey),
         model: settings.assistantModel,
         dailyMessages: settings.assistantDailyMessages,
-        scope: settings.assistantScope,
         last30Days: usage,
-        help: "Billing is the instance owner's: the key is theirs and every message is charged to it. The scope is the honest cost lever — the full tool surface is most of the tokens on every turn, and WRITING is about a quarter of it. Turn it off by clearing the key with admin_set_assistant_config.",
+        help: "Billing is the instance owner's: the key is theirs and every message is charged to it. The tool definitions and the transcript are cached, so most input tokens on a busy day are cache reads. Turn it off by clearing the key with admin_set_assistant_config.",
       };
     },
   },
@@ -7629,16 +7653,11 @@ export const tools: McpTool[] = [
     name: "admin_set_assistant_config",
     title: "Configure the built-in assistant",
     description:
-      "Turn the chat built into this app on or off and set what it costs. Only the fields you pass are changed. Pass an empty anthropicApiKey to turn it off completely — the button stops being rendered and nothing here calls out. dailyMessages is per person, counted in their own time zone, and 0 means no cap at all, which on a key somebody is paying for is a decision rather than a default. scope is the same four values a connection can be narrowed to and is the one real lever on what a turn costs; it is NOT a permission, because the assistant already runs as whoever is signed in.",
+      "Turn the chat built into this app on or off and set what it costs. Only the fields you pass are changed. Pass an empty anthropicApiKey to turn it off completely — the button stops being rendered and nothing here calls out. dailyMessages is per person, counted in their own time zone, between 1 and 10,000; the default is 50. The assistant runs as whoever is signed in and is served the same tools their own connection would be.",
     inputSchema: object({
       anthropicApiKey: str("Anthropic API key from console.anthropic.com, starts with sk-ant-. Empty turns the feature off."),
       model: str(`Which model answers. Default ${DEFAULT_ASSISTANT_MODEL}.`),
-      dailyMessages: num("Messages one person may send in a day. 0 means no cap."),
-      scope: {
-        type: "string",
-        enum: [...SCOPE_VALUES],
-        description: "Which tools it is served: FULL, WRITING, PIPELINE or READONLY",
-      },
+      dailyMessages: num("Messages one person may send in a day, 1 to 10,000."),
     }),
     annotations: {
       readOnlyHint: false,
@@ -7648,18 +7667,13 @@ export const tools: McpTool[] = [
     },
     adminOnly: true,
     handler: async (args, ctx) => {
-      const scope = s(args, "scope");
-      if (scope !== undefined && !(SCOPE_VALUES as readonly string[]).includes(scope)) {
-        throw new Error(`scope must be one of ${SCOPE_VALUES.join(", ")}.`);
-      }
       const daily = n(args, "dailyMessages");
       await updateSettings(
         ctx.user,
         defined({
           assistantApiKey: s(args, "anthropicApiKey"),
           assistantModel: s(args, "model"),
-          assistantDailyMessages: daily === undefined ? undefined : Math.max(0, Math.round(daily)),
-          assistantScope: scope as McpScope | undefined,
+          assistantDailyMessages: daily === undefined ? undefined : Math.max(1, Math.round(daily)),
         }),
       );
       const settings = await getSettings();
@@ -7667,8 +7681,6 @@ export const tools: McpTool[] = [
         configured: assistantIsConfigured(settings),
         model: settings.assistantModel,
         dailyMessages: settings.assistantDailyMessages,
-        scope: settings.assistantScope,
-        serves: scopeBlurb(settings.assistantScope),
       };
     },
   },
@@ -8330,15 +8342,33 @@ const MAX_RESULT_CHARS: Record<string, number> = {
  * Never run these without a person in the loop.
  *
  * The test is not "destructive" — most of this server is, and the archive makes
- * almost all of it reversible. It is "cannot be undone by any tool here". Four
- * things qualify, and each of them can take years of someone's work in one
- * call.
+ * almost all of it reversible. It is "cannot be undone by any tool here, and
+ * takes career material with it": the archive's own destroyers, a company
+ * merge, an account, and every delete of something a person wrote about their
+ * own working life and has no copy of anywhere else. In the built-in drawer
+ * this set is the only thing between a request — or text a stranger planted in
+ * a posting — and those deletes, and every MCP client reads the same flag.
+ *
+ * Housekeeping deletes stay off it on purpose: a task, a tag, a saved view or
+ * a checklist line is one click to make again.
  */
 const REQUIRES_USER_INTERACTION = new Set([
   "delete_archived",
   "empty_archive",
   "merge_companies",
   "admin_delete_user",
+  "delete_role",
+  "delete_highlight",
+  "delete_note",
+  "delete_extra",
+  "delete_resume",
+  "delete_letter",
+  "delete_offer",
+  "delete_attachment",
+  "delete_interview",
+  "delete_interview_question",
+  "delete_referral",
+  "delete_transferable_skill",
 ]);
 
 /** The `_meta` for one tool, or undefined when it needs none. */
@@ -8356,6 +8386,12 @@ export function metaFor(name: string): Json | undefined {
 export const allTools: McpTool[] = [...tools, ...prompts.map(promptAsTool)];
 
 export const toolsByName = new Map(allTools.map((tool) => [tool.name, tool]));
+
+// A name on the confirm-first list that no tool carries is a gate that guards
+// nothing — usually a tool renamed or merged away. Fail loudly at load.
+for (const name of REQUIRES_USER_INTERACTION) {
+  if (!toolsByName.has(name)) throw new Error(`REQUIRES_USER_INTERACTION names ${name}, which is not a tool.`);
+}
 
 // ---------------------------------------------------------------------------
 // Scopes: what one connection is SERVED

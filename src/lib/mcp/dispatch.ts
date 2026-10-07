@@ -59,6 +59,7 @@ export async function dispatchTool(
       tool: name,
       summary: tool.title,
       recordId: subjectIdIn(args),
+      versioned: tool.versioned === true,
     });
   }
 

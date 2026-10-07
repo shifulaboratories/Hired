@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FileSignatureIcon, PlusIcon, PrinterIcon, Trash2Icon } from "lucide-react";
@@ -22,6 +22,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SaveIndicator } from "@/components/save-indicator";
 import { useAutosave } from "@/hooks/use-autosave";
+import { StaleNotice } from "@/components/stale-notice";
 import { useViewerZone } from "@/components/viewer-zone";
 import { civilDay, shortCivilDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -215,14 +216,23 @@ function LetterEditor({
     sentAt: letter.sentAt ?? "",
   });
 
+  // Letters keep no versions, so this check is the only thing between an
+  // open panel and an assistant's update_letter being typed over.
+  const version = useRef(letter.updatedAt);
   const save = useAutosave<typeof values>(async (next) => {
-    await updateLetterAction(letter.id, {
-      kind: next.kind,
-      title: next.title,
-      recipient: next.recipient,
-      body: next.body,
-      sentAt: next.sentAt,
-    });
+    const result = await updateLetterAction(
+      letter.id,
+      {
+        kind: next.kind,
+        title: next.title,
+        recipient: next.recipient,
+        body: next.body,
+        sentAt: next.sentAt,
+      },
+      version.current,
+    );
+    if ("updatedAt" in result) version.current = result.updatedAt;
+    return result;
   });
 
   const set = (patch: Partial<typeof values>) => {
@@ -233,6 +243,7 @@ function LetterEditor({
 
   return (
     <div className="min-w-0 space-y-3">
+      {save.state === "conflict" && <StaleNotice what="letter" />}
       <div className="flex items-center justify-between gap-3">
         <SaveIndicator state={save.state} />
         <div className="flex items-center gap-1">

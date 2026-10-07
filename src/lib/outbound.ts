@@ -1,4 +1,4 @@
-import { assertPublicUrl, MAX_REDIRECT_HOPS } from "@/lib/posting";
+import { assertPublicAddress, assertPublicUrl, MAX_REDIRECT_HOPS } from "@/lib/safe-fetch";
 
 /**
  * Every outbound fetch in this app that is not the posting parser itself.
@@ -74,6 +74,7 @@ async function readCapped(response: Response, cap: number): Promise<string> {
  */
 export async function fetchBoardJson<T>(url: string, options?: { maxBytes?: number }): Promise<T> {
   const target = assertPublicUrl(url);
+  await assertPublicAddress(target);
   const response = await fetch(target, {
     headers: { Accept: "application/json", "User-Agent": BROWSER_UA },
     redirect: "manual",
@@ -129,6 +130,8 @@ export async function probeUrl(rawUrl: string, options?: { wantBody?: boolean })
   for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop += 1) {
     let response: Response;
     try {
+      // What the name resolves to, on every hop. See safe-fetch.ts.
+      await assertPublicAddress(url);
       response = await fetch(url, {
         headers: {
           "User-Agent": BROWSER_UA,

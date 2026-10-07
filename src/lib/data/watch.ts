@@ -179,7 +179,7 @@ export async function resolveBoard(rawUrl: string): Promise<ResolvedBoard> {
 
   return {
     provider: null,
-    reason: `Nothing on ${url.hostname} points at a Greenhouse, Lever or Ashby board, and those are the three that publish a feed to read. Workday, SmartRecruiters and a hand-built careers page publish nothing, so nothing was saved — browse that board and paste the links into capture_job_postings instead.`,
+    reason: `Nothing on ${url.hostname} points at a Greenhouse, Lever or Ashby board, and those are the three that publish a feed to read. Workday, SmartRecruiters and a hand-built careers page publish nothing, so nothing was saved — browse that board and paste the links into capture_job_posting instead.`,
   };
 }
 

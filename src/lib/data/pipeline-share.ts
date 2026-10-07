@@ -182,8 +182,10 @@ export async function unsharePipeline(
  */
 export async function getSharedPipeline(slug: string) {
   if (!slug) return null;
-  const share = await db.pipelineShare.findUnique({
-    where: { slug },
+  // findFirst so the owner's state can be in the filter: a suspended
+  // account's shared board is gone until it is reactivated, like its resume.
+  const share = await db.pipelineShare.findFirst({
+    where: { slug, user: { isActive: true } },
     select: {
       id: true,
       userId: true,

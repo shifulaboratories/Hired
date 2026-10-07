@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -32,6 +32,7 @@ import { useAsk } from "@/components/assistant/ask";
 import { resumeEvidence } from "@/lib/background";
 import { ChipInput } from "@/components/chip-input";
 import { SaveIndicator } from "@/components/save-indicator";
+import { StaleNotice } from "@/components/stale-notice";
 import { useAutosave } from "@/hooks/use-autosave";
 import { cn } from "@/lib/utils";
 import {
@@ -56,6 +57,8 @@ type Role = {
   background: string;
   tags: string[];
   startUnconfirmed: boolean;
+  /** The version this page loaded, ISO. Saves are refused once it is stale. */
+  updatedAt: string;
   endUnconfirmed: boolean;
 };
 
@@ -96,9 +99,15 @@ export function RoleEditor({
     endUnconfirmed: role.endUnconfirmed,
   });
 
-  const { state, push } = useAutosave<typeof values>((next) =>
-    updateRoleAction(role.id, next),
-  );
+  // The version each save is measured against: the one loaded, then the one
+  // every save hands back. An assistant's write in between makes it stale,
+  // and the save is refused rather than written over that.
+  const version = useRef(role.updatedAt);
+  const { state, push } = useAutosave<typeof values>(async (next) => {
+    const result = await updateRoleAction(role.id, next, version.current);
+    if ("updatedAt" in result) version.current = result.updatedAt;
+    return result;
+  });
 
   const set = (patch: Partial<typeof values>) => {
     const next = { ...values, ...patch };
@@ -108,6 +117,7 @@ export function RoleEditor({
 
   return (
     <div className="space-y-6">
+      {state === "conflict" && <StaleNotice what="role" />}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <Input
