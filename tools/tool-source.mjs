@@ -327,8 +327,49 @@ export const promptEntries = entries(promptBody).map((block) => {
   // calls it. Scanning the description instead emptied every narrowed scope.
   const build = text.indexOf("    build:");
   if (build < 0) throw new Error(`Prompt ${name} in tools.ts has no build`);
-  return { name, adminOnly: /^ {4}adminOnly: true,$/m.test(text), body: text.slice(build) };
+  // The description and arguments as a client is served them, so the eval can
+  // offer a workflow the way promptAsTool in tools.ts publishes it rather than
+  // as a one-line stand-in that routed nothing like the real thing.
+  const literal = /^ {4}description:\s*\n?\s*((?:"(?:[^"\\]|\\.)*"\s*\+?\s*)+),\n/m.exec(text)?.[1];
+  if (!literal) throw new Error(`Prompt ${name} in tools.ts has no description`);
+  const argsStart = text.indexOf("    arguments:");
+  const args =
+    argsStart < 0 || argsStart > build
+      ? []
+      : new Function(`return (${text.slice(argsStart + "    arguments:".length, build).trim().replace(/,$/, "")});`)();
+  return {
+    name,
+    adminOnly: /^ {4}adminOnly: true,$/m.test(text),
+    description: new Function(`return (${literal});`)(),
+    arguments: args,
+    body: text.slice(build),
+  };
 });
+
+/**
+ * A workflow as tools/list serves it. Mirrors promptAsTool in tools.ts, suffix
+ * and all — if that sentence changes there, change it here.
+ */
+export function workflowAsTool(name) {
+  const prompt = promptEntries.find((entry) => entry.name === name);
+  if (!prompt) throw new Error(`No workflow called ${name}`);
+  const properties = {};
+  for (const argument of prompt.arguments) {
+    properties[argument.name] = { type: "string", description: argument.description };
+  }
+  return {
+    name: prompt.name,
+    description:
+      `${prompt.description} Returns a step-by-step plan for this job — follow the steps it gives you, ` +
+      `calling the tools it names. This is a workflow, not a data lookup: nothing is read or written until you act on it.`,
+    schema: {
+      type: "object",
+      properties,
+      required: prompt.arguments.filter((argument) => argument.required).map((argument) => argument.name),
+      additionalProperties: false,
+    },
+  };
+}
 
 export const prompts = promptEntries.map((prompt) => prompt.name);
 export const promptAdmin = (promptBody.match(/^ {4}adminOnly: true,$/gm) ?? []).length;
