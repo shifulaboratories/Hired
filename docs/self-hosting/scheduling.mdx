@@ -1,0 +1,55 @@
+---
+title: "Scheduled jobs"
+sidebarTitle: "Scheduling"
+description: "The digest and the background sweeps run when something outside the app calls them. How to set that up, and how to tell whether it is working."
+icon: "clock"
+---
+
+The app runs no timers and no background workers. That is deliberate: every request is
+self-contained, which is what lets an instance restart, scale to two replicas or suspend an
+account instantly. So the four jobs that happen on a schedule happen when a scheduler you
+set up calls an address on your instance.
+
+| Job | What it does | Address | Cadence |
+| --- | --- | --- | --- |
+| Digest | Sends the Monday summary and the due-today nudge to whoever turned them on, at the hour they chose in their own time zone. | `/api/digest/<digest token>` | Hourly |
+| Boards | Reads every watched company board and queues new matching roles for review. | `/api/sweep/<sweep token>?only=boards` | Every few hours |
+| Postings | Re-reads the posting behind each open application and notes when it has come down. | `/api/sweep/<sweep token>?only=postings` | Daily |
+| Mail | Reads new mail from the people and companies on the pipeline for anyone who turned the mail sweep on, and queues what it finds. | `/api/sweep/<sweep token>?only=mail` | Hourly |
+
+`/api/sweep/<sweep token>` with no `?only=` runs the three sweeps in turn. Every address takes
+GET or POST, and every job decides for itself who is due, so calling one more often than it
+needs costs a few queries and nothing else.
+
+## Setting it up
+
+<Steps>
+  <Step title="Choose the tokens">
+    In **Admin → Configuration**, put a long random string of your own into **Digest sweep
+    token**, and a different one into **Background sweep token**. They are separate on
+    purpose: a secret that only ever caused mail to be sent should not also be one that
+    fetches URLs and reads mailboxes. Like every secret there, neither reads back, so keep a
+    copy.
+  </Step>
+  <Step title="Point a scheduler at the addresses">
+    Any scheduler that can make an HTTP request works: a cron job on the host, Railway's cron
+    service, GitHub Actions on a `schedule`, or a hosted pinger. Use your instance's public
+    address, for example `https://hired.example.com/api/digest/<token>`.
+  </Step>
+  <Step title="Check it took">
+    `admin_health`, and the health panel under **Admin**, carry a **Schedules** row. It says
+    when each job last ran and warns only when somebody is counting on a job that nothing is
+    calling: a digest switched on with no digest scheduler, say.
+  </Step>
+</Steps>
+
+Leave a token empty and its address answers 404. It is off, not open.
+
+## What people see when nothing is scheduled
+
+The switches still work, and they say so. A member who turns on a digest, a board watch or
+the mail sweep on an instance where that job has not run recently sees a sentence under the
+switch saying it will not happen on its own yet, and the matching tools return the same
+sentence as `scheduleNote` so a connected assistant reads it back instead of promising a
+Monday summary that will never arrive. **Send now** on a digest, `check_posting_live` and
+`run_mail_sweep` all work by hand whether or not anything is scheduled.
