@@ -41,6 +41,7 @@ import {
   requireUserPendingPasswordChange,
   setupKeyMatches,
   startSession,
+  PLACEHOLDER_OWNER_EMAIL,
 } from "@/lib/auth";
 import { deleteVariable, getSettings, setVariables } from "@/lib/settings";
 import { unlinkGoogleFromUser } from "@/lib/google";
@@ -169,8 +170,17 @@ export async function setNewPasswordAction(
   const user = await requireUserPendingPasswordChange();
   if (!user.mustChangePassword) redirect("/settings");
   const next = String(formData.get("newPassword") ?? "");
+  // The owner made at first boot has a placeholder address, and nothing sent
+  // to it — a waitlist notice, a digest — reaches anybody. This is the one
+  // moment they are guaranteed to be looking, so it is asked for here.
+  const placeholder = user.email === PLACEHOLDER_OWNER_EMAIL;
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (placeholder && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { error: "Enter the email address you want to sign in with." };
+  }
 
   try {
+    if (placeholder) await users.updateOwnAccount(user.id, { email });
     await users.changePassword(user.id, next);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Could not set that password." };

@@ -229,6 +229,12 @@ export function isClaimed(user: { passwordHash: string; googleId: string | null 
   return Boolean(user.passwordHash || user.googleId);
 }
 
+/**
+ * The address the owner account is created with at first boot. Nobody's real
+ * address, so the first sign-in asks for one: see the change-password page.
+ */
+export const PLACEHOLDER_OWNER_EMAIL = "owner@localhost";
+
 /** The instance is unclaimed until somebody who can sign in exists. */
 export async function instanceNeedsSetup() {
   return (await db.user.count({ where: CLAIMED })) === 0;
