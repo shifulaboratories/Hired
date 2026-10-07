@@ -60,6 +60,10 @@ export function ProfileForm({ profile }: { profile: ProfileValues }) {
             onChange={set("headline")}
             placeholder="Staff Software Engineer"
           />
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            The contact lines below are printed on every new resume and every letter. Leave one blank
+            to keep it off paper.
+          </p>
           <Field label="Email" value={values.email} onChange={set("email")} placeholder="you@example.com" />
           <Field label="Phone" value={values.phone} onChange={set("phone")} placeholder="+1 555 000 1234" />
           <Field

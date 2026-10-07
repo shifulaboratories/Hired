@@ -9,7 +9,8 @@ import { ResumeSortSelect } from "@/components/resume/resume-sort";
 import { listResumes, type ResumeListOpts } from "@/lib/data/resumes";
 import { parseResumeDoc } from "@/lib/resume-schema";
 import { diffResumeDocs } from "@/lib/resume-diff";
-import { estimatePages } from "@/lib/resume-text";
+import { LINES_PER_PAGE } from "@/lib/resume-text";
+import { fitReport } from "@/lib/resume-fit";
 import { NewResumeDialog } from "@/components/resume/new-resume-dialog";
 import { ResumeCard } from "@/components/resume/resume-card";
 import { ResumePaper } from "@/components/resume/resume-paper";
@@ -141,7 +142,7 @@ export async function ResumesPanel({
                     name={resume.name}
                     target={[resume.targetRole, resume.targetCompany].filter(Boolean).join(" · ")}
                     template={resume.template}
-                    pages={estimatePages(doc)}
+                    pages={fitReport(doc, LINES_PER_PAGE).approxPages}
                     publicUrl={resume.slug ? `${proto}://${host}/r/${resume.slug}` : null}
                     photoOnPublicPage={resume.showPhoto && Boolean(photo)}
                     applications={resume._count.applications}

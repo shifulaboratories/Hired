@@ -126,6 +126,9 @@ const QUESTION_KINDS = [
 ];
 // Mirrors REFERRAL_STATUSES in src/lib/data/referrals.ts, checked below.
 const REFERRAL_STATUSES = ["ASKED", "AGREED", "SUBMITTED", "DECLINED", "NO_ANSWER"];
+// Mirrors the template catalogue in src/lib/resume-templates.ts, checked below.
+const TEMPLATE_KEYS = ["harvard", "classic", "modern", "compact", "editorial", "ats"];
+const DEFAULT_TEMPLATE = "harvard";
 // Mirrors SYSTEM_EVENT_SOURCES in src/lib/data/system.ts, checked below.
 const SYSTEM_EVENT_SOURCES = [
   "stripe.webhook", "billing.sync", "email.send", "google.signin", "google.data",
@@ -177,6 +180,14 @@ for (const [name, values] of [
   const found = declared ? [...declared[1].matchAll(/"([A-Z_]+)"/g)].map((m) => m[1]) : [];
   if (found.join(",") !== PROPOSAL_KINDS.join(",")) {
     throw new Error(`PROPOSAL_KINDS changed in proposals.ts (${found.join(", ")}) — update tools/tool-source.mjs`);
+  }
+}
+{
+  const file = readFileSync(join(ROOT, "src", "lib", "resume-templates.ts"), "utf8");
+  const found = [...file.matchAll(/^    key: "([a-z]+)",$/gm)].map((m) => m[1]);
+  const fallback = /export const DEFAULT_TEMPLATE = "([a-z]+)";/.exec(file)?.[1];
+  if (found.join(",") !== TEMPLATE_KEYS.join(",") || fallback !== DEFAULT_TEMPLATE) {
+    throw new Error(`The templates changed in resume-templates.ts (${found.join(", ")}) — update tools/tool-source.mjs`);
   }
 }
 {
@@ -276,7 +287,7 @@ const scope = {
   str, num, bool, strArray, object, limitArg, SYSTEM_EVENT_SOURCES, LETTER_KINDS,
   INTERVIEW_FORMATS, INTERVIEW_OUTCOMES, QUESTION_KINDS, REFERRAL_STATUSES,
   PROPOSAL_KINDS, PROPOSAL_STATUSES, DIGEST_KINDS, SCOPE_VALUES, OUTBOUND_STATUSES,
-  DEFAULT_ASSISTANT_MODEL, KEYWORD_POLICIES,
+  DEFAULT_ASSISTANT_MODEL, KEYWORD_POLICIES, TEMPLATE_KEYS, DEFAULT_TEMPLATE,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
   ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,
   COMPANY_MISSING, CONTACT_MISSING, PIPELINE_VIEW_VALUES, COLUMN_LIST_VALUES,
@@ -413,7 +424,7 @@ function workflowFits(prompt, served) {
  * Which workflows one scope serves, by name.
  *
  * A fixed point, not one pass, because a workflow may name another —
- * prep_for_interview ends by offering to run research_company. Mirrors the loop
+ * log_my_week ends by offering mine_role_background. Mirrors the loop
  * in buildScope; see its comment for why.
  */
 export function workflowsForScope(scopeKey, { admin = false } = {}) {

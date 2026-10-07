@@ -22,6 +22,8 @@ export type EvidenceSource = {
   role: string;
   /** The Role it belongs to, for narrowing to one job's material. */
   roleId: string | null;
+  /** A saved highlight, or a line of a role's evidence. Highlights when absent. */
+  kind?: "highlight" | "background";
 };
 
 export type Backing = {

@@ -3,10 +3,9 @@ import type { ResumeDoc } from "@/lib/resume-schema";
 /**
  * Pure rendering helpers for a resume document — no database, no Node built-ins.
  *
- * They live outside `src/lib/data/` on purpose. The editor is a client component
- * and needs `estimateLines` to show a live page count, and importing that from
- * the data layer dragged the whole module — Prisma and `node:crypto` included —
- * into the browser bundle. It only ever worked by accident; adding one Node
+ * They live outside `src/lib/data/` on purpose. Client components need them,
+ * and importing them from the data layer dragged the whole module — Prisma and
+ * `node:crypto` included — into the browser bundle. It only ever worked by accident; adding one Node
  * import to `resumes.ts` broke the build. Keeping these here means the client
  * imports exactly what it uses.
  */
@@ -69,43 +68,10 @@ export function resumeToText(doc: ResumeDoc) {
   return lines.join("\n");
 }
 
-/** Rough one-page pressure gauge shown in the editor. */
-export function estimateLines(doc: ResumeDoc) {
-  let lines = 5; // header
-  for (const section of doc.sections) {
-    if (!section.visible) continue;
-    lines += 2;
-    if (section.kind === "summary") lines += Math.ceil(section.text.length / 110);
-    if (section.kind === "experience")
-      for (const item of section.experience) {
-        lines += 2;
-        lines += Math.ceil(item.summary.length / 110);
-        for (const b of item.bullets.filter(Boolean)) lines += Math.ceil(b.length / 105);
-      }
-    if (section.kind === "education") lines += section.education.length * 2;
-    if (section.kind === "projects")
-      for (const item of section.projects) {
-        lines += 1 + Math.ceil(item.description.length / 110);
-        for (const b of item.bullets.filter(Boolean)) lines += Math.ceil(b.length / 105);
-      }
-    if (section.kind === "skills")
-      for (const g of section.skills) lines += Math.ceil(g.skills.join(", ").length / 95) || 1;
-    if (section.kind === "certifications") lines += section.certifications.length;
-    if (section.kind === "custom")
-      for (const item of section.items) lines += 1 + item.bullets.filter(Boolean).length;
-  }
-  return lines;
-}
-
 /**
  * How many estimated lines fit a US-Letter page at the default type settings.
- * One number, used by the editor's gauge, the resume grid's page badge and the
- * `preview_resume_text` tool — it was hardcoded in two of those before and they
- * would have drifted.
+ * One number, read by check_resume_fit and the resume grid's page badge through
+ * fitReport — the one estimator. A second one, which counted different things,
+ * was removed with preview_resume_text; export_resume_pdf is the measured count.
  */
 export const LINES_PER_PAGE = 46;
-
-/** The page count the gauge and the grid agree on. */
-export function estimatePages(doc: ResumeDoc) {
-  return Math.max(1, Math.ceil(estimateLines(doc) / LINES_PER_PAGE));
-}

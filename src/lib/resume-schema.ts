@@ -317,7 +317,7 @@ export const RESUME_DOC_SHAPE = `{
   "sections": [
     { "kind": "summary", "heading": "Summary", "visible": true, "text": string },
     { "kind": "experience", "heading": "Experience", "visible": true,
-      "experience": [{ "company": string, "title": string, "location": string,
+      "experience": [{ "roleId": string, "company": string, "title": string, "location": string,
                        "startDate": "YYYY-MM", "endDate": "YYYY-MM", "isCurrent": boolean,
                        "summary": string, "bullets": [string] }] },
     { "kind": "education", "heading": "Education", "visible": true,

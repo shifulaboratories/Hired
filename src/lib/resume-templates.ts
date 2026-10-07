@@ -83,7 +83,7 @@ export const RESUME_TEMPLATES: readonly ResumeTemplate[] = [
     name: "Plain (ATS)",
     hint: "One column, black, every link printed as its URL",
     description:
-      "Plain, single column, black on white, no accent colour and no photo. Conventional headings, dates as ordinary text, real list markers, and every link printed as its URL rather than as a label with the address hidden in the markup. Reach for it when a portal is going to parse the file rather than a person read it, or when somebody asks for something 'ATS-friendly' — and say plainly that harvard is already safe, that this is a smaller difference than the internet claims, and that preview_ats_text will show them exactly what changes.",
+      "Plain, single column, black on white, no accent colour and no photo. Conventional headings, dates as ordinary text, real list markers, and every link printed as its URL rather than as a label with the address hidden in the markup. Reach for it when a portal is going to parse the file rather than a person read it, or when somebody asks for something 'ATS-friendly' — and say plainly that this is a smaller difference than the internet claims. What it does change: harvard and the others print a labelled link as its label, so a text extractor sees the label and never the address; here every address is on the page.",
     takesPhoto: false,
     takesAccent: false,
   },

@@ -477,9 +477,10 @@ export async function listOpenQuestions(userId: string): Promise<OpenItem[]> {
  * unconfirmed date is settled by clearing its flag, and an answer of YYYY-MM
  * (or YYYY) corrects the date on the way.
  *
- * `roleId` null means the profile's personal background. Goes through
- * updateRole / updateProfile so the version store keeps the copy it keeps for
- * any other background edit, which is what makes this undoable.
+ * `roleId` null means the profile's personal background. A role's answer goes
+ * through updateRole, so the version store keeps its copy and restore_revision
+ * can put the old background back. The profile keeps no versions, so a profile
+ * answer is not undoable — the tool says so rather than promising otherwise.
  */
 export async function resolveOpenQuestion(
   userId: string,
@@ -1032,6 +1033,12 @@ export type SearchHit = {
   subtitle: string;
   excerpt: string;
   score: number;
+  /**
+   * What the excerpt may be used for. Only "evidence" reaches a document;
+   * "rules" bind the writer, "caveats" are the person's own positioning notes
+   * and "open" is something they have not settled — ask. See background.ts.
+   */
+  use: "evidence" | "rules" | "caveats" | "open";
 };
 
 /**
@@ -1064,6 +1071,13 @@ export type SearchHit = {
  *   weighting is computed afterwards, on the handful of rows that matched.
  *   If those two expressions ever drift, the index simply goes unused and the
  *   search still returns the right answer.
+ *
+ * Every hit says what its excerpt may be used for (`use`). The excerpt is
+ * full-text over a whole background, so it can come from a Caveats or an Open
+ * questions section — and labelled only "role", a positioning note read
+ * exactly like a line of evidence to the writer it was handed to. The
+ * profile's own background ("not for the resume") is not searched at all:
+ * get_profile and get_me_snapshot hand it over whole, parsed.
  */
 export async function searchMe(userId: string, query: string, limit = 25): Promise<SearchHit[]> {
   const text = query.trim();
@@ -1088,7 +1102,7 @@ export async function searchMe(userId: string, query: string, limit = 25): Promi
              coalesce(p."headline", '') AS subtitle,
              coalesce(p."fullName", '') || ' ' || coalesce(p."headline", '') AS head,
              coalesce(p."fullName", '') || ' ' || coalesce(p."headline", '') || ' ' ||
-               coalesce(p."summary", '') || ' ' || coalesce(p."brainDump", '') AS body,
+               coalesce(p."summary", '') AS body,
              0::float8 AS boost
       FROM "Profile" p WHERE p."userId" = ${userId}
 
@@ -1153,16 +1167,69 @@ export async function searchMe(userId: string, query: string, limit = 25): Promi
     LIMIT ${Math.max(1, Math.trunc(limit))}
   `;
 
-  return rows.map((row) => ({
+  // ts_headline has no way to mark a match with nothing, so it marks with a
+  // sentinel we strip. Plain text is what every caller of this wants.
+  const hits = rows.map((row) => ({
     kind: row.kind as SearchHit["kind"],
     id: row.id,
     title: row.title,
     subtitle: row.subtitle,
-    // ts_headline has no way to mark a match with nothing, so it marks with a
-    // sentinel we strip. Plain text is what every caller of this wants.
     excerpt: row.excerpt.replaceAll("~~", "").trim(),
     score: row.score,
+    // The first matched word and the two after it, read off the marks before
+    // they are stripped: what labelUses looks for in the parsed background.
+    match: /~~([^~]+)~~((?:\s+\S+){0,2})/.exec(row.excerpt)?.slice(1, 3).join("") ?? "",
   }));
+  return labelUses(userId, hits);
+}
+
+/** Collapsed whitespace, for finding an excerpt inside the text it came from. */
+const flat = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/**
+ * Which section of its record each excerpt came from.
+ *
+ * Highlights are evidence by definition, and a note is evidence unless it is
+ * a standing rule. A role's or a project's excerpt is found in its parsed
+ * background; one that is not in the background at all matched the title,
+ * the summary or a tag, which are evidence too. At most `limit` records, read
+ * in two queries, parsed in Node.
+ */
+async function labelUses(
+  userId: string,
+  hits: (Omit<SearchHit, "use"> & { match: string })[],
+): Promise<SearchHit[]> {
+  const ids = (kind: string) => hits.filter((hit) => hit.kind === kind).map((hit) => hit.id);
+  const [roles, projects, guardrails] = await Promise.all([
+    db.role.findMany({ where: { userId, id: { in: ids("role") } }, select: { id: true, background: true } }),
+    db.project.findMany({ where: { userId, id: { in: ids("project") } }, select: { id: true, background: true } }),
+    db.note.findMany({
+      where: { userId, id: { in: ids("note") }, kind: "GUARDRAIL" },
+      select: { id: true },
+    }),
+  ]);
+  const backgrounds = new Map([...roles, ...projects].map((row) => [row.id, row.background]));
+  const rules = new Set(guardrails.map((row) => row.id));
+
+  return hits.map(({ match, ...hit }) => {
+    if (hit.kind === "note") return { ...hit, use: rules.has(hit.id) ? "rules" : "evidence" };
+    const background = backgrounds.get(hit.id);
+    if (!background || !match) return { ...hit, use: "evidence" };
+    // Where the MATCHED words sit, not the whole excerpt: a fragment can run
+    // from the last line of evidence into a Caveats heading, and it is the
+    // matched words that made it a hit.
+    // With the two words after it first, which pins it down; the matched word
+    // alone when those run past the end of its section.
+    const sections = parseBackground(background).map((part) => ({
+      kind: part.kind,
+      text: flat(`${part.heading} ${part.body}`).toLowerCase(),
+    }));
+    const needle = flat(match).toLowerCase();
+    const word = needle.split(" ")[0];
+    const section =
+      sections.find((part) => part.text.includes(needle)) ?? sections.find((part) => part.text.includes(word));
+    return { ...hit, use: section?.kind ?? "evidence" };
+  });
 }
 
 /**
@@ -1188,6 +1255,7 @@ async function recentRoles(userId: string, limit: number): Promise<SearchHit[]> 
     // small betrayal, and `## Operating scope` is not a preview of anything.
     excerpt: backgroundExcerpt(role.background),
     score: 1,
+    use: "evidence" as const,
   }));
 }
 
@@ -1242,28 +1310,70 @@ export async function getMeSnapshot(userId: string) {
     skillGroups,
     certifications,
     notes,
-    // Gathered across every role so a writer sees them once, up front, rather
-    // than having to notice them role by role.
-    // The profile's personal background can carry rules too — "never mention
-    // comp in writing" belongs to no one job — and they bind every document.
-    writingRules: [
-      ...writingGuidance(profile.background).rules.map((rule) => ({ role: "Profile", rule })),
-      ...readRoles.flatMap((role) =>
-        role.rules.map((rule) => ({ role: `${role.title} @ ${role.company}`, rule })),
-      ),
-    ],
-    neverOnADocument: readRoles.flatMap((role) =>
-      role.caveats.map((caveat) => ({ role: `${role.title} @ ${role.company}`, caveat })),
+    // Gathered across the profile, every role and every project, so a writer
+    // sees them once, up front, rather than having to notice them record by
+    // record. One function, shared with prep_letter — see writingConstraints.
+    ...constraintsFrom(profile, roles, projects),
+  };
+}
+
+/**
+ * Everything a writer must obey or must not use, from every place it can live.
+ *
+ * Rules, caveats and open questions sit in the profile's background, in each
+ * role's and in each project's. This used to be gathered inline in the
+ * snapshot from the profile and the roles only — project rules were never
+ * read, profile caveats were dropped — and the letter path gathered nothing,
+ * so no per-role rule reached a cover letter. Now it is this one function, and
+ * both the snapshot and prep_letter return its output. Each item names where
+ * it came from as `role` (a role, a project, or "Profile"), which is the key
+ * the snapshot has always used.
+ *
+ * Standing-rule notes are not copied in: the briefing carries them, and
+ * list_notes returns them first.
+ */
+type Guided = { background: string };
+export function constraintsFrom(
+  profile: Guided,
+  roles: (Guided & Parameters<typeof openItemsFor>[0])[],
+  projects: (Guided & { name: string })[],
+) {
+  const sources = [
+    { label: "Profile", guide: writingGuidance(profile.background), open: null as string[] | null },
+    ...roles.map((role) => ({
+      label: `${role.title} @ ${role.company}`,
+      guide: writingGuidance(role.background),
+      // A role's open items include an unconfirmed month, which is not text
+      // in the background at all.
+      open: openItemsFor(role).map((item) => item.question),
+    })),
+    ...projects.map((project) => ({
+      label: `Project: ${project.name}`,
+      guide: writingGuidance(project.background),
+      open: null,
+    })),
+  ];
+  return {
+    writingRules: sources.flatMap((source) => source.guide.rules.map((rule) => ({ role: source.label, rule }))),
+    neverOnADocument: sources.flatMap((source) =>
+      source.guide.caveats.map((caveat) => ({ role: source.label, caveat })),
     ),
     // Facts they have not settled. Not to be used, stated or rounded off —
     // asked about, if the document needs them.
-    notSettled: [
-      ...readRoles.flatMap((role) =>
-        role.open.map((question) => ({ role: `${role.title} @ ${role.company}`, question })),
-      ),
-      ...writingGuidance(profile.background).open.map((question) => ({ role: "Profile", question })),
-    ],
+    notSettled: sources.flatMap((source) =>
+      (source.open ?? source.guide.open).map((question) => ({ role: source.label, question })),
+    ),
   };
+}
+
+/** constraintsFrom, for a caller that has nothing loaded yet. */
+export async function writingConstraints(userId: string) {
+  const [profile, roles, projects] = await Promise.all([
+    getProfile(userId),
+    listRoles(userId),
+    listProjects(userId),
+  ]);
+  return constraintsFrom(profile, roles, projects);
 }
 
 /**
@@ -1401,7 +1511,7 @@ async function mergeIntoRole(
 ) {
   const role = await tx.role.findFirstOrThrow({
     where: { id: roleId, userId },
-    select: { background: true, highlights: { select: { text: true } } },
+    include: { highlights: { select: { text: true } } },
   });
   const known = role.highlights.map((highlight) => highlight.text);
   const bullets = (incoming.bullets ?? []).filter((bullet) => {
@@ -1433,12 +1543,23 @@ async function mergeIntoRole(
   let backgroundAppended = false;
   if (addition && !role.background.includes(addition)) {
     const heading = `## From a resume imported ${new Date().toISOString().slice(0, 10)}`;
+    // Versioned like every other write to a background, and it moves the
+    // freshness date like every other — an import is new material.
+    await snapshot(
+      userId,
+      "ROLE",
+      roleId,
+      Object.fromEntries(ROLE_COLUMNS.map((column) => [column, role[column]])),
+      `${role.title} at ${role.company}`,
+      APP_AUTHOR,
+    );
     await tx.role.update({
       where: { id: roleId },
       data: {
         background: role.background.trim()
           ? `${role.background.trim()}\n\n${heading}\n\n${addition}`
           : `${heading}\n\n${addition}`,
+        backgroundUpdatedAt: new Date(),
       },
     });
     backgroundAppended = true;

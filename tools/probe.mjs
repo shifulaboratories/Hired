@@ -215,6 +215,61 @@ try {
     ok((await share.getSharedPipeline(shared.slug)) === null, "the link still serves");
   });
 
+  // --- What writers are handed -----------------------------------------------
+  await check("search_me says which hits are caveats, and never searches the private profile", async () => {
+    const r = await me.createRole(a.id, {
+      company: "Vandelay",
+      title: "Importer",
+      background: "- Grew latex imports by forty percent\n\n## Caveats\n- Tenure was short, have the zeppelin answer ready\n",
+    });
+    await me.updateProfile(a.id, { background: "POSITIONING: never mention zeppelin anywhere" });
+    const hits = await me.searchMe(a.id, "zeppelin");
+    const roleHit = hits.find((hit) => hit.id === r.id);
+    ok(roleHit?.use === "caveats", `the caveat came back as ${roleHit?.use}`);
+    ok(!hits.some((hit) => hit.kind === "profile"), "the profile background was searched");
+    const evidence = (await me.searchMe(a.id, "latex imports")).find((hit) => hit.id === r.id);
+    ok(evidence?.use === "evidence", `evidence came back as ${evidence?.use}`);
+  });
+
+  await check("constraints come from the profile, every role and every project", async () => {
+    await me.createProject(a.id, { name: "Side thing", background: "## Rules\n- Never name the client\n" });
+    await me.updateProfile(a.id, { background: "## Caveats\n- Do not lead with the gap year\n" });
+    const snapshot = await me.getMeSnapshot(a.id);
+    ok(snapshot.writingRules.some((row) => row.rule.includes("Never name the client")), "project rule missing");
+    ok(snapshot.neverOnADocument.some((row) => row.caveat.includes("gap year")), "profile caveat missing");
+    const letter = await letters.letterContext(a.id, { kind: "COVER_LETTER", topic: "zeppelin tenure latex" });
+    ok(letter.writingRules.some((row) => row.rule.includes("Never name the client")), "prep_letter has no rules");
+    ok(letter.evidence.every((hit) => hit.use === "evidence"), "prep_letter handed over a caveat as evidence");
+  });
+
+  await check("a bullet written from a role's evidence traces back to it", async () => {
+    const r = await me.createRole(a.id, {
+      company: "Kramerica",
+      title: "Founder",
+      background: "- Shipped the oil bladder prototype to three retail partners in six weeks\n",
+    });
+    const doc = await resumes.createResume(a.id, {
+      name: "Trace",
+      data: { sections: [{ kind: "experience", experience: [{ roleId: r.id, company: "Kramerica", title: "Founder",
+        bullets: ["Shipped the oil bladder prototype to three retail partners in six weeks", "Raised forty million dollars"] }] }] },
+    });
+    const trace = await resumes.traceResumeEvidence(a.id, doc.id);
+    ok(trace.bullets[0].evidence[0]?.source === "background", "the evidence line was not found");
+    ok(trace.unbacked === 1, `unbacked is ${trace.unbacked}`);
+  });
+
+  await check("a tailored copy names the base's lines nothing in Me backs", async () => {
+    await db.resume.updateMany({ where: { userId: a.id }, data: { isFavorite: false } });
+    const base = await resumes.createResume(a.id, {
+      name: "Master",
+      data: { sections: [{ kind: "experience", experience: [{ company: "Acme", title: "Lead", bullets: ["Delivered $500K for the founder in year one"] }] }] },
+    });
+    await db.resume.update({ where: { id: base.id }, data: { isFavorite: true } });
+    const job = await pipeline.createApplicationIfNew(a.id, { company: "Pendant", roleTitle: "Editor", stage: "WISHLIST" });
+    const made = await resumes.createResumeForApplication(a.id, job.application.id, { baseId: base.id });
+    ok(made.unbacked.some((row) => row.bullet.includes("$500K")), "the retired claim was not named");
+  });
+
   // --- Instance surface -------------------------------------------------------
   await check("the waitlist is closed on an instance with no site and no signups", async () => {
     const signups = await db.waitlistSignup.count();
