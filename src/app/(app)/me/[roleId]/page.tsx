@@ -42,7 +42,10 @@ export default async function RolePage({ params }: { params: Promise<{ roleId: s
             endUnconfirmed: role.endUnconfirmed,
             updatedAt: role.updatedAt.toISOString(),
           }}
-          highlights={role.highlights.map((h) => ({
+          archived={role.highlights
+            .filter((h) => h.archived)
+            .map((h) => ({ id: h.id, text: h.text }))}
+          highlights={role.highlights.filter((h) => !h.archived).map((h) => ({
             id: h.id,
             text: h.text,
             impact: h.impact,

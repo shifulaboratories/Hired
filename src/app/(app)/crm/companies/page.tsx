@@ -154,7 +154,7 @@ export default async function CompaniesPage({
   return (
     <PageShell>
       <PageHeader
-        eyebrow="CRM"
+        eyebrow="People"
         title="Companies"
         description="Everywhere you have applied, plus anywhere you are still thinking about. The website here is what puts a logo on the pipeline."
         actions={

@@ -7097,3 +7097,55 @@ paper), because the owner was blanking the phone on every resume by hand. A role
 import_resume now takes a version and moves its freshness date. resolve_open_question no longer
 promises an undo the profile cannot give. The public resume page's title never falls back to
 the document's private name, and the slug lookup no longer selects it.
+
+## 2026-10-07 — The pipeline's numbers say one thing everywhere
+
+The few analytics a small workspace exercises gave wrong or conflicting answers on real data.
+Each fix moves a rule to one place and has every caller ask it.
+
+**Gone quiet.** morning_brief and the weekly digest filtered on a day count alone, so all five of
+the owner's "do this first" items were never-sent wishlist rows labelled "silence this long
+usually means it is over". `canGoQuiet(stage)` in quiet.ts — a stage with a STALE_AFTER threshold
+— now gates both. list_applications' own `quietForDays` deliberately still takes any stage:
+"wishlist rows I have sat on for a month" is a real question, and changing a tool's contract to
+fix two callers is the wrong trade. The brief's `quiet` is a summary per row now, not the row.
+
+**In flight** is pipeline_stats' `active` — sent and not closed — so diagnose_search stopped
+saying 11 about a board pipeline_stats called 0. **A move back to WISHLIST clears appliedAt**,
+and migration 20261007030000 nulls it on every wishlist row already carrying one. **A move to
+LOST logs REJECTION only when the loss reason is "Rejected"**; every other ending is the person
+closing the row and logs STAGE_CHANGE, because a ghosted application was counting as answered on
+the day somebody gave up on it. The same migration retypes old stage-move rows; a rejection
+somebody logged by hand has no toStage and is untouched.
+
+**Rates.** `rateOf` in src/lib/rates.ts is the one rule — null under five — and the funnel's
+steps and diagnose_search's sources use it; the verdict keeps its own thresholds on the raw
+counts. diagnose_search's per-resume block is gone: it answered "which resume works" under a
+different rule from resume_performance and the two disagreed about the same documents.
+resume_performance is the one answer; the dashboard card reads it. `reachOf` in src/lib/reach.ts
+is the one sent/interviewed/offered classifier behind it and list_resumes' grid counts, which
+had their own copies with different offer rules. "Still waiting" counts only live applications.
+
+**Worth keeping warm** required only an attachment to an application, so cold targets who never
+answered — one whose own notes said not to follow up again — were the actionable list, with
+`confident: true`. It now requires an interview or offer (direct or at their company) or a
+referral they agreed to, unsent wishlist rows count for nothing, and the list is ordered by what
+silence has cost. contact_warmth, which re-sorted the same membership, is gone; referral_review
+is list_referrals' new `byStatus` plus its two existing filters.
+
+**Payloads.** A list's child rows carry an application summary (`APPLICATION_SUMMARY`), never the
+posting text, notes and owner id — one list_activities row was 7K characters. list_applications
+returns summary rows with notes cut to a line and their length; list_resumes returns rows, not
+documents; the board, the CSV and the grid read the data functions and keep everything. MCP
+results serialise without indentation. list_follow_ups now reads the bell's own dueNow, so an
+offer deadline is in it, and Today's chase list shows offer deadlines as link-only rows.
+pipeline_review is rebuilt on diagnose_search, morning_brief and list_tasks rather than seven raw
+reads and a private ten-day stall rule.
+
+**Smaller:** updateInterview rewrites the round's timeline line when it changes what the line
+says (the web editor autosaves outcome and debrief through it). The palette indexes every
+record from labels-only reads instead of the first sixty. Role cards count live highlights, and
+the role page shows archived ones apart with a Restore button — getRole stays unfiltered because
+get_role is the only conversational path to an archived highlight. The Letters badge and the
+analytics tile count through the data layer, and no screen imports the database client any
+more. People and Board are the labels everywhere.

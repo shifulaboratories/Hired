@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { FadeIn, Stagger, StaggerItem } from "@/components/motion";
 import { AnimatedNumber } from "@/components/animated-number";
-import { db } from "@/lib/db";
+import { meCounts } from "@/lib/data/me";
 import {
   ACTIVITY_LABEL,
   BOARD_STAGES,
@@ -25,6 +25,7 @@ import {
   listActivities,
   pipelineStats,
 } from "@/lib/data/pipeline";
+import { resumePerformance } from "@/lib/data/analytics";
 import { truncate } from "@/lib/utils";
 import { DiagnosisCard } from "@/components/dashboard/diagnosis";
 import { RelationshipsCard } from "@/components/analytics/relationships";
@@ -46,21 +47,18 @@ import { timeZoneOf } from "@/lib/data/me";
  * competing with the one you clear daily.
  */
 export async function AnalyticsPanel({ userId }: { userId: string }) {
-  const [stats, diagnosis, relationships, funnel, activities, counts, zone] = await Promise.all([
+  const [stats, diagnosis, performance, relationships, funnel, activities, counts, zone] = await Promise.all([
     pipelineStats(userId),
     diagnoseSearch(userId),
+    resumePerformance(userId),
     listRelationships(userId),
     funnelFlows(userId),
     listActivities(userId, undefined, 8),
-    Promise.all([
-      db.role.count({ where: { userId } }),
-      db.resume.count({ where: { userId } }),
-      db.highlight.count({ where: { userId } }),
-    ]),
+    meCounts(userId),
     timeZoneOf(userId),
   ]);
 
-  const [roleCount, resumeCount, highlightCount] = counts;
+  const { roles: roleCount, resumes: resumeCount, highlights: highlightCount } = counts;
   const maxStage = Math.max(1, ...BOARD_STAGES.map((stage) => stats.counts[stage]));
 
   // Applications are the honest gate. This used to also require zero roles and
@@ -166,7 +164,7 @@ export async function AnalyticsPanel({ userId }: { userId: string }) {
       </Stagger>
 
       <FadeIn delay={0.08}>
-        <DiagnosisCard diagnosis={diagnosis} />
+        <DiagnosisCard diagnosis={diagnosis} resumes={performance.resumes} />
       </FadeIn>
 
       {/* Directly under the diagnosis, because it is the same question asked of

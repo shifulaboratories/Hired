@@ -3,6 +3,7 @@ import type { Prisma, Stage } from "@prisma/client";
 import { db } from "@/lib/db";
 import { pick } from "@/lib/data/patch";
 import { resumeEvidence } from "@/lib/background";
+import { INTERVIEWED_STAGES, reachOf } from "@/lib/reach";
 import { snapshot, assertFresh, StaleWriteError, APP_AUTHOR, type WriteAuthor } from "@/lib/data/revision-store";
 import {
   blankSection,
@@ -66,8 +67,6 @@ export type ResumeOutcomes = {
   offers: number;
 };
 
-const INTERVIEWED_STAGES: Stage[] = ["INTERVIEWING", "OFFER", "ACCEPTED"];
-const OFFER_STAGES: Stage[] = ["OFFER", "ACCEPTED"];
 
 export async function listResumes(userId: string, opts: ResumeListOpts = {}) {
   const search = opts.search?.trim();
@@ -124,19 +123,11 @@ export async function listResumes(userId: string, opts: ResumeListOpts = {}) {
     const { applications, ...resume } = row;
     const outcomes: ResumeOutcomes = { sent: 0, interviewed: 0, offers: 0 };
     for (const application of applications) {
-      if (application.stage === "WISHLIST") continue;
-      outcomes.sent += 1;
-      const reached = (stages: Stage[], type: "INTERVIEW" | "OFFER") =>
-        stages.includes(application.stage) ||
-        application.activities.some(
-          (activity) =>
-            activity.type === type || (activity.toStage !== null && stages.includes(activity.toStage)),
-        );
-      // An offer proves the interviews happened even when no move to a screen
-      // was ever recorded — offers is a subset of interviewed, always.
-      const offered = reached(OFFER_STAGES, "OFFER");
-      if (offered || reached(INTERVIEWED_STAGES, "INTERVIEW")) outcomes.interviewed += 1;
-      if (offered) outcomes.offers += 1;
+      // The one rule, shared with resume_performance. See src/lib/reach.ts.
+      const reach = reachOf(application);
+      if (reach.sent) outcomes.sent += 1;
+      if (reach.interviewed) outcomes.interviewed += 1;
+      if (reach.offered) outcomes.offers += 1;
     }
     return { ...resume, outcomes };
   });
@@ -151,7 +142,7 @@ export async function listResumeNames(userId: string) {
   return db.resume.findMany({
     where: { userId },
     orderBy: [{ isFavorite: "desc" }, { updatedAt: "desc" }],
-    select: { id: true, name: true },
+    select: { id: true, name: true, targetRole: true, targetCompany: true },
   });
 }
 

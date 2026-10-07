@@ -313,40 +313,24 @@ export async function applyReferralThanks(
 }
 
 /**
- * Who is owed a thank-you, and who has been waiting too long.
- *
- * The two questions the model was built for, answered in one read so an
- * assistant does not have to know to ask both.
+ * The whole set by state, with what each state means for what to do next.
+ * list_referrals returns it beside the rows, so "where do my referrals stand"
+ * is one read — it used to be a tool of its own that was two filters of this
+ * list and this count.
  */
-export async function referralReview(
+export async function referralCounts(
   userId: string,
-  options?: { waitingForDays?: number },
-): Promise<{
-  thanksOwed: ReferralRow[];
-  waiting: ReferralRow[];
-  byStatus: { status: ReferralStatus; label: string; intent: string; count: number }[];
-  total: number;
-}> {
-  const now = new Date();
+): Promise<{ status: ReferralStatus; label: string; intent: string; count: number }[]> {
   // 4 of 4.
-  const rows = await db.referral.findMany({
+  const rows = await db.referral.groupBy({
+    by: ["status"],
     where: { userId, ...liveParents },
-    include: referralInclude,
+    _count: { _all: true },
   });
-  const shaped = rows.map((row) => shape(row, now));
-  const waitingFor = options?.waitingForDays ?? 10;
-
-  return {
-    thanksOwed: shaped.filter((row) => row.thanksOwed),
-    waiting: shaped
-      .filter((row) => (row.status === "ASKED" || row.status === "AGREED") && row.waitingDays >= waitingFor)
-      .sort((a, b) => b.waitingDays - a.waitingDays),
-    byStatus: REFERRAL_STATUSES.map((status) => ({
-      status,
-      label: REFERRAL_LABEL[status],
-      intent: REFERRAL_INTENT[status],
-      count: shaped.filter((row) => row.status === status).length,
-    })),
-    total: shaped.length,
-  };
+  return REFERRAL_STATUSES.map((status) => ({
+    status,
+    label: REFERRAL_LABEL[status],
+    intent: REFERRAL_INTENT[status],
+    count: rows.find((row) => row.status === status)?._count._all ?? 0,
+  }));
 }

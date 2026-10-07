@@ -1,7 +1,7 @@
 ---
 title: "Pipeline tools"
 sidebarTitle: "Pipeline"
-description: "Ninety-eight tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
+description: "Ninety-six tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
 icon: "list-check"
 ---
 
@@ -51,7 +51,7 @@ No arguments.
 
 _List applications_
 
-List job applications. By default the closed ones (ACCEPTED and LOST) are excluded. Every row carries two different numbers and they answer different questions: daysInStage is how long it has sat where it is, measured from the last stage change; quietDays is how long since ANYTHING happened to it — a logged call, an email, a stage move. 'What has gone quiet' is quietDays, and lastTouchAt is the date it counts from. Pass quietForDays to return only the ones past that many silent days, which is the fastest way to answer 'what needs chasing'. Capped at 100 rows unless you raise `limit`, and a cut-off result says how many there were before the data, so narrow the filters rather than reporting a short list as everything.
+List job applications, one summary row each — no posting text, and notes cut to a line with their full length in notesChars; get_application returns the whole record, posting included. By default the closed ones (ACCEPTED and LOST) are excluded. Every row carries two different numbers and they answer different questions: daysInStage is how long it has sat where it is, measured from the last stage change; quietDays is how long since ANYTHING happened to it — a logged call, an email, a stage move. 'What has gone quiet' is quietDays, and lastTouchAt is the date it counts from. Pass quietForDays to return only the ones past that many silent days, which is the fastest way to answer 'what needs chasing'. Capped at 100 rows unless you raise `limit`, and a cut-off result says how many there were before the data, so narrow the filters rather than reporting a short list as everything.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -566,7 +566,7 @@ Set how many days after landing in a stage the follow-up date is armed for. Reac
 
 _Who vouched for you where_
 
-Every referral on file, with where it stands and whether it came to anything. Reach for it when somebody asks who has put them forward, who they are still waiting on, or who they owe a thank-you — and reach for list_relationships instead when the question is who is worth talking to at all, because that one covers everybody in the CRM and this one covers only the people who actually asked on your behalf. `converted` is DERIVED from the application's own stage and timeline, not stored, so it cannot disagree with the funnel. `thanksOwed` is the list that matters: it converted and nobody has said thank you, which is the most expensive unclosed loop in a search and is invisible in every other record this app keeps. `waitingDays` counts from the last time the STATUS moved, not from the last edit, so fixing a typo in the notes does not reset the clock. Referrals from an archived person are excluded; one whose application was archived stays, because who put you forward is a fact about the person. Read-only.
+Every referral on file, with where it stands and whether it came to anything. Reach for it when somebody asks who has put them forward, who they are still waiting on, or who they owe a thank-you — and reach for list_relationships instead when the question is who is worth talking to at all, because that one covers everybody in the CRM and this one covers only the people who actually asked on your behalf. `converted` is DERIVED from the application's own stage and timeline, not stored, so it cannot disagree with the funnel. `thanksOwed` is the list that matters: it converted and nobody has said thank you, which is the most expensive unclosed loop in a search and is invisible in every other record this app keeps. `waitingDays` counts from the last time the STATUS moved, not from the last edit, so fixing a typo in the notes does not reset the clock. `byStatus` counts the whole set, whatever the filters, with a line on what each state means for what to do next. For a weekly review, call it twice: thanks_owed true (work through those first — one message each), then waiting_for_days 10 (a nudge is one line, not a second ask). Referrals from an archived person are excluded; one whose application was archived stays, because who put you forward is a fact about the person. Read-only.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -623,16 +623,6 @@ Delete a referral for good. There is no archive for these. What is lost is the r
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Referral id |
-
-### `referral_review`
-
-_Who you owe a thank-you, and who has gone quiet_
-
-The two questions the referral record exists to answer, in one read. `thanksOwed` is anybody whose referral converted and who has never been thanked — work through it first, because it costs one message and it is the difference between a person who refers you once and a person who refers you for the rest of your career. `waiting` is asks that are still ASKED or AGREED and have sat for a while, longest first, so a nudge goes to the right person; a nudge is one line and is not a second ask. `byStatus` counts the whole set and carries a line on what each state means for what to do next. Reach for this in a weekly review, and after any week with several applications. Read-only, saves nothing: update_referral is what records that you acted.
-
-| Argument | Type | |
-| --- | --- | --- |
-| `waiting_for_days` | number | How long counts as waiting. Default 10. |
 
 ### `log_win`
 
@@ -947,7 +937,7 @@ Recent timeline entries across the whole search, or for one application. Good fo
 
 _List follow-ups that are due_
 
-The 'what has come round' tool, and the same thing the bell in the app counts. Returns three lists: applications whose follow-up date has arrived or passed, contacts whose ping date has — the people you meant to get back in touch with — and tasks that are due or already late. All three are debts with a date on them; plan a day from the set. Each task carries `overdue`, which separates late from due today. Reach for list_tasks when the date does not matter and list_schedule when the question is about a window of time rather than about what is owed now.
+The 'what has come round' tool, and the same thing the bell in the app counts. Returns four lists: applications whose follow-up date has arrived or passed, contacts whose ping date has — the people you meant to get back in touch with — tasks that are due or already late, and offers whose respond-by date has come round, which are the one date here that cannot be snoozed. All four are debts with a date on them; plan a day from the set. Each task carries `overdue`, which separates late from due today. Reach for list_tasks when the date does not matter and list_schedule when the question is about a window of time rather than about what is owed now.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -983,7 +973,7 @@ You actually followed up: writes the touch on the timeline and moves the follow-
 
 _Who has been worth something, and who has gone quiet_
 
-diagnose_search for people. Ranks everyone in the CRM by what they have actually been worth to the search, and says how long since anything was logged against each. Reach for it when somebody asks who to thank, who to nudge, or where their referrals are really coming from — and before a week of cold applications, because the answer is usually that the people already on file outperform them. Two counts per person, kept apart on purpose: `direct` is applications they are attached to, which is somebody who referred you or the recruiter on that thread, and `atCompany` is applications at a company they represent, which is real evidence and much weaker — a recruiter at a five-thousand-person employer did not get you three interviews because you applied three times. Do not add them together and report one number. How far something got is the furthest it ever reached, so a contact on an application rejected after two rounds keeps credit for those two rounds. `worthKeepingWarm` is the subset that earned something and has since gone quiet or has a ping due, which is the actionable list. Archived people and archived applications are excluded. Says confident false when there is too little on file to rank anybody, and you should say so rather than reading the order as meaningful. Read-only.
+diagnose_search for people. Ranks everyone in the CRM by what they have actually been worth to the search, and says how long since anything was logged against each. Reach for it when somebody asks who to thank, who to nudge, or where their referrals are really coming from — and before a week of cold applications, because the answer is usually that the people already on file outperform them. Two counts per person, kept apart on purpose: `direct` is applications they are attached to, which is somebody who referred you or the recruiter on that thread, and `atCompany` is applications at a company they represent, which is real evidence and much weaker — a recruiter at a five-thousand-person employer did not get you three interviews because you applied three times. Do not add them together and report one number. How far something got is the furthest it ever reached, so a contact on an application rejected after two rounds keeps credit for those two rounds. `worthKeepingWarm` is the actionable list: people with an interview or an offer behind them (directly or at their company), or a referral they agreed to, who have since gone quiet or have a ping due — ordered by what silence has cost, so a referral that got an interview and went quiet outranks a recruiter who wrote once. Being attached to an application is not enough, and an unsent wishlist row counts for nothing. Archived people and archived applications are excluded. Says confident false when there is too little on file to rank anybody, and you should say so rather than reading the order as meaningful. Read-only.
 
 No arguments.
 
@@ -991,7 +981,7 @@ No arguments.
 
 _Diagnose the job search_
 
-Works out what is actually going wrong with the search, rather than reporting counts. Returns a one-sentence verdict naming which step of the funnel is losing people — no responses at all is a resume or targeting problem, interviews that do not convert is something else again — plus per-step conversion, median days spent in each stage, weekly volume for the last six weeks, applications that have gone quiet, and the response rate of each resume AND of each source, so you can see both which document is working and which channel is. The source rates are the ones that change what somebody does with a Saturday: referrals converting at four times a job board is an argument for spending it messaging people rather than filling in forms. An application wearing two source tags counts into both, so those rows do not sum to the total applied. Progress is measured by the furthest an application ever got — its `interviewRound` where it has one — so a rejection after a fourth round counts as having got that far. Reach for this before giving advice about a search: it is the difference between 'send more applications' and 'stop sending, the resume is the problem'. Says so plainly when there is not enough data yet. Read-only.
+Works out what is actually going wrong with the search, rather than reporting counts. Returns a one-sentence verdict naming which step of the funnel is losing people — no responses at all is a resume or targeting problem, interviews that do not convert is something else again — plus per-step conversion, median days spent in each stage, weekly volume for the last six weeks, applications that have gone quiet, and the response rate of each source — which channel is working. Per resume is resume_performance's question; it is the one answer to it. Every rate is null under five applications, because a rate off one or two is luck rather than a finding. The source rates are the ones that change what somebody does with a Saturday: referrals converting at four times a job board is an argument for spending it messaging people rather than filling in forms. An application wearing two source tags counts into both, so those rows do not sum to the total applied. Progress is measured by the furthest an application ever got — its `interviewRound` where it has one — so a rejection after a fourth round counts as having got that far. Reach for this before giving advice about a search: it is the difference between 'send more applications' and 'stop sending, the resume is the problem'. Says so plainly when there is not enough data yet. Read-only.
 
 No arguments.
 
@@ -1029,14 +1019,6 @@ Reads every job posting captured on the pipeline, works out what keeps coming up
 | --- | --- | --- |
 | `limit` | number | How many terms to test. Default 40, ceiling 80. Each one costs a search of Me. |
 | `min_postings` | number | Only terms appearing in at least this many different postings. Defaults to a quarter of them, never below 3. |
-
-### `contact_warmth`
-
-_Who has gone cold that you cannot afford to lose_
-
-list_relationships, with time applied to it. It ranks the people in the CRM by what they have actually been worth to the search and then discounts each one by how long since anybody spoke to them, so 'who should I get back in touch with' is one ordered list rather than two columns to combine by eye. Reach for it before a week of cold applications, when somebody asks who to thank or nudge, or when a search has gone quiet and the honest next move is people rather than postings. `cooling` is the list to act on: everyone who earned something — a referral, an introduction, a recruiter on a thread that went somewhere — and has since gone silent or has a ping due, ordered by how much has been LOST rather than by how long it has been, so a referral that produced an onsite three months ago outranks somebody who cold-mailed you once last week. Each person carries the two counts list_relationships gives — `direct`, applications they are attached to, and `atCompany`, applications at a company they represent, which is much weaker evidence — and those are the numbers to quote. THE TRAP: `warmth`, `value` and `decay` are an ORDERING, not a measurement. Never read one out or tell somebody a person is 'at 0.42'; say what they were worth, in the counts, and how long it has been. `confident` false means there is too little on file to rank anybody and the order means nothing — say so rather than reading it as a finding. Archived people and archived applications are excluded. Read-only, saves nothing: schedule_contact_pings puts dates against them and log_follow_up records that you chased one.
-
-No arguments.
 
 ### `research_freshness`
 

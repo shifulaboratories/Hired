@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { chromeProfile } from "@/lib/data/me";
 import { Shell } from "@/components/shell";
 import { relativeDay } from "@/lib/utils";
 import { dueNow } from "@/lib/data/schedule";
@@ -23,10 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const [due, profile, settings] = await Promise.all([
     dueNow(user.id),
-    db.profile.findUnique({
-      where: { userId: user.id },
-      select: { photo: true, tourSeenAt: true, timeZone: true },
-    }),
+    chromeProfile(user.id),
     // One indexed read of a table with a couple of dozen rows, in the same
     // Promise.all as the two that were already here — so it costs a navigation
     // nothing, and the button it decides is never rendered on an instance that

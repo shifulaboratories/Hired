@@ -448,9 +448,9 @@ export const CASES = [
   },
   {
     prompt: "Who should I get back in touch with?",
-    expect: ["contact_warmth"],
-    avoid: ["list_contacts", "list_relationships", "list_follow_ups"],
-    why: "list_relationships ranks by worth and leaves time out of it. Warmth is the one that discounts by silence, which is what 'get back in touch' means.",
+    expect: ["list_relationships"],
+    avoid: ["list_contacts", "list_follow_ups"],
+    why: "worthKeepingWarm is the people who earned something and went quiet, ordered by what silence has cost — which is what 'get back in touch' means.",
   },
   {
     prompt: "Morning. Where am I?",

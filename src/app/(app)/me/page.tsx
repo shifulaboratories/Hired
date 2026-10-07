@@ -8,12 +8,12 @@ import {
   listCertifications,
   listEducation,
   listNotes,
+  meCounts,
   listOpenQuestions,
   listProjects,
   listRoles,
   listSkillGroups,
 } from "@/lib/data/me";
-import { db } from "@/lib/db";
 import { backgroundExcerpt, writingGuidance } from "@/lib/background";
 import { standingRulesFit } from "@/lib/mcp/briefing-head";
 import { requireUser } from "@/lib/auth";
@@ -29,7 +29,7 @@ import { NewRoleDialog } from "@/components/me/new-role-dialog";
 import { NewResumeDialog } from "@/components/resume/new-resume-dialog";
 import { ResumesPanel } from "@/components/resume/resumes-panel";
 import { LettersPanel } from "@/components/letters/letters-panel";
-import { letterForUi, listLetters } from "@/lib/data/letters";
+import { countLetters, letterForUi, listLetters } from "@/lib/data/letters";
 
 export const dynamic = "force-dynamic";
 
@@ -73,12 +73,8 @@ export default async function MePage({
 
   // The counts sit on the tab strip, so they are needed whichever panel is
   // showing. Counts rather than lists: the panel below loads what it renders.
-  const [roleCount, noteCount, resumeCount, letterCount] = await Promise.all([
-    db.role.count({ where: { userId: user.id } }),
-    db.note.count({ where: { userId: user.id } }),
-    db.resume.count({ where: { userId: user.id } }),
-    db.letter.count({ where: { userId: user.id } }),
-  ]);
+  const [counts, letterCount] = await Promise.all([meCounts(user.id), countLetters(user.id)]);
+  const { roles: roleCount, notes: noteCount, resumes: resumeCount } = counts;
 
   const sortParam = one("sort");
 

@@ -331,11 +331,39 @@ export type RoleInput = {
   endUnconfirmed?: boolean;
 };
 
+/**
+ * The counts the Me tab strip and the analytics tile show, with the same
+ * filters the lists behind them use: live highlights only. Pages used to count
+ * with their own hand-written queries, which is how the tile came to include
+ * retired bullets.
+ */
+export async function meCounts(userId: string) {
+  const [roles, notes, resumes, highlights] = await Promise.all([
+    db.role.count({ where: { userId } }),
+    db.note.count({ where: { userId } }),
+    db.resume.count({ where: { userId } }),
+    db.highlight.count({ where: { userId, archived: false } }),
+  ]);
+  return { roles, notes, resumes, highlights };
+}
+
+/** The three profile facts the app's chrome needs, and nothing else. */
+export async function chromeProfile(userId: string) {
+  return db.profile.findUnique({
+    where: { userId },
+    select: { photo: true, tourSeenAt: true, timeZone: true },
+  });
+}
+
 export async function listRoles(userId: string) {
   return db.role.findMany({
     where: { userId },
     orderBy: [{ isCurrent: "desc" }, { startDate: "desc" }, { sortOrder: "asc" }],
-    include: { _count: { select: { highlights: true } } },
+    // Live highlights only: an archived one is retired, and the role card and
+    // the "add a job" picker were counting bullets add_role_to_resume never
+    // inserts. getRole keeps every one, because get_role is the only path to
+    // an archived highlight's id, and so to restoring it by conversation.
+    include: { _count: { select: { highlights: { where: { archived: false } } } } },
   });
 }
 

@@ -1,3 +1,7 @@
+import { canGoQuiet } from "@/lib/quiet";
+import { MIN_RATE_BASIS, rateOf } from "@/lib/rates";
+import { INTERVIEWED_STAGES, reachOf } from "@/lib/reach";
+import { TERMINAL_STAGES as TERMINAL } from "@/lib/stages";
 import type { ActivityType, Stage } from "@prisma/client";
 import { TagKind } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -40,8 +44,8 @@ import { weekdayIn } from "@/lib/time";
  * rewrites a resume because of it.
  */
 
-/** Under this, a rate is not a rate. Exported so a caller can make the same call. */
-export const MIN_RATE_BASIS = 5;
+/** Under this, a rate is not a rate. The one number lives in src/lib/rates.ts. */
+export { MIN_RATE_BASIS } from "@/lib/rates";
 
 /**
  * Activity types that can only have come FROM an employer.
@@ -59,10 +63,8 @@ export const INBOUND_TYPES: ActivityType[] = [
 ];
 
 /** Stages that prove an application reached a real conversation. Mirrors resumes.ts. */
-const INTERVIEWED_STAGES: Stage[] = ["INTERVIEWING", "OFFER", "ACCEPTED"];
 
-const rate = (part: number, whole: number) =>
-  whole >= MIN_RATE_BASIS ? Math.round((part / whole) * 100) : null;
+const rate = rateOf;
 
 const DAY = 86_400_000;
 
@@ -152,16 +154,8 @@ export async function resumePerformance(userId: string): Promise<ResumePerforman
 
     tally.sent += 1;
 
-    const offered =
-      application.stage === "OFFER" ||
-      application.stage === "ACCEPTED" ||
-      application.activities.some((a) => a.type === "OFFER" || a.toStage === "OFFER");
-    const interviewed =
-      offered ||
-      INTERVIEWED_STAGES.includes(application.stage) ||
-      application.activities.some(
-        (a) => a.type === "INTERVIEW" || (a.toStage !== null && INTERVIEWED_STAGES.includes(a.toStage)),
-      );
+    // The one rule, shared with list_resumes. See src/lib/reach.ts.
+    const { interviewed, offered } = reachOf(application);
     if (offered) tally.offers += 1;
     if (interviewed) tally.interviewed += 1;
 
@@ -173,7 +167,9 @@ export async function resumePerformance(userId: string): Promise<ResumePerforman
       (a) => INBOUND_TYPES.includes(a.type) || a.toStage === "INTERVIEWING",
     );
     if (inbound.length === 0) {
-      if (!interviewed) tally.waiting += 1;
+      // Still waiting means still live. A closed application with nothing back
+      // is an answer of a kind, not a wait.
+      if (!interviewed && !TERMINAL.includes(application.stage)) tally.waiting += 1;
       continue;
     }
 
@@ -562,78 +558,6 @@ export async function skillsGap(
 }
 
 // ---------------------------------------------------------------------------
-// 4. Who has gone cold, weighted by what they were worth
-// ---------------------------------------------------------------------------
-
-/**
- * How fast a relationship's VALUE fades.
- *
- * Not CONTACT_QUIET_AFTER (30 days), which is when silence becomes worth
- * noticing — that happens sooner than the worth of the relationship halves.
- * Forty-five days leaves a referral at a quarter after three months, which is
- * the shape people recognise. Nothing benchmarks this number and no tool ever
- * prints it; it only decides an order.
- */
-export const WARMTH_HALF_LIFE_DAYS = 45;
-
-export type WarmContact = ContactStanding & {
-  /** The ordering weight listRelationships already uses. */
-  value: number;
-  /** 1 on the day you last spoke, a half at WARMTH_HALF_LIFE_DAYS. */
-  decay: number;
-  /** value × decay. An ORDER, not a measurement. Never show it to anybody. */
-  warmth: number;
-  /** value × (1 − decay). What has been lost, which is what the chase list sorts by. */
-  lost: number;
-  /** From `decay` alone, so the bands and the curve cannot drift apart. */
-  standing: "WARM" | "COOLING" | "COLD";
-};
-
-export type ContactWarmth = {
-  /** Everyone who earned something and has gone quiet, most value lost first. */
-  cooling: WarmContact[];
-  contacts: WarmContact[];
-  confident: boolean;
-  method: string;
-};
-
-export async function contactWarmth(userId: string, now = new Date()): Promise<ContactWarmth> {
-  // No archive filter spelled here, and that is correct: this function issues
-  // no query. listRelationships does, and filters there.
-  const { contacts, worthKeepingWarm, confident } = await listRelationships(userId, now);
-
-  const warm = (standing: ContactStanding): WarmContact => {
-    const value = relationshipWeight(standing);
-    const decay = 0.5 ** (standing.quietDays / WARMTH_HALF_LIFE_DAYS);
-    return {
-      ...standing,
-      value,
-      decay,
-      warmth: value * decay,
-      lost: value * (1 - decay),
-      standing: decay >= 0.75 ? "WARM" : decay >= 0.4 ? "COOLING" : "COLD",
-    };
-  };
-
-  const coolingIds = new Set(worthKeepingWarm.map((row) => row.id));
-  const all = contacts.map(warm);
-
-  return {
-    contacts: [...all].sort((a, b) => b.warmth - a.warmth),
-    // Membership is listRelationships' decision, not re-made here. Only the
-    // order is this function's: by what has been lost, so a referral that got
-    // an interview and went quiet outranks a recruiter who cold-mailed once.
-    cooling: all.filter((row) => coolingIds.has(row.id)).sort((a, b) => b.lost - a.lost),
-    confident,
-    method:
-      "Ordered by what a person was worth to this search multiplied by how much of it silence has " +
-      "taken back — an offer they are attached to counts for most, an application at a company they " +
-      "represent for least, and the value halves every " +
-      `${WARMTH_HALF_LIFE_DAYS} days of silence. It is an order, not a score; do not read the numbers out.`,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // 5. What is thin
 // ---------------------------------------------------------------------------
 
@@ -847,7 +771,15 @@ export type MorningBrief = {
   due: Awaited<ReturnType<typeof scheduleDueNow>>;
   changed: ScheduleEntry[];
   ahead: ScheduleEntry[];
-  quiet: Awaited<ReturnType<typeof listApplications>>;
+  /** Applications past the quiet window at a stage where silence means something. */
+  quiet: {
+    id: string;
+    company: { id: string; name: string };
+    roleTitle: string;
+    stage: Stage;
+    quietDays: number;
+    lastTouchAt: Date;
+  }[];
   stats: Awaited<ReturnType<typeof pipelineStats>>;
   verdict: { headline: string; detail: string; weakest: string | null } | null;
   /** The ordered answer to "what first". Empty is a real answer. */
@@ -877,7 +809,7 @@ export async function morningBrief(
   const since = new Date(now.getTime() - sinceDays * DAY);
   const until = new Date(now.getTime() + aheadDays * DAY);
 
-  const [due, window, quiet, stats, diagnosis] = await Promise.all([
+  const [due, window, quietRows, stats, diagnosis] = await Promise.all([
     scheduleDueNow(userId, 0),
     // One call over the whole window, split in Node. Two calls would mean two
     // round trips to the person's real calendar on a tool run every morning.
@@ -886,6 +818,19 @@ export async function morningBrief(
     pipelineStats(userId),
     options?.includeVerdict ? diagnoseSearch(userId) : Promise.resolve(null),
   ]);
+  // Only stages where silence means something (see canGoQuiet), and a summary
+  // per row rather than the whole application: the posting, the notes and the
+  // tags are get_application's to return.
+  const quiet = quietRows
+    .filter((row) => canGoQuiet(row.stage))
+    .map((row) => ({
+      id: row.id,
+      company: { id: row.company.id, name: row.company.name },
+      roleTitle: row.roleTitle,
+      stage: row.stage,
+      quietDays: row.quietDays,
+      lastTouchAt: row.lastTouchAt,
+    }));
 
   const changed = window
     .filter((entry) => entry.date <= now && entry.kind === "ACTIVITY")

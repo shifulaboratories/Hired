@@ -186,8 +186,11 @@ export function Shell({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // A resume is opened from Me, so the editor lights Me up rather than nothing.
   const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+    href === "/"
+      ? pathname === "/"
+      : pathname.startsWith(href) || (href === "/me" && pathname.startsWith("/resumes"));
 
   return (
     <AskContext.Provider value={assistant ? ask : null}>
