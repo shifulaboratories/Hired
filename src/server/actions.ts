@@ -61,6 +61,7 @@ import * as archive from "@/lib/data/archive";
 import type { PipelineView } from "@/lib/pipeline-fields";
 import type { ColumnList } from "@/lib/column-widths";
 import { sweepArchive } from "@/lib/data/archive";
+import { applicationDetail, tagOption } from "@/server/application-detail";
 
 /**
  * Every action resolves the caller from their session cookie. No action ever
@@ -1154,19 +1155,7 @@ function revalidateTags() {
   revalidatePath("/crm/contacts");
 }
 
-const asOption = (tag: {
-  id: string;
-  name: string;
-  color: string;
-  kind: TagKind;
-  _count: { applications: number; companies: number; contacts: number };
-}) => ({
-  id: tag.id,
-  name: tag.name,
-  color: tag.color,
-  kind: tag.kind,
-  count: tag._count.applications + tag._count.companies + tag._count.contacts,
-});
+const asOption = tagOption;
 
 export async function listTagsAction(kind: TagKind) {
   const user = await requireUser();
@@ -2013,113 +2002,9 @@ export async function deleteCrmContactAction(id: string) {
  */
 export async function getApplicationForPanelAction(id: string) {
   const user = await requireUser();
-  const [
-    application,
-    resumeList,
-    tagOptions,
-    lossOptions,
-    companies,
-    settings,
-    googleConnection,
-    fieldValues,
-  ] =
-    await Promise.all([
-      pipeline.getApplication(user.id, id),
-      resumes.listResumeNames(user.id),
-      tags.listTags(user.id, "APPLICATION"),
-      tags.listTags(user.id, "LOSS"),
-      pipeline.listCompanies(user.id),
-      getSettings(),
-      accounts.accountAccess(user.id),
-      pipeline.applicationFieldValues(user.id),
-    ]);
-  if (!application) throw new Error("That application is gone.");
-  // Only when one is attached — the document carries the owner's photo as a
-  // data URI, and the panel is opened far more often than a resume is read.
-  const attached = application.resumeId
-    ? await resumes.getResume(user.id, application.resumeId)
-    : null;
-  return {
-    application: {
-      id: application.id,
-      company: application.company.name,
-      companyId: application.companyId,
-      roleTitle: application.roleTitle,
-      stage: application.stage,
-      interviewRound: application.interviewRound,
-      roundLabel: application.roundLabel,
-      jobUrl: application.jobUrl,
-      postingStatus: application.postingStatus,
-      postingNote: application.postingNote,
-      postingGoneSince: application.postingGoneSince?.toISOString() ?? null,
-      jobDescription: application.jobDescription,
-      location: application.location,
-      workMode: application.workMode,
-      salaryRange: application.salaryRange,
-      // One join table, two catalogues: where it came from, and why it ended.
-      tags: tags.tagsOfKind(application.tags, "APPLICATION"),
-      lossTags: tags.tagsOfKind(application.tags, "LOSS"),
-      notes: application.notes,
-      appliedAt: application.appliedAt?.toISOString() ?? null,
-      nextFollowUpAt: application.nextFollowUpAt?.toISOString() ?? null,
-      resumeId: application.resumeId,
-    },
-    activities: application.activities.map((activity) => ({
-      id: activity.id,
-      type: activity.type,
-      body: activity.body,
-      occurredAt: activity.occurredAt.toISOString(),
-    })),
-    contacts: application.contacts.map((contact) => ({
-      id: contact.id,
-      name: contact.name,
-      title: contact.title,
-      email: contact.email,
-      linkedin: contact.linkedin,
-      relationship: contact.relationship,
-    })),
-    tasks: application.tasks.map((task) => ({
-      id: task.id,
-      title: task.title,
-      done: task.done,
-      dueAt: task.dueAt?.toISOString() ?? null,
-    })),
-    offers: application.offers.map(offers.offerForUi),
-    letters: (await letters.listLetters(user.id, { applicationId: id })).map(letters.letterForUi),
-    interviews: (await interviews.listInterviewDetails(user.id, id)).map(interviews.interviewForUi),
-    resumes: resumeList.map((resume) => ({ id: resume.id, name: resume.name })),
-    tagOptions: tagOptions.map(asOption),
-    lossOptions: lossOptions.map(asOption),
-    fieldValues,
-    company: {
-      id: application.companyId,
-      name: application.company.name,
-      website: application.company.website,
-    },
-    companies: companies.map((item) => ({
-      id: item.id,
-      name: item.name,
-      website: item.website,
-    })),
-    resumePreview: attached
-      ? {
-          id: attached.id,
-          name: attached.name,
-          doc: attached.doc,
-          settings: {
-            template: attached.template,
-            accent: attached.accent,
-            fontFamily: attached.fontFamily,
-            fontSize: attached.fontSize,
-            lineHeight: attached.lineHeight,
-            pageMargin: attached.pageMargin,
-            photo: attached.showPhoto ? attached.photo : "",
-          },
-        }
-      : null,
-    logos: settings.companyLogos,
-    googleAccess: googleConnection,
-  };
+  const detail = await applicationDetail(user.id, id);
+  if (!detail) throw new Error("That application is gone.");
+  return detail;
 }
 
 // --- sharing the pipeline read-only -----------------------------------------

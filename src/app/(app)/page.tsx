@@ -27,7 +27,7 @@ import {
   contactFollowUpsDue,
   followUpsDue,
   listApplications,
-  listCompanies,
+  listCompanyNames,
   listContacts,
   listTasks,
 } from "@/lib/data/pipeline";
@@ -188,7 +188,7 @@ async function TodayTab({
       followUpsDue(userId, 7),
       contactFollowUpsDue(userId, 7),
       listContacts(userId),
-      listCompanies(userId),
+      listCompanyNames(userId),
       listResumeNames(userId),
       listRoles(userId),
       listNotes(userId),
