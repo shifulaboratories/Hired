@@ -7229,6 +7229,15 @@ stand-in, so every case choosing between a workflow and a tool was scored agains
 client is served. No baseline was recorded with this change: the session had no Anthropic
 credentials. Record one the next time it runs.
 
+**Descriptions have a budget.** 145,219 characters of member description went to every client on
+every connection; seventy-five were cut to 117,195, with read-only tools capped at 1,000 and
+write tools at 1,300. Reasons and history were cut first; routing sentences and traps were not
+touched, and list tools' filter explanations moved onto their parameters. `tools/tool-budget.json`
+holds the member tool count and that total, `gen-tool-docs` lowers it whenever the surface
+shrinks and fails when it grows unless `--allow-growth` is passed — so every addition is a
+choice somebody logs here. The eval was not rerun (no credentials); run it before reading too
+much into a routing change.
+
 **Still waiting on a go-ahead that a permission check, not a person, withheld:** the linked
 accounts and outbound cut, the sample workspace, stage checklists with cadence and recurrence,
 board watches as a stateless check, and deleting the two duplicate product skills. A Railway
