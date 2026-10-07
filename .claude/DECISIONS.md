@@ -7187,3 +7187,49 @@ calendar accounts with outbound mail, the sample workspace, stage checklists wit
 recurrence, board watches collapsed to a stateless check, and the two duplicate product skills —
 wait for an explicit go-ahead, because dropping a table on boot destroys whatever a self-hoster
 put in it and cannot be taken back by a later release.
+
+## 2026-10-07 — The audit's last batch: what the app promises, it can now see itself keeping
+
+**Scheduled jobs carry a clock.** The digest and the three sweeps run only when a scheduler
+outside the app calls them, and the posting sweep on the hosted instance had never run with
+nothing anywhere saying so. Each route now stamps a Setting when it finishes a run (after, so a
+run that throws leaves the clock alone), and `src/lib/data/scheduled.ts` turns the clocks into
+off / never called / stopped / running, with a stale threshold a few times each job's cadence.
+Every tool and switch that promises a scheduled thing returns `scheduleNote` when that thing is
+not running. Considered and rejected: SystemEvent rows per run (an hourly job would bury the
+error stream) and a timer in the app (the transport is stateless, and that is the point). The
+clocks are bookkeeping, hidden from `listVariables` beside `archive_swept_at`.
+
+**The export names every model.** `COVERAGE` in transfer.ts is typed over `Prisma.ModelName`, so a
+new model fails the typecheck until somebody says whether it is in the file. Seven had silently
+been left out since they were added. Interviews are matched by job, round and label;
+referrals by person, job-or-company and the day asked; a board watch carries its seen ids so
+a restore does not re-propose a whole board.
+
+**The briefing's FULL tail is the join of its paragraphs.** The verbatim copy existed to keep
+FULL byte-identical when scopes were introduced; the join was checked identical and the copy
+deleted. The habits after the areas carry `needs` too and are dropped when a scope cannot see
+every tool they name. The mail paragraph and `inbox_review` now tell an assistant with its own
+Gmail or Calendar connector to use it — both used to tell it to stop because nothing was linked
+here, which was the opposite of useful on the hosted instance, where nobody can link one.
+
+**The first sign-in makes the owner account somebody's.** The generated owner is created with
+`mustChangePassword`, and the forced-change screen asks for a real email while the address is
+`owner@localhost`. The logged password works once. `/setup`, the setup key and the
+`ADMIN_EMAIL`, `APP_PASSWORD` and `PUBLIC_URL` variables were meant to go in the same change;
+deleting the files was refused by the session's permission check, so they remain, and the
+`/setup` fallback still lets the first visitor claim an instance whose boot provisioning failed.
+
+**The README is a front door.** About 150 lines, linking to the manual, which is where features
+are documented now (CLAUDE.md's rule changed with it). Three things lived only in the README and
+moved: page breaks in the editor, the capture link, and a Your data page.
+
+**The tool-choice eval offers workflows with their real descriptions.** It used a one-line
+stand-in, so every case choosing between a workflow and a tool was scored against text no
+client is served. No baseline was recorded with this change: the session had no Anthropic
+credentials. Record one the next time it runs.
+
+**Still waiting on a go-ahead that a permission check, not a person, withheld:** the linked
+accounts and outbound cut, the sample workspace, stage checklists with cadence and recurrence,
+board watches as a stateless check, and deleting the two duplicate product skills. A Railway
+template needs the owner's Railway account, and the GHCR image has never been booted on Railway.
