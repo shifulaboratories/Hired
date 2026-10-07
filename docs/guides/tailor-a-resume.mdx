@@ -69,9 +69,10 @@ Three outcomes, and all three are fine:
 Sometimes the answer to a posting is no, and it is much cheaper to find that out before
 writing anything.
 
-> Run a gap report on this posting.
+> Should I even apply to this one?
 
-[`gap_report`](/workflows#gap-report) does the mining without the writing. It returns
+[`tailor_resume`](/workflows#tailor-a-resume-to-a-job) stops after the mining when that is
+all you asked. It returns
 three lists — **backed**, **thin**, **missing** — with the strongest quote for each backed
 item and the precise gap for each thin one. Then it says roughly how much of the posting's
 core is covered and whether tailoring is worth it.
@@ -121,9 +122,6 @@ Rules that hold up:
   </Step>
   <Step title="Draft">
     Order the experience so the most relevant role leads. Rename headings where it helps.
-  </Step>
-  <Step title="preview_resume_text">
-    Check it lands near one page **before** saving anything.
   </Step>
   <Step title="Save it">
     Already have a base resume? `duplicate_resume` it and edit the copy — never the

@@ -1,7 +1,7 @@
 ---
 title: "Me tools"
 sidebarTitle: "Me"
-description: "Thirty-three tools over roles, backgrounds, highlights, notes, standing rules, the four supporting collections, and importing a resume you already have."
+description: "Twenty-seven tools over roles, backgrounds, highlights, notes, standing rules, the four supporting collections, and importing a resume you already have."
 icon: "user"
 ---
 
@@ -33,7 +33,7 @@ already on file is skipped rather than overwritten, and running it twice is safe
 
 _Search Me_
 
-Ranked full-text search across everything the user has written about themselves: role backgrounds, achievement highlights, notes, projects and their profile. This is the FIRST tool to call when tailoring a resume or answering a question about their experience. Words are matched by stem, so "managing engineers" finds "managed three engineers" and a partial word finds the whole one — search the language of the POSTING rather than guessing how they phrased it, and search two or three times with different words before concluding they have no evidence for something. Terms are ORed and ranked, so a record matching two of three comes back above one matching one; nothing is excluded for missing a word. Returns an excerpt centred on the match, with the id and kind of each hit so you can fetch the full record, and `use`: only a hit whose use is "evidence" may reach a document. "rules" binds you without being quoted, "caveats" is their own positioning note — context, never document material — and "open" is a fact they have not settled, so ask. The profile's own background is not searched; get_profile has it. An empty query returns their roles, newest first.
+Ranked full-text search across everything the user has written about themselves: role backgrounds, achievement highlights, notes, projects and their profile. This is the FIRST tool to call when tailoring a resume or answering a question about their experience. Words are matched by stem, so "managing engineers" finds "managed three engineers" and a partial word finds the whole one — search the language of the POSTING rather than guessing how they phrased it, and search two or three times with different words before concluding they have no evidence for something. Terms are ORed and ranked, so a record matching two of three comes back above one matching one; nothing is excluded for missing a word. Returns an excerpt centred on the match, with the id and kind of each hit so you can fetch the full record, and `use`: only a hit whose use is "evidence" may reach a document. "rules" binds you without being quoted, "caveats" is their own positioning note — context, never document material — and "open" is a fact they have not settled, so ask. The profile's own background is not searched; get_me_snapshot with only "profile" has it. An empty query returns their roles, newest first.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -49,14 +49,7 @@ Returns EVERYTHING in Me at once: profile, all roles with their full background 
 | Argument | Type | |
 | --- | --- | --- |
 | `include_background` | boolean | Include the full long-form background text for each role (default true). Set false for a lighter payload. |
-
-### `get_profile`
-
-_Get profile_
-
-The user's identity block: name, headline, contact details, links, career summary and their personal background (values, what they want next, comp expectations, non-negotiables). `hasPhoto` says whether a profile photo is set; the picture itself is not returned because it is hundreds of kilobytes of base64 — use set_profile_photo to change it. `timeZone` is the calendar every date in this workspace is read against — an IANA name, or empty meaning the server's own clock.
-
-No arguments.
+| `only` | enum | "profile" for the identity block alone: name, headline, contact details, links, summary and their personal background. `hasPhoto` says whether a photo is set (the picture itself is never returned); `timeZone` is the calendar every date here is read against, or empty for the server's clock.  `profile` |
 
 ### `update_profile`
 
@@ -182,53 +175,6 @@ Update fields on an existing role. WARNING: passing background REPLACES the whol
 | `startUnconfirmed` | boolean | True when the start MONTH is a guess. A writer then prints the year only, or asks. Use it rather than writing the doubt into the background. |
 | `endUnconfirmed` | boolean | True when the end MONTH is a guess. Same rule. |
 
-### `list_transferable_skills`
-
-_List transferable skills_
-
-The tools they have ACTUALLY used, and what each one transfers to. This is the answer to 'the posting wants HubSpot and they have only ever run Salesforce'. Each row is `have` — the real thing — plus `covers`, the tools it reaches, spelled the way a posting spells them, plus their own note on why. Read this before writing a document for a posting that names a tool you cannot find in Me: a recorded transfer lets that tool appear in a SKILLS line marked comparable, under their keyword policy. It never lets it appear in a bullet about a job. A transfer that is not on file does not exist — do not infer one.
-
-No arguments.
-
-### `record_transferable_skill`
-
-_Record a transferable skill_
-
-File something they have used and the tools it transfers to. Reach for this when they say a version of 'I have only used X but Y is the same thing' — the sentence people say about CRMs, ticket trackers, cloud providers and BI tools. `have` must be something they genuinely used; `covers` is what it reaches. Ask them rather than guessing the list: the point of storing it is that THEY stand behind it in a room, and a bridge you invented is one they cannot defend. `note` is their own answer to 'how would you pick it up', which is the thing an interviewer actually asks.
-
-| Argument | Type | |
-| --- | --- | --- |
-| `have` | string | **required** — What they have actually used, e.g. 'Salesforce' |
-| `covers` | string[] | What it transfers to, as a posting would name them, e.g. ['HubSpot', 'Pipedrive'] |
-| `note` | string | Their own words on why it transfers and how fast they would be productive |
-
-### `update_transferable_skill`
-
-_Update a transferable skill_
-
-Change a recorded transfer. `covers` REPLACES the whole list — read it with list_transferable_skills first, then write it back entire, or an assistant adding one tool silently drops the rest.
-
-**Overwrites or deletes.**
-
-| Argument | Type | |
-| --- | --- | --- |
-| `id` | string | **required** — Transferable id, from list_transferable_skills |
-| `have` | string | What they have actually used |
-| `covers` | string[] | The COMPLETE list of what it transfers to. Replaces what is stored. |
-| `note` | string | Their own words on why it transfers |
-
-### `delete_transferable_skill`
-
-_Delete a transferable skill_
-
-Remove a recorded transfer for good. Nothing already written is changed — this only stops the bridge being offered on the next document. Permanent, like deleting a role or a highlight.
-
-**Overwrites or deletes.**
-
-| Argument | Type | |
-| --- | --- | --- |
-| `id` | string | **required** — Transferable id |
-
 ### `posting_keywords`
 
 _Where a posting's keywords land_
@@ -243,7 +189,7 @@ Read ONE posting on the board and say, term by term, what it lands on: `onFile` 
 
 _Append to a role's background_
 
-Safely ADD text to the end of a role's background without touching what is already there. This is the right tool when the user tells you something new about a job they already have on file. Passing a `heading` that the background ALREADY has merges the new lines into that section rather than opening a second one with the same name, so filing three things under one heading over three conversations leaves one tidy section. Three headings are reserved and change what the text MEANS: "Rules" for a binding instruction about how this job may be described ("describe internal software by function only, no product names"), "Caveats" for positioning and interview prep that must never reach a document ("tenure is short — have the answer ready"), and "Open questions" for a fact they are not sure of yet ("start month assumed — confirm before it goes on a dated resume"). Everything else is evidence and is fair game for resumes. Use the reserved headings when the user is telling you a CONSTRAINT, a WORRY or an UNCERTAINTY rather than a fact about what they did. Once they settle an open question, resolve_open_question takes it out and files the answer — never rewrite the whole background for it.
+Safely ADD text to the end of a role's background without touching what is already there. This is the right tool when the user tells you something new about a job they already have on file — and whenever they mention something that went well at the job they are in now (a project shipped, a number moved, somebody thanked them), whether or not they asked: offer to file it, because Me stops growing the day a search ends and the next one starts from whatever was written down. Write it in their words with whatever number they gave, under a month heading like "October 2026"; do NOT polish it into a resume bullet — mine_role_background does that later, with them. list_roles marks the current job. Passing a `heading` that the background ALREADY has merges the new lines into that section rather than opening a second one with the same name, so filing three things under one heading over three conversations leaves one tidy section. Three headings are reserved and change what the text MEANS: "Rules" for a binding instruction about how this job may be described ("describe internal software by function only, no product names"), "Caveats" for positioning and interview prep that must never reach a document ("tenure is short — have the answer ready"), and "Open questions" for a fact they are not sure of yet ("start month assumed — confirm before it goes on a dated resume"). Everything else is evidence and is fair game for resumes. Use the reserved headings when the user is telling you a CONSTRAINT, a WORRY or an UNCERTAINTY rather than a fact about what they did. Once they settle an open question, resolve_open_question takes it out and files the answer — never rewrite the whole background for it.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -255,7 +201,7 @@ Safely ADD text to the end of a role's background without touching what is alrea
 
 _Delete a role_
 
-Destroy a job and everything hanging off it: its background, every highlight drawn from it, and the evidence behind any resume bullet that came from there. There is no archive for a role and no undo — this is not delete_application, which files things away. Resumes already written keep their text; what they lose is the material that proves it, so trace_resume_evidence will start reporting those bullets as unsupported. Almost nobody means this: a role kept out of a document is a resume edit, not a deletion. Read it back with get_role and get a plain yes first.
+Destroy a job and everything hanging off it: its background, every highlight drawn from it, and the evidence behind any resume bullet that came from there. There is no archive for a role and no undo — this is not archive_records, which files a company, a person or an application away. Resumes already written keep their text; what they lose is the material that proves it, so trace_resume_evidence will start reporting those bullets as unsupported. Almost nobody means this: a role kept out of a document is a resume edit, not a deletion. Read it back with get_role and get a plain yes first.
 
 **Overwrites or deletes.**
 
@@ -371,23 +317,23 @@ Permanently delete a note. This is the only way to remove one — a note has no 
 
 ### `list_extras`
 
-_List education / projects / skills / certifications_
+_List education / projects / skills / certifications / transferables_
 
-Read one of the supporting knowledge-base collections: education history, side projects, skill groups, or certifications.
+Read one of the supporting knowledge-base collections: education history, side projects, skill groups, certifications, or transferables. A TRANSFERABLE is a tool they have ACTUALLY used (`have`) and the tools it reaches (`covers`, spelled the way a posting spells them), with their own note on why — the answer to 'the posting wants HubSpot and they have only ever run Salesforce'. Read them before writing for a posting that names a tool you cannot find in Me: a recorded transfer lets that tool appear in a SKILLS line marked comparable, under their keyword policy, and never in a bullet about a job. A transfer that is not on file does not exist — do not infer one.
 
 | Argument | Type | |
 | --- | --- | --- |
-| `kind` | enum | **required** — Which collection to read  `education` · `projects` · `skills` · `certifications` |
+| `kind` | enum | **required** — Which collection to read  `education` · `projects` · `skills` · `certifications` · `transferables` |
 
 ### `create_extra`
 
-_Add education / project / skill group / certification_
+_Add education / project / skill group / certification / transferable_
 
-Add an item to one of the supporting collections. Only the fields relevant to `kind` are read — see each field's description for which kind it belongs to.
+Add an item to one of the supporting collections. Only the fields relevant to `kind` are read — see each field's description for which kind it belongs to. For a transferable, reach for it when they say a version of 'I have only used X but Y is the same thing'. Ask them for the list rather than guessing it: the point of storing it is that THEY stand behind it in a room, and a bridge you invented is one they cannot defend.
 
 | Argument | Type | |
 | --- | --- | --- |
-| `kind` | enum | **required** — Which collection to add to  `education` · `projects` · `skills` · `certifications` |
+| `kind` | enum | **required** — Which collection to add to  `education` · `projects` · `skills` · `certifications` · `transferables` |
 | `school` | string | [education] School name |
 | `degree` | string | [education] e.g. 'B.S.' |
 | `field` | string | [education] e.g. 'Computer Science' |
@@ -405,10 +351,13 @@ Add an item to one of the supporting collections. Only the fields relevant to `k
 | `startDate` | string | [education \| projects] YYYY-MM |
 | `endDate` | string | [education \| projects] YYYY-MM |
 | `tags` | string[] | [projects] Tags |
+| `have` | string | [transferables] What they have actually used, e.g. 'Salesforce' |
+| `covers` | string[] | [transferables] What it transfers to, as a posting names them, e.g. ['HubSpot', 'Pipedrive'] |
+| `note` | string | [transferables] Their own words on why it transfers and how fast they would be productive |
 
 ### `update_extra`
 
-_Update an education / project / skill group / certification_
+_Update an education / project / skill group / certification / transferable_
 
 Change fields on an item in one of the supporting collections. Reach for this instead of deleting and re-creating — that would hand the item a new id and break anything referring to it. Only the fields you pass are changed; everything you leave out keeps its current value, so you do not need to read the item first. Fields not relevant to `kind` are ignored.
 
@@ -416,7 +365,7 @@ Change fields on an item in one of the supporting collections. Reach for this in
 
 | Argument | Type | |
 | --- | --- | --- |
-| `kind` | enum | **required** — Which collection the item is in  `education` · `projects` · `skills` · `certifications` |
+| `kind` | enum | **required** — Which collection the item is in  `education` · `projects` · `skills` · `certifications` · `transferables` |
 | `id` | string | **required** — Id of the item to change |
 | `school` | string | [education] School name |
 | `degree` | string | [education] e.g. 'B.S.' |
@@ -435,25 +384,28 @@ Change fields on an item in one of the supporting collections. Reach for this in
 | `startDate` | string | [education \| projects] YYYY-MM |
 | `endDate` | string | [education \| projects] YYYY-MM |
 | `tags` | string[] | [projects] REPLACES the whole list |
+| `have` | string | [transferables] What they have actually used |
+| `covers` | string[] | [transferables] The COMPLETE list of what it transfers to. REPLACES what is stored — read it first and write it back entire, or adding one silently drops the rest. |
+| `note` | string | [transferables] Their own words on why it transfers |
 
 ### `delete_extra`
 
-_Delete an education / project / skill group / certification_
+_Delete an education / project / skill group / certification / transferable_
 
-Destroy one education entry, project, skill group or certification. Permanent, with no archive behind it, and it takes the `kind` as well as the id because ids are only unique within a collection. Reach for update_extra instead when the item is merely wrong: deleting and re-creating mints a new id and breaks anything pointing at the old one. Resumes already written keep their copy of the text.
+Destroy one education entry, project, skill group, certification or transferable. A deleted transferable only stops the bridge being offered on the next document; nothing already written changes. Permanent, with no archive behind it, and it takes the `kind` as well as the id because ids are only unique within a collection. Reach for update_extra instead when the item is merely wrong: deleting and re-creating mints a new id and breaks anything pointing at the old one. Resumes already written keep their copy of the text.
 
 **Overwrites or deletes.**
 
 | Argument | Type | |
 | --- | --- | --- |
-| `kind` | enum | **required** — Which collection the item is in  `education` · `projects` · `skills` · `certifications` |
+| `kind` | enum | **required** — Which collection the item is in  `education` · `projects` · `skills` · `certifications` · `transferables` |
 | `id` | string | **required** — Item id |
 
 ### `import_resume`
 
 _Import a resume into Me_
 
-Turn an existing resume, LinkedIn export or any pasted career history into a filled-in Me in ONE call. Reach for this first when the workspace is empty and the user has a document: it is the difference between starting from their real history and starting from nothing, so offer it before asking them to talk through their life. You do the reading — parse the pasted text yourself into the payload: profile facts, one entry per role with its bullets, education, projects, skills, certifications. Copy what the document says and NEVER invent, upgrade or round anything: no employer, title, date or metric the text does not state, and a field it is silent on stays absent. Include startDate on every role — it is part of a role's identity, and two stints at one company import as two roles only when their dates differ. Everything is additive and re-import is safe: nothing is overwritten or removed. Profile fields fill only where empty. A role already on file — same company and title, matching start date — is not created twice; instead it gains the bullets it does not have, and the new wording is appended to its background, so re-importing an updated resume brings in what changed. An education entry with the same school, degree and field, or a project or certification with the same name, is skipped; a skill group with an existing name has its skills unioned in. Each role's bullets are saved as highlights and land in its background for search_me to mine. Returns what was created, what was merged into and how many bullets each gained, and what was skipped — report that back. When the workspace is NOT empty, call preview_resume_import first: the same report, writing nothing. Pass create_base_resume: true to also build their first draft from what was imported; it reuses a resume already named 'Base resume' rather than minting another, so repeating the call is safe. Offer it — a resume is usually why they pasted one.
+Turn an existing resume, LinkedIn export or any pasted career history into a filled-in Me in ONE call. Reach for this first when the workspace is empty and the user has a document: it is the difference between starting from their real history and starting from nothing, so offer it before asking them to talk through their life. You do the reading — parse the pasted text yourself into the payload: profile facts, one entry per role with its bullets, education, projects, skills, certifications. Copy what the document says and NEVER invent, upgrade or round anything: no employer, title, date or metric the text does not state, and a field it is silent on stays absent. Include startDate on every role — it is part of a role's identity, and two stints at one company import as two roles only when their dates differ. Everything is additive and re-import is safe: nothing is overwritten or removed. Profile fields fill only where empty. A role already on file — same company and title, matching start date — is not created twice; instead it gains the bullets it does not have, and the new wording is appended to its background, so re-importing an updated resume brings in what changed. An education entry with the same school, degree and field, or a project or certification with the same name, is skipped; a skill group with an existing name has its skills unioned in. Each role's bullets are saved as highlights and land in its background for search_me to mine. Returns what was created, what was merged into and how many bullets each gained, and what was skipped — report that back. When the workspace is NOT empty, call it with dry_run true first: the same report, writing nothing. Pass create_base_resume: true to also build their first draft from what was imported; it reuses a resume already named 'Base resume' rather than minting another, so repeating the call is safe. Offer it — a resume is usually why they pasted one.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -465,6 +417,7 @@ Turn an existing resume, LinkedIn export or any pasted career history into a fil
 | `certifications` | object[] | Certifications and licences. |
 | `on_existing` | string | What to do with a role already on file: 'merge' (default) adds the bullets it does not have and appends the new wording to its background; 'skip' leaves it completely untouched, which is what this tool used to do. Merging never edits or removes anything, so prefer it. |
 | `create_base_resume` | boolean | Also build a first draft resume from what was imported, named 'Base resume'. Offer this — it is usually why they pasted a resume. |
+| `dry_run` | boolean | Report exactly what this WOULD change and write nothing: the roles it would create, the roles already on file it would add bullets to and how many each gains, what it would skip, and which profile fields would fill. It runs the real import and rolls it back, so the answer cannot drift. Use it first whenever the workspace is NOT empty — a second resume from someone with history is where 'what will this do to what I have?' is a real question — then call again without it to go ahead. |
 
 ### `import_linkedin_archive`
 
@@ -479,14 +432,3 @@ Fill in Me from LinkedIn's own data export — the zip you get from Settings →
 | `connections` | boolean | Also file people from Connections.csv whose Company is already a company on file. Default false. Capped at 200 |
 | `on_existing` | string | 'merge' (default) or 'skip', matching import_resume. Merge adds what a role does not already have; skip drops the whole entry |
 | `dry_run` | boolean | Do every lookup and no writes, and report the same numbers. Do this first whenever the workspace is not empty |
-
-### `preview_resume_import`
-
-_Preview what importing a resume would do_
-
-Read an import payload and report exactly what it WOULD change, writing nothing. Build the payload exactly as you would for import_resume — same shape, same fields, call get_me_snapshot or import_resume's schema if you need it — and pass it as `payload`. Send it here first whenever the workspace is NOT already empty: a second resume from someone who has history is where 'what will this do to what I already have?' is a real question, and this answers it before anything happens rather than after. Returns the same report import_resume returns: the roles it would create, the roles already on file it would add bullets to and how many each would gain, what it would skip, and which profile fields would fill. It runs the real import and rolls it back, so its answer cannot drift from what the import actually does. Nothing is written; call import_resume with the same payload to go ahead.
-
-| Argument | Type | |
-| --- | --- | --- |
-| `payload` | object | **required** — Exactly the arguments you would pass to import_resume — profile, roles with their bullets, education, projects, skillGroups, certifications. |
-| `on_existing` | string | 'merge' (default) or 'skip', matching import_resume. Preview what you intend to do, not something else. |

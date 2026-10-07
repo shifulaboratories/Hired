@@ -17,7 +17,7 @@ Report a table with three columns: **capability**, **tool that covers it** (or `
 
 - `covered` — a tool does this
 - `gap` — no tool, and there should be one
-- `ui-only` — legitimately direct-manipulation or rendering; say which
+- `ui-only` — legitimately direct-manipulation, rendering or a display preference (a width, a visible field); say which
 
 Then, separately, list the reverse: tools with no UI equivalent. Those aren't bugs, but
 call out any where a person would reasonably expect a screen.

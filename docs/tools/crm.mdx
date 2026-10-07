@@ -1,7 +1,7 @@
 ---
 title: "CRM tools"
 sidebarTitle: "Companies & contacts"
-description: "Fifteen tools over the companies you are talking to and the people at them, including their own timelines and ping dates."
+description: "Twelve tools over the companies you are talking to and the people at them, including their own timelines and ping dates."
 icon: "building"
 ---
 
@@ -99,18 +99,6 @@ Change what you know about a company. Only the fields you pass are touched, but 
 | `tagIds` | string[] | Company tag ids. Exact; wins over tags. |
 | `notes` | string | Research notes — replaces what is there |
 
-### `delete_company`
-
-_Archive a company_
-
-Put a company in the archive. It leaves the CRM, every picker, every filter and the pipeline, and restore_records brings it back for a set number of days — 30 by default — before it is deleted for good. Nothing is destroyed here. Every application still pointing at it goes into the archive with it and comes back with it; this used to refuse while those existed and no longer needs to. The people who represent it are NOT archived: somebody is a founder at one company and an advisor at another, so they keep every other company and simply lose this one. Returns how many applications went with it. To fold a duplicate employer into the one you are keeping without archiving anything, use merge_companies.
-
-**Overwrites or deletes.**
-
-| Argument | Type | |
-| --- | --- | --- |
-| `id` | string | **required** — Company id |
-
 ### `preview_company_merge`
 
 _Preview merging two companies_
@@ -196,18 +184,6 @@ Change a person's details. Only the fields you pass are touched, and each REPLAC
 | `applicationId` | string | Application to attach to, or empty string to detach |
 | `nextFollowUpAt` | string | ISO date to next get in touch — 'ping Sarah in two weeks' lives here. Empty string clears it. Due pings surface in list_follow_ups and on the dashboard. |
 
-### `delete_contact`
-
-_Archive a contact_
-
-Put a person in the archive with their whole timeline — every call, coffee and reply logged against them. Nothing is destroyed, and restore_records brings all of it back for a set number of days, 30 by default. The companies they represent and the application they were attached to are untouched; they simply stop appearing on either. To take somebody off one application without archiving them, use update_contact with an empty applicationId.
-
-**Overwrites or deletes.**
-
-| Argument | Type | |
-| --- | --- | --- |
-| `id` | string | **required** — Contact id |
-
 ### `create_contact`
 
 _Create a contact_
@@ -235,28 +211,17 @@ Save a person: recruiter, hiring manager, referral, friend at the company. Recor
 | `tags` | string[] | How they are filed — 'referral', 'warm intro', 'ex-colleague'. Names; any that do not exist yet are created. |
 | `applicationId` | string | Attach to this application |
 
-### `tag_companies`
+### `tag_records`
 
-_Tag companies in bulk_
+_Tag companies or people in bulk_
 
-Add or remove tags across a set of companies in one act — 'these nine are all fintech', 'take Dream list off these four'. ADD and REMOVE, never replace: a bulk write that replaced the set would mean tagging nine companies as fintech quietly stripping the size, location and everything else off every one of them. Ids only, from list_tags, and each must be a tag of kind INDUSTRY, SIZE, LOCATION or COMPANY — a tag of any other kind is refused rather than attached, because nothing in the app renders an application tag on a company and no picker could ever take it back off. Ids that are not this person's, or are in the archive, are skipped rather than failing the call. Returns which companies changed and which were skipped. Use update_company when you are setting one company's lists deliberately; this is for a selection.
-
-| Argument | Type | |
-| --- | --- | --- |
-| `ids` | string[] | **required** — Company ids to change |
-| `add` | string[] | Tag ids to attach. Kind INDUSTRY, SIZE, LOCATION or COMPANY. |
-| `remove` | string[] | Tag ids to take off |
-
-### `tag_contacts`
-
-_Tag people in bulk_
-
-Add or remove CONTACT tags across a set of people in one act — 'these six are all referrals'. ADD and REMOVE, never replace, for the same reason tag_companies does not replace: a bulk overwrite loses every other label somebody already carries. Ids only, from list_tags with kind CONTACT; a tag of any other kind is refused. Ids that are not this person's, or are in the archive, are skipped rather than failing the call. Use update_contact when you are setting one person's tags deliberately.
+Add or remove tags across a set of companies or a set of people in one act — 'these nine are all fintech', 'these six are all referrals', 'take Dream list off these four'. Pass `kind`: company or contact. ADD and REMOVE, never replace: a bulk write that replaced the set would mean tagging nine companies as fintech quietly stripping the size, location and everything else off every one of them. Ids only, from list_tags. A company takes tags of kind INDUSTRY, SIZE, LOCATION or COMPANY; a person takes CONTACT. A tag of any other kind is refused rather than attached, because nothing in the app renders it there and no picker could take it back off. Ids that are not this person's, or are in the archive, are skipped rather than failing the call. Returns which records changed and which were skipped. Use update_company or update_contact when you are setting one record's lists deliberately; this is for a selection.
 
 | Argument | Type | |
 | --- | --- | --- |
-| `ids` | string[] | **required** — Contact ids to change |
-| `add` | string[] | Tag ids to attach. Kind CONTACT. |
+| `kind` | enum | **required** — Which records the ids are  `company` · `contact` |
+| `ids` | string[] | **required** — Company or contact ids to change |
+| `add` | string[] | Tag ids to attach |
 | `remove` | string[] | Tag ids to take off |
 
 ### `schedule_contact_pings`
@@ -264,6 +229,8 @@ Add or remove CONTACT tags across a set of people in one act — 'these six are 
 _Put people on the chase list_
 
 Set one next-ping date across a set of people — 'chase everyone I met at the conference in two weeks'. Takes an ISO date; an empty string clears the date instead, taking all of them off the chase list. A date it cannot read is REFUSED rather than treated as empty, so a vague 'next Tuesday' fails loudly instead of silently unscheduling everybody in the batch. Due pings surface in list_follow_ups and list_schedule alongside due applications. Ids that are not this person's, or are in the archive, are skipped. Use update_contact's nextFollowUpAt for one person.
+
+**Overwrites or deletes.**
 
 | Argument | Type | |
 | --- | --- | --- |

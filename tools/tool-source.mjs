@@ -97,8 +97,6 @@ const CONTACT_SORTS = ["name", "company", "ping", "touch"];
 const SORT_DIRECTIONS = ["asc", "desc"];
 const COMPANY_MISSING = ["website", "industry", "location"];
 const CONTACT_MISSING = ["email", "tags"];
-const PIPELINE_VIEW_VALUES = ["board", "list", "calendar"];
-const COLUMN_LIST_VALUES = ["pipeline", "companies", "contacts"];
 // Mirrors PROPOSAL_KINDS in src/lib/data/proposals.ts and PROPOSAL_STATUSES in
 // src/lib/mcp/tools.ts. Both checked below.
 const PROPOSAL_KINDS = ["LOG_ACTIVITY", "MOVE_STAGE", "CREATE_TASK", "SET_FOLLOW_UP", "CREATE_CONTACT", "CREATE_APPLICATION"];
@@ -148,8 +146,6 @@ for (const [name, values] of [
   ["SORT_DIRECTIONS", SORT_DIRECTIONS],
   ["COMPANY_MISSING", COMPANY_MISSING],
   ["CONTACT_MISSING", CONTACT_MISSING],
-  ["PIPELINE_VIEW_VALUES", PIPELINE_VIEW_VALUES],
-  ["COLUMN_LIST_VALUES", COLUMN_LIST_VALUES],
   ["PROPOSAL_STATUSES", PROPOSAL_STATUSES],
   ["DIGEST_KINDS", DIGEST_KINDS],
 ]) {
@@ -290,7 +286,7 @@ const scope = {
   DEFAULT_ASSISTANT_MODEL, KEYWORD_POLICIES, TEMPLATE_KEYS, DEFAULT_TEMPLATE,
   STAGE_VALUES, ACTIVITY_VALUES, COMPANY_FILTERS, CONTACT_FILTERS, TAG_COLORS, TAG_KINDS,
   ARCHIVE_KIND_VALUES, EXPORT_KINDS, COMPANY_SORTS, CONTACT_SORTS, SORT_DIRECTIONS,
-  COMPANY_MISSING, CONTACT_MISSING, PIPELINE_VIEW_VALUES, COLUMN_LIST_VALUES,
+  COMPANY_MISSING, CONTACT_MISSING,
 };
 const scopeKeys = Object.keys(scope);
 const scopeValues = Object.values(scope);

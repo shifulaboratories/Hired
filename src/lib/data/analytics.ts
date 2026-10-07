@@ -677,7 +677,7 @@ export async function workspaceHealth(
       count: companies.length,
       of: companyTotal,
       why: "Loss and conversion cut by industry are empty without it — the first thing you ask when a pattern appears.",
-      fix: "tag_companies",
+      fix: "tag_records with kind company",
       examples: companies.slice(0, take).map((row) => ({ id: row.id, name: row.name })),
     },
     {
@@ -697,7 +697,7 @@ export async function workspaceHealth(
       count: contacts.length,
       of: contactTotal,
       why: "A recruiter and a former manager need different messages, and nothing can tell them apart without this.",
-      fix: "tag_contacts, or update_contact",
+      fix: "tag_records with kind contact, or update_contact",
       examples: contacts.slice(0, take).map((row) => ({ id: row.id, name: row.name })),
     },
     {

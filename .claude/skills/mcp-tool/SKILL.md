@@ -33,7 +33,7 @@ id, or anything else that would let a caller act as someone else.
 
 `verb_noun`, snake_case, area-consistent: `list_*`, `get_*`, `create_*`, `update_*`,
 `delete_*`, `search_*`, plus specifics like `move_application_stage`,
-`preview_resume_text`, `pipeline_stats`. Admin tools are prefixed `admin_`. A name that
+`preview_company_merge`, `pipeline_stats`. Admin tools are prefixed `admin_`. A name that
 doesn't fit the pattern means the tool is doing too much.
 
 ## Descriptions — where the effort goes
@@ -54,8 +54,8 @@ Traps that must be restated wherever they apply:
 - **Replace vs append.** `update_resume` and `update_role` replace what you send. Say
   "read first, modify, then write back whole." `append_role_background` exists precisely
   because assistants kept overwriting people's notes with `update_role`.
-- **Saved vs not.** `preview_resume_text` renders and estimates page count without saving.
-  Any tool with a dry-run twin should point at it.
+- **Saved vs not.** `import_resume` with `dry_run` reports what it would add without saving.
+  Any tool with a dry-run twin, or a dry-run flag, should point at it.
 - **Prefer a copy.** Tailoring should say to `duplicate_resume` rather than edit a resume
   already attached to an application.
 - **No fabrication.** Any tool that writes resume content restates the rule: never invent

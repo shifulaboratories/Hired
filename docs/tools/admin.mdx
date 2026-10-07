@@ -1,7 +1,7 @@
 ---
 title: "Admin tools"
 sidebarTitle: "Admin"
-description: "Thirty-four tools for running an instance: accounts, invitations, the waitlist, sign-in, email, billing, health and every stored setting."
+description: "Thirty-two tools for running an instance: accounts, invitations, the waitlist, sign-in, email, billing, health and every stored setting."
 icon: "shield-halved"
 ---
 
@@ -44,18 +44,6 @@ How many people are on this instance, how many are active, how many invites are 
 **Admin only.**
 
 No arguments.
-
-### `admin_set_company_logos`
-
-_Turn company logos on or off_
-
-Controls whether the pipeline shows a company's favicon next to its name. When on, each person's browser asks twenty-icons.com for the logo, which means that service can see which companies are in their pipeline — turn it off for an instance where that matters and everyone gets initials on a coloured tile instead. Nothing else changes; no data is stored or deleted either way. Call admin_instance_stats to read the current state.
-
-**Admin only.** **Overwrites or deletes.**
-
-| Argument | Type | |
-| --- | --- | --- |
-| `enabled` | boolean | **required** — On shows logos, off shows initials only |
 
 ### `admin_list_users`
 
@@ -257,16 +245,6 @@ Destroy an account and everything it owns — career history, highlights, resume
 | Argument | Type | |
 | --- | --- | --- |
 | `userId` | string | **required** — User id |
-
-### `admin_get_email_config`
-
-_Check email configuration_
-
-Whether Resend is wired up, and the from address invitations will come from. The API key is returned masked.
-
-**Admin only.**
-
-No arguments.
 
 ### `admin_set_email_config`
 

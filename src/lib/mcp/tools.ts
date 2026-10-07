@@ -28,7 +28,6 @@ import * as revisions from "@/lib/data/revisions";
 import * as stageCadence from "@/lib/data/stage-cadence";
 import * as referrals from "@/lib/data/referrals";
 import { REFERRAL_STATUSES } from "@/lib/data/referrals";
-import * as wins from "@/lib/data/wins";
 import * as watch from "@/lib/data/watch";
 import * as mailSweep from "@/lib/data/mail-sweep";
 import * as captureLink from "@/lib/data/capture-link";
@@ -497,12 +496,12 @@ function offerInputFrom(args: Json): offers.OfferInput {
 }
 
 /**
- * One reading of an import payload, for the two tools that take one.
+ * One reading of an import payload, for both of import_resume's paths.
  *
- * import_resume and preview_resume_import share a schema of about a hundred
- * lines. Two copies of the code that walks it would disagree the day either
- * gained a field, and a preview of something other than what the import will do
- * is worse than no preview.
+ * The import and its dry run share a schema of about a hundred lines. Two
+ * copies of the code that walks it would disagree the day either gained a
+ * field, and a preview of something other than what the import will do is
+ * worse than no preview.
  */
 function importPayloadFrom(args: Json): Parameters<typeof me.importResume>[1] {
   const roles = Array.isArray(args.roles) ? (args.roles as Json[]) : [];
@@ -694,8 +693,6 @@ const CONTACT_SORTS = ["name", "company", "ping", "touch"] as const;
 const SORT_DIRECTIONS = ["asc", "desc"] as const;
 const COMPANY_MISSING = ["website", "industry", "location"] as const;
 const CONTACT_MISSING = ["email", "tags"] as const;
-const PIPELINE_VIEW_VALUES = ["board", "list", "calendar"] as const;
-const COLUMN_LIST_VALUES = ["pipeline", "companies", "contacts"] as const;
 
 /**
  * The profile as a tool should see it.
@@ -772,7 +769,7 @@ export const tools: McpTool[] = [
     name: "search_me",
     title: "Search Me",
     description:
-      "Ranked full-text search across everything the user has written about themselves: role backgrounds, achievement highlights, notes, projects and their profile. This is the FIRST tool to call when tailoring a resume or answering a question about their experience. Words are matched by stem, so \"managing engineers\" finds \"managed three engineers\" and a partial word finds the whole one — search the language of the POSTING rather than guessing how they phrased it, and search two or three times with different words before concluding they have no evidence for something. Terms are ORed and ranked, so a record matching two of three comes back above one matching one; nothing is excluded for missing a word. Returns an excerpt centred on the match, with the id and kind of each hit so you can fetch the full record, and `use`: only a hit whose use is \"evidence\" may reach a document. \"rules\" binds you without being quoted, \"caveats\" is their own positioning note — context, never document material — and \"open\" is a fact they have not settled, so ask. The profile's own background is not searched; get_profile has it. An empty query returns their roles, newest first.",
+      "Ranked full-text search across everything the user has written about themselves: role backgrounds, achievement highlights, notes, projects and their profile. This is the FIRST tool to call when tailoring a resume or answering a question about their experience. Words are matched by stem, so \"managing engineers\" finds \"managed three engineers\" and a partial word finds the whole one — search the language of the POSTING rather than guessing how they phrased it, and search two or three times with different words before concluding they have no evidence for something. Terms are ORed and ranked, so a record matching two of three comes back above one matching one; nothing is excluded for missing a word. Returns an excerpt centred on the match, with the id and kind of each hit so you can fetch the full record, and `use`: only a hit whose use is \"evidence\" may reach a document. \"rules\" binds you without being quoted, \"caveats\" is their own positioning note — context, never document material — and \"open\" is a fact they have not settled, so ask. The profile's own background is not searched; get_me_snapshot with only \"profile\" has it. An empty query returns their roles, newest first.",
     inputSchema: object(
       {
         query: str("Keywords to search for, e.g. 'kubernetes cost savings' or 'led a team'"),
@@ -797,6 +794,12 @@ export const tools: McpTool[] = [
       include_background: bool(
         "Include the full long-form background text for each role (default true). Set false for a lighter payload.",
       ),
+      only: {
+        type: "string",
+        enum: ["profile"],
+        description:
+          "\"profile\" for the identity block alone: name, headline, contact details, links, summary and their personal background. `hasPhoto` says whether a photo is set (the picture itself is never returned); `timeZone` is the calendar every date here is read against, or empty for the server's clock.",
+      },
     }),
     annotations: {
       readOnlyHint: true,
@@ -805,6 +808,7 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) => {
+      if (s(args, "only") === "profile") return withoutPhotoBytes(await me.getProfile(ctx.userId));
       const snapshot = await me.getMeSnapshot(ctx.userId);
       const profile = withoutPhotoBytes(snapshot.profile);
       if (b(args, "include_background") === false) {
@@ -824,20 +828,6 @@ export const tools: McpTool[] = [
       }
       return { ...snapshot, profile };
     },
-  },
-  {
-    name: "get_profile",
-    title: "Get profile",
-    description:
-      "The user's identity block: name, headline, contact details, links, career summary and their personal background (values, what they want next, comp expectations, non-negotiables). `hasPhoto` says whether a profile photo is set; the picture itself is not returned because it is hundreds of kilobytes of base64 — use set_profile_photo to change it. `timeZone` is the calendar every date in this workspace is read against — an IANA name, or empty meaning the server's own clock.",
-    inputSchema: object({}),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (_args, ctx) => withoutPhotoBytes(await me.getProfile(ctx.userId)),
   },
   {
     name: "update_profile",
@@ -1129,90 +1119,6 @@ export const tools: McpTool[] = [
       ),
   },
   {
-    name: "list_transferable_skills",
-    title: "List transferable skills",
-    description:
-      "The tools they have ACTUALLY used, and what each one transfers to. This is the answer to 'the posting wants HubSpot and they have only ever run Salesforce'. Each row is `have` — the real thing — plus `covers`, the tools it reaches, spelled the way a posting spells them, plus their own note on why. Read this before writing a document for a posting that names a tool you cannot find in Me: a recorded transfer lets that tool appear in a SKILLS line marked comparable, under their keyword policy. It never lets it appear in a bullet about a job. A transfer that is not on file does not exist — do not infer one.",
-    inputSchema: object({}),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (_args, ctx) => transferables.listTransferables(ctx.userId),
-  },
-  {
-    name: "record_transferable_skill",
-    title: "Record a transferable skill",
-    description:
-      "File something they have used and the tools it transfers to. Reach for this when they say a version of 'I have only used X but Y is the same thing' — the sentence people say about CRMs, ticket trackers, cloud providers and BI tools. `have` must be something they genuinely used; `covers` is what it reaches. Ask them rather than guessing the list: the point of storing it is that THEY stand behind it in a room, and a bridge you invented is one they cannot defend. `note` is their own answer to 'how would you pick it up', which is the thing an interviewer actually asks.",
-    inputSchema: object(
-      {
-        have: str("What they have actually used, e.g. 'Salesforce'"),
-        covers: strArray("What it transfers to, as a posting would name them, e.g. ['HubSpot', 'Pipedrive']"),
-        note: str("Their own words on why it transfers and how fast they would be productive"),
-      },
-      ["have"],
-    ),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) =>
-      transferables.createTransferable(ctx.userId, {
-        have: required(args, "have"),
-        covers: a(args, "covers"),
-        note: s(args, "note"),
-      }),
-  },
-  {
-    name: "update_transferable_skill",
-    title: "Update a transferable skill",
-    description:
-      "Change a recorded transfer. `covers` REPLACES the whole list — read it with list_transferable_skills first, then write it back entire, or an assistant adding one tool silently drops the rest.",
-    inputSchema: object(
-      {
-        id: str("Transferable id, from list_transferable_skills"),
-        have: str("What they have actually used"),
-        covers: strArray("The COMPLETE list of what it transfers to. Replaces what is stored."),
-        note: str("Their own words on why it transfers"),
-      },
-      ["id"],
-    ),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) =>
-      transferables.updateTransferable(
-        ctx.userId,
-        required(args, "id"),
-        defined({ have: s(args, "have"), covers: a(args, "covers"), note: s(args, "note") }),
-      ),
-  },
-  {
-    name: "delete_transferable_skill",
-    title: "Delete a transferable skill",
-    description:
-      "Remove a recorded transfer for good. Nothing already written is changed — this only stops the bridge being offered on the next document. Permanent, like deleting a role or a highlight.",
-    inputSchema: object({ id: str("Transferable id") }, ["id"]),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) => {
-      await transferables.deleteTransferable(ctx.userId, required(args, "id"));
-      return { deleted: required(args, "id") };
-    },
-  },
-  {
     name: "posting_keywords",
     title: "Where a posting's keywords land",
     description:
@@ -1231,7 +1137,7 @@ export const tools: McpTool[] = [
     name: "append_role_background",
     title: "Append to a role's background",
     description:
-      "Safely ADD text to the end of a role's background without touching what is already there. This is the right tool when the user tells you something new about a job they already have on file. Passing a `heading` that the background ALREADY has merges the new lines into that section rather than opening a second one with the same name, so filing three things under one heading over three conversations leaves one tidy section. Three headings are reserved and change what the text MEANS: \"Rules\" for a binding instruction about how this job may be described (\"describe internal software by function only, no product names\"), \"Caveats\" for positioning and interview prep that must never reach a document (\"tenure is short — have the answer ready\"), and \"Open questions\" for a fact they are not sure of yet (\"start month assumed — confirm before it goes on a dated resume\"). Everything else is evidence and is fair game for resumes. Use the reserved headings when the user is telling you a CONSTRAINT, a WORRY or an UNCERTAINTY rather than a fact about what they did. Once they settle an open question, resolve_open_question takes it out and files the answer — never rewrite the whole background for it.",
+      "Safely ADD text to the end of a role's background without touching what is already there. This is the right tool when the user tells you something new about a job they already have on file — and whenever they mention something that went well at the job they are in now (a project shipped, a number moved, somebody thanked them), whether or not they asked: offer to file it, because Me stops growing the day a search ends and the next one starts from whatever was written down. Write it in their words with whatever number they gave, under a month heading like \"October 2026\"; do NOT polish it into a resume bullet — mine_role_background does that later, with them. list_roles marks the current job. Passing a `heading` that the background ALREADY has merges the new lines into that section rather than opening a second one with the same name, so filing three things under one heading over three conversations leaves one tidy section. Three headings are reserved and change what the text MEANS: \"Rules\" for a binding instruction about how this job may be described (\"describe internal software by function only, no product names\"), \"Caveats\" for positioning and interview prep that must never reach a document (\"tenure is short — have the answer ready\"), and \"Open questions\" for a fact they are not sure of yet (\"start month assumed — confirm before it goes on a dated resume\"). Everything else is evidence and is fair game for resumes. Use the reserved headings when the user is telling you a CONSTRAINT, a WORRY or an UNCERTAINTY rather than a fact about what they did. Once they settle an open question, resolve_open_question takes it out and files the answer — never rewrite the whole background for it.",
     inputSchema: object(
       {
         id: str("Role id"),
@@ -1262,7 +1168,7 @@ export const tools: McpTool[] = [
     name: "delete_role",
     title: "Delete a role",
     description:
-      "Destroy a job and everything hanging off it: its background, every highlight drawn from it, and the evidence behind any resume bullet that came from there. There is no archive for a role and no undo — this is not delete_application, which files things away. Resumes already written keep their text; what they lose is the material that proves it, so trace_resume_evidence will start reporting those bullets as unsupported. Almost nobody means this: a role kept out of a document is a resume edit, not a deletion. Read it back with get_role and get a plain yes first.",
+      "Destroy a job and everything hanging off it: its background, every highlight drawn from it, and the evidence behind any resume bullet that came from there. There is no archive for a role and no undo — this is not archive_records, which files a company, a person or an application away. Resumes already written keep their text; what they lose is the material that proves it, so trace_resume_evidence will start reporting those bullets as unsupported. Almost nobody means this: a role kept out of a document is a resume edit, not a deletion. Read it back with get_role and get a plain yes first.",
     inputSchema: object({ id: str("Role id") }, ["id"]),
     annotations: {
       readOnlyHint: false,
@@ -1541,14 +1447,14 @@ export const tools: McpTool[] = [
   },
   {
     name: "list_extras",
-    title: "List education / projects / skills / certifications",
+    title: "List education / projects / skills / certifications / transferables",
     description:
-      "Read one of the supporting knowledge-base collections: education history, side projects, skill groups, or certifications.",
+      "Read one of the supporting knowledge-base collections: education history, side projects, skill groups, certifications, or transferables. A TRANSFERABLE is a tool they have ACTUALLY used (`have`) and the tools it reaches (`covers`, spelled the way a posting spells them), with their own note on why — the answer to 'the posting wants HubSpot and they have only ever run Salesforce'. Read them before writing for a posting that names a tool you cannot find in Me: a recorded transfer lets that tool appear in a SKILLS line marked comparable, under their keyword policy, and never in a bullet about a job. A transfer that is not on file does not exist — do not infer one.",
     inputSchema: object(
       {
         kind: {
           type: "string",
-          enum: ["education", "projects", "skills", "certifications"],
+          enum: ["education", "projects", "skills", "certifications", "transferables"],
           description: "Which collection to read",
         },
       },
@@ -1570,21 +1476,23 @@ export const tools: McpTool[] = [
           return me.listSkillGroups(ctx.userId);
         case "certifications":
           return me.listCertifications(ctx.userId);
+        case "transferables":
+          return transferables.listTransferables(ctx.userId);
         default:
-          throw new Error("kind must be education | projects | skills | certifications");
+          throw new Error("kind must be education | projects | skills | certifications | transferables");
       }
     },
   },
   {
     name: "create_extra",
-    title: "Add education / project / skill group / certification",
+    title: "Add education / project / skill group / certification / transferable",
     description:
-      "Add an item to one of the supporting collections. Only the fields relevant to `kind` are read — see each field's description for which kind it belongs to.",
+      "Add an item to one of the supporting collections. Only the fields relevant to `kind` are read — see each field's description for which kind it belongs to. For a transferable, reach for it when they say a version of 'I have only used X but Y is the same thing'. Ask them for the list rather than guessing it: the point of storing it is that THEY stand behind it in a room, and a bridge you invented is one they cannot defend.",
     inputSchema: object(
       {
         kind: {
           type: "string",
-          enum: ["education", "projects", "skills", "certifications"],
+          enum: ["education", "projects", "skills", "certifications", "transferables"],
           description: "Which collection to add to",
         },
         school: str("[education] School name"),
@@ -1604,6 +1512,9 @@ export const tools: McpTool[] = [
         startDate: str("[education | projects] YYYY-MM"),
         endDate: str("[education | projects] YYYY-MM"),
         tags: strArray("[projects] Tags"),
+        have: str("[transferables] What they have actually used, e.g. 'Salesforce'"),
+        covers: strArray("[transferables] What it transfers to, as a posting names them, e.g. ['HubSpot', 'Pipedrive']"),
+        note: str("[transferables] Their own words on why it transfers and how fast they would be productive"),
       },
       ["kind"],
     ),
@@ -1651,21 +1562,27 @@ export const tools: McpTool[] = [
             name: required(args, "name"),
             ...defined({ issuer: s(args, "issuer"), date: s(args, "date"), url: s(args, "url") }),
           });
+        case "transferables":
+          return transferables.createTransferable(ctx.userId, {
+            have: required(args, "have"),
+            covers: a(args, "covers"),
+            note: s(args, "note"),
+          });
         default:
-          throw new Error("kind must be education | projects | skills | certifications");
+          throw new Error("kind must be education | projects | skills | certifications | transferables");
       }
     },
   },
   {
     name: "update_extra",
-    title: "Update an education / project / skill group / certification",
+    title: "Update an education / project / skill group / certification / transferable",
     description:
       "Change fields on an item in one of the supporting collections. Reach for this instead of deleting and re-creating — that would hand the item a new id and break anything referring to it. Only the fields you pass are changed; everything you leave out keeps its current value, so you do not need to read the item first. Fields not relevant to `kind` are ignored.",
     inputSchema: object(
       {
         kind: {
           type: "string",
-          enum: ["education", "projects", "skills", "certifications"],
+          enum: ["education", "projects", "skills", "certifications", "transferables"],
           description: "Which collection the item is in",
         },
         id: str("Id of the item to change"),
@@ -1686,6 +1603,9 @@ export const tools: McpTool[] = [
         startDate: str("[education | projects] YYYY-MM"),
         endDate: str("[education | projects] YYYY-MM"),
         tags: strArray("[projects] REPLACES the whole list"),
+        have: str("[transferables] What they have actually used"),
+        covers: strArray("[transferables] The COMPLETE list of what it transfers to. REPLACES what is stored — read it first and write it back entire, or adding one silently drops the rest."),
+        note: str("[transferables] Their own words on why it transfers"),
       },
       ["kind", "id"],
     ),
@@ -1737,21 +1657,27 @@ export const tools: McpTool[] = [
               url: s(args, "url"),
             }),
           );
+        case "transferables":
+          return transferables.updateTransferable(
+            ctx.userId,
+            id,
+            defined({ have: s(args, "have"), covers: a(args, "covers"), note: s(args, "note") }),
+          );
         default:
-          throw new Error("kind must be education | projects | skills | certifications");
+          throw new Error("kind must be education | projects | skills | certifications | transferables");
       }
     },
   },
   {
     name: "delete_extra",
-    title: "Delete an education / project / skill group / certification",
+    title: "Delete an education / project / skill group / certification / transferable",
     description:
-      "Destroy one education entry, project, skill group or certification. Permanent, with no archive behind it, and it takes the `kind` as well as the id because ids are only unique within a collection. Reach for update_extra instead when the item is merely wrong: deleting and re-creating mints a new id and breaks anything pointing at the old one. Resumes already written keep their copy of the text.",
+      "Destroy one education entry, project, skill group, certification or transferable. A deleted transferable only stops the bridge being offered on the next document; nothing already written changes. Permanent, with no archive behind it, and it takes the `kind` as well as the id because ids are only unique within a collection. Reach for update_extra instead when the item is merely wrong: deleting and re-creating mints a new id and breaks anything pointing at the old one. Resumes already written keep their copy of the text.",
     inputSchema: object(
       {
         kind: {
           type: "string",
-          enum: ["education", "projects", "skills", "certifications"],
+          enum: ["education", "projects", "skills", "certifications", "transferables"],
           description: "Which collection the item is in",
         },
         id: str("Item id"),
@@ -1775,8 +1701,11 @@ export const tools: McpTool[] = [
           return me.deleteSkillGroup(ctx.userId, id);
         case "certifications":
           return me.deleteCertification(ctx.userId, id);
+        case "transferables":
+          await transferables.deleteTransferable(ctx.userId, id);
+          return { deleted: id };
         default:
-          throw new Error("kind must be education | projects | skills | certifications");
+          throw new Error("kind must be education | projects | skills | certifications | transferables");
       }
     },
   },
@@ -1784,7 +1713,7 @@ export const tools: McpTool[] = [
     name: "import_resume",
     title: "Import a resume into Me",
     description:
-      "Turn an existing resume, LinkedIn export or any pasted career history into a filled-in Me in ONE call. Reach for this first when the workspace is empty and the user has a document: it is the difference between starting from their real history and starting from nothing, so offer it before asking them to talk through their life. You do the reading — parse the pasted text yourself into the payload: profile facts, one entry per role with its bullets, education, projects, skills, certifications. Copy what the document says and NEVER invent, upgrade or round anything: no employer, title, date or metric the text does not state, and a field it is silent on stays absent. Include startDate on every role — it is part of a role's identity, and two stints at one company import as two roles only when their dates differ. Everything is additive and re-import is safe: nothing is overwritten or removed. Profile fields fill only where empty. A role already on file — same company and title, matching start date — is not created twice; instead it gains the bullets it does not have, and the new wording is appended to its background, so re-importing an updated resume brings in what changed. An education entry with the same school, degree and field, or a project or certification with the same name, is skipped; a skill group with an existing name has its skills unioned in. Each role's bullets are saved as highlights and land in its background for search_me to mine. Returns what was created, what was merged into and how many bullets each gained, and what was skipped — report that back. When the workspace is NOT empty, call preview_resume_import first: the same report, writing nothing. Pass create_base_resume: true to also build their first draft from what was imported; it reuses a resume already named 'Base resume' rather than minting another, so repeating the call is safe. Offer it — a resume is usually why they pasted one.",
+      "Turn an existing resume, LinkedIn export or any pasted career history into a filled-in Me in ONE call. Reach for this first when the workspace is empty and the user has a document: it is the difference between starting from their real history and starting from nothing, so offer it before asking them to talk through their life. You do the reading — parse the pasted text yourself into the payload: profile facts, one entry per role with its bullets, education, projects, skills, certifications. Copy what the document says and NEVER invent, upgrade or round anything: no employer, title, date or metric the text does not state, and a field it is silent on stays absent. Include startDate on every role — it is part of a role's identity, and two stints at one company import as two roles only when their dates differ. Everything is additive and re-import is safe: nothing is overwritten or removed. Profile fields fill only where empty. A role already on file — same company and title, matching start date — is not created twice; instead it gains the bullets it does not have, and the new wording is appended to its background, so re-importing an updated resume brings in what changed. An education entry with the same school, degree and field, or a project or certification with the same name, is skipped; a skill group with an existing name has its skills unioned in. Each role's bullets are saved as highlights and land in its background for search_me to mine. Returns what was created, what was merged into and how many bullets each gained, and what was skipped — report that back. When the workspace is NOT empty, call it with dry_run true first: the same report, writing nothing. Pass create_base_resume: true to also build their first draft from what was imported; it reuses a resume already named 'Base resume' rather than minting another, so repeating the call is safe. Offer it — a resume is usually why they pasted one.",
     inputSchema: object(
       {
         profile: {
@@ -1900,6 +1829,9 @@ export const tools: McpTool[] = [
         create_base_resume: bool(
           "Also build a first draft resume from what was imported, named 'Base resume'. Offer this — it is usually why they pasted a resume.",
         ),
+        dry_run: bool(
+          "Report exactly what this WOULD change and write nothing: the roles it would create, the roles already on file it would add bullets to and how many each gains, what it would skip, and which profile fields would fill. It runs the real import and rolls it back, so the answer cannot drift. Use it first whenever the workspace is NOT empty — a second resume from someone with history is where 'what will this do to what I have?' is a real question — then call again without it to go ahead.",
+        ),
       },
       [],
     ),
@@ -1910,6 +1842,9 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) => {
+      if (b(args, "dry_run")) {
+        return me.previewResumeImport(ctx.userId, importPayloadFrom(args), onExistingFrom(args));
+      }
       const result = await me.importResume(
         ctx.userId,
         importPayloadFrom(args),
@@ -1972,38 +1907,6 @@ export const tools: McpTool[] = [
         connections: b(args, "connections") ?? false,
         dryRun: b(args, "dry_run") ?? false,
       }),
-  },
-  {
-    name: "preview_resume_import",
-    title: "Preview what importing a resume would do",
-    description:
-      "Read an import payload and report exactly what it WOULD change, writing nothing. Build the payload exactly as you would for import_resume — same shape, same fields, call get_me_snapshot or import_resume's schema if you need it — and pass it as `payload`. Send it here first whenever the workspace is NOT already empty: a second resume from someone who has history is where 'what will this do to what I already have?' is a real question, and this answers it before anything happens rather than after. Returns the same report import_resume returns: the roles it would create, the roles already on file it would add bullets to and how many each would gain, what it would skip, and which profile fields would fill. It runs the real import and rolls it back, so its answer cannot drift from what the import actually does. Nothing is written; call import_resume with the same payload to go ahead.",
-    inputSchema: object(
-      {
-        payload: {
-          type: "object",
-          description:
-            "Exactly the arguments you would pass to import_resume — profile, roles with their bullets, education, projects, skillGroups, certifications.",
-          additionalProperties: true,
-        },
-        on_existing: str(
-          "'merge' (default) or 'skip', matching import_resume. Preview what you intend to do, not something else.",
-        ),
-      },
-      ["payload"],
-    ),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) =>
-      me.previewResumeImport(
-        ctx.userId,
-        importPayloadFrom((args.payload ?? {}) as Json),
-        onExistingFrom(args),
-      ),
   },
 
   // -------------------------------------------------------------------------
@@ -2442,7 +2345,7 @@ export const tools: McpTool[] = [
     ),
     annotations: {
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: true,
       openWorldHint: false,
     },
@@ -3629,7 +3532,7 @@ export const tools: McpTool[] = [
     ),
     annotations: {
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: false,
       openWorldHint: false,
     },
@@ -3965,40 +3868,6 @@ export const tools: McpTool[] = [
     handler: async (args, ctx) => referrals.deleteReferral(ctx.userId, required(args, "id")),
   },
   {
-    name: "log_win",
-    title: "Put something that went well into Me",
-    description:
-      "Append one thing that went well to their current role's background, under a dated heading. THIS IS THE TOOL FOR AFTER THE SEARCH IS OVER, and it is the one that makes the next one possible: Me stops growing the day somebody accepts an offer, and two years later the next search starts from a role with an empty background that nobody can reconstruct from memory. Reach for it whenever they mention something they did — a project that shipped, a number that moved, something somebody thanked them for — whether or not they asked you to record it; offer, do not assume. Write what they said, in their words, with whatever number they gave. DO NOT polish it into a resume bullet and do not invent an impact figure: a highlight is a deliberate distillation and mine_role_background is what does that, later, with them in the room. If nothing in Me is marked as the current role this refuses and says so — and when there is an accepted application it names the employer, so the next move is to add the role rather than to give up.",
-    inputSchema: object(
-      {
-        text: str("What went well, in their words. One or two sentences is right."),
-        role_id: str("Which role it belongs to. Defaults to whichever is marked current."),
-        occurred_on: str("When it happened, YYYY-MM-DD. Only decides which month it files under."),
-      },
-      ["text"],
-    ),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: false,
-    },
-    versioned: true,
-    handler: async (args, ctx) => {
-      const result = await wins.logWin(ctx.userId, {
-        text: required(args, "text"),
-        roleId: s(args, "role_id"),
-        occurredOn: s(args, "occurred_on"),
-      }, mcpAuthor(ctx, "log_win"));
-      return {
-        roleId: result.target.roleId,
-        role: `${result.target.title} at ${result.target.company}`,
-        heading: result.heading,
-        backgroundChars: result.role.background.length,
-      };
-    },
-  },
-  {
     name: "list_stage_templates",
     title: "List the stage checklists",
     description:
@@ -4276,7 +4145,7 @@ export const tools: McpTool[] = [
     ),
     annotations: {
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: true,
       openWorldHint: false,
     },
@@ -4320,7 +4189,7 @@ export const tools: McpTool[] = [
     name: "create_application",
     title: "Create an application",
     description:
-      "Track a new job. Paste the full posting into jobDescription — it is what you will tailor the resume against later. The company is created automatically if it does not exist. Pass companyWebsite when you know it — it is what makes the company's logo appear in the pipeline, and it costs nothing to include. A job link and description are OPTIONAL: an application that started as a LinkedIn message with no listing is still an application — track it with just company and roleTitle, put 'Cold outreach' in sources, and attach the person messaged with create_contact.",
+      "Track a new job. Paste the full posting into jobDescription — it is what you will tailor the resume against later. The company is created automatically if it does not exist. Pass companyWebsite when you know it — it is what makes the company's logo appear in the pipeline, and it costs nothing to include. A job link and description are OPTIONAL: an application that started as a LinkedIn message with no listing is still an application — track it with just company and roleTitle, put 'Cold outreach' in tags, and attach the person messaged with create_contact.",
     inputSchema: object(
       {
         company: str("Company name"),
@@ -4343,8 +4212,6 @@ export const tools: McpTool[] = [
         tags: strArray(
           "How to file it, by NAME, and several at once is normal: ['LinkedIn', 'Referral'] for a posting a friend also flagged. Matched case-insensitively against the tags that exist and created only when nothing matches, so call list_tags first.",
         ),
-        sources: strArray("What tags used to be called. Still works; tags wins."),
-        source: str("The old single-value spelling. Ignored when tags or sources is passed."),
         notes: str("Any notes"),
         appliedAt: str("ISO date they applied"),
         nextFollowUpAt: str("ISO date to follow up. Auto-set from the stage if omitted."),
@@ -4354,7 +4221,7 @@ export const tools: McpTool[] = [
     ),
     annotations: {
       readOnlyHint: false,
-      destructiveHint: true,
+      destructiveHint: false,
       idempotentHint: false,
       openWorldHint: false,
     },
@@ -4388,7 +4255,7 @@ export const tools: McpTool[] = [
     name: "update_application",
     title: "Update an application",
     description:
-      "Update fields on an application. Changing `stage` here also writes a timeline entry and resets the follow-up date. `sources` and `lossReasons` each REPLACE the whole list — read the current one from get_application, add or remove, and pass the full list back. The two are separate sets on the same application: writing one never disturbs the other.",
+      "Update fields on an application. Changing `stage` here also writes a timeline entry and resets the follow-up date. `tags` and `lossReasons` each REPLACE the whole list — read the current one from get_application, add or remove, and pass the full list back. The two are separate sets on the same application: writing one never disturbs the other.",
     inputSchema: object(
       {
         id: str("Application id"),
@@ -4411,10 +4278,6 @@ export const tools: McpTool[] = [
         salaryRange: str("Compensation"),
         tagIds: strArray("Tag ids. Exact; wins over tags. REPLACES the whole set."),
         tags: strArray("Tag names — REPLACES the whole set, matched or created as above"),
-        sources: strArray("What tags used to be called. REPLACES the whole set; tags wins."),
-        source: str(
-          "The old single-value spelling. WARNING: this also REPLACES the entire set with just this one value — read the current list from get_application first, or use tags to write the full list. Ignored when tags or sources is passed.",
-        ),
         notes: str("Notes"),
         appliedAt: str("ISO date applied"),
         nextFollowUpAt: str("ISO date of next follow-up, or empty string to clear"),
@@ -4456,58 +4319,16 @@ export const tools: McpTool[] = [
       }),
   },
   {
-    name: "move_applications_stage",
-    title: "Move several applications to one stage",
-    description:
-      "Move a batch of applications to the same stage — the tool for 'close out everything I never heard back from' or 'mark these four as applied'. Each one gets its own timeline entry and follow-up date, exactly as if it had been moved on its own, so the funnel history stays intact. Ids that no longer exist are skipped rather than failing the batch; the result lists what moved and what was skipped. Read the ids from list_applications first, and when closing them out pass `lossReasons` saying why — 'Ghosted' for silence, 'Rejected' for a no. The stage is the same either way; the reason is what makes the funnel worth reading. `addedTasks` counts what any stage checklist put on their list across the whole batch.",
-    inputSchema: object(
-      {
-        ids: strArray("The application ids to move"),
-        stage: { type: "string", enum: STAGE_VALUES, description: "The stage they all move to" },
-        interviewRound: num(
-          "Which round they all reached, counting from 1. Recorded whatever the stage — 'rejected after round 3' is exactly how the funnel knows where they fell out.",
-        ),
-        roundLabel: str("What that round is called — 'Phone screen', 'Onsite'. Applied to all of them."),
-        lossReasons: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "Why they ended, by name — the same reasons on every one. REPLACES any already on them, and an empty list clears them, whatever the stage.",
-        },
-      },
-      ["ids", "stage"],
-    ),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) => {
-      const ids = a(args, "ids");
-      if (!ids?.length) throw new Error("ids is required: pass at least one application id");
-      return pipeline.moveApplicationsStage(
-        ctx.userId,
-        ids,
-        required(args, "stage") as Stage,
-        defined({
-          interviewRound: n(args, "interviewRound"),
-          roundLabel: s(args, "roundLabel"),
-          lossReasons: a(args, "lossReasons"),
-        }),
-      );
-    },
-  },
-  {
     name: "move_application_stage",
     title: "Move an application to a new stage",
     description:
-      "Advance or close an application. Automatically logs the change to the timeline and schedules the next follow-up. Six stages: WISHLIST for something not applied to yet, APPLIED, INTERVIEWING for every conversation from a recruiter screen to a final round, OFFER, ACCEPTED for a signed offer, and LOST for every other ending. Moving to INTERVIEWING sets round 1 unless you pass a round — pass `interviewRound` when they say which one it is (\"second interview\" is 2), and `roundLabel` for what it was called. Moving to LOST, pass `lossReasons` with WHY: \"Rejected\" when they said no, \"Ghosted\" for the far more common ending where nobody ever replied, \"Withdrew\", \"Declined their offer\", \"Role closed\", or anything else that fits — names are matched against what they already use and created when nothing does. The reason is what the funnel reads to tell a decision against them apart from silence, and the advice that falls out of those is different, so it is worth asking rather than guessing. Returns `addedTasks`: if they keep a checklist for the stage it just reached (list_stage_templates), the tasks it put on their list. Read those back — a stage move that silently adds four things is a stage move somebody stops trusting.",
+      "Advance or close an application — or several at once: pass `ids` instead of `id` for 'close out everything I never heard back from' or 'mark these four as applied', and each one moves exactly as if it had been moved on its own, with its own timeline entry and follow-up date; ids that are not theirs or no longer exist are skipped and listed rather than failing the batch, and `addedTasks` becomes a count. Automatically logs the change to the timeline and schedules the next follow-up. Six stages: WISHLIST for something not applied to yet, APPLIED, INTERVIEWING for every conversation from a recruiter screen to a final round, OFFER, ACCEPTED for a signed offer, and LOST for every other ending. Moving to INTERVIEWING sets round 1 unless you pass a round — pass `interviewRound` when they say which one it is (\"second interview\" is 2), and `roundLabel` for what it was called. Moving to LOST, pass `lossReasons` with WHY: \"Rejected\" when they said no, \"Ghosted\" for the far more common ending where nobody ever replied, \"Withdrew\", \"Declined their offer\", \"Role closed\", or anything else that fits — names are matched against what they already use and created when nothing does. The reason is what the funnel reads to tell a decision against them apart from silence, and the advice that falls out of those is different, so it is worth asking rather than guessing. Returns `addedTasks`: if they keep a checklist for the stage it just reached (list_stage_templates), the tasks it put on their list. Read those back — a stage move that silently adds four things is a stage move somebody stops trusting.",
     inputSchema: object(
       {
         id: str("Application id"),
+        ids: strArray("Several application ids, all moving to the same stage. Use instead of id."),
         stage: { type: "string", enum: STAGE_VALUES, description: "The new stage" },
-        note: str("Optional note for the timeline entry"),
+        note: str("Optional note for the timeline entry — on every one, when moving several"),
         interviewRound: num(
           "Which round it reached, counting from 1. Recorded whatever the stage, because 'rejected after round 3' is how the funnel knows where it fell out; moving to INTERVIEWING with none on file yet sets round 1.",
         ),
@@ -4519,7 +4340,7 @@ export const tools: McpTool[] = [
             "Why it ended, by name. REPLACES any reasons already on it, and an empty list clears them, whatever the stage.",
         },
       },
-      ["id", "stage"],
+      ["stage"],
     ),
     annotations: {
       readOnlyHint: false,
@@ -4527,32 +4348,30 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (args, ctx) =>
-      pipeline.moveApplicationStage(
+    handler: async (args, ctx) => {
+      const extra = defined({
+        interviewRound: n(args, "interviewRound"),
+        roundLabel: s(args, "roundLabel"),
+        lossReasons: a(args, "lossReasons"),
+      });
+      const ids = a(args, "ids");
+      if (ids?.length) {
+        return pipeline.moveApplicationsStage(
+          ctx.userId,
+          ids,
+          required(args, "stage") as Stage,
+          extra,
+          s(args, "note"),
+        );
+      }
+      return pipeline.moveApplicationStage(
         ctx.userId,
         required(args, "id"),
         required(args, "stage") as Stage,
         s(args, "note"),
-        defined({
-          interviewRound: n(args, "interviewRound"),
-          roundLabel: s(args, "roundLabel"),
-          lossReasons: a(args, "lossReasons"),
-        }),
-      ),
-  },
-  {
-    name: "delete_application",
-    title: "Archive an application",
-    description:
-      "Put an application in the archive. It leaves the board, the list, the calendar and the funnel, taking its timeline and its tasks with it, and restore_records brings the lot back for a set number of days — 30 by default — before it is deleted for good. Nothing is destroyed here. Still reach for move_application_stage with LOST, and a reason, whenever the thread actually ended: the funnel and diagnose_search are built from applications that ended, and archiving one takes it out of that record entirely. Archive is for something that should never have been tracked; a stage is for something that ended.",
-    inputSchema: object({ id: str("Application id") }, ["id"]),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: true,
-      openWorldHint: false,
+        extra,
+      );
     },
-    handler: async (args, ctx) => pipeline.deleteApplication(ctx.userId, required(args, "id")),
   },
   {
     name: "log_activity",
@@ -4583,23 +4402,6 @@ export const tools: McpTool[] = [
         type: s(args, "type") as ActivityType | undefined,
         occurredAt: s(args, "occurredAt"),
       }),
-  },
-  {
-    name: "list_activities",
-    title: "List recent activity",
-    description:
-      "Recent timeline entries across the whole search, or for one application. Good for 'what happened this week'.",
-    inputSchema: object({
-      applicationId: str("Limit to one application"),
-      limit: num("Max entries, default 40"),
-    }),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) => pipeline.listActivities(ctx.userId, s(args, "applicationId"), n(args, "limit") ?? 40),
   },
   {
     name: "list_follow_ups",
@@ -4641,7 +4443,7 @@ export const tools: McpTool[] = [
     }),
     annotations: {
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: true,
       openWorldHint: false,
     },
@@ -4807,7 +4609,7 @@ export const tools: McpTool[] = [
     name: "workspace_health",
     title: "What is thin in this workspace",
     description:
-      "The six places this workspace is missing what everything else depends on: companies with no industry, applications with no source, people with no relationship recorded, roles with no highlights distilled out of them, resumes that were never attached to anything, and a current job nothing has been written into for thirty days — the details that are freshest now and gone by the time a resume is due. Reach for it when somebody asks how to get more out of the app, when an analysis you just ran came back unconfident, or at the start of a tidy-up — and reach for get_setup_status instead when the question is whether they have started at all, because this one assumes they have. Every check comes back with a count, the total it is out of, one line saying why it matters, the tool that fixes it, and up to five examples WITH IDS, so you can fix them in the same turn rather than reading out a number and asking them to go and click. Work through it conversationally, one check at a time, largest share of a population first — and confirm before writing: a source tag is a claim about where something came from, and guessing one is worse than leaving it blank. `clean` lists the checks that found nothing, so you can say what is already in good shape rather than only what is wrong. Nothing here is a fault; a workspace three days old is supposed to look like this. Archived companies, people and applications are excluded; roles carry no archive of their own, so all of them are counted. Read-only, saves nothing.",
+      "The six places this workspace is missing what everything else depends on: companies with no industry, applications with no source, people with no relationship recorded, roles with no highlights distilled out of them, resumes that were never attached to anything, and a current job nothing has been written into for thirty days — the details that are freshest now and gone by the time a resume is due. Reach for it when somebody asks how to get more out of the app, when an analysis you just ran came back unconfident, or at the start of a tidy-up — and reach for whoami instead when the question is whether they have started at all — its `setup` says so, because this one assumes they have. Every check comes back with a count, the total it is out of, one line saying why it matters, the tool that fixes it, and up to five examples WITH IDS, so you can fix them in the same turn rather than reading out a number and asking them to go and click. Work through it conversationally, one check at a time, largest share of a population first — and confirm before writing: a source tag is a claim about where something came from, and guessing one is worse than leaving it blank. `clean` lists the checks that found nothing, so you can say what is already in good shape rather than only what is wrong. Nothing here is a fault; a workspace three days old is supposed to look like this. Archived companies, people and applications are excluded; roles carry no archive of their own, so all of them are counted. Read-only, saves nothing.",
     inputSchema: object({
       examples: num("How many examples to return per check. Default 5, ceiling 25."),
     }),
@@ -5179,7 +4981,7 @@ export const tools: McpTool[] = [
     ),
     annotations: {
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: true,
       openWorldHint: false,
     },
@@ -5313,84 +5115,6 @@ export const tools: McpTool[] = [
     },
   },
   {
-    name: "get_pipeline_fields",
-    title: "What each pipeline view shows",
-    description:
-      "Which optional fields the board, the table and the calendar draw before you open anything, and everything each one COULD draw. Reach for it when somebody asks what their board shows, says it is too busy or too bare, or wants to know why a field is not on a card. Returns one entry per view: the catalogue of fields with a label each, and which are on. On the board and the table, three things are never in a catalogue and are always drawn — the company, the role title and the stage — because a card without them is not shorter, it is unreadable, and on the table the stage cell is the editor the table exists for. The calendar is the exception and only for stage: a chip is one line of its own title, so stage is genuinely extra there and is off by default. A view whose list comes back empty is on its defaults, which is not the same as showing nothing. Read-only.",
-    inputSchema: object({}),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (_args, ctx) => {
-      const profile = await me.getProfile(ctx.userId);
-      const stored = {
-        board: profile.boardFields,
-        list: profile.listFields,
-        calendar: profile.calendarFields,
-      };
-      return PIPELINE_VIEWS.map((view) => ({
-        view,
-        showing: [...visibleFields(view, stored[view])],
-        onDefaults: stored[view].length === 0,
-        available: FIELDS[view].map((field) => ({
-          key: field.key,
-          label: field.label,
-          inDefaults: field.standard,
-        })),
-      }));
-    },
-  },
-  {
-    name: "set_pipeline_fields",
-    title: "Choose what a pipeline view shows",
-    description:
-      "Set which optional fields one pipeline view draws. REPLACES that view's whole list, so call get_pipeline_fields first, decide the full set, and send it — sending one key turns off everything else on that view. One view per call: the board, the table and the calendar have different catalogues and there is no field they all share. Pass an empty list to put that view back on its defaults, which also means it picks up any field added to the catalogue later; pass ['none'] to mean genuinely nothing, which is a different thing and is why the empty list cannot mean it. A key that is not in that view's catalogue is refused rather than ignored. This is a display preference and changes no data — nothing here archives, deletes or edits an application.",
-    inputSchema: object(
-      {
-        view: {
-          type: "string",
-          enum: [...PIPELINE_VIEW_VALUES],
-          description: "board | list | calendar",
-        },
-        fields: strArray(
-          "The whole set for that view, from get_pipeline_fields. Empty for the defaults, ['none'] for nothing.",
-        ),
-      },
-      ["view", "fields"],
-    ),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) => {
-      // enumArg, not a computed key: a mistyped view would otherwise be dropped
-      // by `pick` and reported back as a success over a board that never moved.
-      const view = enumArg(args, "view", PIPELINE_VIEW_VALUES);
-      if (!view) throw new Error('Missing required string argument "view"');
-      const fields = requiredArrayAllowingEmpty(args, "fields");
-      const known = new Set(FIELDS[view].map((field) => field.key));
-      for (const key of fields) {
-        if (key !== NO_FIELDS && !known.has(key)) {
-          throw new Error(
-            `"${key}" is not a field the ${view} draws. Use one of: ${[...known].join(", ")}, or "none".`,
-          );
-        }
-      }
-      const stored = await me.setPipelineFields(ctx.userId, view, fields);
-      return {
-        view,
-        showing: [...visibleFields(view, fields)],
-        onDefaults: fields.length === 0,
-        stored,
-      };
-    },
-  },
-  {
     name: "list_field_values",
     title: "Locations and work modes already in use",
     description:
@@ -5403,103 +5127,6 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (_args, ctx) => pipeline.applicationFieldValues(ctx.userId),
-  },
-  {
-    name: "get_column_widths",
-    title: "How wide each list's columns are",
-    description:
-      "The column widths on the three tables you can resize — the pipeline's table view, the companies list and the contacts list — with each column's default, its minimum and its maximum beside the width it is actually drawing at. Reach for it when somebody says a column is too narrow to read, wants their layout described, or before set_column_widths, which needs the keys. Each list also has a name column that flexes to fill whatever the others leave; it is not in the catalogue and has no width, because widening a fixed column is what makes the name narrower. `onDefaults` is true for a list nothing has been stored for. Read-only.",
-    inputSchema: object({}),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (_args, ctx) => {
-      const profile = await me.getProfile(ctx.userId);
-      const stored = parseWidths(profile.columnWidths);
-      return COLUMN_LISTS.map((list) => ({
-        list,
-        label: LIST_LABEL[list],
-        onDefaults: stored[list] === undefined,
-        columns: COLUMNS[list].map((column) => ({
-          key: column.key,
-          label: column.label,
-          width: widthsFor(list, stored)[column.key],
-          default: column.width,
-          min: column.min,
-          max: column.max,
-        })),
-      }));
-    },
-  },
-  {
-    name: "set_column_widths",
-    title: "Resize a list's columns",
-    description:
-      "Set how wide one or more columns are on one list, in pixels. MERGES rather than replaces: a column you leave out keeps the width it had, which is the opposite of set_pipeline_fields and is deliberate — 'make Salary wider' should not reset every other column on the way past. Pass reset: true with no widths to put the whole list back on its defaults, which also means it picks up the catalogue's width for any column added later. A width outside a column's min and max is clamped to the nearest end rather than refused, because the useful reading of 'make it as wide as it goes' is the maximum, not an error; a key that is not a column on that list IS refused, because that one is a typo. Call get_column_widths first for the keys and the limits. This is a display preference and changes no data.",
-    inputSchema: object(
-      {
-        list: {
-          type: "string",
-          enum: [...COLUMN_LIST_VALUES],
-          description: "pipeline | companies | contacts",
-        },
-        widths: {
-          type: "object",
-          description:
-            "Column key to width in pixels, e.g. { \"salary\": 180 }. Omit with reset: true.",
-          additionalProperties: { type: "number" },
-        },
-        reset: bool("Put the whole list back on its default widths"),
-      },
-      ["list"],
-    ),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) => {
-      const list = enumArg(args, "list", COLUMN_LIST_VALUES);
-      if (!list) throw new Error('Missing required string argument "list"');
-      const reset = b(args, "reset") ?? false;
-      const raw = args.widths;
-      const widths: Record<string, number> = {};
-      if (raw !== undefined) {
-        if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-          throw new Error('"widths" must be an object of column key to pixel width.');
-        }
-        const known = new Set(columnKeys(list));
-        for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-          // A typo is refused; an out-of-range number is clamped downstream.
-          // Those are different mistakes and deserve different answers.
-          if (!known.has(key)) {
-            throw new Error(
-              `"${key}" is not a column on the ${list} list. Use one of: ${columnKeys(list).join(", ")}.`,
-            );
-          }
-          if (typeof value !== "number" || !Number.isFinite(value)) {
-            throw new Error(`Width for "${key}" must be a number of pixels.`);
-          }
-          widths[key] = value;
-        }
-      }
-      if (!reset && Object.keys(widths).length === 0) {
-        throw new Error("Pass widths to set, or reset: true to go back to the defaults.");
-      }
-      const stored = await me.setColumnWidths(ctx.userId, list, widths, { reset });
-      const drawn = widthsFor(list, stored);
-      return {
-        list,
-        onDefaults: stored[list] === undefined,
-        // What it actually drew at, not what was asked for: the difference is
-        // the clamp, and reporting the request back would hide it.
-        columns: COLUMNS[list].map((column) => ({ key: column.key, width: drawn[column.key] })),
-      };
-    },
   },
   // --- CRM: companies and the people at them -------------------------------
   {
@@ -5667,20 +5294,6 @@ export const tools: McpTool[] = [
           notes: s(args, "notes"),
         }),
       ),
-  },
-  {
-    name: "delete_company",
-    title: "Archive a company",
-    description:
-      "Put a company in the archive. It leaves the CRM, every picker, every filter and the pipeline, and restore_records brings it back for a set number of days — 30 by default — before it is deleted for good. Nothing is destroyed here. Every application still pointing at it goes into the archive with it and comes back with it; this used to refuse while those existed and no longer needs to. The people who represent it are NOT archived: somebody is a founder at one company and an advisor at another, so they keep every other company and simply lose this one. Returns how many applications went with it. To fold a duplicate employer into the one you are keeping without archiving anything, use merge_companies.",
-    inputSchema: object({ id: str("Company id") }, ["id"]),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) => pipeline.deleteCompany(ctx.userId, required(args, "id")),
   },
   {
     name: "preview_company_merge",
@@ -5871,20 +5484,6 @@ export const tools: McpTool[] = [
       ),
   },
   {
-    name: "delete_contact",
-    title: "Archive a contact",
-    description:
-      "Put a person in the archive with their whole timeline — every call, coffee and reply logged against them. Nothing is destroyed, and restore_records brings all of it back for a set number of days, 30 by default. The companies they represent and the application they were attached to are untouched; they simply stop appearing on either. To take somebody off one application without archiving them, use update_contact with an empty applicationId.",
-    inputSchema: object({ id: str("Contact id") }, ["id"]),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) => pipeline.deleteContact(ctx.userId, required(args, "id")),
-  },
-  {
     name: "create_contact",
     title: "Create a contact",
     description:
@@ -5949,17 +5548,18 @@ export const tools: McpTool[] = [
       }),
   },
   {
-    name: "tag_companies",
-    title: "Tag companies in bulk",
+    name: "tag_records",
+    title: "Tag companies or people in bulk",
     description:
-      "Add or remove tags across a set of companies in one act — 'these nine are all fintech', 'take Dream list off these four'. ADD and REMOVE, never replace: a bulk write that replaced the set would mean tagging nine companies as fintech quietly stripping the size, location and everything else off every one of them. Ids only, from list_tags, and each must be a tag of kind INDUSTRY, SIZE, LOCATION or COMPANY — a tag of any other kind is refused rather than attached, because nothing in the app renders an application tag on a company and no picker could ever take it back off. Ids that are not this person's, or are in the archive, are skipped rather than failing the call. Returns which companies changed and which were skipped. Use update_company when you are setting one company's lists deliberately; this is for a selection.",
+      "Add or remove tags across a set of companies or a set of people in one act — 'these nine are all fintech', 'these six are all referrals', 'take Dream list off these four'. Pass `kind`: company or contact. ADD and REMOVE, never replace: a bulk write that replaced the set would mean tagging nine companies as fintech quietly stripping the size, location and everything else off every one of them. Ids only, from list_tags. A company takes tags of kind INDUSTRY, SIZE, LOCATION or COMPANY; a person takes CONTACT. A tag of any other kind is refused rather than attached, because nothing in the app renders it there and no picker could take it back off. Ids that are not this person's, or are in the archive, are skipped rather than failing the call. Returns which records changed and which were skipped. Use update_company or update_contact when you are setting one record's lists deliberately; this is for a selection.",
     inputSchema: object(
       {
-        ids: strArray("Company ids to change"),
-        add: strArray("Tag ids to attach. Kind INDUSTRY, SIZE, LOCATION or COMPANY."),
+        kind: { type: "string", enum: ["company", "contact"], description: "Which records the ids are" },
+        ids: strArray("Company or contact ids to change"),
+        add: strArray("Tag ids to attach"),
         remove: strArray("Tag ids to take off"),
       },
-      ["ids"],
+      ["kind", "ids"],
     ),
     annotations: {
       readOnlyHint: false,
@@ -5967,36 +5567,14 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (args, ctx) =>
-      pipeline.tagCompanies(ctx.userId, requiredArray(args, "ids"), {
-        add: a(args, "add"),
-        remove: a(args, "remove"),
-      }),
-  },
-  {
-    name: "tag_contacts",
-    title: "Tag people in bulk",
-    description:
-      "Add or remove CONTACT tags across a set of people in one act — 'these six are all referrals'. ADD and REMOVE, never replace, for the same reason tag_companies does not replace: a bulk overwrite loses every other label somebody already carries. Ids only, from list_tags with kind CONTACT; a tag of any other kind is refused. Ids that are not this person's, or are in the archive, are skipped rather than failing the call. Use update_contact when you are setting one person's tags deliberately.",
-    inputSchema: object(
-      {
-        ids: strArray("Contact ids to change"),
-        add: strArray("Tag ids to attach. Kind CONTACT."),
-        remove: strArray("Tag ids to take off"),
-      },
-      ["ids"],
-    ),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
+    handler: async (args, ctx) => {
+      const change = { add: a(args, "add"), remove: a(args, "remove") };
+      const ids = requiredArray(args, "ids");
+      const kind = required(args, "kind");
+      if (kind === "company") return pipeline.tagCompanies(ctx.userId, ids, change);
+      if (kind === "contact") return pipeline.tagContacts(ctx.userId, ids, change);
+      throw new Error('kind must be "company" or "contact".');
     },
-    handler: async (args, ctx) =>
-      pipeline.tagContacts(ctx.userId, requiredArray(args, "ids"), {
-        add: a(args, "add"),
-        remove: a(args, "remove"),
-      }),
   },
   {
     name: "schedule_contact_pings",
@@ -6012,7 +5590,7 @@ export const tools: McpTool[] = [
     ),
     annotations: {
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: true,
       openWorldHint: false,
     },
@@ -6062,7 +5640,7 @@ export const tools: McpTool[] = [
     name: "archive_records",
     title: "Delete, reversibly",
     description:
-      "Delete records the reversible way: they leave every list, board, picker, filter and count in the app and land in the archive, where restore_records brings them back for a set number of days — 30 by default — before they are deleted for good. This is what to use whenever somebody says to delete or remove a company, a person or an application; delete_company, delete_contact and delete_application do exactly this for one at a time. Takes ONE kind and the ids of that kind. Archiving a company takes every application still pointing at it, with their timelines and their tasks, and brings them all back together on restore — it no longer refuses while applications exist, because nothing is destroyed here. The people who represent a company are NOT archived with it: somebody is a founder at one place and an advisor at another, so they keep every other company and simply lose this one. Ids that are not this person's, or are already in the archive, are skipped rather than failing the call. Nothing here is permanent — delete_archived is.",
+      "Delete records the reversible way: they leave every list, board, picker, filter and count in the app and land in the archive, where restore_records brings them back for a set number of days — 30 by default — before they are deleted for good. This is THE tool whenever somebody says to delete or remove a company, a person or an application — one id or many. Takes ONE kind and the ids of that kind. Three things it is not: a thread that ended is move_application_stage to LOST with a reason, because the funnel is built from applications that ended and archiving one takes it out of that record; a duplicate employer is merge_companies, which folds it into the one you keep; and taking somebody off one application without archiving them is update_contact with an empty applicationId. Archiving a company takes every application still pointing at it, with their timelines and their tasks, and brings them all back together on restore — it no longer refuses while applications exist, because nothing is destroyed here. The people who represent a company are NOT archived with it: somebody is a founder at one place and an advisor at another, so they keep every other company and simply lose this one. Ids that are not this person's, or are already in the archive, are skipped rather than failing the call. Nothing here is permanent — delete_archived is.",
     inputSchema: object(
       {
         kind: {
@@ -6581,7 +6159,7 @@ export const tools: McpTool[] = [
     name: "whoami",
     title: "Who am I connected as",
     description:
-      "The account this connection belongs to: name, email, role, and whether it can administer the instance. Every other tool acts as this person and can only see their data.",
+      "The account this connection belongs to — name, email, role, whether it can administer the instance — what this connection is called and what it is served (`connection.scope`), and how far into setup the workspace is. Every other tool acts as this person and can only see their data. Call it when someone new asks what to do first, or when a read comes back empty and you are deciding whether that is an empty account or a wrong query: `setup` says which of the three things a workspace needs (a job on the board, career material in Me, something connected) are done and what each is waiting for. `tourSeenAt` null means they have never been shown around the web app — explain things rather than assuming they know what a pipeline stage is.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -6589,28 +6167,20 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (_args, ctx) => ({
-      id: ctx.user.id,
-      name: ctx.user.name,
-      email: ctx.user.email,
-      role: ctx.user.role,
-      isAdmin: isAdmin(ctx.user),
-      memberSince: ctx.user.createdAt,
-    }),
-  },
-  {
-    name: "get_setup_status",
-    title: "How far into setup this workspace is",
-    description:
-      "Three things a workspace needs before it does anything: one job on the board, some career material in Me, and something connected over MCP. Returns which are done and what each is waiting for, plus `tourSeenAt` — when the person last went through the welcome tour in the web app, or null if they never have. Worth calling when someone new asks what to do first, or when a read comes back empty and you are deciding whether that is an empty account or a wrong query — an empty Me with nothing tracked is a workspace nobody has filled yet, not a failure. A null tourSeenAt is a strong hint you are talking to somebody who has not been shown around: explain things rather than assuming they know what a pipeline stage is.",
-    inputSchema: object({}),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
+    handler: async (_args, ctx) => {
+      const { tourSeenAt, ...setup } = await onboarding.setupStatus(ctx.userId);
+      return {
+        id: ctx.user.id,
+        name: ctx.user.name,
+        email: ctx.user.email,
+        role: ctx.user.role,
+        isAdmin: isAdmin(ctx.user),
+        memberSince: ctx.user.createdAt,
+        connection: { name: ctx.connectionName, scope: ctx.scope },
+        setup,
+        tourSeenAt,
+      };
     },
-    handler: async (args, ctx) => onboarding.setupStatus(ctx.userId),
   },
   {
     name: "load_sample_workspace",
@@ -6649,7 +6219,7 @@ export const tools: McpTool[] = [
     name: "restart_tour",
     title: "Show the welcome tour again",
     description:
-      "Queue the web app's welcome tour to run again the next time this person opens it — the short walk through what the board, Me and the assistant connection are for. Reach for it when somebody says they are lost, that they never saw an introduction, or that they want the tutorial back; also worth offering to someone whose `get_setup_status` shows tourSeenAt null who is clearly struggling. It does not open anything on its own — nothing here can reach into their browser — so say plainly that it will appear next time they load the app. Setting it back to seen is the tour\'s own job, not a tool: they put it away by finishing or closing it.",
+      "Queue the web app's welcome tour to run again the next time this person opens it — the short walk through what the board, Me and the assistant connection are for. Reach for it when somebody says they are lost, that they never saw an introduction, or that they want the tutorial back; also worth offering to someone whose `whoami` shows tourSeenAt null who is clearly struggling. It does not open anything on its own — nothing here can reach into their browser — so say plainly that it will appear next time they load the app. Setting it back to seen is the tour\'s own job, not a tool: they put it away by finishing or closing it.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: false,
@@ -6669,7 +6239,7 @@ export const tools: McpTool[] = [
     name: "list_changes",
     title: "What each assistant changed",
     description:
-      "Every write that arrived over MCP, newest first: which connection made it, which tool ran, what it touched and one line saying so. Reach for it when somebody asks what an assistant actually did, when something looks wrong and nobody remembers changing it, or before undo_change so you can name the change rather than guessing at it. Saves made in the app's own screens are NOT here, deliberately — the person was there. Versions are kept for both paths, so an edit made in the editor is still recoverable, just not listed. `undoable` and `restorePointAt` are the important pair: only writes that replace a resume or a role are versioned, and `restorePointAt` is the moment the record would go back to, which is often EARLIER than the change itself because versions are coalesced within ten minutes per author. Say that date out loud before undoing — 'this puts it back to how it was at 14:02, before three edits' — and get a yes. Read-only.",
+      "Every write that arrived over MCP, newest first: which connection made it, which tool ran, what it touched and one line saying so. Reach for it when somebody asks what an assistant actually did, when something looks wrong and nobody remembers changing it, or before restore_revision with change_id, so you can name the change rather than guessing at it. Saves made in the app's own screens are NOT here, deliberately — the person was there. Versions are kept for both paths, so an edit made in the editor is still recoverable, just not listed. `undoable` and `restorePointAt` are the important pair: only writes that replace a resume or a role are versioned, and `restorePointAt` is the moment the record would go back to, which is often EARLIER than the change itself because versions are coalesced within ten minutes per author. Say that date out loud before undoing — 'this puts it back to how it was at 14:02, before three edits' — and get a yes. Read-only.",
     inputSchema: object({
       connection_id: str("Only changes made through this connection, from list_connections"),
       tool: str("Only calls of this tool, e.g. 'update_resume'"),
@@ -6732,8 +6302,11 @@ export const tools: McpTool[] = [
     name: "restore_revision",
     title: "Put a stored version back",
     description:
-      "Replace a resume's document, or a role's fields, with a version stored earlier. Reach for it when a write went wrong and they want it back, and reach for undo_change instead when what they can name is the CHANGE rather than the version. SAY WHAT WILL HAPPEN AND GET A YES FIRST: this replaces the current state, and the date on the version is often earlier than the change they are thinking of, because versions are coalesced within ten minutes per author — restoring can take them back past several edits. The restore is itself undoable: it takes a fresh version of the current state on its way past, and the result names it as `redoRevisionId`. For a resume only the DOCUMENT comes back — the template, font, size, margins and any published link are left exactly as they are, because silently changing a font back is a surprise and a restore must never resurrect a withdrawn public address. `changed` false means the record already matched that version, and you should say so rather than reporting work that did not happen. Refuses, without writing anything, when the stored version does not parse or the record has been deleted.",
-    inputSchema: object({ id: str("Revision id, from list_revisions") }, ["id"]),
+      "Replace a resume's document, or a role's fields, with a version stored earlier — or undo one change. Pass `id` (from list_revisions) when they can name the VERSION, or `change_id` (from list_changes) when what they can name is the CHANGE: it puts back the version from just before that write. Only writes list_changes marks undoable can be undone; deleting a company, a person or an application is undone from the archive with restore_records, and a deleted role or resume cannot come back at all. SAY WHAT WILL HAPPEN AND GET A YES FIRST: this replaces the current state, and the date on the version is often earlier than the change they are thinking of, because versions are coalesced within ten minutes per author — restoring can take them back past several edits. The restore is itself undoable: it takes a fresh version of the current state on its way past, and the result names it as `redoRevisionId`. For a resume only the DOCUMENT comes back — the template, font, size, margins and any published link are left exactly as they are, because silently changing a font back is a surprise and a restore must never resurrect a withdrawn public address. `changed` false means the record already matched that version, and you should say so rather than reporting work that did not happen. Refuses, without writing anything, when the stored version does not parse or the record has been deleted.",
+    inputSchema: object({
+      id: str("Revision id, from list_revisions"),
+      change_id: str("Or a change id, from list_changes: undo that one write"),
+    }),
     annotations: {
       readOnlyHint: false,
       destructiveHint: true,
@@ -6741,40 +6314,18 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     versioned: true,
-    handler: async (args, ctx) =>
-      revisions.restoreRevision(ctx.userId, required(args, "id"), {
-        writtenBy: "mcp",
-        connectionId: ctx.connectionId,
-        connectionName: ctx.connectionName,
-        tool: "restore_revision",
-      }),
-  },
-  {
-    name: "undo_change",
-    title: "Put back what one change replaced",
-    description:
-      "Undo one row from list_changes. Only writes that replace a resume or a role can be undone, because they are the only two the app takes a copy of on the way past — everything else in the log is a line for the eye. Deleting a company, a person or an application is undone from the archive with restore_records; deleting a role, a resume, a letter, a task or a tag cannot be undone at all, and their tool descriptions say so before they run. SAY WHERE IT LANDS AND GET A YES FIRST: `restorePointAt` on the change is often earlier than the change itself, because versions are coalesced within ten minutes per author, so undoing one edit can take them back past three. The undo is itself undoable — it takes a version of the current state on the way past and names it as `redoRevisionId`. Refuses, without writing anything, when there is no stored version from before that change: it may have been swept, or it may predate version history on this instance.",
-    inputSchema: object({ id: str("Change id, from list_changes") }, ["id"]),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: true,
-      openWorldHint: false,
+    handler: async (args, ctx) => {
+      const author = mcpAuthor(ctx, "restore_revision");
+      const change = s(args, "change_id");
+      if (change) return revisions.undoChange(ctx.userId, change, author);
+      return revisions.restoreRevision(ctx.userId, required(args, "id"), author);
     },
-    versioned: true,
-    handler: async (args, ctx) =>
-      revisions.undoChange(ctx.userId, required(args, "id"), {
-        writtenBy: "mcp",
-        connectionId: ctx.connectionId,
-        connectionName: ctx.connectionName,
-        tool: "undo_change",
-      }),
   },
   {
     name: "list_connections",
     title: "List AI connections",
     description:
-      "Every assistant wired to this workspace: what it is called, which client it was set up for, when it last called in and from what. Reach for it to answer 'which of these am I still using?' or before rotating something — the ids come back here. Tokens deliberately do not: they are credentials, they would sit in this transcript forever, and the only place a person needs to see one is the client they are pasting it into. `isThisOne` marks the connection you are calling through right now, and `scope` says what each one is SERVED — FULL is everything, and a narrowed one is offered fewer tools without being able to do less to the account. set_connection_scope changes it.",
+      "Every assistant wired to this workspace: what it is called, which client it was set up for, when it last called in and from what. Reach for it to answer 'which of these am I still using?' or before rotating something — the ids come back here. Tokens deliberately do not: they are credentials, they would sit in this transcript forever, and the only place a person needs to see one is the client they are pasting it into. `isThisOne` marks the connection you are calling through right now, and `scope` says what each one is SERVED — FULL is everything, and a narrowed one is offered fewer tools without being able to do less to the account. update_connection changes it.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -6835,33 +6386,17 @@ export const tools: McpTool[] = [
     },
   },
   {
-    name: "rename_connection",
-    title: "Rename a connection",
+    name: "update_connection",
+    title: "Rename a connection, or narrow what it is served",
     description:
-      "Change what a connection is called in the list. Names are for the person, not the machine — 'Cursor — old laptop' is what makes it obvious later which one to revoke. Get the id from list_connections.",
-    inputSchema: object({ id: str("Connection id"), name: str("The new name") }, ["id", "name"]),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    handler: async (args, ctx) => {
-      await connections.renameConnection(ctx.userId, required(args, "id"), required(args, "name"));
-      return { id: required(args, "id"), renamed: true };
-    },
-  },
-  {
-    name: "set_connection_scope",
-    title: "Narrow what a connection is served",
-    description:
-      "Change which tools one client is offered. Four choices: `FULL` is everything, `WRITING` is Me, resumes and letters plus the four reads a document needs about the job it is aimed at, `PIPELINE` is the search — applications, people, the archive, mail and calendar — and `READONLY` is every tool on this server that writes nothing. Narrowing is a ROUTING AID, NOT A PERMISSION: the URL still resolves to the whole account, anybody who can sign in can widen it again, and it is never a reason to hand a connection URL to somebody you would not hand the account to. What it is good for is accuracy and cost — a client choosing between two hundred tools picks the wrong one more often than one choosing between sixty, and the wrong one here writes into somebody's career history. It takes effect on that client's next call, and a client that caches the tool list may need reconnecting to notice. Say which connection and which scope before you call it, because a narrowed client silently stops being able to do things its person may be in the middle of. Get the id from list_connections, which also says what each one is scoped to now.",
+      "Change what one connection is called, what it is served, or both. `name` is for the person, not the machine — 'Cursor — old laptop' is what makes it obvious later which one to revoke. `scope` changes which tools that client is offered. Four choices: `FULL` is everything, `WRITING` is Me, resumes and letters plus the four reads a document needs about the job it is aimed at, `PIPELINE` is the search — applications, people, the archive, mail and calendar — and `READONLY` is every tool on this server that writes nothing. Narrowing is a ROUTING AID, NOT A PERMISSION: the URL still resolves to the whole account, anybody who can sign in can widen it again, and it is never a reason to hand a connection URL to somebody you would not hand the account to. What it is good for is accuracy and cost — a client choosing between two hundred tools picks the wrong one more often than one choosing between sixty, and the wrong one here writes into somebody's career history. It takes effect on that client's next call, and a client that caches the tool list may need reconnecting to notice. Say which connection and which scope before you call it, because a narrowed client silently stops being able to do things its person may be in the middle of. Get the id from list_connections, which also says what each one is scoped to now.",
     inputSchema: object(
       {
         id: str("Connection id, from list_connections"),
+        name: str("The new name"),
         scope: { type: "string", enum: [...SCOPE_VALUES], description: "FULL, WRITING, PIPELINE or READONLY" },
       },
-      ["id", "scope"],
+      ["id"],
     ),
     annotations: {
       readOnlyHint: false,
@@ -6870,9 +6405,20 @@ export const tools: McpTool[] = [
       openWorldHint: false,
     },
     handler: async (args, ctx) => {
-      const scope = required(args, "scope") as McpScope;
-      await connections.setConnectionScope(ctx.userId, required(args, "id"), scope);
-      return { id: required(args, "id"), scope, label: scopeLabel(scope), serves: scopeBlurb(scope) };
+      const id = required(args, "id");
+      const name = s(args, "name");
+      const scope = s(args, "scope") as McpScope | undefined;
+      if (name === undefined && scope === undefined) throw new Error("Pass a name, a scope, or both.");
+      if (scope !== undefined && !(SCOPE_VALUES as readonly string[]).includes(scope)) {
+        throw new Error(`scope must be one of ${SCOPE_VALUES.join(", ")}.`);
+      }
+      if (name !== undefined) await connections.renameConnection(ctx.userId, id, name);
+      if (scope !== undefined) await connections.setConnectionScope(ctx.userId, id, scope);
+      return {
+        id,
+        ...(name !== undefined ? { name } : {}),
+        ...(scope !== undefined ? { scope, label: scopeLabel(scope), serves: scopeBlurb(scope) } : {}),
+      };
     },
   },
   {
@@ -6974,26 +6520,6 @@ export const tools: McpTool[] = [
     handler: async () => {
       const [stats, settings] = await Promise.all([users.instanceStats(), getSettings()]);
       return { ...stats, instanceName: settings.instanceName, companyLogos: settings.companyLogos };
-    },
-  },
-  {
-    name: "admin_set_company_logos",
-    title: "Turn company logos on or off",
-    description:
-      "Controls whether the pipeline shows a company's favicon next to its name. When on, each person's browser asks twenty-icons.com for the logo, which means that service can see which companies are in their pipeline — turn it off for an instance where that matters and everyone gets initials on a coloured tile instead. Nothing else changes; no data is stored or deleted either way. Call admin_instance_stats to read the current state.",
-    inputSchema: object({ enabled: bool("On shows logos, off shows initials only") }, ["enabled"]),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    adminOnly: true,
-    handler: async (args, ctx) => {
-      const enabled = b(args, "enabled");
-      if (enabled === undefined) throw new Error('Missing required boolean argument "enabled"');
-      await updateSettings(ctx.user, { companyLogos: enabled });
-      return { companyLogos: enabled };
     },
   },
   {
@@ -7410,32 +6936,6 @@ export const tools: McpTool[] = [
     },
     adminOnly: true,
     handler: async (args, ctx) => users.deleteUser(ctx.user, required(args, "userId")),
-  },
-  {
-    name: "admin_get_email_config",
-    title: "Check email configuration",
-    description:
-      "Whether Resend is wired up, and the from address invitations will come from. The API key is returned masked.",
-    inputSchema: object({}),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    adminOnly: true,
-    handler: async () => {
-      const settings = await getSettings();
-      return {
-        configured: emailIsConfigured(settings),
-        instanceName: settings.instanceName,
-        resendApiKey: maskSecret(settings.resendApiKey),
-        resendFromEmail: settings.resendFromEmail,
-        resendFromName: settings.resendFromName,
-        publicUrl: settings.publicUrl,
-        help: "The from address must be on a domain you have verified in Resend, otherwise sends are rejected.",
-      };
-    },
   },
   {
     name: "admin_set_email_config",
@@ -8075,8 +7575,9 @@ Skip newsletters, job-board digests and anything automated that does not concern
     ],
     build: (args) => `Invite ${args.email ?? "someone"} to this Hired instance.
 
-1. Call admin_get_email_config. If email is not configured, tell me plainly and carry on —
-   the invite still works, I will just send the link myself.
+1. Call admin_list_variables and check resend_api_key and resend_from_email. If email is not
+   configured, tell me plainly and carry on — the invite still works, I will just send the link
+   myself.
 2. Call admin_invite_user with email "${args.email ?? ""}"${args.role ? ` and role ${args.role}` : ""}.
 3. If emailSent is false, give me the acceptUrl in full and tell me to send it to them.
 4. Then write me a short message I can paste to them explaining what this is: a place to
@@ -8256,7 +7757,6 @@ const REQUIRES_USER_INTERACTION = new Set([
   "delete_interview",
   "delete_interview_question",
   "delete_referral",
-  "delete_transferable_skill",
 ]);
 
 /** The `_meta` for one tool, or undefined when it needs none. */

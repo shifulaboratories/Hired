@@ -390,7 +390,7 @@ export async function listChanges(
   });
 
   // A version outlives its record on purpose, so a deleted role or resume
-  // still has one — and the log offered to undo it, which undo_change then
+  // still has one — and the log offered to undo it, which an undo then
   // refused. One query per kind says which records are still there.
   const idsOf = (kind: string) =>
     [...new Set(rows.filter((row) => row.versioned && row.kind === kind && row.recordId).map((row) => row.recordId))];

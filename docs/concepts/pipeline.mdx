@@ -78,7 +78,7 @@ board, stays in the funnel, and `list_applications` returns it with `includeClos
 what you want for almost everything that ends, because a rejection you cannot count is a
 rejection you cannot learn from.
 
-Deleting is the other thing, and it is reversible. `delete_application` puts the row in the
+Deleting is the other thing, and it is reversible. `archive_records` puts the row in the
 [archive](/tools/archive), where it leaves every list, board, picker, filter and count and
 waits — thirty days by default — before it is deleted for good. `restore_records` brings it
 back. If you want it out of the way but still counted, close it; if you want it gone, delete
@@ -327,8 +327,8 @@ living in the URL, because a saved view is a cut of the data and this is not. Th
 true of how wide each column of the table is: drag the divider between two headings and the
 width is saved to your profile, so it is the same on your laptop and your phone. The company
 column takes whatever the rest leave, which is why widening one narrows it rather than
-pushing the table off the side. `get_column_widths` and `set_column_widths` are the same
-thing over MCP.
+pushing the table off the side. Both are display preferences, so they live in the app
+rather than behind a tool.
 
 On the board
 and in the table, the company, the role title and the stage are never in the list: a card

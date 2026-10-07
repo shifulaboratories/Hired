@@ -1611,6 +1611,8 @@ export async function moveApplicationsStage(
   ids: string[],
   stage: Stage,
   extra?: Parameters<typeof moveApplicationStage>[4],
+  /** One note for every timeline entry the batch writes. */
+  note?: string,
 ) {
   const moved: string[] = [];
   const skipped: string[] = [];
@@ -1619,7 +1621,7 @@ export async function moveApplicationsStage(
   let addedTasks = 0;
   for (const id of ids) {
     try {
-      const result = await moveApplicationStage(userId, id, stage, undefined, extra);
+      const result = await moveApplicationStage(userId, id, stage, note, extra);
       addedTasks += result.addedTasks.length;
       moved.push(id);
     } catch {

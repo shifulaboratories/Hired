@@ -214,8 +214,7 @@ const AREA_PARAGRAPHS: { key: string; needs: string; text: string }[] = [
   location, how you know a person, why an application was lost — every one of those is a tag
   rather than a free-text field, and they are multi-select. Call list_tags before writing any of
   them: passing a name that already exists matches it rather than creating a near-duplicate, and
-  the kinds are separate lists that never collide. "sources" on an application is the old
-  spelling of its tags and still works.` },
+  the kinds are separate lists that never collide.` },
 ];
 
 /** FULL's tail, verbatim. Never rebuilt from the paragraphs above. */
@@ -285,8 +284,7 @@ const AREAS = `The areas:
   location, how you know a person, why an application was lost — every one of those is a tag
   rather than a free-text field, and they are multi-select. Call list_tags before writing any of
   them: passing a name that already exists matches it rather than creating a near-duplicate, and
-  the kinds are separate lists that never collide. "sources" on an application is the old
-  spelling of its tags and still works.`;
+  the kinds are separate lists that never collide.`;
 
 /** A narrowed connection's tail: the head, then only the areas it can reach. */
 function areasFor(user: User, scope: McpScope): string {
@@ -353,9 +351,9 @@ shows them all, create_connection wires up another client and hands back its URL
 and rotate_connection kills a URL that has leaked.
 
 Also worth knowing:
-- When the ask covers several records at once, reach for the bulk tool rather than a loop:
-  move_applications_stage, tag_companies, tag_contacts, schedule_contact_pings, archive_records.
-  The tagging ones ADD and REMOVE where update_company and update_contact REPLACE — so "tag these
+- When the ask covers several records at once, pass them all in one call rather than looping:
+  move_application_stage with ids, tag_records, schedule_contact_pings, archive_records.
+  tag_records ADDS and REMOVES where update_company and update_contact REPLACE — so "tag these
   nine as fintech" written as nine update_company calls would replace each company's whole industry
   list with fintech alone, losing every other industry they were filed under. Every bulk tool skips
   ids that are not theirs rather than failing the whole call.

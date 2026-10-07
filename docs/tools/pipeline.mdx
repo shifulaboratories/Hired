@@ -1,7 +1,7 @@
 ---
 title: "Pipeline tools"
 sidebarTitle: "Pipeline"
-description: "Ninety-six tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
+description: "Eighty-eight tools over applications, stages, the activity timeline, tasks, follow-ups, saved views, sharing and diagnosis."
 icon: "list-check"
 ---
 
@@ -465,6 +465,8 @@ _Say how a round went, and what they asked_
 
 The tool to reach for straight after an interview, and the one that makes every future one easier. It records how the round went, what they wrote about it, and — the part that matters — the questions they were asked with the answers they actually gave. Ask for the real answer, not a better one: the whole value of the bank is knowing which real answers led somewhere, and an improved version recorded now is a story they will not be able to repeat. `better` is where the improved version goes. This is the one write here with side effects, and both are the point: it writes the round's line on the timeline, REWRITING its own earlier line rather than adding a second, and it raises the application's round counter if this round is deeper than anything recorded — never lowering it. It does NOT move the application's stage; a rejection is still move_application_stage, and passing the loss reason there is what makes loss_report useful later. Confidence is 1 to 5 in their own judgement; leave it out rather than guessing one for them.
 
+**Overwrites or deletes.**
+
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Interview id |
@@ -624,18 +626,6 @@ Delete a referral for good. There is no archive for these. What is lost is the r
 | --- | --- | --- |
 | `id` | string | **required** — Referral id |
 
-### `log_win`
-
-_Put something that went well into Me_
-
-Append one thing that went well to their current role's background, under a dated heading. THIS IS THE TOOL FOR AFTER THE SEARCH IS OVER, and it is the one that makes the next one possible: Me stops growing the day somebody accepts an offer, and two years later the next search starts from a role with an empty background that nobody can reconstruct from memory. Reach for it whenever they mention something they did — a project that shipped, a number that moved, something somebody thanked them for — whether or not they asked you to record it; offer, do not assume. Write what they said, in their words, with whatever number they gave. DO NOT polish it into a resume bullet and do not invent an impact figure: a highlight is a deliberate distillation and mine_role_background is what does that, later, with them in the room. If nothing in Me is marked as the current role this refuses and says so — and when there is an accepted application it names the employer, so the next move is to add the role rather than to give up.
-
-| Argument | Type | |
-| --- | --- | --- |
-| `text` | string | **required** — What went well, in their words. One or two sentences is right. |
-| `role_id` | string | Which role it belongs to. Defaults to whichever is marked current. |
-| `occurred_on` | string | When it happened, YYYY-MM-DD. Only decides which month it files under. |
-
 ### `list_stage_templates`
 
 _List the stage checklists_
@@ -771,6 +761,8 @@ _Rename or recolour a tag_
 
 Change a tag's name or colour in one place, and everything wearing it follows — which is the whole reason these are rows rather than strings. Renaming 'Fintech' to 'Financial services' updates every company at once. The kind cannot be changed: a location is not an industry, and moving one would silently reclassify everything wearing it.
 
+**Overwrites or deletes.**
+
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Tag id from list_tags |
@@ -803,9 +795,7 @@ Create the handful of obvious labels for one kind, skipping any the person alrea
 
 _Create an application_
 
-Track a new job. Paste the full posting into jobDescription — it is what you will tailor the resume against later. The company is created automatically if it does not exist. Pass companyWebsite when you know it — it is what makes the company's logo appear in the pipeline, and it costs nothing to include. A job link and description are OPTIONAL: an application that started as a LinkedIn message with no listing is still an application — track it with just company and roleTitle, put 'Cold outreach' in sources, and attach the person messaged with create_contact.
-
-**Overwrites or deletes.**
+Track a new job. Paste the full posting into jobDescription — it is what you will tailor the resume against later. The company is created automatically if it does not exist. Pass companyWebsite when you know it — it is what makes the company's logo appear in the pipeline, and it costs nothing to include. A job link and description are OPTIONAL: an application that started as a LinkedIn message with no listing is still an application — track it with just company and roleTitle, put 'Cold outreach' in tags, and attach the person messaged with create_contact.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -823,8 +813,6 @@ Track a new job. Paste the full posting into jobDescription — it is what you w
 | `salaryRange` | string | Advertised or expected compensation |
 | `tagIds` | string[] | Tag ids from list_tags, kind APPLICATION. Exact; wins over tags. |
 | `tags` | string[] | How to file it, by NAME, and several at once is normal: ['LinkedIn', 'Referral'] for a posting a friend also flagged. Matched case-insensitively against the tags that exist and created only when nothing matches, so call list_tags first. |
-| `sources` | string[] | What tags used to be called. Still works; tags wins. |
-| `source` | string | The old single-value spelling. Ignored when tags or sources is passed. |
 | `notes` | string | Any notes |
 | `appliedAt` | string | ISO date they applied |
 | `nextFollowUpAt` | string | ISO date to follow up. Auto-set from the stage if omitted. |
@@ -834,7 +822,7 @@ Track a new job. Paste the full posting into jobDescription — it is what you w
 
 _Update an application_
 
-Update fields on an application. Changing `stage` here also writes a timeline entry and resets the follow-up date. `sources` and `lossReasons` each REPLACE the whole list — read the current one from get_application, add or remove, and pass the full list back. The two are separate sets on the same application: writing one never disturbs the other.
+Update fields on an application. Changing `stage` here also writes a timeline entry and resets the follow-up date. `tags` and `lossReasons` each REPLACE the whole list — read the current one from get_application, add or remove, and pass the full list back. The two are separate sets on the same application: writing one never disturbs the other.
 
 **Overwrites or deletes.**
 
@@ -856,57 +844,28 @@ Update fields on an application. Changing `stage` here also writes a timeline en
 | `salaryRange` | string | Compensation |
 | `tagIds` | string[] | Tag ids. Exact; wins over tags. REPLACES the whole set. |
 | `tags` | string[] | Tag names — REPLACES the whole set, matched or created as above |
-| `sources` | string[] | What tags used to be called. REPLACES the whole set; tags wins. |
-| `source` | string | The old single-value spelling. WARNING: this also REPLACES the entire set with just this one value — read the current list from get_application first, or use tags to write the full list. Ignored when tags or sources is passed. |
 | `notes` | string | Notes |
 | `appliedAt` | string | ISO date applied |
 | `nextFollowUpAt` | string | ISO date of next follow-up, or empty string to clear |
 | `resumeId` | string | Attach this resume id, or empty string to detach |
 
-### `move_applications_stage`
-
-_Move several applications to one stage_
-
-Move a batch of applications to the same stage — the tool for 'close out everything I never heard back from' or 'mark these four as applied'. Each one gets its own timeline entry and follow-up date, exactly as if it had been moved on its own, so the funnel history stays intact. Ids that no longer exist are skipped rather than failing the batch; the result lists what moved and what was skipped. Read the ids from list_applications first, and when closing them out pass `lossReasons` saying why — 'Ghosted' for silence, 'Rejected' for a no. The stage is the same either way; the reason is what makes the funnel worth reading. `addedTasks` counts what any stage checklist put on their list across the whole batch.
-
-**Overwrites or deletes.**
-
-| Argument | Type | |
-| --- | --- | --- |
-| `ids` | string[] | **required** — The application ids to move |
-| `stage` | enum | **required** — The stage they all move to  `WISHLIST` · `APPLIED` · `INTERVIEWING` · `OFFER` · `ACCEPTED` · `LOST` |
-| `interviewRound` | number | Which round they all reached, counting from 1. Recorded whatever the stage — 'rejected after round 3' is exactly how the funnel knows where they fell out. |
-| `roundLabel` | string | What that round is called — 'Phone screen', 'Onsite'. Applied to all of them. |
-| `lossReasons` | string[] | Why they ended, by name — the same reasons on every one. REPLACES any already on them, and an empty list clears them, whatever the stage. |
-
 ### `move_application_stage`
 
 _Move an application to a new stage_
 
-Advance or close an application. Automatically logs the change to the timeline and schedules the next follow-up. Six stages: WISHLIST for something not applied to yet, APPLIED, INTERVIEWING for every conversation from a recruiter screen to a final round, OFFER, ACCEPTED for a signed offer, and LOST for every other ending. Moving to INTERVIEWING sets round 1 unless you pass a round — pass `interviewRound` when they say which one it is ("second interview" is 2), and `roundLabel` for what it was called. Moving to LOST, pass `lossReasons` with WHY: "Rejected" when they said no, "Ghosted" for the far more common ending where nobody ever replied, "Withdrew", "Declined their offer", "Role closed", or anything else that fits — names are matched against what they already use and created when nothing does. The reason is what the funnel reads to tell a decision against them apart from silence, and the advice that falls out of those is different, so it is worth asking rather than guessing. Returns `addedTasks`: if they keep a checklist for the stage it just reached (list_stage_templates), the tasks it put on their list. Read those back — a stage move that silently adds four things is a stage move somebody stops trusting.
+Advance or close an application — or several at once: pass `ids` instead of `id` for 'close out everything I never heard back from' or 'mark these four as applied', and each one moves exactly as if it had been moved on its own, with its own timeline entry and follow-up date; ids that are not theirs or no longer exist are skipped and listed rather than failing the batch, and `addedTasks` becomes a count. Automatically logs the change to the timeline and schedules the next follow-up. Six stages: WISHLIST for something not applied to yet, APPLIED, INTERVIEWING for every conversation from a recruiter screen to a final round, OFFER, ACCEPTED for a signed offer, and LOST for every other ending. Moving to INTERVIEWING sets round 1 unless you pass a round — pass `interviewRound` when they say which one it is ("second interview" is 2), and `roundLabel` for what it was called. Moving to LOST, pass `lossReasons` with WHY: "Rejected" when they said no, "Ghosted" for the far more common ending where nobody ever replied, "Withdrew", "Declined their offer", "Role closed", or anything else that fits — names are matched against what they already use and created when nothing does. The reason is what the funnel reads to tell a decision against them apart from silence, and the advice that falls out of those is different, so it is worth asking rather than guessing. Returns `addedTasks`: if they keep a checklist for the stage it just reached (list_stage_templates), the tasks it put on their list. Read those back — a stage move that silently adds four things is a stage move somebody stops trusting.
 
 **Overwrites or deletes.**
 
 | Argument | Type | |
 | --- | --- | --- |
-| `id` | string | **required** — Application id |
+| `id` | string | Application id |
+| `ids` | string[] | Several application ids, all moving to the same stage. Use instead of id. |
 | `stage` | enum | **required** — The new stage  `WISHLIST` · `APPLIED` · `INTERVIEWING` · `OFFER` · `ACCEPTED` · `LOST` |
-| `note` | string | Optional note for the timeline entry |
+| `note` | string | Optional note for the timeline entry — on every one, when moving several |
 | `interviewRound` | number | Which round it reached, counting from 1. Recorded whatever the stage, because 'rejected after round 3' is how the funnel knows where it fell out; moving to INTERVIEWING with none on file yet sets round 1. |
 | `roundLabel` | string | What that round is called — 'Phone screen', 'Take-home', 'Onsite'. Optional. |
 | `lossReasons` | string[] | Why it ended, by name. REPLACES any reasons already on it, and an empty list clears them, whatever the stage. |
-
-### `delete_application`
-
-_Archive an application_
-
-Put an application in the archive. It leaves the board, the list, the calendar and the funnel, taking its timeline and its tasks with it, and restore_records brings the lot back for a set number of days — 30 by default — before it is deleted for good. Nothing is destroyed here. Still reach for move_application_stage with LOST, and a reason, whenever the thread actually ended: the funnel and diagnose_search are built from applications that ended, and archiving one takes it out of that record entirely. Archive is for something that should never have been tracked; a stage is for something that ended.
-
-**Overwrites or deletes.**
-
-| Argument | Type | |
-| --- | --- | --- |
-| `id` | string | **required** — Application id |
 
 ### `log_activity`
 
@@ -921,17 +880,6 @@ Append to a timeline. Pass applicationId for things that happened on an applicat
 | `type` | enum | Kind of activity. Default NOTE.  `NOTE` · `STAGE_CHANGE` · `EMAIL_SENT` · `EMAIL_RECEIVED` · `CALL` · `INTERVIEW` · `FOLLOW_UP` · `APPLIED` · `OFFER` · `REJECTION` · `REFERRAL` · `OUTREACH` |
 | `body` | string | **required** — What happened |
 | `occurredAt` | string | ISO datetime it happened. Defaults to now. |
-
-### `list_activities`
-
-_List recent activity_
-
-Recent timeline entries across the whole search, or for one application. Good for 'what happened this week'.
-
-| Argument | Type | |
-| --- | --- | --- |
-| `applicationId` | string | Limit to one application |
-| `limit` | number | Max entries, default 40 |
 
 ### `list_follow_ups`
 
@@ -948,6 +896,8 @@ The 'what has come round' tool, and the same thing the bell in the app counts. R
 _Push a follow-up out_
 
 Move a follow-up date further out without recording anything — for a thread you have decided to leave alone a while longer. Pass an applicationId or a contactId, and days from today; the date lands at 9am so it reads as due the morning you meant to do it. This is deferral, not progress: nothing is logged and the stage does not move, so use log_follow_up instead when you actually chased it.
+
+**Overwrites or deletes.**
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -1035,7 +985,7 @@ The companies with something live riding on them, ordered by WHAT IS COMING UP r
 
 _What is thin in this workspace_
 
-The six places this workspace is missing what everything else depends on: companies with no industry, applications with no source, people with no relationship recorded, roles with no highlights distilled out of them, resumes that were never attached to anything, and a current job nothing has been written into for thirty days — the details that are freshest now and gone by the time a resume is due. Reach for it when somebody asks how to get more out of the app, when an analysis you just ran came back unconfident, or at the start of a tidy-up — and reach for get_setup_status instead when the question is whether they have started at all, because this one assumes they have. Every check comes back with a count, the total it is out of, one line saying why it matters, the tool that fixes it, and up to five examples WITH IDS, so you can fix them in the same turn rather than reading out a number and asking them to go and click. Work through it conversationally, one check at a time, largest share of a population first — and confirm before writing: a source tag is a claim about where something came from, and guessing one is worse than leaving it blank. `clean` lists the checks that found nothing, so you can say what is already in good shape rather than only what is wrong. Nothing here is a fault; a workspace three days old is supposed to look like this. Archived companies, people and applications are excluded; roles carry no archive of their own, so all of them are counted. Read-only, saves nothing.
+The six places this workspace is missing what everything else depends on: companies with no industry, applications with no source, people with no relationship recorded, roles with no highlights distilled out of them, resumes that were never attached to anything, and a current job nothing has been written into for thirty days — the details that are freshest now and gone by the time a resume is due. Reach for it when somebody asks how to get more out of the app, when an analysis you just ran came back unconfident, or at the start of a tidy-up — and reach for whoami instead when the question is whether they have started at all — its `setup` says so, because this one assumes they have. Every check comes back with a count, the total it is out of, one line saying why it matters, the tool that fixes it, and up to five examples WITH IDS, so you can fix them in the same turn rather than reading out a number and asking them to go and click. Work through it conversationally, one check at a time, largest share of a population first — and confirm before writing: a source tag is a claim about where something came from, and guessing one is worse than leaving it blank. `clean` lists the checks that found nothing, so you can say what is already in good shape rather than only what is wrong. Nothing here is a fault; a workspace three days old is supposed to look like this. Archived companies, people and applications are excluded; roles carry no archive of their own, so all of them are counted. Read-only, saves nothing.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -1192,6 +1142,8 @@ _Update a task_
 
 Reword a task, move its due date, or hook it to something different. Only the fields you pass change; each REPLACES what was there. Pass an empty string for dueAt to clear the date, or for any of the subject ids to unhook it. Setting one subject CLEARS the others, because a task is about at most one thing — so moving a task from an application to a person is one call with contactId, not two. Use complete_task to tick it off; done is not settable here. THE TRAP with repeats: moving this instance's due date moves THIS instance, not the series, because every future date is stepped from the first one. Sending repeat_unit as an empty string stops the series, and completing the task is then the end of it — which is the whole off switch and is on the row somebody is already looking at.
 
+**Overwrites or deletes.**
+
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Task id |
@@ -1243,27 +1195,6 @@ One of the three lists as a spreadsheet file, returned as CSV text you can hand 
 | `dir` | enum | asc \| desc  `asc` · `desc` |
 | `query` | string | For applications: a pipeline query string, e.g. "f=INTERVIEWING&src=<tagId>" — the same one the app puts in its URL |
 
-### `get_pipeline_fields`
-
-_What each pipeline view shows_
-
-Which optional fields the board, the table and the calendar draw before you open anything, and everything each one COULD draw. Reach for it when somebody asks what their board shows, says it is too busy or too bare, or wants to know why a field is not on a card. Returns one entry per view: the catalogue of fields with a label each, and which are on. On the board and the table, three things are never in a catalogue and are always drawn — the company, the role title and the stage — because a card without them is not shorter, it is unreadable, and on the table the stage cell is the editor the table exists for. The calendar is the exception and only for stage: a chip is one line of its own title, so stage is genuinely extra there and is off by default. A view whose list comes back empty is on its defaults, which is not the same as showing nothing. Read-only.
-
-No arguments.
-
-### `set_pipeline_fields`
-
-_Choose what a pipeline view shows_
-
-Set which optional fields one pipeline view draws. REPLACES that view's whole list, so call get_pipeline_fields first, decide the full set, and send it — sending one key turns off everything else on that view. One view per call: the board, the table and the calendar have different catalogues and there is no field they all share. Pass an empty list to put that view back on its defaults, which also means it picks up any field added to the catalogue later; pass ['none'] to mean genuinely nothing, which is a different thing and is why the empty list cannot mean it. A key that is not in that view's catalogue is refused rather than ignored. This is a display preference and changes no data — nothing here archives, deletes or edits an application.
-
-**Overwrites or deletes.**
-
-| Argument | Type | |
-| --- | --- | --- |
-| `view` | enum | **required** — board \| list \| calendar  `board` · `list` · `calendar` |
-| `fields` | string[] | **required** — The whole set for that view, from get_pipeline_fields. Empty for the defaults, ['none'] for nothing. |
-
 ### `list_field_values`
 
 _Locations and work modes already in use_
@@ -1271,23 +1202,3 @@ _Locations and work modes already in use_
 Every location and every work mode already on one of this person's live applications, most-used first with a count each. Call it BEFORE writing either field on create_application or update_application: both are free text and always will be — 'Remote (US, PST overlap)' is a real answer no list survives — but writing 'remote' next to an existing 'Remote' leaves two values that never group together, and this is the cheap way not to. Match case-insensitively against what comes back and reuse that spelling; a genuinely new value is still just a string, so send it. Archived applications do not contribute. Read-only.
 
 No arguments.
-
-### `get_column_widths`
-
-_How wide each list's columns are_
-
-The column widths on the three tables you can resize — the pipeline's table view, the companies list and the contacts list — with each column's default, its minimum and its maximum beside the width it is actually drawing at. Reach for it when somebody says a column is too narrow to read, wants their layout described, or before set_column_widths, which needs the keys. Each list also has a name column that flexes to fill whatever the others leave; it is not in the catalogue and has no width, because widening a fixed column is what makes the name narrower. `onDefaults` is true for a list nothing has been stored for. Read-only.
-
-No arguments.
-
-### `set_column_widths`
-
-_Resize a list's columns_
-
-Set how wide one or more columns are on one list, in pixels. MERGES rather than replaces: a column you leave out keeps the width it had, which is the opposite of set_pipeline_fields and is deliberate — 'make Salary wider' should not reset every other column on the way past. Pass reset: true with no widths to put the whole list back on its defaults, which also means it picks up the catalogue's width for any column added later. A width outside a column's min and max is clamped to the nearest end rather than refused, because the useful reading of 'make it as wide as it goes' is the maximum, not an error; a key that is not a column on that list IS refused, because that one is a typo. Call get_column_widths first for the keys and the limits. This is a display preference and changes no data.
-
-| Argument | Type | |
-| --- | --- | --- |
-| `list` | enum | **required** — pipeline \| companies \| contacts  `pipeline` · `companies` · `contacts` |
-| `widths` | object | Column key to width in pixels, e.g. { "salary": 180 }. Omit with reset: true. |
-| `reset` | boolean | Put the whole list back on its default widths |

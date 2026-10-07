@@ -1,7 +1,7 @@
 ---
 title: "Account and connection tools"
 sidebarTitle: "Your account"
-description: "Twenty-three tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
+description: "Twenty tools for finding out who a connection belongs to, and for managing the wiring itself without opening a browser."
 icon: "plug"
 ---
 
@@ -138,15 +138,7 @@ Restore a document written by export_everything. ADDITIVE AND MATCHED BY NATURAL
 
 _Who am I connected as_
 
-The account this connection belongs to: name, email, role, and whether it can administer the instance. Every other tool acts as this person and can only see their data.
-
-No arguments.
-
-### `get_setup_status`
-
-_How far into setup this workspace is_
-
-Three things a workspace needs before it does anything: one job on the board, some career material in Me, and something connected over MCP. Returns which are done and what each is waiting for, plus `tourSeenAt` — when the person last went through the welcome tour in the web app, or null if they never have. Worth calling when someone new asks what to do first, or when a read comes back empty and you are deciding whether that is an empty account or a wrong query — an empty Me with nothing tracked is a workspace nobody has filled yet, not a failure. A null tourSeenAt is a strong hint you are talking to somebody who has not been shown around: explain things rather than assuming they know what a pipeline stage is.
+The account this connection belongs to — name, email, role, whether it can administer the instance — what this connection is called and what it is served (`connection.scope`), and how far into setup the workspace is. Every other tool acts as this person and can only see their data. Call it when someone new asks what to do first, or when a read comes back empty and you are deciding whether that is an empty account or a wrong query: `setup` says which of the three things a workspace needs (a job on the board, career material in Me, something connected) are done and what each is waiting for. `tourSeenAt` null means they have never been shown around the web app — explain things rather than assuming they know what a pipeline stage is.
 
 No arguments.
 
@@ -174,7 +166,7 @@ No arguments.
 
 _Show the welcome tour again_
 
-Queue the web app's welcome tour to run again the next time this person opens it — the short walk through what the board, Me and the assistant connection are for. Reach for it when somebody says they are lost, that they never saw an introduction, or that they want the tutorial back; also worth offering to someone whose `get_setup_status` shows tourSeenAt null who is clearly struggling. It does not open anything on its own — nothing here can reach into their browser — so say plainly that it will appear next time they load the app. Setting it back to seen is the tour's own job, not a tool: they put it away by finishing or closing it.
+Queue the web app's welcome tour to run again the next time this person opens it — the short walk through what the board, Me and the assistant connection are for. Reach for it when somebody says they are lost, that they never saw an introduction, or that they want the tutorial back; also worth offering to someone whose `whoami` shows tourSeenAt null who is clearly struggling. It does not open anything on its own — nothing here can reach into their browser — so say plainly that it will appear next time they load the app. Setting it back to seen is the tour's own job, not a tool: they put it away by finishing or closing it.
 
 No arguments.
 
@@ -182,7 +174,7 @@ No arguments.
 
 _What each assistant changed_
 
-Every write that arrived over MCP, newest first: which connection made it, which tool ran, what it touched and one line saying so. Reach for it when somebody asks what an assistant actually did, when something looks wrong and nobody remembers changing it, or before undo_change so you can name the change rather than guessing at it. Saves made in the app's own screens are NOT here, deliberately — the person was there. Versions are kept for both paths, so an edit made in the editor is still recoverable, just not listed. `undoable` and `restorePointAt` are the important pair: only writes that replace a resume or a role are versioned, and `restorePointAt` is the moment the record would go back to, which is often EARLIER than the change itself because versions are coalesced within ten minutes per author. Say that date out loud before undoing — 'this puts it back to how it was at 14:02, before three edits' — and get a yes. Read-only.
+Every write that arrived over MCP, newest first: which connection made it, which tool ran, what it touched and one line saying so. Reach for it when somebody asks what an assistant actually did, when something looks wrong and nobody remembers changing it, or before restore_revision with change_id, so you can name the change rather than guessing at it. Saves made in the app's own screens are NOT here, deliberately — the person was there. Versions are kept for both paths, so an edit made in the editor is still recoverable, just not listed. `undoable` and `restorePointAt` are the important pair: only writes that replace a resume or a role are versioned, and `restorePointAt` is the moment the record would go back to, which is often EARLIER than the change itself because versions are coalesced within ten minutes per author. Say that date out loud before undoing — 'this puts it back to how it was at 14:02, before three edits' — and get a yes. Read-only.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -208,31 +200,20 @@ Every stored version of one resume or one role, newest first, with when it was t
 
 _Put a stored version back_
 
-Replace a resume's document, or a role's fields, with a version stored earlier. Reach for it when a write went wrong and they want it back, and reach for undo_change instead when what they can name is the CHANGE rather than the version. SAY WHAT WILL HAPPEN AND GET A YES FIRST: this replaces the current state, and the date on the version is often earlier than the change they are thinking of, because versions are coalesced within ten minutes per author — restoring can take them back past several edits. The restore is itself undoable: it takes a fresh version of the current state on its way past, and the result names it as `redoRevisionId`. For a resume only the DOCUMENT comes back — the template, font, size, margins and any published link are left exactly as they are, because silently changing a font back is a surprise and a restore must never resurrect a withdrawn public address. `changed` false means the record already matched that version, and you should say so rather than reporting work that did not happen. Refuses, without writing anything, when the stored version does not parse or the record has been deleted.
+Replace a resume's document, or a role's fields, with a version stored earlier — or undo one change. Pass `id` (from list_revisions) when they can name the VERSION, or `change_id` (from list_changes) when what they can name is the CHANGE: it puts back the version from just before that write. Only writes list_changes marks undoable can be undone; deleting a company, a person or an application is undone from the archive with restore_records, and a deleted role or resume cannot come back at all. SAY WHAT WILL HAPPEN AND GET A YES FIRST: this replaces the current state, and the date on the version is often earlier than the change they are thinking of, because versions are coalesced within ten minutes per author — restoring can take them back past several edits. The restore is itself undoable: it takes a fresh version of the current state on its way past, and the result names it as `redoRevisionId`. For a resume only the DOCUMENT comes back — the template, font, size, margins and any published link are left exactly as they are, because silently changing a font back is a surprise and a restore must never resurrect a withdrawn public address. `changed` false means the record already matched that version, and you should say so rather than reporting work that did not happen. Refuses, without writing anything, when the stored version does not parse or the record has been deleted.
 
 **Overwrites or deletes.**
 
 | Argument | Type | |
 | --- | --- | --- |
-| `id` | string | **required** — Revision id, from list_revisions |
-
-### `undo_change`
-
-_Put back what one change replaced_
-
-Undo one row from list_changes. Only writes that replace a resume or a role can be undone, because they are the only two the app takes a copy of on the way past — everything else in the log is a line for the eye. Deleting a company, a person or an application is undone from the archive with restore_records; deleting a role, a resume, a letter, a task or a tag cannot be undone at all, and their tool descriptions say so before they run. SAY WHERE IT LANDS AND GET A YES FIRST: `restorePointAt` on the change is often earlier than the change itself, because versions are coalesced within ten minutes per author, so undoing one edit can take them back past three. The undo is itself undoable — it takes a version of the current state on the way past and names it as `redoRevisionId`. Refuses, without writing anything, when there is no stored version from before that change: it may have been swept, or it may predate version history on this instance.
-
-**Overwrites or deletes.**
-
-| Argument | Type | |
-| --- | --- | --- |
-| `id` | string | **required** — Change id, from list_changes |
+| `id` | string | Revision id, from list_revisions |
+| `change_id` | string | Or a change id, from list_changes: undo that one write |
 
 ### `list_connections`
 
 _List AI connections_
 
-Every assistant wired to this workspace: what it is called, which client it was set up for, when it last called in and from what. Reach for it to answer 'which of these am I still using?' or before rotating something — the ids come back here. Tokens deliberately do not: they are credentials, they would sit in this transcript forever, and the only place a person needs to see one is the client they are pasting it into. `isThisOne` marks the connection you are calling through right now, and `scope` says what each one is SERVED — FULL is everything, and a narrowed one is offered fewer tools without being able to do less to the account. set_connection_scope changes it.
+Every assistant wired to this workspace: what it is called, which client it was set up for, when it last called in and from what. Reach for it to answer 'which of these am I still using?' or before rotating something — the ids come back here. Tokens deliberately do not: they are credentials, they would sit in this transcript forever, and the only place a person needs to see one is the client they are pasting it into. `isThisOne` marks the connection you are calling through right now, and `scope` says what each one is SERVED — FULL is everything, and a narrowed one is offered fewer tools without being able to do less to the account. update_connection changes it.
 
 No arguments.
 
@@ -247,31 +228,19 @@ Mint a new connection URL so a second client — the laptop's editor, a phone ap
 | `client` | string | Which client it is for: claude \| claude-code \| chatgpt \| cursor \| vscode \| windsurf \| generic-http \| stdio-bridge \| raw. Sets the setup steps returned. |
 | `name` | string | What to call it in the list, e.g. 'Cursor — work laptop'. Defaults to the client's name. |
 
-### `rename_connection`
+### `update_connection`
 
-_Rename a connection_
+_Rename a connection, or narrow what it is served_
 
-Change what a connection is called in the list. Names are for the person, not the machine — 'Cursor — old laptop' is what makes it obvious later which one to revoke. Get the id from list_connections.
-
-**Overwrites or deletes.**
-
-| Argument | Type | |
-| --- | --- | --- |
-| `id` | string | **required** — Connection id |
-| `name` | string | **required** — The new name |
-
-### `set_connection_scope`
-
-_Narrow what a connection is served_
-
-Change which tools one client is offered. Four choices: `FULL` is everything, `WRITING` is Me, resumes and letters plus the four reads a document needs about the job it is aimed at, `PIPELINE` is the search — applications, people, the archive, mail and calendar — and `READONLY` is every tool on this server that writes nothing. Narrowing is a ROUTING AID, NOT A PERMISSION: the URL still resolves to the whole account, anybody who can sign in can widen it again, and it is never a reason to hand a connection URL to somebody you would not hand the account to. What it is good for is accuracy and cost — a client choosing between two hundred tools picks the wrong one more often than one choosing between sixty, and the wrong one here writes into somebody's career history. It takes effect on that client's next call, and a client that caches the tool list may need reconnecting to notice. Say which connection and which scope before you call it, because a narrowed client silently stops being able to do things its person may be in the middle of. Get the id from list_connections, which also says what each one is scoped to now.
+Change what one connection is called, what it is served, or both. `name` is for the person, not the machine — 'Cursor — old laptop' is what makes it obvious later which one to revoke. `scope` changes which tools that client is offered. Four choices: `FULL` is everything, `WRITING` is Me, resumes and letters plus the four reads a document needs about the job it is aimed at, `PIPELINE` is the search — applications, people, the archive, mail and calendar — and `READONLY` is every tool on this server that writes nothing. Narrowing is a ROUTING AID, NOT A PERMISSION: the URL still resolves to the whole account, anybody who can sign in can widen it again, and it is never a reason to hand a connection URL to somebody you would not hand the account to. What it is good for is accuracy and cost — a client choosing between two hundred tools picks the wrong one more often than one choosing between sixty, and the wrong one here writes into somebody's career history. It takes effect on that client's next call, and a client that caches the tool list may need reconnecting to notice. Say which connection and which scope before you call it, because a narrowed client silently stops being able to do things its person may be in the middle of. Get the id from list_connections, which also says what each one is scoped to now.
 
 **Overwrites or deletes.**
 
 | Argument | Type | |
 | --- | --- | --- |
 | `id` | string | **required** — Connection id, from list_connections |
-| `scope` | enum | **required** — FULL, WRITING, PIPELINE or READONLY  `FULL` · `WRITING` · `PIPELINE` · `READONLY` |
+| `name` | string | The new name |
+| `scope` | enum | FULL, WRITING, PIPELINE or READONLY  `FULL` · `WRITING` · `PIPELINE` · `READONLY` |
 
 ### `rotate_connection`
 

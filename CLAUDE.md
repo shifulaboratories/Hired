@@ -40,9 +40,13 @@ Steps 1–3 are mandatory. Steps 4–5 are mandatory only when a person needs to
 *adjust* the thing. If you find yourself building a form before the tool exists, stop —
 you are building the wrong product.
 
-**The two exceptions**, and they are narrow: direct-manipulation editing (dragging a card
-between stages, typing into the resume editor) and rendering (the paper, the print page).
-Those are UI-native. Everything they manipulate still has to be reachable by tool.
+**The three exceptions**, and they are narrow: direct-manipulation editing (dragging a card
+between stages, typing into the resume editor), rendering (the paper, the print page), and
+display preferences (a column's width, which fields a card shows). Those are UI-native.
+Everything the first two manipulate still has to be reachable by tool — a card's stage, a
+resume's words. A display preference is not career data and gets no tool: four of them were
+cut in October 2026 because every tool costs routing quality on every client, and nobody asks
+an assistant to make a column 180px wide.
 
 When you finish a feature, ask literally: *can an assistant connected over MCP do this
 end to end with no browser open?* If the answer is no, it is not finished.
@@ -153,7 +157,7 @@ tools/gen-tool-docs.mjs       Rewrites docs/tools/*.mdx from the tools array by 
 
 Data areas map cleanly onto tool prefixes: me (`search_me`, `list_roles`,
 `append_role_background`, …), resumes (`get_resume_format`, `create_resume`,
-`preview_resume_text`, …), pipeline (`list_applications`, `move_application_stage`,
+`export_resume_pdf`, …), pipeline (`list_applications`, `move_application_stage`,
 `list_follow_ups`, …), CRM (`list_companies`, `create_contact`, …), admin (`admin_*`,
 hidden from members' `tools/list` entirely — not merely refused), tags (`list_tags`,
 `create_tag`, …) and the archive (`list_archive`, `restore_records`, …) cutting across all
@@ -179,8 +183,9 @@ into someone's career history. Budget real effort here.
   back whole" or an assistant will silently drop half a role.
 - Prefer additive tools where a person would expect additive behaviour.
   `append_role_background` exists because `update_role` was eating people's notes.
-- Give a dry-run where a mistake is expensive. `preview_resume_text` renders and estimates
-  length *without* saving; `export_resume_pdf` reports the measured page count.
+- Give a dry-run where a mistake is expensive. `import_resume` takes `dry_run` and says what
+  it would add *without* saving; `preview_company_merge` shows what a merge would fold in
+  before `merge_companies` does it for good.
 - Use the local helpers (`str`, `num`, `bool`, `object`, `required`, `defined`) rather
   than hand-rolling schema objects. `defined()` strips undefined keys so Prisma doesn't
   try to write them.
