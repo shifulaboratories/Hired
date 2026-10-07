@@ -7545,22 +7545,21 @@ are unsure, mark it as unconfirmed in the notes rather than stating it flatly.`,
   },
   {
     name: "inbox_review",
-    title: "Inbox review: what moved in Gmail and Calendar",
+    title: "Inbox review: what moved in their mail and calendar",
     description:
-      "Go through the person's own Gmail and Google Calendar for every open application and every contact with a ping due, find what has happened that the pipeline does not know yet — a reply, a scheduled interview, a rejection, an offer — and queue the logging and stage changes that would bring the pipeline up to date onto their dashboard, each with the line of evidence behind it. Nothing is written until they accept it. Needs Gmail and Calendar connected under Settings → Connections.",
+      "Go through the person's own mail and calendar for every open application and every contact with a ping due, find what has happened that the pipeline does not know yet — a reply, a scheduled interview, a rejection, an offer — and queue the logging and stage changes that would bring the pipeline up to date onto their dashboard, each with the line of evidence behind it. Nothing is written until they accept it. Reads mail through your own mail and calendar tools when you have them (a Gmail connector, say), and through an account connected to this app when you do not.",
     arguments: [
       { name: "days", description: "How far back to look. Default 7." },
     ],
     build: (args) => `Bring my pipeline up to date from my inbox and calendar, looking back ${args.days ?? "7"} days.
 
 Work in this order:
-1. Call list_linked_accounts. If nothing is connected, stop and tell me how to connect (Settings → Connections, or connect_imap_account with an app password); do not guess at my mail.
-2. Call list_applications (open ones) and list_follow_ups.
-3. Call run_mail_sweep with days=${args.days ?? "7"}. That makes ONE request per mailbox for the whole pipeline instead of one per application, queues the things a rule can prove, and hands back a needsReading list of the threads it deliberately would not judge. Then call get_email_thread on each of those and READ it rather than trusting the snippet — a reply from the company, an interview invitation, a rejection, an offer, a take-home. Only fall back to list_correspondence per application if run_mail_sweep says no mailbox is connected.
-4. Call search_calendar for the same window forward ${args.days ?? "7"} days too, and note interviews or calls that are on the calendar but not on the pipeline.
-5. Tell me, application by application, what moved and quote the line that says so. Be specific about dates and numbers; never round a salary or a deadline.
-6. Then call propose_changes with one proposal per thing the READING turned up — the sweep has already queued what it could prove, so do not queue those again — LOG_ACTIVITY (type INTERVIEW, EMAIL_RECEIVED, REJECTION, OFFER as fits, with the date it happened), MOVE_STAGE, SET_FOLLOW_UP, CREATE_TASK or CREATE_CONTACT — quoting the line from the thread as the evidence on each. That queues them on my dashboard, where I can accept or dismiss them one at a time whenever I get to it. Call list_proposals first so you do not queue the same suggestion twice, and check the refused list in the result.
-7. Do NOT call accept_proposal. Nothing is written until I say so. Then tell me what you queued, and read back anything that was refused.
+1. Call list_applications (open ones) and list_follow_ups. Those are the companies and people to look for.
+2. Find a way into my mail. If you have mail and calendar tools of your own — a Gmail or Google Calendar connector, say — use them: search for each company's name and each contact's address over the last ${args.days ?? "7"} days, and READ every thread that matters rather than trusting a snippet. If you do not, call list_linked_accounts; with an account connected here, run_mail_sweep with days=${args.days ?? "7"} makes one request per mailbox for the whole pipeline, queues what a rule can prove, and hands back a needsReading list — call get_email_thread on each of those and read it. With neither, stop and say so; do not guess at my mail.
+3. Look at the calendar for the same window and ${args.days ?? "7"} days forward, with your own calendar tool or search_calendar, and note interviews or calls that are on the calendar but not on the pipeline.
+4. Tell me, application by application, what moved and quote the line that says so. Be specific about dates and numbers; never round a salary or a deadline.
+5. Then call propose_changes with one proposal per thing the READING turned up — if run_mail_sweep ran, it has already queued what it could prove, so do not queue those again — LOG_ACTIVITY (type INTERVIEW, EMAIL_RECEIVED, REJECTION, OFFER as fits, with the date it happened), MOVE_STAGE, SET_FOLLOW_UP, CREATE_TASK or CREATE_CONTACT — quoting the line from the thread as the evidence on each. That queues them on my dashboard, where I can accept or dismiss them one at a time whenever I get to it. Call list_proposals first so you do not queue the same suggestion twice, and check the refused list in the result.
+6. Do NOT call accept_proposal. Nothing is written until I say so. Then tell me what you queued, and read back anything that was refused.
 
 Skip newsletters, job-board digests and anything automated that does not concern a specific application. If a thread involves a person who is not a contact yet, suggest create_contact with their name and address.`,
   },

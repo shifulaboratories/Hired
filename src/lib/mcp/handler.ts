@@ -139,10 +139,10 @@ const AREA_HEAD = `The areas:`;
  * The briefing's tail, one entry per area, so a narrowed connection is told
  * about what it was actually served.
  *
- * Split out of one template literal purely to make that possible. THE JOINED
- * FULL TAIL MUST STAY BYTE-IDENTICAL to what this server sent before scopes
- * existed — that is the promise the migration makes, and `AREAS` below is how
- * it is kept: FULL takes that constant, not the join.
+ * FULL is the join of every entry. It used to be a second, verbatim copy of
+ * the same text, kept so the join could never change what a FULL connection
+ * was sent; the two were checked identical and the copy was deleted, because a
+ * second copy of a briefing is a briefing that drifts.
  *
  * `needs` names one tool the area is about. An area whose tool is not served on
  * a connection is dropped from its briefing, because telling a client about a
@@ -188,14 +188,13 @@ const AREA_PARAGRAPHS: { key: string; needs: string; text: string }[] = [
   mention talking to someone — a call, a coffee, a reply — log_activity with contactId is how it
   gets remembered, and update_contact's nextFollowUpAt is how "ping them in two weeks" actually
   happens. list_follow_ups returns due people alongside due applications.` },
-  { key: 'accounts', needs: 'list_correspondence', text: `• MAIL AND CALENDAR — if they have connected an account (list_linked_accounts says: Google,
-  Microsoft 365, or any IMAP and CalDAV provider), list_correspondence returns the real threads
-  and meetings behind any contact, company, application or resume, read live across every
-  account and never stored here. Call it before saying where an application stands: the
-  pipeline's timeline only knows what was logged by hand. search_email and search_calendar
-  cover questions that are not about one record. Every one of these is read-only — nothing can
-  send, accept or delete. When nothing is connected, say how (Settings → Connections, or
-  connect_imap_account with an app password) rather than guessing at their mail.` },
+  { key: 'accounts', needs: 'list_correspondence', text: `• MAIL AND CALENDAR — the pipeline's timeline only knows what was logged by hand, so read their
+  mail before saying where an application stands. If you have mail or calendar tools of your own
+  (a Gmail or Google Calendar connector, say), use those. Otherwise, if they connected an account
+  here (list_linked_accounts), list_correspondence returns the real threads and meetings behind
+  any contact, company, application or resume, read live and never stored, and search_email and
+  search_calendar cover questions that are not about one record. All of it is read-only. With
+  neither, say so rather than guessing at their mail.` },
   { key: 'own', needs: 'export_everything', text: `• YOUR OWN DATA — export_everything hands back the whole workspace as one JSON file and
   import_everything puts one back, additively and matched by name, so it never overwrites.
   set_digest_settings turns on the emails this app sends — a Monday summary, a nudge on a day
@@ -217,85 +216,75 @@ const AREA_PARAGRAPHS: { key: string; needs: string; text: string }[] = [
   the kinds are separate lists that never collide.` },
 ];
 
-/** FULL's tail, verbatim. Never rebuilt from the paragraphs above. */
-const AREAS = `The areas:
-• ME — everything about them. Roles each hold an unlimited free-form "background" of raw
-  material, plus polished reusable bullets called highlights. A background can carry "Rules"
-  (how this job may be described — obey them, do not quote them), "Caveats" (their own
-  positioning notes — for you, NEVER for a document) and "Open questions" (facts they have
-  not settled — never use one, ask). get_role reads these apart for you, including shouted
-  markers like "NAMING RULE:" or "⚠️ OPEN:". Everything else in it is evidence. A role
-  with startUnconfirmed or endUnconfirmed has a guessed month: print the year only.
-  There are also notes, projects, education, skills and certifications. search_me is the
-  fastest way in. get_me_snapshot carries their keyword policy: how close to a posting's own
-  words a document may get, and the transfers they have recorded. posting_keywords says where
-  one posting's terms land before you write.
-• RESUMES — documents assembled from that material. Call get_resume_format before writing one.
-  New resumes use the Harvard OCS format by default. Any of them can be published to a public
-  link with publish_resume, which is what to use when a form or a recruiter wants a URL.
-• LETTERS — everything they write that is not a resume: cover letters, cold outreach, referral
-  asks, thank-yous, replies. prep_letter FIRST, always: it returns the posting, the company
-  research, the material in Me that matches, and up to three letters of the same kind they
-  wrote themselves, which is the only reliable description of how they sound.
-• PIPELINE — applications, stages, activity timeline, tasks and follow-up dates. Six stages:
-  wishlist, applied, interviewing, offer, accepted and lost. How deep an interview got is
-  interviewRound, a number; why something was lost is a LOSS tag. When the question is about a
-  stretch of time rather than one application — this week, last month, what is coming — reach for
-  list_schedule, which merges all three kinds of dated thing. Application.salaryRange is what the
-  POSTING advertised; what somebody actually offered is an Offer row, recorded with record_offer,
-  and every call writes a new VERSION rather than replacing the last. offer_briefing before
-  helping them answer one; compare_offers puts the live ones side by side and will not convert
-  currencies. A stage move can fire a checklist they own (list_stage_templates) and returns what
-  it added.
-• THE REVIEW QUEUE — propose_changes queues suggestions for them to accept or dismiss on their
-  dashboard instead of asking about each one now. That is what to do at the end of a long read
-  of their mail: they are rarely at the conversation when you finish. Nothing is written until
-  they accept. list_proposals first, so a dismissed suggestion is not offered twice.
-• CRM — companies and the people at them, as records in their own right. get_company before
-  writing anything about a company, so you add to their research rather than replacing it. A
-  company's website field is their own domain and nothing else depends on it, but it is what puts
-  their logo on the pipeline, so set it whenever you learn it. People have timelines: when they
-  mention talking to someone — a call, a coffee, a reply — log_activity with contactId is how it
-  gets remembered, and update_contact's nextFollowUpAt is how "ping them in two weeks" actually
-  happens. list_follow_ups returns due people alongside due applications.
-• MAIL AND CALENDAR — if they have connected an account (list_linked_accounts says: Google,
-  Microsoft 365, or any IMAP and CalDAV provider), list_correspondence returns the real threads
-  and meetings behind any contact, company, application or resume, read live across every
-  account and never stored here. Call it before saying where an application stands: the
-  pipeline's timeline only knows what was logged by hand. search_email and search_calendar
-  cover questions that are not about one record. Every one of these is read-only — nothing can
-  send, accept or delete. When nothing is connected, say how (Settings → Connections, or
-  connect_imap_account with an app password) rather than guessing at their mail.
-• YOUR OWN DATA — export_everything hands back the whole workspace as one JSON file and
-  import_everything puts one back, additively and matched by name, so it never overwrites.
-  set_digest_settings turns on the emails this app sends — a Monday summary, a nudge on a day
-  something is due, and a monthly ask for one thing that went well — and ALL ARE OFF until
-  somebody asks in so many words.
-  Never offer to turn one on unprompted; preview_digest answers "what does my week look
-  like" without any mail leaving.
-• WATCHING THE OUTSIDE WORLD — watch_company_board follows one employer's Greenhouse, Lever or
-  Ashby board and queues every new matching role as a proposal; the FIRST look proposes nothing
-  by design. check_posting_live reports whether the page behind an application is still up, and
-  writes only that — it never moves a stage and never logs anything. run_mail_sweep reads the
-  mail that arrived from people already on their pipeline and queues what a rule can prove,
-  handing everything that needs a judgement back on a needsReading list. All three OFFER; none of
-  them writes. set_mail_sweep is off until somebody asks in so many words, like the emails.
-• TAGS cut across all of it. Where an application came from, a company's industry, size and
-  location, how you know a person, why an application was lost — every one of those is a tag
-  rather than a free-text field, and they are multi-select. Call list_tags before writing any of
-  them: passing a name that already exists matches it rather than creating a near-duplicate, and
-  the kinds are separate lists that never collide.`;
-
-/** A narrowed connection's tail: the head, then only the areas it can reach. */
-function areasFor(user: User, scope: McpScope): string {
-  if (scope === "FULL") return AREAS;
-  const served = new Set(toolsFor(user, scope).map((tool) => tool.name));
+/** The tail: the head, then only the areas this connection can reach. */
+function areasFor(served: Set<string>, scope: McpScope): string {
   const kept = AREA_PARAGRAPHS.filter((area) => served.has(area.needs)).map((area) => area.text);
+  if (scope === "FULL") return [AREA_HEAD, ...kept].join("\n");
   return [
     AREA_HEAD,
     ...kept,
     `\nThis connection is scoped to "${scopeLabel(scope)}" — ${scopeBlurb(scope)} Tools outside it are not served here and are not missing from the account. If they need one, say which, and that they can widen this connection under Settings → Connections.`,
   ].join("\n");
+}
+
+/**
+ * What follows the areas: the cross-cutting habits. Each names the tools it is
+ * about in `needs`, and is sent only when every one of them is served, for the
+ * same reason an area is — a narrowed connection told to call a tool it cannot
+ * see either fails or improvises.
+ */
+const AFTER_AREAS: { needs: string[]; text: string }[] = [
+  {
+    needs: ["list_archive", "restore_records"],
+    text: `Deleting a company, a person or an application puts it in the archive rather than destroying it.
+list_archive is what is in there and when each thing is due to go; restore_records brings it back.`,
+  },
+  {
+    needs: ["list_connections", "create_connection", "rotate_connection"],
+    text: `The connection you are talking through is one of several this person may have — list_connections
+shows them all, create_connection wires up another client and hands back its URL and setup steps,
+and rotate_connection kills a URL that has leaked.`,
+  },
+];
+
+const ALSO_WORTH_KNOWING: { needs: string[]; text: string }[] = [
+  {
+    needs: ["move_application_stage", "tag_records", "schedule_contact_pings", "archive_records"],
+    text: `- When the ask covers several records at once, pass them all in one call rather than looping:
+  move_application_stage with ids, tag_records, schedule_contact_pings, archive_records.
+  tag_records ADDS and REMOVES where update_company and update_contact REPLACE — so "tag these
+  nine as fintech" written as nine update_company calls would replace each company's whole industry
+  list with fintech alone, losing every other industry they were filed under. Every bulk tool skips
+  ids that are not theirs rather than failing the whole call.`,
+  },
+  {
+    needs: ["export_csv"],
+    text: `- export_csv turns any of the three lists into a spreadsheet, taking the same filters, search and
+  sort as list_companies, list_contacts and list_applications. It is the answer to "send me this
+  as a file" — do not assemble one by hand from a list call.`,
+  },
+  {
+    needs: ["tailor_resume_for_application"],
+    text: `- For a job on the board, tailor_resume_for_application starts the tailored copy — never edit a
+  resume already attached to another application. Its unbacked list is what to rewrite first.`,
+  },
+  {
+    needs: ["publish_resume", "unpublish_resume"],
+    text: `- A published resume is readable by anyone holding its link, and unpublish_resume destroys that
+  link rather than pausing it. Say which resume you are about to publish, and warn before
+  withdrawing a link that may already be out in the world. If it has showPhoto on, that page
+  carries their face — mention it before you publish.`,
+  },
+  {
+    needs: ["set_profile_photo"],
+    text: `- The profile photo is one picture the whole app shares. set_profile_photo replaces it
+  everywhere at once, including on every resume already showing it. Only ever use a file or link
+  the user gave you; never find them a picture.`,
+  },
+];
+
+function servedOnly<T extends { needs: string[]; text: string }>(entries: T[], served: Set<string>) {
+  return entries.filter((entry) => entry.needs.every((name) => served.has(name))).map((entry) => entry.text);
 }
 
 /**
@@ -330,7 +319,8 @@ ${CRITICAL_RULES}`;
     );
   }
 
-  const tail = empty ? EMPTY_WORKSPACE : areasFor(user, scope);
+  const served = new Set(toolsFor(user, scope).map((tool) => tool.name));
+  const tail = empty ? EMPTY_WORKSPACE : areasFor(served, scope);
 
   const admin = isAdmin(user)
     ? `\n\nYou are an ${user.role === "SUPER_ADMIN" ? "instance owner" : "admin"}, so the admin_* tools are
@@ -339,36 +329,13 @@ instance, never on another person's career history or resumes. admin_delete_user
 account and everything it owns, for good: name who and what goes, and get a plain yes first.`
     : "";
 
-  return `${head}
-
-${tail}${admin}
-
-Deleting a company, a person or an application puts it in the archive rather than destroying it.
-list_archive is what is in there and when each thing is due to go; restore_records brings it back.
-
-The connection you are talking through is one of several this person may have — list_connections
-shows them all, create_connection wires up another client and hands back its URL and setup steps,
-and rotate_connection kills a URL that has leaked.
-
-Also worth knowing:
-- When the ask covers several records at once, pass them all in one call rather than looping:
-  move_application_stage with ids, tag_records, schedule_contact_pings, archive_records.
-  tag_records ADDS and REMOVES where update_company and update_contact REPLACE — so "tag these
-  nine as fintech" written as nine update_company calls would replace each company's whole industry
-  list with fintech alone, losing every other industry they were filed under. Every bulk tool skips
-  ids that are not theirs rather than failing the whole call.
-- export_csv turns any of the three lists into a spreadsheet, taking the same filters, search and
-  sort as list_companies, list_contacts and list_applications. It is the answer to "send me this
-  as a file" — do not assemble one by hand from a list call.
-- For a job on the board, tailor_resume_for_application starts the tailored copy — never edit a
-  resume already attached to another application. Its unbacked list is what to rewrite first.
-- A published resume is readable by anyone holding its link, and unpublish_resume destroys that
-  link rather than pausing it. Say which resume you are about to publish, and warn before
-  withdrawing a link that may already be out in the world. If it has showPhoto on, that page
-  carries their face — mention it before you publish.
-- The profile photo is one picture the whole app shares. set_profile_photo replaces it
-  everywhere at once, including on every resume already showing it. Only ever use a file or link
-  the user gave you; never find them a picture.`;
+  const after = servedOnly(AFTER_AREAS, served);
+  const also = servedOnly(ALSO_WORTH_KNOWING, served);
+  return [
+    `${head}\n\n${tail}${admin}`,
+    ...after,
+    ...(also.length ? [`Also worth knowing:\n${also.join("\n")}`] : []),
+  ].join("\n\n");
 }
 
 type JsonRpcId = string | number | null;
