@@ -291,6 +291,61 @@ console.log(
     `${counts.listMember} for a member, ${counts.listAdmin} for an admin.`,
 );
 
+// ---------------------------------------------------------------------------
+// The budget
+// ---------------------------------------------------------------------------
+
+/**
+ * A ratchet on what every client is sent: the member tool count and the
+ * characters of description those tools carry.
+ *
+ * Every tool and every sentence of description is loaded by every client on
+ * every connection, and routing gets worse as the list grows. The surface went
+ * from forty tools to two hundred and twenty-one with nothing pushing back,
+ * because each addition was reasonable on its own. So the budget only moves
+ * down by itself: a run that shrinks the surface lowers it, and a run that
+ * grows it fails unless `--allow-growth` is passed — which is the moment to
+ * write the reason into .claude/DECISIONS.md. `--check` fails on growth and on
+ * a budget left higher than the surface it describes.
+ */
+const BUDGET_PATH = join(ROOT, "tools", "tool-budget.json");
+const member = tools.filter((tool) => !tool.adminOnly);
+const now = {
+  memberTools: counts.listMember,
+  memberDescriptionChars: member.reduce((sum, tool) => sum + tool.description.length, 0),
+};
+let budget = null;
+try {
+  budget = JSON.parse(readFileSync(BUDGET_PATH, "utf8"));
+} catch {
+  budget = null;
+}
+const ALLOW_GROWTH = process.argv.includes("--allow-growth");
+const grew = budget
+  ? Object.keys(now).filter((key) => now[key] > budget[key])
+  : [];
+const behind = budget ? Object.keys(now).some((key) => now[key] < budget[key]) : false;
+console.log(
+  `Budget: ${now.memberTools} member tools, ${now.memberDescriptionChars} characters of description` +
+    (budget ? ` (budget ${budget.memberTools}, ${budget.memberDescriptionChars}).` : " (no budget recorded yet)."),
+);
+if (grew.length && !ALLOW_GROWTH) {
+  console.error(
+    `\nThe surface grew past its budget: ${grew.map((key) => `${key} ${budget[key]} → ${now[key]}`).join(", ")}.` +
+      "\nShorten what you added, or rerun with --allow-growth and log why in .claude/DECISIONS.md.",
+  );
+  process.exit(1);
+}
+if (CHECK) {
+  if (behind && budget) {
+    console.error("\ntools/tool-budget.json is higher than the surface. Run `node tools/gen-tool-docs.mjs` to lower it.");
+    stale += 1;
+  }
+} else if (behind || (grew.length && ALLOW_GROWTH) || (!budget && ALLOW_GROWTH)) {
+  writeFileSync(BUDGET_PATH, `${JSON.stringify(now, null, 2)}\n`);
+  console.log(`  ${relative(ROOT, BUDGET_PATH)}  ${budget ? "budget moved" : "budget recorded"}`);
+}
+
 if (CHECK && stale) {
   console.error("\nRun `node tools/gen-tool-docs.mjs` and commit the result.");
   process.exit(1);

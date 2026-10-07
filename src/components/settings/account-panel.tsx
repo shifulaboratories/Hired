@@ -47,6 +47,7 @@ export function AccountPanel({
     dailyNudge: boolean;
     digestHour: number;
     emailConfigured: boolean;
+    scheduleNote: string;
   };
   user: {
     name: string;

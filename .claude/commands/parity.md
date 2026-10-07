@@ -23,8 +23,8 @@ Then, separately, list the reverse: tools with no UI equivalent. Those aren't bu
 call out any where a person would reasonably expect a screen.
 
 Finally, sanity-check the asserted tool counts. Count the entries in `tools` and in
-`prompts`, split by `adminOnly`, and compare against the numbers hardcoded in `README.md`
-(three places, currently "44 tools, 55 if you're an admin"). The Settings panel derives
-its count live, so the README is the only thing that can go stale.
+`prompts`, split by `adminOnly`, and compare against the numbers in the README's "Connect
+your AI" paragraph. The Settings panel derives its count live and the manual's are
+generated, so the README is the only thing that can go stale.
 
 Don't fix anything. Just report, ranked by how much the gap hurts.

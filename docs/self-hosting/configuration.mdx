@@ -28,6 +28,10 @@ been configured here".
 | `company_logos` | Instance | Shows each company's favicon in the pipeline. | On |
 | `mcp_allowed_origins` | Instance | Browser origins allowed to call the MCP endpoint, comma separated. This instance's own address and anything on localhost are always allowed and need no listing. Almost every client connects from a server or a desktop app and sends no origin, so empty is normally right. | *(empty)* |
 | `archive_retention_days` | Instance | How many days a deleted company, person or application waits in the archive before it goes for good. Everyone on the instance gets the same window. 0 keeps everything until somebody empties it by hand. | `30` |
+| `revision_retention_days` | Instance | How many days a previous version of a resume or a role, and a line in the change log, is kept. Versions are what `restore_revision` puts back, so shortening this shortens how far back somebody can go. 0 keeps everything. | `90` |
+| `sweep_token` | Instance | The secret in `/api/sweep/<token>`. A scheduler calling it checks watched company boards, re-reads postings to see whether they came down, and runs the mail sweep for whoever turned it on. Empty means the address answers 404. [Scheduling →](/self-hosting/scheduling) | *(empty)* |
+| `attachment_max_bytes` | Instance | The largest single attachment, in bytes. Attachments live in your database, not an object store. | `8000000` |
+| `attachment_workspace_bytes` | Instance | Bytes across every file one person keeps. At the cap, attaching refuses and says how much is in use. | `250000000` |
 | `google_client_id` | Sign-in | OAuth client ID from the Google Cloud console. Setting it puts a Continue with Google button on the sign-in page. | *(empty)* |
 | `google_client_secret` | Sign-in | The secret for that OAuth client. | *(empty)* |
 | `google_allow_signup` | Sign-in | Whether a Google account nobody invited may create an account here. | Off |
@@ -37,9 +41,14 @@ been configured here".
 | `resend_api_key` | Email | Starts with `re_`. Stored on your server and never shown again. | *(empty)* |
 | `resend_from_email` | Email | The address invitations are sent from, on a domain verified in Resend. | *(empty)* |
 | `resend_from_name` | Email | Display name on outgoing mail. | `Hired` |
+| `digest_token` | Email | The secret in `/api/digest/<token>`. A scheduler calling it hourly is what sends the weekly summary and the due-today nudge to whoever asked for them. Empty means nothing is sent on a schedule. [Scheduling →](/self-hosting/scheduling) | *(empty)* |
+| `outbound_enabled` | Email | Whether members may send mail from their own connected mailbox through the app. Each person still turns it on for themselves and sets a daily number. | Off |
 | `stripe_secret_key` | Billing | Stripe API key. A restricted `rk_` key is enough and safer. | *(empty)* |
 | `stripe_webhook_secret` | Billing | Webhook signing secret, starts with `whsec_`. | *(empty)* |
 | `stripe_payment_link` | Billing | The public checkout URL people pay through. | *(empty)* |
+| `assistant_api_key` | Assistant | An Anthropic API key. Setting it turns on the chat built into the app; empty means the button is never rendered and nothing calls out. The bill is yours. | *(empty)* |
+| `assistant_model` | Assistant | Which model answers in that chat. | The current default |
+| `assistant_daily_messages` | Assistant | How many messages one person may send a day, in their own time zone. Between 1 and 10,000. | `50` |
 
 <Note>
   **Company logos and privacy.** With logos on, each person's browser asks

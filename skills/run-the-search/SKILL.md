@@ -13,10 +13,11 @@ happened, which is exactly what a conversation is good at.
 
 When they mention a job they are interested in:
 
-`create_application` with `company`, `roleTitle`, the full posting in
-`jobDescription`, and `stage` — `WISHLIST` if they are still deciding, `APPLIED` if
-they have sent it. Pass `companyWebsite` if you know the company's own domain; it is
-what puts their logo in the pipeline and it costs nothing.
+With a link, `capture_job_posting` — it reads the posting, files the company with its own
+website, and returns the existing application instead of a second one when the job is
+already on the board. Several open tabs go in one call as `urls`. Without a link,
+`create_application` with `company`, `roleTitle`, the full posting in `jobDescription`, and
+`stage` — `WISHLIST` if they are still deciding, `APPLIED` if they have sent it.
 
 Paste the **whole** posting into `jobDescription`. It is what a resume gets tailored
 against later, and postings disappear from the web the moment the role is filled.
@@ -155,4 +156,5 @@ people or applications as a spreadsheet, taking the same filters, search and sor
   out of the funnel, and the funnel is the only thing that can tell them where the search is
   losing people.
 - Do not call `empty_archive` or `delete_archived` without reading the archive back to them
-  first. Those are the only two acts here that cannot be undone.
+  first, or `merge_companies` without `preview_company_merge`. Those three cannot be undone
+  by anything.

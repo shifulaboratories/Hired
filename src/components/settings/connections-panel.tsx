@@ -97,6 +97,8 @@ export type AccountsProps = {
     note: string;
     mailConnected: boolean;
     calendarConnected: boolean;
+    /** Empty when the instance's scheduler calls the mail sweep. */
+    scheduleNote: string;
   };
 };
 
@@ -996,6 +998,9 @@ export function ConnectionsPanel({
               <p className="text-faint mt-1 text-[12px]">
                 Connect a mailbox above and this switch starts working.
               </p>
+            )}
+            {accounts.sweep.on && accounts.sweep.scheduleNote && (
+              <p className="text-faint mt-1 text-[12px]">{accounts.sweep.scheduleNote}</p>
             )}
             {accounts.sweep.on && accounts.sweep.lastRunAt && (
               <p className="text-faint mt-1 text-[12px]">

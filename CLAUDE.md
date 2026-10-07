@@ -100,15 +100,20 @@ generates resume content inherits that rule and should restate it.
 
 ```
 prisma/schema.prisma          Data model. Migrations in prisma/migrations/, applied on boot.
-src/lib/data/                 THE data layer, one file per area: me, resumes, letters,
-                              pipeline, offers, stage-templates, proposals, pipeline-share,
-                              schedule, views, tags, archive, export, transfer, digest,
-                              accounts, onboarding, users, connections, waitlist, audit,
-                              system, patch. userId first wherever content is touched;
-                              the instance-level files (users, waitlist, audit, system)
-                              say in their header comments why they are not exceptions,
-                              and pipeline-share carries the app's second unauthenticated
-                              read, which its own comment treats accordingly.
+src/lib/data/                 THE data layer, one file per area — Me (me, wins,
+                              transferables, linkedin), documents (resumes, letters,
+                              revisions, revision-store, attachments), the search
+                              (pipeline, interviews, offers, referrals, proposals,
+                              stage-templates, stage-cadence, recurrence, schedule,
+                              analytics, views, tags, archive, watch, capture-link),
+                              mail (accounts, mail-sweep, outbound, digest), moving data
+                              (export, transfer, patch, sample), and the instance (users,
+                              connections, onboarding, assistant, waitlist, audit, system,
+                              scheduled). userId first wherever content is touched; the
+                              instance-level files say in their header comments why they
+                              are not exceptions, and pipeline-share carries the app's
+                              second unauthenticated read, which its own comment treats
+                              accordingly.
 src/lib/mcp/tools.ts          Tool + prompt definitions. One array, one source of truth.
 src/lib/mcp/handler.ts        Streamable HTTP transport + the server instructions block.
 src/lib/mcp/briefing-head.ts  The budgeted head of that block: standing rules and what fits.
@@ -117,6 +122,8 @@ src/lib/resume-schema.ts      The resume document contract (zod).
 src/lib/pdf.ts                Server-side PDF rendering. Needs a Chromium on the host;
                               degrades to the print page where there isn't one.
 src/server/actions.ts         Server actions for the UI. Never accepts a userId.
+src/server/application-detail.ts  The application screen's props, built once for the
+                              page and the board's side panel.
 src/app/(app)/                The app: dashboard, me (roles, profile, notes, extras,
                               resumes, letters), applications, tasks, crm, archive, docs,
                               settings (pipeline checklists and admin live under it).
@@ -163,8 +170,9 @@ hidden from members' `tools/list` entirely — not merely refused), tags (`list_
 `create_tag`, …) and the archive (`list_archive`, `restore_records`, …) cutting across all
 of them. Don't trust any
 hand-written tool count you find, including in old decision-log entries: the authoritative
-number is generated live on the /docs page, and the README hand-carries it in three
-places that must be bumped whenever the array changes.
+number is what `node tools/gen-tool-docs.mjs` prints and writes into docs/tools/overview.mdx,
+Settings → Connections shows it live, and the README hand-carries it in one paragraph
+("Connect your AI") that must be bumped whenever the array changes.
 
 ---
 
@@ -200,96 +208,43 @@ in sequence, it is a prompt composed of four tools.
 
 ## Current focus: nothing, and that is the point
 
-The original focus list — delete the reasons to leave the app for resume.lol — is mostly
-done. Shipped and live: a published resume has an unlisted URL at `/r/[slug]`
-(`publish_resume` / `unpublish_resume`), PDF export renders server-side
-(`export_resume_pdf`, `src/lib/pdf.ts`, print page kept as the Chromium-less fallback),
-a posting is captured in one move (`capture_job_posting`), and a pipeline can be shared
-read-only at `/p/[slug]`. Do not rebuild any of these; the decision log records how each
-landed.
+The product is built. What is worth doing is unglamorous: keeping the surface small, the
+numbers right and the manual true. Before building anything, ask whether it fixes something
+seen in real use and whether an assistant could not already do it with the tools that exist;
+every tool costs routing quality on every client, and October 2026 spent a week cutting
+twenty-two of them.
 
-Both of the items that stood here are now shipped, and neither should be rebuilt:
+These are shipped and must not be rebuilt — each has a decision-log entry explaining the
+call that shaped it, so read that (from the end) before changing one: import
+(`import_resume`, the paste dialog, `src/lib/resume-parse.ts`), traceable tailoring
+(`Resume.baseResumeId`, `src/lib/resume-diff.ts`, `compare_resumes`,
+`trace_resume_evidence`), publishing (`/r/[slug]`) and sharing (`/p/[slug]`), server-side
+PDF, posting capture, letters, offers as versions, interview rounds and the question bank
+(`src/lib/data/interviews.ts` — the `Interview` model, not free-text activities), stage
+checklists, the review queue, full export and import, digests, search_me on Postgres FTS,
+and one tag catalogue behind every label.
 
-**Import.** `import_resume` takes what an assistant read off a resume and fills in Me in
-one call — additive, and safe to repeat: a role already on file is skipped rather than
-overwritten. The app also has a paste-and-correct dialog on `/me` for someone who has not
-connected anything yet, backed by a heuristic parser in `src/lib/resume-parse.ts`. It reads
-headings, so it is a draft a person fixes before it lands; the conversational path is
-better and the dialog says so. PDFs are deliberately not parsed: a two-column layout comes
-out interleaved.
+Three rules live in that history and are easy to break:
 
-**Traceable tailoring.** `Resume.baseResumeId`, a pure diff in `src/lib/resume-diff.ts`,
-and the compare-to-base view in the resume editor, which recomputes as you type.
-`compare_resumes` is the same thing over MCP. Beside it, `trace_resume_evidence` answers
-the other half — which of a person's own material stands behind each bullet, and which
-bullets nothing does. That is derived by comparing text rather than recorded when a
-document is written; read the decision log before changing it.
+- **Deleting is archiving, for three models.** Company, Contact and Application carry
+  `archivedAt`, and EVERY read of them has to exclude archived rows — nothing in the
+  toolchain catches one that forgets, and a Prisma extension provably cannot help. If you add
+  a read, filter it, or say in a comment why not. `Offer` and `Letter` hang off archivable
+  models without carrying the column, so the reads in `offers.ts` that do not start from a
+  filtered application spell `application: { archivedAt: null }` by hand; the probe checks
+  them. Everything else deletable really is gone when deleted, and its copy says so.
+- **One catalogue behind every label.** Where a job came from, a company's industry, how you
+  know a person — all of it is `Tag` rows keyed by `kind`, managed from one picker and one set
+  of tools. The pipeline's saved views still spell the filter `src` in the URL, deliberately.
+  Don't add a second labelling mechanism.
+- **`src/lib/data/transfer.ts` names every model** in `COVERAGE`, typed over
+  `Prisma.ModelName`. A new model fails the typecheck there until you decide whether it is in
+  the export.
 
-**Deleting is archiving, for three models.** Company, Contact and Application carry
-`archivedAt`; `src/lib/data/archive.ts` owns putting things in, taking them out, destroying
-them and sweeping what is past its window. Everything else deletable — a role, a highlight,
-a note, a resume, a task, a tag, a saved view — really is gone when you delete it, and its
-copy says so. The scope is small on purpose: EVERY read of an archivable model has to
-exclude archived rows, nothing in the toolchain catches one that forgets, and a Prisma
-client extension provably cannot help (it covers top-level finds and silently does nothing
-for nested includes or `_count`). So the list of reads has to stay short enough to audit by
-hand, and the audit is a real-Postgres exercise rather than a build. If you add a read of
-Company, Contact or Application, filter it — and if you deliberately do not, say why in a
-comment, as the seven exceptions already do.
-`Offer` and `Letter` hang off archivable models without carrying `archivedAt` themselves —
-as `Activity` and `Task` already did — and belong to their application, disappearing with
-it. The cost is that every read in
-`src/lib/data/offers.ts` that does not start from an already-filtered application has to
-spell `application: { archivedAt: null }` by hand. There are five, each numbered at the
-line, and the probe archives an application and checks them. The two writes, `updateOffer`
-and `deleteOffer`, deliberately do not filter, and the file header says why.
-
-There is also one catalogue behind every label in the product: `src/lib/data/tags.ts` and
-the `Tag` table, keyed by `kind`. Where an application came from, a company's industry,
-size and location, how you know a person — all of it is tags, all of it multi-select, all
-of it managed from one picker (`src/components/tags/tag-picker.tsx`) and one set of
-`*_tag` tools. `sources` on an application is the old spelling and still works; the
-pipeline's saved views still spell the filter `src` in the URL, deliberately, because
-renaming it would break every view already saved. Don't add a second labelling mechanism.
-
-**Eleven things landed together in September 2026**, and none of them should be rebuilt.
-Each has a decision-log entry explaining the call that shaped it; read that before changing
-one.
-
-- **Offers** (`src/lib/data/offers.ts`) — rows, not columns, because offers get revised and
-  the movement IS the negotiation record. Never confused with `Application.salaryRange`,
-  which is what the posting advertised. `compare_offers` refuses to convert currencies.
-- **Letters** (`src/lib/data/letters.ts`) — everything that is not a resume. Its own model
-  rather than a `kind` on Resume, because `resume-schema.ts` is a contract. The feature is
-  `prep_letter`, which gathers the five things a good draft needs; `priorLetters` is the
-  one people do not expect and the one that matters.
-- **Stage checklists** (`src/lib/data/stage-templates.ts`) — fire once per application ever,
-  never retroactively, and deleting a line leaves the tasks it made.
-- **The review queue** (`src/lib/data/proposals.ts`) — the only place a stored blob written
-  by an assistant later becomes a write. Five kinds, validated twice, claimed before the
-  work runs. Read its header before adding a sixth.
-- **Full transfer** (`src/lib/data/transfer.ts`) — one JSON file out, the same file back in.
-  Additive and matched by natural key; there is no mode that empties anything first.
-- **Digests** (`src/lib/data/digest.ts`) — the only mail this app sends a member. Off until
-  asked, once a day in their zone, and scheduled OUTSIDE the app at
-  `/api/digest/<token>` because the transport stays stateless.
-- **Sharing a saved view** — `PipelineShare` is one row per thing shared, discriminated by
-  `shareKey` because Postgres treats NULLs as distinct and Prisma cannot write a partial
-  unique index.
-- **search_me is Postgres FTS now**, OR-ed and stemmed, with expression GIN indexes and an
-  immutable `hired_words` wrapper the migration creates.
-- Plus per-source conversion in `diagnose_search`, `list_relationships`, and
-  `capture_job_posting` taking a list for a morning of open tabs.
-
-What is worth doing next is unglamorous: `.claude/DECISIONS.md` is now long enough that
-its own advice — read from the end — is doing real work.
-
-**Parked, deliberately:** first-class interview rounds and questions (today they are
-`Activity` rows of type `INTERVIEW` with free-text bodies), and any sharing that involves
-*accounts* — viewers, editors, workspace members. The unlisted links that exist
-(`/r/[slug]`, `/p/[slug]`) are the deliberate ceiling: a link is consent, an account
-system is a permissions model this product does not have and should not grow as a side
-quest. `.claude/plans/workspaces.md` is a design for it, and only a design.
+**Parked, deliberately:** any sharing that involves *accounts* — viewers, editors, workspace
+members. The unlisted links (`/r/[slug]`, `/p/[slug]`) are the ceiling: a link is consent,
+and an account system is a permissions model this product should not grow as a side quest.
+`.claude/plans/workspaces.md` is a design for it, and only a design.
 
 ---
 
@@ -341,8 +296,10 @@ prints once on first boot. `npm run dev` applies no migrations — only `start` 
 **Prose matters here.** The README, tool descriptions and UI copy are written in a
 specific voice: plain, direct, second person, no marketing, no exclamation marks, no
 emoji, contractions fine. Sentences carry information — "That's expected; the next two
-steps fix it" rather than "Don't worry!". Match it. When you add a feature, update the
-README in that voice rather than appending a bullet list.
+steps fix it" rather than "Don't worry!". Match it. When you add a feature, document it in
+the manual under `docs/` in that voice. The README is a front door of about 150 lines that
+links there; it gains a sentence only when something changes what a newcomer needs to know
+in their first five minutes.
 
 **Log decisions.** When you make a non-obvious call — a tradeoff, a thing you tried that
 didn't work, a constraint you discovered — append it to `.claude/DECISIONS.md` with the

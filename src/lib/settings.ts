@@ -42,6 +42,11 @@ export const SETTING_KEYS = {
   revisionRetentionDays: "revision_retention_days",
   /** Bookkeeping again, not a knob. */
   revisionsSweptAt: "revisions_swept_at",
+  /** When each scheduled job last ran. Clocks, not knobs: see data/scheduled.ts. */
+  digestRanAt: "digest_ran_at",
+  boardsRanAt: "boards_ran_at",
+  postingsRanAt: "postings_ran_at",
+  mailRanAt: "mail_ran_at",
   googleClientId: "google_client_id",
   googleClientSecret: "google_client_secret",
   googleAllowSignup: "google_allow_signup",
@@ -651,6 +656,16 @@ export type VariableRow = {
   updatedAt: string | null;
 };
 
+/** Timestamps the app keeps for itself, which no operator sets. */
+const CLOCKS = new Set<string>([
+  SETTING_KEYS.archiveSweptAt,
+  SETTING_KEYS.revisionsSweptAt,
+  SETTING_KEYS.digestRanAt,
+  SETTING_KEYS.boardsRanAt,
+  SETTING_KEYS.postingsRanAt,
+  SETTING_KEYS.mailRanAt,
+]);
+
 /**
  * Every configurable value on this instance, declared ones first and anything
  * an admin added after them. Secrets come back masked, which is why this is
@@ -683,12 +698,7 @@ export async function listVariables(): Promise<VariableRow[]> {
     // archive_swept_at is a clock the sweep keeps, not a knob anybody sets. An
     // operator screen of settings should not carry a timestamp that changes on
     // its own every hour.
-    .filter(
-      (row) =>
-        !BY_KEY.has(row.key) &&
-        row.key !== SETTING_KEYS.archiveSweptAt &&
-        row.key !== SETTING_KEYS.revisionsSweptAt,
-    )
+    .filter((row) => !BY_KEY.has(row.key) && !CLOCKS.has(row.key))
     .map((row) => ({
       key: row.key,
       label: row.key,

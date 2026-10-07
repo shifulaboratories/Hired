@@ -1,9 +1,15 @@
 import {
   ActivityType,
+  BoardProvider,
+  InterviewFormat,
+  InterviewOutcome,
   LetterKind,
   NoteKind,
+  QuestionKind,
+  ReferralStatus,
   Stage,
   TagKind,
+  TaskRepeat,
   type Prisma,
 } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -26,7 +32,8 @@ import { tagKey } from "@/lib/data/tags";
  * without a warning screen, and it is the one people actually want: a restore,
  * not a replacement.
  *
- * Five things are deliberately NOT in the file, and the export says so:
+ * Some things are deliberately NOT in the file, and the export says so. The
+ * whole decision, model by model, is COVERAGE below; the main ones:
  *
  * - **Connections and linked accounts.** An MCP connection URL is a credential
  *   with full read and write over the workspace, and a mail account carries an
@@ -68,7 +75,73 @@ const EXCLUDED = [
   "instance-level rows: accounts, invitations, settings, the audit log",
   "your profile photo — a data URI nobody restores from a backup, and it would dwarf the file",
   "attachments — the files you have kept; their bytes would dwarf this document, and pg_dump is the backup that carries them",
+  "capture links and queued outgoing mail — the first is a credential, the second is tied to a linked account",
+  "version history, the change log and conversations with the built-in assistant — a restore starts its own",
 ];
+
+/**
+ * Every model in the schema, and what the export does with it.
+ *
+ * Typed over Prisma.ModelName, so a model added to schema.prisma fails the
+ * typecheck here until somebody decides whether it is in the file. The export
+ * promised "every record this workspace owns" for months while it quietly left
+ * out interview rounds, the question bank, referrals and recorded transfers —
+ * everything added after the export was written — and nothing noticed, because
+ * nothing could. A string is the reason a model stays out; "file" means it is
+ * in, under that key.
+ */
+export const COVERAGE: Record<Prisma.ModelName, { file: string } | { out: string }> = {
+  Profile: { file: "profile" },
+  Role: { file: "roles" },
+  Highlight: { file: "highlights" },
+  Education: { file: "education" },
+  Project: { file: "projects" },
+  SkillGroup: { file: "skillGroups" },
+  Certification: { file: "certifications" },
+  TransferableSkill: { file: "transferableSkills" },
+  Note: { file: "notes" },
+  Resume: { file: "resumes" },
+  Letter: { file: "letters" },
+  Tag: { file: "tags" },
+  Company: { file: "companies" },
+  Contact: { file: "contacts" },
+  ContactCompany: { file: "contactCompanies" },
+  Application: { file: "applications" },
+  ApplicationTag: { file: "applicationTags" },
+  CompanyTag: { file: "companyTags" },
+  ContactTag: { file: "contactTags" },
+  Activity: { file: "activities" },
+  Task: { file: "tasks" },
+  Offer: { file: "offers" },
+  Interview: { file: "interviews" },
+  InterviewInterviewer: { file: "interviewers" },
+  InterviewQuestion: { file: "interviewQuestions" },
+  Referral: { file: "referrals" },
+  SavedView: { file: "savedViews" },
+  StageTemplate: { file: "stageTemplates" },
+  StageCadence: { file: "stageCadences" },
+  CompanyWatch: { file: "companyWatches" },
+  McpConnection: { out: "a connection URL is a credential" },
+  LinkedAccount: { out: "it holds app passwords and refresh tokens" },
+  Outbound: { out: "a queued email is tied to a linked account, which is not in the file either" },
+  PipelineShare: { out: "a share slug is a live public URL" },
+  CaptureLink: { out: "a capture link is a credential" },
+  Proposal: { out: "a proposal is a question, not a record" },
+  Attachment: { out: "file bytes would dwarf the document; pg_dump is the backup that carries them" },
+  Revision: { out: "history of records that are in the file; a restore starts its own" },
+  WriteLog: { out: "which connection wrote what, on an instance the file is leaving" },
+  AssistantThread: { out: "conversations with the built-in assistant are not career material" },
+  AssistantMessage: { out: "as AssistantThread" },
+  SampleLoad: { out: "a marker for sample material, which nobody restores" },
+  User: { out: "instance-level: the account itself" },
+  Session: { out: "instance-level: a sign-in" },
+  Invite: { out: "instance-level" },
+  LoginThrottle: { out: "instance-level" },
+  AdminAudit: { out: "instance-level" },
+  Setting: { out: "instance-level" },
+  SystemEvent: { out: "instance-level" },
+  WaitlistSignup: { out: "instance-level" },
+};
 
 /** Columns stripped on the way out, wherever they appear. */
 const WITHHELD = new Set(["slug", "visibility", "publishedAt", "photo"]);
@@ -113,6 +186,13 @@ export async function exportWorkspace(userId: string): Promise<WorkspaceExport> 
     offers,
     savedViews,
     stageTemplates,
+    transferableSkills,
+    interviews,
+    interviewers,
+    interviewQuestions,
+    referrals,
+    stageCadences,
+    companyWatches,
   ] = await Promise.all([
     db.profile.findUnique({ where: { userId } }),
     db.role.findMany({ where, orderBy: { sortOrder: "asc" } }),
@@ -137,6 +217,13 @@ export async function exportWorkspace(userId: string): Promise<WorkspaceExport> 
     db.offer.findMany({ where, orderBy: { receivedAt: "asc" } }),
     db.savedView.findMany({ where, orderBy: { name: "asc" } }),
     db.stageTemplate.findMany({ where, orderBy: { sortOrder: "asc" } }),
+    db.transferableSkill.findMany({ where, orderBy: { createdAt: "asc" } }),
+    db.interview.findMany({ where, orderBy: [{ applicationId: "asc" }, { round: "asc" }] }),
+    db.interviewInterviewer.findMany({ where: { interview: { userId } } }),
+    db.interviewQuestion.findMany({ where, orderBy: [{ interviewId: "asc" }, { sortOrder: "asc" }] }),
+    db.referral.findMany({ where, orderBy: { askedOn: "asc" } }),
+    db.stageCadence.findMany({ where }),
+    db.companyWatch.findMany({ where, orderBy: { createdAt: "asc" } }),
   ]);
 
   const data: Record<string, unknown[]> = {
@@ -162,6 +249,13 @@ export async function exportWorkspace(userId: string): Promise<WorkspaceExport> 
     offers: offers.map(clean),
     savedViews: savedViews.map(clean),
     stageTemplates: stageTemplates.map(clean),
+    transferableSkills: transferableSkills.map(clean),
+    interviews: interviews.map(clean),
+    interviewers: interviewers.map(clean),
+    interviewQuestions: interviewQuestions.map(clean),
+    referrals: referrals.map(clean),
+    stageCadences: stageCadences.map(clean),
+    companyWatches: companyWatches.map(clean),
   };
 
   const counts: Record<string, number> = {};
@@ -308,6 +402,8 @@ export async function importWorkspace(
     contact: new Map<string, string>(),
     application: new Map<string, string>(),
     note: new Map<string, string>(),
+    activity: new Map<string, string>(),
+    interview: new Map<string, string>(),
   };
 
   // Profile: fills blanks, never overwrites. Somebody restoring a backup into
@@ -333,6 +429,12 @@ export async function importWorkspace(
       const incoming = s(doc.profile, field);
       const current = existing ? ((existing as unknown as Row)[field] as string) : "";
       if (incoming && !current) patch[field] = incoming;
+    }
+    // The keyword policy has a default rather than a blank, so "empty" here
+    // means still on that default.
+    const policy = s(doc.profile, "keywordPolicy");
+    if (policy && policy !== "MATCH" && (!existing || existing.keywordPolicy === "MATCH")) {
+      patch.keywordPolicy = policy;
     }
     if (Object.keys(patch).length > 0) {
       if (!dryRun) {
@@ -832,11 +934,10 @@ export async function importWorkspace(
   // Matched on parent, instant and the first words of the body: the same
   // interview logged twice would otherwise double on every re-import.
   const liveActivities = await db.activity.findMany({ where: { userId } });
-  const activityKeys = new Set(
-    liveActivities.map((row) =>
-      key(row.applicationId ?? row.contactId, row.occurredAt.toISOString(), row.body.slice(0, 80)),
-    ),
-  );
+  const activityKey = (row: { applicationId: string | null; contactId: string | null; occurredAt: Date; body: string }) =>
+    key(row.applicationId ?? row.contactId, row.occurredAt.toISOString(), row.body.slice(0, 80));
+  const activityByKey = new Map(liveActivities.map((row) => [activityKey(row), row.id]));
+  const activityKeys = new Set(activityByKey.keys());
   for (const row of rowsOf(doc, "activities")) {
     const applicationId = map.application.get(s(row, "applicationId"));
     const contactId = map.contact.get(s(row, "contactId"));
@@ -848,13 +949,15 @@ export async function importWorkspace(
     const when = date(row, "occurredAt") ?? new Date(0);
     const k = key(parent, when.toISOString(), s(row, "body").slice(0, 80));
     if (activityKeys.has(k)) {
+      const already = activityByKey.get(k);
+      if (already) map.activity.set(s(row, "id"), already);
       bump(skipped, "activities");
       continue;
     }
     activityKeys.add(k);
     bump(created, "activities");
     if (dryRun || isDry(parent)) continue;
-    await db.activity.create({
+    const madeActivity = await db.activity.create({
       data: {
         userId,
         applicationId: real(applicationId),
@@ -869,6 +972,7 @@ export async function importWorkspace(
         occurredAt: when,
       },
     });
+    map.activity.set(s(row, "id"), madeActivity.id);
   }
 
   // The due date is in the key. Without it three standalone "Update resume"
@@ -902,6 +1006,11 @@ export async function importWorkspace(
         resumeId: real(map.resume.get(s(row, "resumeId"))),
         roleId: real(map.role.get(s(row, "roleId"))),
         noteId: real(map.note.get(s(row, "noteId"))),
+        repeatUnit: maybeEnum(TaskRepeat, s(row, "repeatUnit")),
+        repeatEvery: int(row, "repeatEvery", 1),
+        repeatUntil: date(row, "repeatUntil"),
+        repeatAnchor: date(row, "repeatAnchor"),
+        repeatFrom: s(row, "repeatFrom") || null,
       },
     });
   }
@@ -1024,6 +1133,207 @@ export async function importWorkspace(
       });
     },
   );
+
+  await plain(
+    "transferableSkills",
+    (row) => key(s(row, "have")),
+    (await db.transferableSkill.findMany({ where: { userId } })).map((row) => key(row.have)),
+    async (row) => {
+      await db.transferableSkill.create({
+        data: { userId, have: s(row, "have"), covers: strings(row, "covers"), note: s(row, "note") },
+      });
+    },
+  );
+
+  // A cadence is one row per stage, so "already there" is any row for that
+  // stage, whatever its number: the one on this instance is the newer choice.
+  await plain(
+    "stageCadences",
+    (row) => key(s(row, "stage")),
+    (await db.stageCadence.findMany({ where: { userId } })).map((row) => key(row.stage)),
+    async (row) => {
+      await db.stageCadence.create({
+        data: {
+          userId,
+          stage: enumOf(Stage, s(row, "stage"), Stage.APPLIED),
+          days: typeof row.days === "number" ? int(row, "days") : null,
+        },
+      });
+    },
+  );
+
+  // Rounds after their applications and the timeline, so each finds its job
+  // and the line it wrote. Matched on the job and the round number, which is
+  // what a person means by "the second interview at Acme".
+  const liveInterviews = await db.interview.findMany({ where: { userId } });
+  const interviewByKey = new Map(
+    liveInterviews.map((row) => [key(row.applicationId, String(row.round), row.label), row.id]),
+  );
+  for (const row of rowsOf(doc, "interviews")) {
+    const applicationId = map.application.get(s(row, "applicationId"));
+    if (!applicationId) {
+      bump(skipped, "interviews");
+      continue;
+    }
+    const k = key(applicationId, String(int(row, "round", 1)), s(row, "label"));
+    const found = interviewByKey.get(k);
+    if (found) {
+      map.interview.set(s(row, "id"), found);
+      bump(skipped, "interviews");
+      continue;
+    }
+    bump(created, "interviews");
+    if (dryRun || isDry(applicationId)) {
+      map.interview.set(s(row, "id"), `dry:${k}`);
+      continue;
+    }
+    const made = await db.interview.create({
+      data: {
+        userId,
+        applicationId,
+        round: int(row, "round", 1),
+        label: s(row, "label"),
+        format: enumOf(InterviewFormat, s(row, "format"), InterviewFormat.VIDEO),
+        outcome: enumOf(InterviewOutcome, s(row, "outcome"), InterviewOutcome.SCHEDULED),
+        scheduledAt: date(row, "scheduledAt"),
+        durationMins: int(row, "durationMins"),
+        location: s(row, "location"),
+        prep: s(row, "prep"),
+        debrief: s(row, "debrief"),
+        calendarEventId: s(row, "calendarEventId"),
+        activityId: real(map.activity.get(s(row, "activityId"))),
+      },
+    });
+    interviewByKey.set(k, made.id);
+    map.interview.set(s(row, "id"), made.id);
+  }
+
+  await join(
+    "interviewers",
+    "interviewId",
+    "interview",
+    "contactId",
+    "contact",
+    await linked(
+      db.interviewInterviewer.findMany({ where: { interview: { userId } } }),
+      (row) => row.interviewId,
+      (row) => row.contactId,
+    ),
+    (a, b) =>
+      db.interviewInterviewer.upsert({
+        where: { interviewId_contactId: { interviewId: a, contactId: b } },
+        update: {},
+        create: { interviewId: a, contactId: b },
+      }),
+  );
+
+  const liveQuestions = await db.interviewQuestion.findMany({ where: { userId } });
+  const questionKeys = new Set(liveQuestions.map((row) => key(row.interviewId, row.key)));
+  for (const row of rowsOf(doc, "interviewQuestions")) {
+    const interviewId = map.interview.get(s(row, "interviewId"));
+    const question = s(row, "question");
+    if (!interviewId || !question) {
+      bump(skipped, "interviewQuestions");
+      continue;
+    }
+    const k = key(interviewId, s(row, "key") || question);
+    if (questionKeys.has(k)) {
+      bump(skipped, "interviewQuestions");
+      continue;
+    }
+    questionKeys.add(k);
+    bump(created, "interviewQuestions");
+    if (dryRun || isDry(interviewId)) continue;
+    await db.interviewQuestion.create({
+      data: {
+        userId,
+        interviewId,
+        kind: enumOf(QuestionKind, s(row, "kind"), QuestionKind.BEHAVIOURAL),
+        question,
+        key: s(row, "key") || question.toLowerCase(),
+        answer: s(row, "answer"),
+        confidence: int(row, "confidence"),
+        better: s(row, "better"),
+        sortOrder: int(row, "sortOrder"),
+      },
+    });
+  }
+
+  // Matched on who, about what, and when it was asked: one person asked twice
+  // about one job a month apart is two asks, and both are the record.
+  const liveReferrals = await db.referral.findMany({ where: { userId } });
+  const referralKey = (contactId: string, about: string | null, askedOn: Date | null) =>
+    key(contactId, about, askedOn ? askedOn.toISOString() : "");
+  const referralKeys = new Set(
+    liveReferrals.map((row) => referralKey(row.contactId, row.applicationId ?? row.companyId, row.askedOn)),
+  );
+  for (const row of rowsOf(doc, "referrals")) {
+    const contactId = map.contact.get(s(row, "contactId"));
+    if (!contactId) {
+      problems.push("Skipped a referral: the person it was asked of is not in the file.");
+      bump(skipped, "referrals");
+      continue;
+    }
+    const applicationId = map.application.get(s(row, "applicationId")) ?? null;
+    const companyId = map.company.get(s(row, "companyId")) ?? null;
+    const askedOn = date(row, "askedOn");
+    const k = referralKey(contactId, applicationId ?? companyId, askedOn);
+    if (referralKeys.has(k)) {
+      bump(skipped, "referrals");
+      continue;
+    }
+    referralKeys.add(k);
+    bump(created, "referrals");
+    if (dryRun || isDry(contactId)) continue;
+    await db.referral.create({
+      data: {
+        userId,
+        contactId,
+        applicationId: real(applicationId),
+        companyId: real(companyId),
+        status: enumOf(ReferralStatus, s(row, "status"), ReferralStatus.ASKED),
+        askedOn: askedOn ?? new Date(),
+        statusOn: date(row, "statusOn") ?? askedOn ?? new Date(),
+        notes: s(row, "notes"),
+        thankedAt: date(row, "thankedAt"),
+      },
+    });
+  }
+
+  const liveWatches = await db.companyWatch.findMany({ where: { userId } });
+  const watchKeys = new Set(liveWatches.map((row) => key(row.provider, row.slug)));
+  for (const row of rowsOf(doc, "companyWatches")) {
+    const companyId = map.company.get(s(row, "companyId"));
+    const provider = maybeEnum(BoardProvider, s(row, "provider"));
+    if (!companyId || !provider || !s(row, "slug")) {
+      bump(skipped, "companyWatches");
+      continue;
+    }
+    const k = key(provider, s(row, "slug"));
+    if (watchKeys.has(k)) {
+      bump(skipped, "companyWatches");
+      continue;
+    }
+    watchKeys.add(k);
+    bump(created, "companyWatches");
+    if (dryRun || isDry(companyId)) continue;
+    await db.companyWatch.create({
+      data: {
+        userId,
+        companyId,
+        provider,
+        slug: s(row, "slug"),
+        boardUrl: s(row, "boardUrl"),
+        titleTerms: strings(row, "titleTerms"),
+        locationTerms: strings(row, "locationTerms"),
+        // What it has already seen comes along, so the first look after a
+        // restore does not propose every role on the board again.
+        seenIds: strings(row, "seenIds"),
+        proposed: int(row, "proposed"),
+        enabled: bool(row, "enabled", true),
+      },
+    });
+  }
 
   return { dryRun, created, skipped, problems };
 

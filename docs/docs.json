@@ -120,6 +120,7 @@
               "workflows",
               "app",
               "reference/security",
+              "reference/your-data",
               "reference/troubleshooting",
               "reference/faq"
             ]
@@ -162,6 +163,7 @@
             "group": "Configure it",
             "pages": [
               "self-hosting/configuration",
+              "self-hosting/scheduling",
               "self-hosting/email",
               "self-hosting/google",
               "self-hosting/microsoft",

@@ -34,6 +34,8 @@ export function DigestPanel({
     dailyNudge: boolean;
     digestHour: number;
     emailConfigured: boolean;
+    /** Empty when the instance's scheduler calls the digest address. */
+    scheduleNote: string;
   };
 }) {
   const [values, setValues] = useState(initial);
@@ -96,6 +98,12 @@ export function DigestPanel({
         onChange={(dailyNudge) => save({ dailyNudge })}
         onSend={() => sendNow("nudge")}
       />
+
+      {on && values.emailConfigured && values.scheduleNote && (
+        <p className="text-faint text-[12px]">
+          {values.scheduleNote} &ldquo;Send now&rdquo; still works.
+        </p>
+      )}
 
       {on && (
         <label className="flex flex-wrap items-center gap-2 text-xs">

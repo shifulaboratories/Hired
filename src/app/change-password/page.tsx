@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireUserPendingPasswordChange } from "@/lib/auth";
+import { PLACEHOLDER_OWNER_EMAIL, requireUserPendingPasswordChange } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
 import { AuthShell, authViewport } from "@/components/auth-shell";
 import { ForcedPasswordForm } from "@/components/forced-password-form";
@@ -20,6 +20,11 @@ export const viewport = authViewport;
  *
  * Somebody who is not flagged is sent to Settings, which is where changing a
  * password you already own belongs.
+ *
+ * It is also the first screen of a new instance. The owner is created at boot
+ * with a placeholder address and a password printed to the deploy log, so the
+ * first sign-in lands here to make the account theirs: a real address and a
+ * password nobody else has seen.
  */
 export default async function ChangePasswordPage() {
   const user = await requireUserPendingPasswordChange();
@@ -29,7 +34,11 @@ export default async function ChangePasswordPage() {
 
   return (
     <AuthShell>
-      <ForcedPasswordForm instanceName={settings.instanceName} email={user.email} />
+      <ForcedPasswordForm
+        instanceName={settings.instanceName}
+        email={user.email}
+        claiming={user.email === PLACEHOLDER_OWNER_EMAIL}
+      />
     </AuthShell>
   );
 }

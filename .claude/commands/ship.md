@@ -1,5 +1,5 @@
 ---
-description: Build a feature the Resume OS way — schema, migration, data layer, MCP tools, then UI
+description: Build a feature the Hired way — schema, migration, data layer, MCP tools, then UI
 argument-hint: [what to build]
 ---
 
@@ -19,7 +19,7 @@ If step 2 is empty, stop and explain why this feature can't be reached by conver
 That is almost always a sign the design is wrong, not that the rule doesn't apply.
 
 Then build it in order: schema → migration → `src/lib/data/` → `src/lib/mcp/tools.ts` →
-`src/server/actions.ts` → UI → README.
+`src/server/actions.ts` → UI → the manual under `docs/`.
 
 Finish with `npm run typecheck` and `npm run build`, both clean, and append anything
 non-obvious you decided to `.claude/DECISIONS.md`.

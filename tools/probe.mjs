@@ -47,6 +47,11 @@ const store = await load("data/revision-store.ts");
 const waitlist = await load("data/waitlist.ts");
 const interviews = await load("data/interviews.ts");
 const tagsData = await load("data/tags.ts");
+const transfer = await load("data/transfer.ts");
+const referrals = await load("data/referrals.ts");
+const transferables = await load("data/transferables.ts");
+const scheduled = await load("data/scheduled.ts");
+const settingsLib = await load("settings.ts");
 const { tools } = await load("mcp/tools.ts");
 const tool = (name) => {
   const found = tools.find((t) => t.name === name);
@@ -383,7 +388,63 @@ try {
     ok(who.setup && typeof who.setup === "object" && !("tourSeenAt" in who.setup), "setup is missing or carries the tour");
   });
 
+  // --- Moving a workspace ------------------------------------------------------
+  await check("an export carries interview rounds, questions, referrals and transfers, and restores once", async () => {
+    const from = await person("from");
+    const into = await person("into");
+    const job = await pipeline.createApplicationIfNew(from.id, { company: "Roundco", roleTitle: "PM", stage: "INTERVIEWING" });
+    const dana = await pipeline.createContact(from.id, { name: "Dana Round", email: "dana@roundco.invalid" });
+    const booked = await interviews.scheduleInterview(from.id, job.application.id, {
+      label: "Onsite",
+      format: "ONSITE",
+      interviewerIds: [dana.id],
+    });
+    await interviews.addQuestions(from.id, booked.interview.id, [{ question: "Tell me about a launch that slipped", answer: "The billing rewrite" }]);
+    await interviews.recordInterviewOutcome(from.id, booked.interview.id, { outcome: "HELD", debrief: "Went well" });
+    await referrals.createReferral(from.id, { contactId: dana.id, applicationId: job.application.id, status: "AGREED" });
+    await transferables.createTransferable(from.id, { have: "Looker", covers: ["Tableau"] });
+
+    const file = JSON.parse(JSON.stringify(await transfer.exportWorkspace(from.id)));
+    for (const name of ["interviews", "interviewers", "interviewQuestions", "referrals", "transferableSkills"]) {
+      ok(file.counts[name] === 1, `${name} exported ${file.counts[name]}`);
+    }
+    const first = await transfer.importWorkspace(into.id, file);
+    ok(first.problems.length === 0, `problems: ${first.problems.join("; ")}`);
+    const round = await db.interview.findFirst({ where: { userId: into.id }, include: { interviewers: true, questions: true } });
+    ok(round?.label === "Onsite" && round.format === "ONSITE" && round.outcome === "HELD", "the round did not come back as it was");
+    ok(round.interviewers.length === 1 && round.questions.length === 1, "the round lost its interviewer or its question");
+    ok(round.activityId !== null, "the round lost its timeline line");
+    ok((await db.referral.count({ where: { userId: into.id, status: "AGREED" } })) === 1, "the referral did not come back");
+    ok((await db.transferableSkill.count({ where: { userId: into.id } })) === 1, "the transfer did not come back");
+    const second = await transfer.importWorkspace(into.id, file);
+    const again = Object.values(second.created).reduce((sum, n) => sum + n, 0);
+    ok(again === 0, `a second import created ${JSON.stringify(second.created)}`);
+  });
+
   // --- Instance surface -------------------------------------------------------
+  await check("a scheduled job is only called running once something has called it, and its clock is not a variable", async () => {
+    const before = await db.setting.findMany({ where: { key: { in: ["digest_token", "digest_ran_at"] } } });
+    try {
+      await db.setting.deleteMany({ where: { key: { in: ["digest_token", "digest_ran_at"] } } });
+      let state = await scheduled.scheduleState("digest");
+      ok(!state.enabled && !state.running && state.note.includes("off"), `with no token: ${JSON.stringify(state)}`);
+      await settingsLib.setSetting("digest_token", "probe-token-not-a-secret");
+      state = await scheduled.scheduleState("digest");
+      ok(state.enabled && !state.running && state.note.includes("yet"), `never called: ${JSON.stringify(state)}`);
+      await scheduled.recordJobRun("digest");
+      state = await scheduled.scheduleState("digest");
+      ok(state.running && state.note === "", `just ran: ${JSON.stringify(state)}`);
+      await scheduled.recordJobRun("digest", new Date(Date.now() - 3 * 86_400_000));
+      state = await scheduled.scheduleState("digest");
+      ok(!state.running && state.note.includes("stopped"), `stale: ${JSON.stringify(state)}`);
+      const variables = await settingsLib.listVariables();
+      ok(!variables.some((row) => row.key === "digest_ran_at"), "the clock is listed as a variable");
+    } finally {
+      await db.setting.deleteMany({ where: { key: { in: ["digest_token", "digest_ran_at"] } } });
+      for (const row of before) await db.setting.create({ data: { key: row.key, value: row.value } });
+    }
+  });
+
   await check("the waitlist is closed on an instance with no site and no signups", async () => {
     const signups = await db.waitlistSignup.count();
     const landing = await db.setting.findUnique({ where: { key: "landing_url" } });

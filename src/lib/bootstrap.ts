@@ -2,7 +2,7 @@ import { randomInt } from "node:crypto";
 import { db } from "@/lib/db";
 import { sweepArchive } from "@/lib/data/archive";
 import { generatePassphrase } from "@/lib/passphrase";
-import { CLAIMED, ensureDefaultConnection, hashPassword } from "@/lib/auth";
+import { CLAIMED, PLACEHOLDER_OWNER_EMAIL, ensureDefaultConnection, hashPassword } from "@/lib/auth";
 
 /**
  * First-boot provisioning.
@@ -37,7 +37,7 @@ function publicUrl() {
 async function ownerEmail() {
   const configured = process.env.ADMIN_EMAIL?.trim().toLowerCase();
   if (configured) return configured;
-  return "owner@localhost";
+  return PLACEHOLDER_OWNER_EMAIL;
 }
 
 /**
@@ -65,6 +65,9 @@ export async function ensureOwner() {
     role: "SUPER_ADMIN" as const,
     isActive: true,
     emailProvenAt: new Date(),
+    // The password sits in the platform's deploy log for as long as the log
+    // is kept, so it opens the door once: the first sign-in replaces it.
+    mustChangePassword: !provided,
   };
 
   const owner = placeholder
@@ -83,7 +86,9 @@ export async function ensureOwner() {
     provided
       ? "  (password taken from your APP_PASSWORD variable)"
       : "  This password was generated for you and is shown ONCE.",
-    "  Copy it now, then change both from Settings once you're in.",
+    provided
+      ? "  Change both from Settings once you're in."
+      : "  It works once: signing in asks for your own email and password.",
     "",
     "  Lost it? Set RESET_OWNER_PASSWORD=1 and redeploy to get a new one.",
   ]);
@@ -107,7 +112,8 @@ async function maybeResetOwnerPassword() {
   const password = generatePassphrase();
   await db.user.update({
     where: { id: owner.id },
-    data: { passwordHash: hashPassword(password), isActive: true },
+    // Printed to the log like the first one, so it is replaced on first use too.
+    data: { passwordHash: hashPassword(password), isActive: true, mustChangePassword: true },
   });
   await db.session.deleteMany({ where: { userId: owner.id } });
 

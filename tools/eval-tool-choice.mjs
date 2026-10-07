@@ -47,6 +47,7 @@ import {
   tools as allTools,
   SCOPE_KEYS,
   toolsForScope,
+  workflowAsTool,
   workflowsForScope,
 } from "./tool-source.mjs";
 import { CASES, NO_TOOL_CASES } from "./eval-cases.mjs";
@@ -107,13 +108,17 @@ function toolsForApi() {
  * The cases name several of them (`tailor_resume`, `pipeline_review`), and
  * scoring a case as wrong because the eval did not offer the tool it asked for
  * would be measuring this script rather than the descriptions.
+ *
+ * Offered with its REAL description and arguments, as promptAsTool publishes
+ * it. A one-line stand-in was used until October 2026, which measured routing
+ * to a tool no client is ever served: every case that picked between a
+ * workflow and a tool was scored against the wrong text.
  */
 function workflowTools() {
-  return workflowsForScope(SCOPE, { admin: AS_ADMIN }).map((name) => ({
-    name,
-    description: `Workflow: ${name.replace(/_/g, " ")}. Returns a step-by-step plan that you then follow.`,
-    input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
-  }));
+  return workflowsForScope(SCOPE, { admin: AS_ADMIN }).map((name) => {
+    const tool = workflowAsTool(name);
+    return { name: tool.name, description: tool.description, input_schema: tool.schema };
+  });
 }
 
 const API_TOOLS = [...toolsForApi(), ...workflowTools()];

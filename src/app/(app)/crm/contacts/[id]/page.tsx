@@ -5,7 +5,7 @@ import { PageShell } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { FadeIn } from "@/components/motion";
 import { ContactDetail } from "@/components/crm/contact-detail";
-import { getContact, listCompanies } from "@/lib/data/pipeline";
+import { getContact, listCompanyNames } from "@/lib/data/pipeline";
 import { requireUser } from "@/lib/auth";
 import { formatIn } from "@/lib/time";
 import { timeZoneOf } from "@/lib/data/me";
@@ -20,7 +20,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const [contact, companies, { companyLogos }, googleConnection] = await Promise.all([
     getContact(user.id, id),
-    listCompanies(user.id),
+    listCompanyNames(user.id),
     getSettings(),
     accountAccess(user.id),
   ]);

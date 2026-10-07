@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { sweepCompanyWatches, sweepPostings } from "@/lib/data/watch";
 import { sweepMailForEveryone } from "@/lib/data/mail-sweep";
 import { getSettings } from "@/lib/settings";
+import { recordJobRun } from "@/lib/data/scheduled";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -62,6 +63,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
       if (kind === "boards") report.boards = await sweepCompanyWatches();
       if (kind === "postings") report.postings = await sweepPostings();
       if (kind === "mail") report.mail = await sweepMailForEveryone();
+      await recordJobRun(kind);
     } catch (error) {
       // One sweep failing is not a reason to skip the other two.
       report[kind] = { error: error instanceof Error ? error.message : "That sweep failed." };

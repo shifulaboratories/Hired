@@ -1,9 +1,9 @@
 ---
 name: ship-a-feature
-description: The end-to-end loop for adding any capability to Resume OS — schema, migration, data layer, MCP tool, server action, UI, README. Use whenever adding or substantially changing a feature, a data model, or anything a user can do. Triggers on "add", "build", "implement", "support", "let me be able to", "new tool", "new field", "new screen".
+description: The end-to-end loop for adding any capability to Hired — schema, migration, data layer, MCP tool, server action, UI, docs. Use whenever adding or substantially changing a feature, a data model, or anything a user can do. Triggers on "add", "build", "implement", "support", "let me be able to", "new tool", "new field", "new screen".
 ---
 
-# Shipping a feature in Resume OS
+# Shipping a feature in Hired
 
 Follow this in order. The order is the point: it forces the conversational interface to
 exist before the visual one, which is the product thesis.
@@ -79,11 +79,12 @@ Screens live in `src/app/(app)/`, components in `src/components/<area>/`. `src/c
 is shadcn — extend it, don't rewrite it. Everything autosaves (`src/hooks/use-autosave.ts`);
 there is no save button anywhere in this app and adding one would be a regression.
 
-## 6. README and docs
+## 6. Docs
 
-Update `README.md` in the existing voice — plain, second person, no marketing, no emoji.
-If you added tools, the count in the README ("44 tools, 55 if you're an admin") and in the
-Settings connection test is now wrong; fix both.
+Document the feature in the manual under `docs/`, in the existing voice — plain, second
+person, no marketing, no emoji. If you added tools, run `node tools/gen-tool-docs.mjs` for
+the generated tool pages, and bump the counts in the README's "Connect your AI" paragraph.
+The README is a front door; it does not grow a section per feature.
 
 ## 7. Verify
 

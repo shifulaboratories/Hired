@@ -31,18 +31,18 @@ learn it.
 
 _List companies_
 
-Every company on file, with how many applications and contacts each one has, plus lastAppliedAt (when you last applied there) and openApplications (how many are still live). Reach for this to answer 'who have I applied to', to find a companyId before get_company, or to cut the list down to something specific before working through it. Every row carries its tags: industry, size, location and free tags, all as labels rather than the single strings they used to be. Everything below ANDs, so one call asks for 'fintech, remote, never applied'. search matches the name, the website, your notes and any tag name. filter is one cut and only one. industryIds, sizeIds and locationIds each take tag ids of that kind from list_tags and match a company wearing ANY id in the group — so a group ORs inside itself and ANDs with the others. tagIds is the loose one: it matches a tag of any kind, which is what to use when you have an id and do not care which list it came from. missing finds the gaps worth fixing in one sitting, and those AND with each other. sort is name, applied, apps or people; every sort but name defaults to most-first, and companies you have never applied to sort last whichever way 'applied' points, because that is a question about the others. Ids only — call list_tags first to turn 'fintech' into an id; a name here would narrow nothing and hand you every company as if that were the answer. Archived companies are never returned; list_archive is where those are. Read-only: it saves nothing and creates no tags. Capped at 100 rows unless you raise `limit`, and a cut-off result says how many there were before the data, so narrow the filters rather than reporting a short list as everything.
+Every company on file, with counts of applications and contacts, lastAppliedAt, openApplications and its tags (industry, size, location and free tags). Reach for this to answer 'who have I applied to', to find a companyId before get_company, or to cut the list to something specific — 'fintech, remote, never applied' is one call. Filters AND together; each parameter says what it matches. Tag filters take IDS ONLY: call list_tags first to turn 'fintech' into an id — a name here narrows nothing and hands back every company as if that were the answer. Archived companies are never returned; list_archive has them. Read-only: saves nothing, creates no tags. Capped at 100 rows unless you raise `limit`, and a cut-off result says how many there were before the data, so narrow the filters rather than reporting a short list as everything.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `search` | string | Match name, website, notes or any tag — industry and location included |
-| `tagIds` | string[] | Only companies wearing one of these tags, of any kind. Ids from list_tags. |
-| `industryIds` | string[] | Tag ids of kind INDUSTRY. Matches a company wearing any of them. |
-| `sizeIds` | string[] | Tag ids of kind SIZE. |
-| `locationIds` | string[] | Tag ids of kind LOCATION. |
+| `tagIds` | string[] | Only companies wearing one of these tags, of any kind — for an id whose list you do not care about. Ids from list_tags. |
+| `industryIds` | string[] | Tag ids of kind INDUSTRY. Matches a company wearing any of them; ANDs with the other groups. |
+| `sizeIds` | string[] | Tag ids of kind SIZE. Matches any of them; ANDs with the other groups. |
+| `locationIds` | string[] | Tag ids of kind LOCATION. Matches any of them; ANDs with the other groups. |
 | `missing` | string[] | Fields that are blank: website \| industry \| location. These AND with each other. |
-| `filter` | enum | Cut the list: active \| applied \| never-applied \| with-contacts  `active` · `applied` · `never-applied` · `with-contacts` |
-| `sort` | enum | name \| applied \| apps \| people. Default name.  `name` · `applied` · `apps` · `people` |
+| `filter` | enum | One cut, and only one: active \| applied \| never-applied \| with-contacts  `active` · `applied` · `never-applied` · `with-contacts` |
+| `sort` | enum | name \| applied \| apps \| people. Default name. Every sort but name defaults to most-first, and companies never applied to sort last whichever way 'applied' points.  `name` · `applied` · `apps` · `people` |
 | `dir` | enum | asc \| desc  `asc` · `desc` |
 | `limit` | number | Max rows to return. Default 100, hard ceiling 500. Prefer narrowing the filters. |
 
@@ -114,7 +114,7 @@ What merging one company into another WOULD do, without doing any of it. Call th
 
 _Merge one company into another_
 
-Fix the same employer being on file twice — 'Stripe', 'Stripe, Inc.' and 'stripe' each holding a slice of the pipeline. Every application and contact on merge_id moves to keep_id, blank fields on keep_id are filled from the duplicate, the duplicate's notes are APPENDED to the survivor's under a line saying where they came from, and then the duplicate row is deleted. DESTRUCTIVE and IRREVERSIBLE: the company at merge_id ceases to exist, its page stops resolving, and nothing records afterwards which applications came from which side. Call preview_company_merge first and let the person confirm. The direction matters and is not guessable — keep_id is the name that lives on. Nothing is de-duplicated: two identical role titles on the survivor is the correct result, not a bug. Note that a later create_application naming the old spelling will simply create it again as an empty company.
+Fix the same employer being on file twice — 'Stripe', 'Stripe, Inc.' and 'stripe'. Every application and contact on merge_id moves to keep_id, blank fields on keep_id are filled from the duplicate, its notes are APPENDED under a line saying where they came from, and the duplicate is deleted. DESTRUCTIVE and IRREVERSIBLE: the merge_id company ceases to exist and nothing records which applications came from which side. Call preview_company_merge first and get the person's yes. The direction is not guessable — keep_id is the name that lives on. Nothing is de-duplicated: two identical role titles on the survivor is correct. A later create_application naming the old spelling will create it again as an empty company.
 
 **Overwrites or deletes.**
 
@@ -127,19 +127,19 @@ Fix the same employer being on file twice — 'Stripe', 'Stripe, Inc.' and 'stri
 
 _List contacts_
 
-Recruiters, hiring managers, referrals and the friend who might put in a word. Reach for this to find a contactId before get_contact or update_contact, to see who you already know somewhere before an interview, or to build the list you are about to work through. Returns each person with `companies` — a list, because someone can be a founder at one place and an advisor at another — their `tags`, their next ping date, the application they are attached to, and their most recent logged activity. Everything below ANDs. search matches name, title, relationship, email, notes, employer names and tag names. filter is one cut and only one. companyIds matches anyone linked to ANY of those companies — linked, not employed by, so an advisor at one of them counts; companyId is the single-company shorthand for the same thing. tagIds takes CONTACT tag ids from list_tags. quietDays is the networking question: everyone you have logged nothing against for at least that many days, counting from the day you added somebody you have never logged anything against at all, so people you filed and forgot come back rather than hiding behind a blank. missing finds the gaps: 'email' means nobody you can write to, 'tags' means filed under nothing so no tag filter will ever find them. sort is name, company (people with nobody on file last), ping (soonest first, no date last) or touch (longest since you logged anything, first). log_activity with a contactId is what moves the last-touch date; update_contact's nextFollowUpAt is what schedules the next ping. Archived people are never returned; list_archive is where those are. Read-only; it saves nothing. Capped at 100 rows unless you raise `limit`, and a cut-off result says how many there were before the data, so narrow the filters rather than reporting a short list as everything.
+Recruiters, hiring managers, referrals and the friend who might put in a word. Reach for this to find a contactId before get_contact or update_contact, to see who you know somewhere before an interview, or to build a list to work through. Returns each person with `companies` (a list — someone can be a founder at one place and an advisor at another), `tags`, next ping date, attached application and latest logged activity. Filters AND together; each parameter says what it matches. log_activity with a contactId moves their last-touch date; update_contact's nextFollowUpAt schedules the next ping. Archived people are never returned; list_archive has them. Read-only; it saves nothing. Capped at 100 rows unless you raise `limit`, and a cut-off result says how many there were before the data, so narrow the filters rather than reporting a short list as everything.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `applicationId` | string | Limit to one application |
-| `companyId` | string | Limit to people linked to one company |
-| `companyIds` | string[] | Limit to people linked to any of these companies |
-| `search` | string | Match name, title, relationship, email, notes, company or tag |
+| `companyId` | string | Limit to people linked to one company — linked, not employed by, so an advisor there counts |
+| `companyIds` | string[] | Limit to people linked to ANY of these companies — linked, not employed by |
+| `search` | string | Match name, title, relationship, email, notes, employer names or tag names |
 | `tagIds` | string[] | Only people wearing one of these tags. Ids from list_tags, kind CONTACT. |
-| `quietDays` | number | Only people with nothing logged for at least this many days |
-| `missing` | string[] | Fields that are blank: email \| tags. These AND with each other. |
-| `filter` | enum | Cut the list: ping-due \| with-application \| no-company  `ping-due` · `with-application` · `no-company` |
-| `sort` | enum | name \| company \| ping \| touch. Default name.  `name` · `company` · `ping` · `touch` |
+| `quietDays` | number | Only people with nothing logged for at least this many days, counting from the day they were added when nothing was ever logged — so people filed and forgotten come back |
+| `missing` | string[] | Fields that are blank: 'email' (nobody you can write to) \| 'tags' (filed under nothing, so no tag filter finds them). These AND with each other. |
+| `filter` | enum | One cut, and only one: ping-due \| with-application \| no-company  `ping-due` · `with-application` · `no-company` |
+| `sort` | enum | name \| company (nobody on file last) \| ping (soonest first, no date last) \| touch (longest since anything was logged, first). Default name.  `name` · `company` · `ping` · `touch` |
 | `dir` | enum | asc \| desc  `asc` · `desc` |
 | `limit` | number | Max rows to return. Default 100, hard ceiling 500. Prefer narrowing the filters. |
 
@@ -215,7 +215,7 @@ Save a person: recruiter, hiring manager, referral, friend at the company. Recor
 
 _Tag companies or people in bulk_
 
-Add or remove tags across a set of companies or a set of people in one act — 'these nine are all fintech', 'these six are all referrals', 'take Dream list off these four'. Pass `kind`: company or contact. ADD and REMOVE, never replace: a bulk write that replaced the set would mean tagging nine companies as fintech quietly stripping the size, location and everything else off every one of them. Ids only, from list_tags. A company takes tags of kind INDUSTRY, SIZE, LOCATION or COMPANY; a person takes CONTACT. A tag of any other kind is refused rather than attached, because nothing in the app renders it there and no picker could take it back off. Ids that are not this person's, or are in the archive, are skipped rather than failing the call. Returns which records changed and which were skipped. Use update_company or update_contact when you are setting one record's lists deliberately; this is for a selection.
+Add or remove tags across a set of companies or a set of people in one act — 'these nine are all fintech', 'take Dream list off these four'. Pass `kind`: company or contact. ADD and REMOVE only, never replace, so nothing else on those records is stripped. Tag ids only, from list_tags. A company takes INDUSTRY, SIZE, LOCATION or COMPANY tags; a person takes CONTACT; any other kind is refused. Ids not theirs, or archived, are skipped. Returns which records changed and which were skipped. To set one record's lists deliberately, use update_company or update_contact; this is for a selection.
 
 | Argument | Type | |
 | --- | --- | --- |
