@@ -1,7 +1,6 @@
 import type { Role } from "@prisma/client";
 import { db } from "@/lib/db";
-import { appendToRoleBackground, timeZoneOf } from "@/lib/data/me";
-import { APP_AUTHOR, type WriteAuthor } from "@/lib/data/revision-store";
+import { timeZoneOf } from "@/lib/data/me";
 import { civilDay, formatIn, SERVER_ZONE, toDate } from "@/lib/time";
 import type { DigestContent } from "@/lib/data/digest";
 
@@ -14,7 +13,10 @@ import type { DigestContent } from "@/lib/data/digest";
  * the smallest thing that fixes it: one call that puts a sentence where
  * search_me will find it, and the read the monthly mail is built from.
  *
- * A win is an APPEND to the current role's background, under a dated heading.
+ * A win is an APPEND to the current role's background, under a month heading —
+ * append_role_background, which also resets the wins mail's quiet counter when
+ * the role is current. There used to be a log_win tool beside it doing the
+ * same append; one tool for "file this against a job" routes better than two.
  *
  * Not a highlight. A highlight is a polished bullet with an impact figure, and
  * inventing that figure out of one sentence is exactly what invariant six
@@ -80,41 +82,6 @@ export async function resolveWinTarget(
       : "Nothing in Me is marked as the current role, and there is no accepted application to guess from.",
     suggested: accepted ? { company: accepted.company.name, roleTitle: accepted.roleTitle } : null,
   };
-}
-
-/** Append one win. Additive, never overwriting, and it resets the quiet counter. */
-export async function logWin(
-  userId: string,
-  input: { text: string; roleId?: string; occurredOn?: Date | string | null },
-  author: WriteAuthor = APP_AUTHOR,
-): Promise<{ role: Role; heading: string; target: WinTarget }> {
-  const text = input.text.trim();
-  if (!text) throw new Error("A win needs some words.");
-
-  const resolved = await resolveWinTarget(userId, input.roleId);
-  if (!resolved.ok) throw new Error(resolved.reason);
-
-  const zone = await timeZoneOf(userId);
-  const when = toDate(zone, input.occurredOn) ?? new Date();
-  // The civil month, so repeated wins in one month collect under one heading
-  // rather than twelve.
-  const heading = formatIn(when, zone, { month: "long", year: "numeric" });
-
-  // The heading goes on only when it is not already the last one, decided
-  // under appendToRoleBackground's row lock: checked here, two wins logged at
-  // once could both see no heading and write two.
-  const role = await appendToRoleBackground(
-    userId,
-    resolved.target.roleId,
-    text,
-    heading,
-    author,
-    { headingIfNew: true },
-  );
-  // They answered, so the mail has not been ignored. Start the count again.
-  await db.profile.updateMany({ where: { userId }, data: { winsQuiet: 0 } });
-
-  return { role, heading, target: resolved.target };
 }
 
 /**

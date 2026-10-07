@@ -1,5 +1,5 @@
 ---
-title: "The ten workflows"
+title: "The eight workflows"
 sidebarTitle: "Workflows"
 description: "Multi-step jobs that come with every connection. Every one arrives as an ordinary tool, and as a slash command too in the clients that render MCP prompts."
 icon: "list-ol"
@@ -15,7 +15,7 @@ The text lives in one place, so the two surfaces cannot drift. That matters beca
 support is optional in MCP and tool support is not — a workflow that only existed as a
 prompt would simply be unreachable in half the clients people use.
 
-Eight are available to everyone. One is admin-only.
+Seven are available to everyone. One is admin-only.
 
 <Note>
   You do not have to name them. "Tailor my resume to this posting" reaches the same place
@@ -26,33 +26,13 @@ Eight are available to everyone. One is admin-only.
 
 ## Tailor a resume to a job
 
-`tailor_resume` · takes `job_description` (required), `company`
+`tailor_resume` · takes `application_id`, or `job_description` and `company`
 
-Reads a posting, mines Me for real evidence, drafts and saves a tailored resume,
-and finishes with a gap report.
+Checks a job against the evidence in Me and then, if it is worth it, writes a tailored
+resume attached to that job. The first half reads and writes nothing, and it is the whole
+answer when you only asked whether to apply.
 
-The plan it follows: get the document format, pull out the 8–12 requirements the posting
-actually cares about in priority order, search Me for evidence of each one, get the
-profile and dates, draft, preview the text to check it lands near one page, save it as
-`"<Company> — <Role>"` with the target fields set, then say what was emphasised, what was
-cut, and which requirements could not be evidenced.
-
-Bullets are required to lead with a strong verb, name the specific scope, and end in a
-measurable outcome pulled from the background. The closing instruction is explicit:
-*never paper over the third list — it is what the person needs to see.*
-
-[The craft behind it →](/guides/tailor-a-resume)
-
----
-
-## Gap report
-
-`gap_report` · takes `job_description`
-
-The reading that decides what happens next. Checks a posting against the evidence that
-actually exists **before** anything is written or saved.
-
-Every requirement lands in exactly one of three lists:
+The reading sorts every requirement the posting rewards into exactly one of three lists:
 
 | List | Meaning |
 | --- | --- |
@@ -60,18 +40,17 @@ Every requirement lands in exactly one of three lists:
 | **THIN** | Something adjacent exists, but claiming the requirement outright would be a stretch. What exists and what the gap is, precisely. |
 | **MISSING** | There is nothing on file. Said plainly. |
 
-Then it says what the report means — roughly how much of the posting's core is covered,
-and whether tailoring is worth it or the fit is not there.
+For every thin and missing item it asks one concrete question that would surface the
+evidence if it exists. People forget their own work constantly; anything you answer is
+appended to Me, and it is backed for every future application rather than just this one.
 
-The last step is the one that compounds: for every missing and thin item it asks one
-concrete question that would surface the evidence if it exists. People forget their own
-work constantly. Anything you answer gets appended to Me, and it is backed for
-every future application rather than just this one.
+The writing half copies your base resume onto the job, rewrites or drops every line it
+carried over that nothing in Me stands behind, measures the real page count with
+`export_resume_pdf`, and runs `trace_resume_evidence` last. It finishes by saying what it
+emphasised, what it cut, and which requirements nothing backs. The rule stated in the plan
+itself: *never move an item to BACKED to be encouraging.*
 
-The rule stated in the plan itself: *never move an item to BACKED to be encouraging. A gap
-named now costs a rewrite; a gap discovered in an interview costs the interview.*
-
-Pass an application id instead of a posting and it reads the stored description.
+[The craft behind it →](/guides/tailor-a-resume)
 
 ---
 
@@ -137,28 +116,6 @@ mark anything unsure as unconfirmed rather than stating it flatly.
 
 ---
 
-## Prepare for an interview
-
-`prep_for_interview` · takes `company` (required), `round`
-
-Pulls the application, the company research, the people involved and your own evidence into
-one prep sheet.
-
-It gathers before it writes: the application with its full posting **and its whole
-timeline** — what has already been said matters more than the posting does — the company
-record, the contacts there, and the evidence in Me for the two or three themes the posting
-leans on hardest.
-
-Then: the three things they most obviously care about; your strongest true story for each
-with the specific numbers from your background; the questions you are most likely to be asked
-and the weak spots in your own history for this role; five questions worth asking them
-drawn from the research; and anything in the timeline to follow up on.
-
-If a number is not on file it gives the story without one and tells you to check. If the
-research on file is thin, it says so and offers to run `research_company` first.
-
----
-
 ## Log what happened this week
 
 `log_my_week` · takes `update` (required)
@@ -167,13 +124,14 @@ You ramble; it files everything where it belongs.
 
 | What you mention | Where it goes |
 | --- | --- |
-| Anything about a current or past job | Appended to that role's background, numbers kept |
-| A clean accomplishment | Also a highlight, so it is resume-ready |
+| Anything about a current or past job | Appended to that role's background, numbers kept, in your words |
 | Anything about a company you are talking to | A timeline entry, and a stage move if it moved |
 | Anything you said you would do | A task, with a due date |
 | Anything that fits none of those | A note |
 
-Then it confirms what it filed and where, and asks about anything ambiguous.
+Then it confirms what it filed and where, and asks about anything ambiguous. Turning raw
+material into resume bullets is left to `mine_role_background`, which it offers rather than
+does, because that step reads the role's own rules first.
 
 This is the one that keeps the whole system current. Ten minutes on a Friday.
 

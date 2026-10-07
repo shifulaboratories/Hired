@@ -247,7 +247,7 @@ export const VARIABLES: VariableDef[] = [
     key: SETTING_KEYS.revisionRetentionDays,
     field: "revisionRetentionDays",
     label: "Version history",
-    help: "How many days a previous version of a resume or a role, and a line in the change log, is kept before it is swept. Versions are what undo_change and restore_revision put back, so shortening this shortens how far back somebody can go. 0 keeps everything, which grows without limit.",
+    help: "How many days a previous version of a resume or a role, and a line in the change log, is kept before it is swept. Versions are what restore_revision puts back, so shortening this shortens how far back somebody can go. 0 keeps everything, which grows without limit.",
     kind: "text",
     group: "Instance",
     placeholder: "90",

@@ -43,8 +43,8 @@ Three outcomes, and all three are fine:
 
 Report the gaps explicitly when you are done. That list is often the most useful part
 of the whole exercise — it tells them what to go and learn, or which jobs to skip.
-The gap_report tool runs this check on its own, before any tailoring — reach for it when
-the question is "should I even apply" rather than "make me the resume". And every gap a
+The tailor_resume workflow runs this check first and stops there when the question is
+"should I even apply" rather than "make me the resume". And every gap a
 person answers out loud belongs in Me (append_role_background), so it is covered
 for every future posting, not just this one.
 
@@ -78,10 +78,10 @@ Rules that hold up:
 3. `search_me` per requirement. Collect the evidence with its ids.
 4. `get_me_snapshot` for profile, dates, education, skills.
 5. Draft. Order the experience so the most relevant role leads.
-6. `preview_resume_text` — check it lands near one page before saving anything.
-7. `create_resume`, named `"<Company> — <Role>"`, with `targetRole` and
+6. `create_resume`, named `"<Company> — <Role>"`, with `targetRole` and
    `targetCompany` set. If you are adapting an existing one, `duplicate_resume` first
    and edit the copy — never the version already attached to an application.
+7. `export_resume_pdf` for the real page count; `check_resume_fit` if it runs long.
 8. Tell them what you led with, what you cut, and what you could not evidence.
 
 ## If there is a company record

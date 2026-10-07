@@ -7149,3 +7149,41 @@ the role page shows archived ones apart with a Restore button — getRole stays 
 get_role is the only conversational path to an archived highlight. The Letters badge and the
 analytics tile count through the data layer, and no screen imports the database client any
 more. People and Board are the labels everywhere.
+
+## 2026-10-07 — Fewer tools that each do more: twenty-two folded or dropped
+
+Member tools/list went from 214 to 194 and an admin's from 249 to 227, with nothing removed that a person could do before. The
+rule applied: every tool in the list costs routing quality on every call, so a tool earns its
+own row only when no existing one could take an argument instead.
+
+**Folded into a sibling by argument.** move_applications_stage is `ids` on
+move_application_stage, and the note now lands on every timeline entry of a batch, not just one.
+tag_companies and tag_contacts are tag_records with `kind`. undo_change is `change_id` on
+restore_revision. get_profile is get_me_snapshot `only: "profile"`. get_setup_status is part of
+whoami, which also says which connection and scope answered. rename_connection and
+set_connection_scope are update_connection. preview_resume_import is import_resume `dry_run`.
+The four transferable-skill tools are a `transferables` kind on the extras tools.
+
+**Dropped, with the guidance moved to where it is used.** delete_company, delete_contact and
+delete_application were three names for archive_records; its description now carries what they
+said. list_activities duplicated get_application's timeline and list_schedule's window. log_win
+was append_role_background plus resetting the quiet counter, so the append now resets it when
+the role is current, and its description carries the "offer to file it, month heading, do not
+polish" advice. get/set_column_widths and get/set_pipeline_fields are display preferences —
+CLAUDE.md's rule zero now names them as a third UI-native exception — and an assistant moving a
+column divider by conversation was never a real request. admin_set_company_logos was one
+variable admin_set_variable already writes; admin_get_email_config is admin_list_variables.
+
+The `sources`/`source` arguments on create_application and update_application are gone from
+the schema and the descriptions say tags; the handler still accepts them silently, because an
+assistant that learned the old spelling should not start failing.
+
+Annotations corrected: update_task, schedule_contact_pings, record_interview_outcome, update_tag,
+snooze_follow_up and set_resume_base replace a value and are destructive; create_application
+only fills a company's empty fields and is not.
+
+**Not done here, on purpose.** The cuts that delete files or drop tables — linked mail and
+calendar accounts with outbound mail, the sample workspace, stage checklists with cadence and
+recurrence, board watches collapsed to a stateless check, and the two duplicate product skills —
+wait for an explicit go-ahead, because dropping a table on boot destroys whatever a self-hoster
+put in it and cannot be taken back by a later release.

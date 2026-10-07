@@ -128,12 +128,10 @@ alone, so neither can drop a section the way a partial `update_resume` would.
 
 ### Checking length before you commit
 
-`preview_resume_text` renders a document to plain text and estimates the lines it will
-occupy **without saving anything**. It is the cheap way to answer "does this fit on one
-page?" while there is still something to cut.
-
-For the real answer, `export_resume_pdf` reports the page count measured from the
-rendered document rather than estimated.
+`export_resume_pdf` reports the page count measured from the rendered document rather
+than estimated. When it runs long, `check_resume_fit` ranks the bullets longest first and
+the sections by how much room they take, so the two obvious cuts are in front of you. It
+ranks; it does not measure.
 
 ## Publishing and exporting
 
@@ -168,5 +166,5 @@ policy, but because a bullet with nothing behind it fails at the follow-up quest
 which is a worse place to fail than the draft.
 
 Every connected assistant is instructed accordingly, and the
-[`gap_report`](/workflows#gap-report) workflow exists to run that check *before* anything
-is written.
+[`tailor_resume`](/workflows#tailor-a-resume-to-a-job) workflow runs that check *before*
+anything is written.

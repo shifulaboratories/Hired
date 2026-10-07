@@ -259,7 +259,7 @@ just *talk* to it.
   before it does it. Names fold case, so `linkedin` lands on the `LinkedIn` you already
   have rather than minting a twin.
 - **AI connections** — every person gets their own URL that turns all of the above into
-  214 tools any MCP client can call (249 if you're an admin). Claude, Claude Code, ChatGPT,
+  194 tools any MCP client can call (227 if you're an admin). Claude, Claude Code, ChatGPT,
   Cursor, VS Code and Windsurf all have one-paste setup built into the app.
 - **It explains itself** — a short tour opens the first time you sign in: what the board is,
   what Today is for, what Me holds, one picture and one sentence each. Skip it in a click if
@@ -442,7 +442,7 @@ config already filled in with your URL, ready to copy.
 | **Anything else** | A standard `streamable-http` entry — or `mcp-remote` if it only speaks stdio |
 
 Open a connection and hit **Test**: the app calls its own endpoint the way a client would,
-then tells you how many tools answered — 214, or 249 if you're an admin.
+then tells you how many tools answered — 194, or 227 if you're an admin.
 
 Each connection can also be narrowed to one job, in the panel where you copy its URL:
 **Everything** (the default, and what every connection had before this existed), **Me,
@@ -710,22 +710,20 @@ By conversation: `admin_get_assistant_config`, `admin_set_assistant_config`.
 
 ## What your AI can do once it's connected
 
-214 tools. Two hundred and six of them are the data tools across the five areas, the
+194 tools. A hundred and eighty-seven of them are the data tools across the five areas, the
 archive that cuts through all of them, your mail and calendar accounts, and your own
-account; the other eight are the workflows below, published as tools as well as prompts,
+account; the other seven are the workflows below, published as tools as well as prompts,
 because prompt support is optional in MCP clients and tool support isn't. Call one and it
-hands back a step-by-step plan that it then follows. Admins get 35 more — 34 data tools and
-a ninth workflow — and members never even see those in the tool list, so nobody is tempted
+hands back a step-by-step plan that it then follows. Admins get 33 more — 32 data tools and
+an eighth workflow — and members never even see those in the tool list, so nobody is tempted
 by a permission they don't have.
 
 | Workflow | What it does |
 | --- | --- |
-| **Tailor a resume to a job** | Reads a posting, mines Me for real evidence, drafts and saves a tailored resume, and tells you what it couldn't back up. |
-| **Gap report** | Checks a posting against Me before you write anything: which requirements you can evidence, which are thin, which are missing — and the questions that would fill the gaps. |
+| **Tailor a resume to a job** | Checks a posting against Me first — which requirements you can evidence, which are thin, which are missing — and stops there if you only asked whether to apply. Otherwise drafts a tailored resume on the job and tells you what it couldn't back up. |
 | **Mine a background into highlights** | Turns a raw, rambling background into polished, reusable resume bullets. |
 | **Weekly pipeline review** | What's stalled, who needs chasing, what to do next — with the follow-up messages drafted. |
 | **Research a company into the CRM** | Gathers what's known, works out what's missing, and writes it back to their record without flattening what was already there. |
-| **Prepare for an interview** | Pulls the posting, the timeline, the company research, the people involved and your own evidence into one prep sheet. |
 | **Write a letter** | Gathers the posting, your evidence and the documents of the same kind you have already written, then drafts one in your own voice: a cover letter, a cold message, a referral ask, a thank-you, a reply, a LinkedIn About, a headline, a self-review or a brag doc. |
 | **Log what happened this week** | You ramble; it files everything to the right role, application, or note. |
 | **Bring the pipeline up to date from your inbox** | Reads a week of your mail and calendar, tells you what moved, and queues what to log on your dashboard — nothing is written until you accept it. |
@@ -837,9 +835,7 @@ resume, a role in Me, a note, or nothing at all —
 what's overdue, `list_schedule` for a whole window of dated work at once, `pipeline_stats` for
 the shape of your search, and `diagnose_search`, which reads the funnel and tells you which
 step is losing people rather than handing you six numbers to interpret. `export_csv` returns
-any of the three lists as a spreadsheet, `get_pipeline_fields` / `set_pipeline_fields` choose
-how much each view shows before you open anything, `get_column_widths` /
-`set_column_widths` are the same idea for how wide each table column is, and
+any of the three lists as a spreadsheet, and
 `list_field_values` says which locations and work modes you already use, so a new application
 does not become the third spelling of Remote.
 
@@ -850,12 +846,12 @@ its four siblings are the checklist a stage move fires. `propose_changes` queues
 for you to accept on the dashboard rather than asking about each one in the chat, and
 `list_proposals` / `accept_proposal` / `dismiss_proposal` are the rest of that.
 
-**CRM** — `list_companies` / `get_company` / `create_company` / `update_company` /
-`delete_company` for the companies you're talking to, and `get_contact` / `update_contact` /
-`delete_contact` for the people at them, each carrying every way to reach them rather than
-just a LinkedIn URL. A company's `website` is what puts their logo on your
-pipeline. Deleting one archives it and takes its applications with it, and the people at it
-stay where they are.
+**CRM** — `list_companies` / `get_company` / `create_company` / `update_company` for the
+companies you're talking to, and `get_contact` / `update_contact` for the people at them,
+each carrying every way to reach them rather than just a LinkedIn URL. A company's `website`
+is what puts their logo on your pipeline. `tag_records` adds and removes labels across a
+whole selection of either. Deleting is `archive_records`: a company goes with its
+applications, and the people at it stay where they are.
 
 **Archive** — `list_archive` says what has been deleted and when each thing is due to go,
 `restore_records` brings it back, and `delete_archived` and `empty_archive` are the only two
@@ -870,7 +866,7 @@ location called `Remote` never collides with a way of working called `Remote`. E
 takes names or ids: names fold case and are created only when nothing matches.
 
 **Your account** — `whoami` says who this connection belongs to. `list_connections`,
-`create_connection`, `rename_connection`, `rotate_connection` and `delete_connection` manage
+`create_connection`, `update_connection`, `rotate_connection` and `delete_connection` manage
 the wiring itself, so "add this to my work laptop" and "kill the one I pasted in a chat by
 mistake" are things you can just say. Listing never returns tokens — creating and rotating
 do, because that is the point of them. `set_profile_photo` takes a link or a file and sets
@@ -881,7 +877,7 @@ it back.
 
 **Admin** *(admins only)* — `admin_list_users`, `admin_invite_user`, `admin_set_user_role`,
 `admin_set_user_active`, `admin_delete_user`, `admin_instance_stats`, plus
-`admin_get_email_config` / `admin_set_email_config` / `admin_send_test_email` for wiring up
+`admin_set_email_config` / `admin_send_test_email` for wiring up
 Resend without leaving the conversation, and `admin_list_variables` / `admin_set_variable` /
 `admin_delete_variable` for every other setting the instance stores. These act on accounts
 and instance settings only — none of them can read another person's content.
@@ -897,8 +893,8 @@ reads the document properly, and it's the one to use.
 
 Import the same resume again a year later and it adds what changed rather than shrugging: a
 job already on file keeps everything it has and gains the bullets it doesn't, with a reworded
-line recognised as the one you already had. `preview_resume_import` says what a second import
-would do before it does it.
+line recognised as the one you already had. `import_resume` with `dry_run` says what a
+second import would do before it does it.
 
 If you haven't connected anything yet, **Import** on the Me page takes the text instead. It
 reads headings, so it's a draft rather than an answer, and it's built to be corrected: every

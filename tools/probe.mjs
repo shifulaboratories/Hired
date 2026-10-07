@@ -46,6 +46,14 @@ const revisions = await load("data/revisions.ts");
 const store = await load("data/revision-store.ts");
 const waitlist = await load("data/waitlist.ts");
 const interviews = await load("data/interviews.ts");
+const tagsData = await load("data/tags.ts");
+const { tools } = await load("mcp/tools.ts");
+const tool = (name) => {
+  const found = tools.find((t) => t.name === name);
+  if (!found) throw new Error(`no tool called ${name}`);
+  return (user, args) =>
+    found.handler(args, { userId: user.id, user, connectionId: "probe", connectionName: "Probe", scope: "FULL", baseUrl: "http://probe.invalid" });
+};
 
 let passed = 0;
 const failures = [];
@@ -325,6 +333,54 @@ try {
     await interviews.updateInterview(c.id, booked.interview.id, { outcome: "PASSED", debrief: "They moved me on" });
     const line = await db.activity.findUnique({ where: { id: held.activityId } });
     ok(line.body.includes("They moved me on"), `the timeline still says: ${line.body}`);
+  });
+
+  // --- Tools that absorbed others ------------------------------------------------
+  await check("move_application_stage moves a list, with the note on every timeline", async () => {
+    const one = await pipeline.createApplicationIfNew(c.id, { company: "Batchco", roleTitle: "PM", stage: "APPLIED" });
+    const two = await pipeline.createApplicationIfNew(c.id, { company: "Batchco", roleTitle: "Lead", stage: "APPLIED" });
+    const ids = [one.application.id, two.application.id];
+    const result = await tool("move_application_stage")(c, { ids, stage: "LOST", note: "No reply since January" });
+    ok(result.moved.length === 2, `moved ${result.moved.length}`);
+    const lines = await db.activity.findMany({ where: { applicationId: { in: ids }, toStage: "LOST" } });
+    ok(lines.length === 2 && lines.every((line) => line.body.includes("No reply since January")), "the note is not on both");
+    const single = await tool("move_application_stage")(c, { id: one.application.id, stage: "APPLIED" });
+    ok(single.stage === "APPLIED", "one id no longer moves");
+  });
+
+  await check("tag_records adds a label without taking the others off", async () => {
+    const kept = await tagsData.createTag(c.id, { kind: "INDUSTRY", name: "Payments" });
+    const added = await tagsData.createTag(c.id, { kind: "INDUSTRY", name: "Fintech" });
+    const company = await pipeline.createCompany(c.id, { name: "Tagco" });
+    await pipeline.tagCompanies(c.id, [company.id], { add: [kept.id] });
+    await tool("tag_records")(c, { kind: "company", ids: [company.id], add: [added.id] });
+    const links = await db.company.findUnique({ where: { id: company.id }, include: { tags: true } });
+    ok(links.tags.length === 2, `the company carries ${links.tags.length} tags`);
+    await refuses(tool("tag_records")(c, { kind: "application", ids: [company.id], add: [added.id] }), /kind/);
+  });
+
+  await check("restore_revision undoes one change by its change id", async () => {
+    const held = await me.createRole(c.id, { company: "Undoco", title: "PM", background: "", summary: "before" });
+    await me.updateRole(c.id, held.id, { summary: "after" }, MCP);
+    await store.recordWrite({ userId: c.id, connectionId: "probe", connectionName: "Probe", tool: "update_role", summary: "x", recordId: held.id, versioned: true });
+    const change = (await revisions.listChanges(c.id)).find((row) => row.recordId === held.id);
+    await tool("restore_revision")(c, { change_id: change.id });
+    const back = await db.role.findUnique({ where: { id: held.id } });
+    ok(back.summary === "before", `summary is ${back.summary}`);
+  });
+
+  await check("filing something about a current job counts as a win", async () => {
+    const current = await me.createRole(c.id, { company: "Nowco", title: "PM", background: "", isCurrent: true });
+    await db.profile.upsert({ where: { userId: c.id }, update: { winsQuiet: 3 }, create: { userId: c.id, winsQuiet: 3 } });
+    await me.appendToRoleBackground(c.id, current.id, "Shipped the billing rewrite");
+    const profile = await db.profile.findUnique({ where: { userId: c.id } });
+    ok(profile.winsQuiet === 0, `winsQuiet is ${profile.winsQuiet}`);
+  });
+
+  await check("whoami carries the setup status and the connection", async () => {
+    const who = await tool("whoami")(c, {});
+    ok(who.connection?.name === "Probe" && who.connection.scope === "FULL", "no connection in whoami");
+    ok(who.setup && typeof who.setup === "object" && !("tourSeenAt" in who.setup), "setup is missing or carries the tour");
   });
 
   // --- Instance surface -------------------------------------------------------

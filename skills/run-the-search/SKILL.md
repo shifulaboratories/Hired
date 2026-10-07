@@ -39,7 +39,7 @@ call".
 
 Moving a stage is `move_application_stage`, which writes its own timeline entry and
 resets the follow-up date. Do not do both. When several move at once — "everything I
-applied to in January got no reply" — `move_applications_stage` takes the whole list and
+applied to in January got no reply" — `move_application_stage` takes the whole list as `ids` and
 writes a timeline entry on each.
 
 If they have connected their Google account, `list_correspondence` on an application returns
@@ -87,8 +87,8 @@ up from there. Set it when they say which round they are on. It is what the funn
 are built from, and it is never cleared when an application ends, because how far it got is
 the point.
 
-Deleting is the other thing, and it is reversible. `delete_application`, `delete_company` and
-`delete_contact` archive rather than destroy: the row leaves every list, board, picker and
+Deleting is the other thing, and it is reversible. `archive_records` takes applications,
+companies and people out rather than destroying them: the row leaves every list, board, picker and
 count, and waits out a retention window — thirty days by default — before it goes for good.
 `list_archive` says what is in there, `restore_records` brings it back. Archiving a company
 takes its applications with it and returns exactly those; the people at it stay, because
@@ -110,7 +110,7 @@ recruiter told them is a follow-up that gets answered.
 
 1. `pipeline_stats` — the shape of the search.
 2. `list_follow_ups` with `withinDays: 7`.
-3. `list_applications` and `list_activities` — what has actually moved.
+3. `list_applications` and `list_schedule` over the last week — what has actually moved.
 4. `list_tasks` with `done: false`.
 
 Then say, in this order:
@@ -135,8 +135,8 @@ filed under nothing. "Which companies do I have no website for" is one call, and
 is one `update_company` each.
 
 Acts that cover a selection have their own tools, and they are add-and-remove rather than
-replace: `tag_companies`, `tag_contacts`, `schedule_contact_pings` ("ping all of these in two
-weeks"), `move_applications_stage`, `archive_records`. Reach for those rather than looping a
+replace: `tag_records`, `schedule_contact_pings` ("ping all of these in two
+weeks"), `move_application_stage` with `ids`, `archive_records`. Reach for those rather than looping a
 single-record tool — a loop of `update_company` calls would strip every other tag off each
 company it touched.
 
@@ -145,7 +145,7 @@ people or applications as a spreadsheet, taking the same filters, search and sor
 
 ## What not to do
 
-- Do not log the same thing twice — check `list_activities` for the application first.
+- Do not log the same thing twice — check the application's timeline in `get_application` first.
 - Do not move a stage they did not tell you about. An interview being scheduled is not
   an interview happening.
 - Do not create a company record just to have one. Applications create their company

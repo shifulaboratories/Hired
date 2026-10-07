@@ -41,7 +41,7 @@ const CHECK = process.argv.includes("--check");
  * the manual.
  */
 const SECTIONS = [
-  { file: "me.mdx", first: "search_me", last: "preview_resume_import",
+  { file: "me.mdx", first: "search_me", last: "import_linkedin_archive",
     title: "Me", icon: "user",
     blurb: "roles, backgrounds, highlights, notes, standing rules, the four supporting collections, and importing an existing resume." },
   { file: "resumes.mdx", first: "get_resume_format", last: "check_resume_fit",
@@ -50,7 +50,7 @@ const SECTIONS = [
   { file: "letters.mdx", first: "prep_letter", last: "delete_letter",
     title: "Letters", icon: "envelope-open-text",
     blurb: "everything you write that is not a resume: cover letters, cold outreach, referral asks, thank-yous, replies." },
-  { file: "pipeline.mdx", first: "pipeline_stats", last: "set_column_widths",
+  { file: "pipeline.mdx", first: "pipeline_stats", last: "list_field_values",
     title: "Pipeline", icon: "list-check",
     blurb: "applications, stages, timeline, tasks, follow-ups, views, sharing, diagnosis." },
   { file: "crm.mdx", first: "list_companies", last: "schedule_contact_pings",

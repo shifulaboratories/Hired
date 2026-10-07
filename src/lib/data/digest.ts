@@ -412,7 +412,7 @@ async function stamp(userId: string, kind: DigestKind, day: string) {
         : kind === "wins"
           ? // The quiet counter goes up on the way out, not on the way in: a
             // mail somebody has ignored three times is a mail they have
-            // declined, and logWin resets it the moment they answer one.
+            // declined, and an append to the current role resets it the moment they answer one.
             { lastWinsOn: day, winsQuiet: { increment: 1 } }
           : { lastNudgeOn: day },
   });

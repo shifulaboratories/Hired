@@ -73,15 +73,15 @@ silently deletes work.
 | `update_company` | Replaces each field passed, notes included | `get_company` first, then write the combined notes |
 | `update_contact` | Same | `get_contact` first |
 | `append_role_background` | Adds | Safe by default — prefer it |
-| `tag_companies` / `tag_contacts` | **Adds and removes** | The bulk tools, and the exception — safe across a selection |
+| `tag_records` | **Adds and removes** | The bulk tools, and the exception — safe across a selection |
 
 When someone tells you something new about a job already on file, that is
 `append_role_background`. Not `update_role`.
 
 The bulk tools are the reason that last row matters. "Tag these nine as fintech" written as
 nine `update_company` calls replaces each one's whole industry list with fintech alone,
-losing every other industry they were filed under; `tag_companies` adds
-and removes and leaves everything else alone. The same goes for `move_applications_stage`,
+losing every other industry they were filed under; `tag_records` adds
+and removes and leaves everything else alone. The same goes for `move_application_stage` with `ids`,
 `schedule_contact_pings` and `archive_records` — when the ask covers several records, use
 the bulk tool rather than a loop.
 
@@ -94,8 +94,8 @@ the bulk tool rather than a loop.
 
 ## Things worth knowing
 
-- **Preview before saving.** `preview_resume_text` renders and estimates page count
-  without saving anything. Use it to check length before `create_resume`.
+- **Measure, don't guess.** `export_resume_pdf` reports the real page count. When it runs
+  long, `check_resume_fit` ranks what to cut — propose the cuts rather than making them.
 - **Tailor into a copy.** `duplicate_resume`, then edit the copy. Never edit a resume
   already attached to an application — that is the version they actually sent.
 - **Publishing is real.** `publish_resume` puts the document at a public URL that
@@ -108,8 +108,8 @@ the bulk tool rather than a loop.
 - **Dates.** `list_schedule(from, to)` merges follow-ups, task deadlines and logged
   activity into one window. Reach for it whenever the question is about a stretch of
   time rather than one application. `list_follow_ups` is only what is already overdue.
-- **Deleting is reversible, once.** `delete_company`, `delete_contact` and
-  `delete_application` archive rather than destroy — the row leaves every list, board and
+- **Deleting is reversible, once.** `archive_records` takes companies, people and
+  applications out rather than destroying them — the row leaves every list, board and
   count and waits out a retention window. `delete_archived` and `empty_archive` are the only
   two acts that cannot be undone, and neither can reach anything not already in the archive.
   Never call either without reading `list_archive` back to them and getting a plain yes.

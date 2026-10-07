@@ -63,7 +63,7 @@ async function existingOrThrow<T>(
  * The person's profile, or a blank one if they have never had a row.
  *
  * A READ, and that word is load-bearing. This used to create the row when it
- * found none, which was convenient and wrong: `get_profile`, `search_me` and
+ * found none, which was convenient and wrong: the profile read, `search_me` and
  * `get_me_snapshot` all go through here, and the three of them are the most
  * called reads on the server. A tool that writes cannot claim readOnlyHint, so
  * the three had to declare themselves writers, and a client that asks before
@@ -673,10 +673,14 @@ export async function appendToRoleBackground(
     // Merges into a section that already carries this heading rather than opening
     // a second one beside it — see appendToBackground for why.
     const next = appendToBackground(role.background, text, useHeading);
-    return tx.role.update({
+    const updated = await tx.role.update({
       where: { id: role.id },
       data: { background: next, backgroundUpdatedAt: new Date() },
     });
+    // Something filed against the job they are in now is an answer to the
+    // monthly "one thing that went well" mail, so its quiet count starts again.
+    if (role.isCurrent) await tx.profile.updateMany({ where: { userId }, data: { winsQuiet: 0 } });
+    return updated;
   });
 }
 
@@ -1105,7 +1109,7 @@ export type SearchHit = {
  * questions section — and labelled only "role", a positioning note read
  * exactly like a line of evidence to the writer it was handed to. The
  * profile's own background ("not for the resume") is not searched at all:
- * get_profile and get_me_snapshot hand it over whole, parsed.
+ * get_me_snapshot hands it over whole, parsed.
  */
 export async function searchMe(userId: string, query: string, limit = 25): Promise<SearchHit[]> {
   const text = query.trim();

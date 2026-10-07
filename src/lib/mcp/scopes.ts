@@ -22,10 +22,10 @@ import type { McpScope } from "@prisma/client";
  * way, or the module graph cycles.
  */
 export const SECTIONS = [
-  { key: "me", first: "search_me", last: "preview_resume_import" },
+  { key: "me", first: "search_me", last: "import_linkedin_archive" },
   { key: "resumes", first: "get_resume_format", last: "check_resume_fit" },
   { key: "letters", first: "prep_letter", last: "delete_letter" },
-  { key: "pipeline", first: "pipeline_stats", last: "set_column_widths" },
+  { key: "pipeline", first: "pipeline_stats", last: "list_field_values" },
   { key: "crm", first: "list_companies", last: "schedule_contact_pings" },
   { key: "archive", first: "list_archive", last: "empty_archive" },
   { key: "accounts", first: "list_linked_accounts", last: "search_calendar" },
@@ -40,14 +40,15 @@ export type SectionKey = (typeof SECTIONS)[number]["key"];
  *
  * Small on purpose, and read-only to a tool. The briefing names `search_me` as
  * the way in and would be lying in three scopes out of four without it;
- * `whoami` and `list_connections` are how a narrowed client explains ITSELF,
- * which is the difference between "I can't do that" and "that tool isn't served
- * here, and here is how your person widens it"; `get_setup_status` is what a
- * first conversation opens with. Nothing that writes is ever core — which is
+ * `whoami` is how a narrowed client explains ITSELF — it returns the
+ * connection's scope — which is the difference between "I can't do that" and
+ * "that tool isn't served here, and here is how your person widens it", and its
+ * `setup` is what a first conversation opens with; `list_connections` names
+ * the other connections. Nothing that writes is ever core — which is
  * what makes READONLY's core fall out for free rather than needing an
  * exception.
  */
-export const CORE_TOOLS = ["search_me", "whoami", "get_setup_status", "list_connections"] as const;
+export const CORE_TOOLS = ["search_me", "whoami", "list_connections"] as const;
 
 export const SCOPES = [
   {
@@ -83,7 +84,6 @@ export const SCOPES = [
       "list_changes",
       "list_revisions",
       "restore_revision",
-      "undo_change",
     ],
     readOnly: false,
     blurb:
@@ -96,12 +96,11 @@ export const SCOPES = [
     /**
      * list_resumes answers "which one did I send them" without opening the
      * resume tools; preview_digest is a pipeline read that happens to be filed
-     * on the account page. The change log and undo_change are here for the
-     * same reason they are in WRITING: this scope writes, so it needs the way
-     * back. restore_revision is NOT — it puts a version of a resume or a role
-     * back, and neither is this scope's to touch.
+     * on the account page. The change log is here so this scope can say what
+     * it did. restore_revision is NOT: nothing this scope writes is versioned
+     * — only resumes and roles are — so there is nothing here for it to undo.
      */
-    extras: ["list_resumes", "preview_digest", "list_changes", "list_revisions", "undo_change"],
+    extras: ["list_resumes", "preview_digest", "list_changes"],
     readOnly: false,
     blurb:
       "Runs the search: applications, offers, interviews, people, tasks, the archive, mail and calendar.",

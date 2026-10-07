@@ -87,7 +87,7 @@ export const CASES = [
   },
   {
     prompt: "Here's my old resume, pasted below. Get it into the system.",
-    expect: ["import_resume", "preview_resume_import"],
+    expect: ["import_resume"],
     avoid: ["create_resume", "create_role"],
     why: "import_resume is additive and safe to repeat; create_resume builds a document instead.",
   },
@@ -209,9 +209,9 @@ export const CASES = [
   },
   {
     prompt: "These four are dead, mark them lost.",
-    expect: ["move_applications_stage"],
-    avoid: ["move_application_stage"],
-    why: "The bulk tool exists; four calls is the failure.",
+    expect: ["move_application_stage"],
+    avoid: ["update_application"],
+    why: "One call with ids; four calls, or setting the stage column, is the failure.",
   },
   {
     prompt: "The Acme posting says 190 to 230.",
@@ -289,7 +289,7 @@ export const CASES = [
   // -------------------------------------------------------------------------
   {
     prompt: "Delete the Acme application, I'm not going for it.",
-    expect: ["archive_records", "delete_application"],
+    expect: ["archive_records"],
     avoid: ["empty_archive", "delete_archived"],
     why: "Deleting an application archives it. Destroying the archive is a different, permanent act.",
   },
@@ -323,7 +323,7 @@ export const CASES = [
   {
     prompt: "I've got Acme in here twice, as 'Acme' and 'Acme Inc'.",
     expect: ["preview_company_merge", "merge_companies"],
-    avoid: ["delete_company", "update_company"],
+    avoid: ["archive_records", "update_company"],
     why: "Merging is permanent, so the preview exists. Deleting one loses its applications.",
   },
   {
@@ -355,7 +355,7 @@ export const CASES = [
   {
     prompt: "What did Acme's recruiter actually say in that thread?",
     expect: ["search_email", "get_email_thread", "list_correspondence"],
-    avoid: ["list_activities"],
+    avoid: ["get_application"],
     why: "Mail is read live from the person's own account, never copied into the app.",
   },
   {
@@ -379,7 +379,7 @@ export const CASES = [
   {
     prompt: "Who am I connected as?",
     expect: ["whoami"],
-    avoid: ["get_profile", "admin_list_users"],
+    avoid: ["get_me_snapshot", "admin_list_users"],
     why: "The connection's own identity, not the profile and not the user table.",
   },
   {
@@ -492,7 +492,7 @@ export const CASES = [
   },
   {
     prompt: "You just overwrote my whole background for that job. Put it back.",
-    expect: ["list_changes", "undo_change", "list_revisions", "restore_revision"],
+    expect: ["list_changes", "list_revisions", "restore_revision"],
     avoid: ["update_role", "append_role_background"],
     why: "The one case where writing again is the wrong instinct. Find the change, then undo it — writing back from memory invents what was lost.",
   },
@@ -501,7 +501,7 @@ export const CASES = [
   {
     prompt: "I downloaded my data export from LinkedIn, it's a zip.",
     expect: ["import_linkedin_archive"],
-    avoid: ["import_resume", "preview_resume_import"],
+    avoid: ["import_resume"],
     why: "An archive is connections and positions, not a resume. import_resume would throw away the contacts.",
   },
   {
@@ -535,7 +535,7 @@ export const CASES = [
   {
     prompt: "I've only been at this job four months and every recruiter asks about it. Remember that.",
     expect: ["append_role_background"],
-    avoid: ["create_note", "update_role", "log_win"],
+    avoid: ["create_note", "update_role"],
     why: "Positioning, not evidence. It goes under 'Caveats' so it reaches interview prep and never a resume — filed as a plain note it is loose from the role it is about.",
   },
   {
@@ -548,7 +548,7 @@ export const CASES = [
   // --- after the search ----------------------------------------------------
   {
     prompt: "I shipped the billing migration this quarter and it cut our costs by about a third.",
-    expect: ["log_win", "append_role_background"],
+    expect: ["append_role_background"],
     avoid: ["update_role", "create_note", "create_highlights"],
     why: "Additive, against the current role. update_role replaces the background, which is the misroute this whole file exists for.",
   },
