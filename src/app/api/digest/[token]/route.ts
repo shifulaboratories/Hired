@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { runDigestSweep } from "@/lib/data/digest";
+import { recordJobRun } from "@/lib/data/scheduled";
 import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   }
 
   const report = await runDigestSweep();
+  // After the run, so a sweep that throws leaves the clock where it was and the
+  // health check goes on saying the digest has not run.
+  await recordJobRun("digest");
   return json(report, 200);
 }
 

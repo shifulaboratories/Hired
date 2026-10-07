@@ -29,6 +29,7 @@ import * as stageCadence from "@/lib/data/stage-cadence";
 import * as referrals from "@/lib/data/referrals";
 import { REFERRAL_STATUSES } from "@/lib/data/referrals";
 import * as watch from "@/lib/data/watch";
+import * as scheduled from "@/lib/data/scheduled";
 import * as mailSweep from "@/lib/data/mail-sweep";
 import * as captureLink from "@/lib/data/capture-link";
 import * as linkedin from "@/lib/data/linkedin";
@@ -2784,7 +2785,7 @@ export const tools: McpTool[] = [
     name: "watch_company_board",
     title: "Watch a company's jobs board",
     description:
-      "Watch one employer's own jobs board and hear about a role the moment it appears. This is the tool for \"tell me when Stripe posts a staff engineer role\" — a search that is waiting on a particular company rather than browsing. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON; hand it the board link (boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme) or just the company's careers page, and it follows an embedded board through to the real one. ANY OTHER BOARD IS REFUSED and nothing is saved — Workday, SmartRecruiters and a hand-built careers page publish no feed to read, and the honest answer for those is to browse them and paste the links into capture_job_posting. `title_terms` and `location_terms` narrow it: a role has to contain ANY of the title terms AND ANY of the location terms, matched case-insensitively against the posting's own words, and an empty list means anything. THE FIRST LOOK PROPOSES NOTHING: it records what is on the board today as already seen, because a watch on a six-hundred-role board is otherwise six hundred rows to review. Pass propose_existing true when they want what is already up there, and the first ten matches are queued. After that, every new matching role becomes a proposal on their dashboard with the posting already read into it, which they accept to put it on the wishlist or dismiss. NOTHING IS EVER ADDED TO THE PIPELINE WITHOUT A YES. Returns the watch, which provider was found, and how many roles the board is carrying today — read that number back, because a board of four hundred and filters of none is a watch that will be noisy. Calling it again for the same board changes the filters rather than making a second watch.",
+      "Watch one employer's own jobs board and hear about a role the moment it appears. This is the tool for \"tell me when Stripe posts a staff engineer role\" — a search that is waiting on a particular company rather than browsing. It reads Greenhouse, Lever and Ashby, which publish their boards as plain JSON; hand it the board link (boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme) or just the company's careers page, and it follows an embedded board through to the real one. ANY OTHER BOARD IS REFUSED and nothing is saved — Workday, SmartRecruiters and a hand-built careers page publish no feed to read, and the honest answer for those is to browse them and paste the links into capture_job_posting. `title_terms` and `location_terms` narrow it: a role has to contain ANY of the title terms AND ANY of the location terms, matched case-insensitively against the posting's own words, and an empty list means anything. THE FIRST LOOK PROPOSES NOTHING: it records what is on the board today as already seen, because a watch on a six-hundred-role board is otherwise six hundred rows to review. Pass propose_existing true when they want what is already up there, and the first ten matches are queued. After that, every new matching role becomes a proposal on their dashboard with the posting already read into it, which they accept to put it on the wishlist or dismiss. NOTHING IS EVER ADDED TO THE PIPELINE WITHOUT A YES. Returns the watch, which provider was found, and how many roles the board is carrying today — read that number back, because a board of four hundred and filters of none is a watch that will be noisy. Calling it again for the same board changes the filters rather than making a second watch. A `scheduleNote` in the result means nothing on this instance looks at watched boards on a schedule yet — say so, because a watch nobody runs hears about nothing.",
     inputSchema: object(
       {
         board_url: str(
@@ -2812,8 +2813,8 @@ export const tools: McpTool[] = [
       idempotentHint: true,
       openWorldHint: true,
     },
-    handler: async (args, ctx) =>
-      watch.watchCompanyBoard(ctx.userId, {
+    handler: async (args, ctx) => {
+      const result = await watch.watchCompanyBoard(ctx.userId, {
         boardUrl: required(args, "board_url"),
         ...defined({
           companyId: s(args, "company_id"),
@@ -2822,7 +2823,12 @@ export const tools: McpTool[] = [
           locationTerms: a(args, "location_terms"),
           proposeExisting: b(args, "propose_existing"),
         }),
-      }),
+      });
+      // A watch is only as good as the scheduler that runs it. Say so here,
+      // where the promise is made, rather than letting it fail silently.
+      const { note } = await scheduled.scheduleState("boards");
+      return result.watched && note ? { ...result, scheduleNote: note } : result;
+    },
   },
   {
     name: "list_company_watches",
@@ -5929,7 +5935,7 @@ export const tools: McpTool[] = [
     name: "get_mail_sweep",
     title: "Is the mail sweep on",
     description:
-      "Whether this person has asked the app to look through their own mail on a schedule, when it last ran, how far it has read up to, and whether a mailbox is actually connected for it to read. `mailConnected` false means the switch is inert until they connect something under Settings → Connections — say that rather than turning on something that cannot work. `note` is non-empty when the last run was short, usually because the window came back full. Read-only, and it reads nothing from anybody's mailbox.",
+      "Whether this person has asked the app to look through their own mail on a schedule, when it last ran, how far it has read up to, and whether a mailbox is actually connected for it to read. `mailConnected` false means the switch is inert until they connect something under Settings → Connections — say that rather than turning on something that cannot work. `note` is non-empty when the last run was short, usually because the window came back full. A non-empty `scheduleNote` means nothing runs the sweep on a schedule on this instance, so it only happens when run_mail_sweep is called. Read-only, and it reads nothing from anybody's mailbox.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -5943,7 +5949,7 @@ export const tools: McpTool[] = [
     name: "set_mail_sweep",
     title: "Turn the mail sweep on or off",
     description:
-      "OFF until somebody asks for it, and this is the only thing that turns it on. On, the app reads the mail that arrives from the companies and people already on their pipeline and queues what it finds on their dashboard: the message to log, the person to add, the meeting that means an interview. IT NEVER WRITES TO THE PIPELINE — every finding is a proposal waiting for a yes — and it never reads anything outside the addresses and domains their own records name. It also looks at a connected calendar, which is where the one stage move comes from, so say that when you offer it. Only offer this when somebody asks for it; nobody wants an assistant signing them up to have their inbox read. Turning it off stops the schedule and leaves everything already queued exactly where it is. Returns the settings as they now stand.",
+      "OFF until somebody asks for it, and this is the only thing that turns it on. On, the app reads the mail that arrives from the companies and people already on their pipeline and queues what it finds on their dashboard: the message to log, the person to add, the meeting that means an interview. IT NEVER WRITES TO THE PIPELINE — every finding is a proposal waiting for a yes — and it never reads anything outside the addresses and domains their own records name. It also looks at a connected calendar, which is where the one stage move comes from, so say that when you offer it. Only offer this when somebody asks for it; nobody wants an assistant signing them up to have their inbox read. Turning it off stops the schedule and leaves everything already queued exactly where it is. Returns the settings as they now stand; read back any `scheduleNote`, which means the instance runs no schedule for it yet.",
     inputSchema: object({ on: bool("True to sweep, false to stop") }, ["on"]),
     annotations: {
       readOnlyHint: false,
@@ -6018,7 +6024,7 @@ export const tools: McpTool[] = [
     name: "get_digest_settings",
     title: "Check the two emails this app can send",
     description:
-      "Whether this person has asked for a weekly summary or a due-today nudge, what hour they go out at in their own zone, when each was last sent, and whether the instance can send mail at all. `emailConfigured` false means both switches are inert until an admin sets up email — say that rather than turning something on that cannot work. Read-only.",
+      "Whether this person has asked for a weekly summary or a due-today nudge, what hour they go out at in their own zone, when each was last sent, and whether the instance can send mail at all. `emailConfigured` false means both switches are inert until an admin sets up email — say that rather than turning something on that cannot work. A non-empty `scheduleNote` means nothing calls this instance's digest address on a schedule, so nothing goes out on its own either way: read it back. Read-only.",
     inputSchema: object({}),
     annotations: {
       readOnlyHint: true,
@@ -6032,7 +6038,7 @@ export const tools: McpTool[] = [
     name: "set_digest_settings",
     title: "Turn the weekly summary or the daily nudge on or off",
     description:
-      "All three are OFF until somebody asks, and this is the only thing that turns them on. The weekly one goes out on a Monday morning and says where the search stands. The daily one arrives only on a day something is actually due, and sends nothing on a quiet day, on purpose, so the one that matters does not land in a folder nobody reads. The MONTHLY one is the odd one out and the one worth offering at the right moment: it arrives on the last day of the month and asks for one thing that went well, so Me keeps growing after the search is over — offer it the day somebody accepts an offer, which is the day the other two should come off. It stops sending after three unanswered, because a mail ignored three times is a mail somebody has declined; logging a win, or switching it off and on, starts the count again. `hour` is in their own time zone. Only offer any of this when somebody asks for mail; nobody wants to be signed up for email by an assistant.",
+      "All three are OFF until somebody asks, and this is the only thing that turns them on. The weekly one goes out on a Monday morning and says where the search stands. The daily one arrives only on a day something is actually due, and sends nothing on a quiet day, on purpose, so the one that matters does not land in a folder nobody reads. The MONTHLY one is the odd one out and the one worth offering at the right moment: it arrives on the last day of the month and asks for one thing that went well, so Me keeps growing after the search is over — offer it the day somebody accepts an offer, which is the day the other two should come off. It stops sending after three unanswered, because a mail ignored three times is a mail somebody has declined; logging a win, or switching it off and on, starts the count again. `hour` is in their own time zone. Only offer any of this when somebody asks for mail; nobody wants to be signed up for email by an assistant. Returns the settings as they now stand; a non-empty `scheduleNote` in them means the switch is on but nothing will send until the instance's scheduler is set up, and that has to be said.",
     inputSchema: object({
       weekly: bool("The Monday summary"),
       daily: bool("The due-today nudge. Only sends on a day something is due"),

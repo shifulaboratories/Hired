@@ -1,6 +1,12 @@
 import type { SystemEventLevel } from "@prisma/client";
 import { db } from "@/lib/db";
-import { billingIsConfigured, emailIsConfigured, getSettings } from "@/lib/settings";
+import {
+  billingIsConfigured,
+  emailIsConfigured,
+  getSettings,
+  type InstanceSettings,
+} from "@/lib/settings";
+import { scheduleStates, type Job } from "@/lib/data/scheduled";
 
 /**
  * Whether the instance is working, and what broke when it wasn't.
@@ -337,6 +343,8 @@ export async function instanceHealth(): Promise<{
     });
   }
 
+  checks.push(await scheduleCheck(settings));
+
   checks.push({
     key: "assistants",
     label: "Assistants",
@@ -359,4 +367,59 @@ export async function instanceHealth(): Promise<{
   });
 
   return { checks, errorsLastDay };
+}
+
+/**
+ * Whether the four scheduled jobs are running, weighed by whether anybody
+ * needs them to. A job nobody has switched on is fine off; a job somebody is
+ * counting on, with nothing calling it, is the failure this check exists for —
+ * a Monday summary that has never been sent produces no error anywhere.
+ */
+async function scheduleCheck(settings: InstanceSettings): Promise<HealthCheck> {
+  const [states, digestPeople, watches, postings, mailPeople] = await Promise.all([
+    scheduleStates(settings),
+    db.profile.count({
+      where: { OR: [{ weeklyDigest: true }, { dailyNudge: true }, { winsNudge: true }] },
+    }),
+    db.companyWatch.count({ where: { enabled: true } }),
+    // ARCHIVE FILTER: an archived application is not waiting on a posting check.
+    db.application.count({ where: { archivedAt: null, closedAt: null, jobUrl: { not: "" } } }),
+    db.profile.count({ where: { mailSweep: true } }),
+  ]);
+  const wanted: Record<Job, { count: number; what: string }> = {
+    digest: { count: digestPeople, what: `${digestPeople} ${digestPeople === 1 ? "person has" : "people have"} a digest on` },
+    boards: { count: watches, what: `${watches} board ${watches === 1 ? "watch is" : "watches are"} on` },
+    postings: { count: postings, what: `${postings} open ${postings === 1 ? "application has" : "applications have"} a posting link` },
+    mail: { count: mailPeople, what: `${mailPeople} ${mailPeople === 1 ? "person has" : "people have"} the mail sweep on` },
+  };
+  const label: Record<Job, string> = { digest: "Digest", boards: "Boards", postings: "Postings", mail: "Mail" };
+
+  const parts: string[] = [];
+  const missing: string[] = [];
+  for (const job of Object.keys(states) as Job[]) {
+    const state = states[job];
+    if (state.running && state.lastRunAt) {
+      parts.push(`${label[job]} ran ${ago(state.lastRunAt)}`);
+    } else if (wanted[job].count > 0) {
+      parts.push(`${label[job]} ${state.enabled ? (state.lastRunAt ? "stopped" : "never called") : "off"}`);
+      const address = job === "digest" ? "/api/digest/<token>" : `/api/sweep/<token>?only=${job}`;
+      const why = !state.enabled
+        ? `the ${job === "digest" ? "digest" : "sweep"} token is not set`
+        : state.lastRunAt
+          ? `nothing has called ${address} since ${state.lastRunAt.toISOString().slice(0, 10)}`
+          : `nothing has ever called ${address}`;
+      missing.push(`${wanted[job].what}, but ${why}.`);
+    } else {
+      parts.push(`${label[job]} ${state.enabled ? (state.lastRunAt ? "stopped" : "never called") : "off"}, unused`);
+    }
+  }
+  return {
+    key: "schedules",
+    label: "Schedules",
+    status: missing.length === 0 ? "ok" : "warn",
+    summary: `${parts.join(". ")}.`,
+    detail: missing.length
+      ? `${missing.join(" ")} Set the digest and sweep tokens under Admin → Configuration and point your host's scheduler at /api/digest/<token> and /api/sweep/<token>.`
+      : "",
+  };
 }

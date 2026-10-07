@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { domainOf } from "@/lib/accounts/text";
 import * as accounts from "@/lib/data/accounts";
 import * as proposals from "@/lib/data/proposals";
+import { scheduleState } from "@/lib/data/scheduled";
 
 /**
  * Reading a person's own mail on a schedule, and proposing what a rule can prove.
@@ -51,15 +52,18 @@ export type MailSweepSettings = {
   /** False when no mailbox is connected, which makes the switch inert. */
   mailConnected: boolean;
   calendarConnected: boolean;
+  /** Empty when something calls the mail sweep on a schedule; otherwise why it will not run. */
+  scheduleNote: string;
 };
 
 async function settingsFor(userId: string): Promise<MailSweepSettings> {
-  const [profile, access] = await Promise.all([
+  const [profile, access, schedule] = await Promise.all([
     db.profile.findUnique({
       where: { userId },
       select: { mailSweep: true, mailSweptAt: true, mailSweptRunAt: true, mailSweepNote: true },
     }),
     accounts.accountAccess(userId),
+    scheduleState("mail"),
   ]);
   return {
     on: profile?.mailSweep ?? false,
@@ -68,6 +72,7 @@ async function settingsFor(userId: string): Promise<MailSweepSettings> {
     note: profile?.mailSweepNote ?? "",
     mailConnected: access?.mail ?? false,
     calendarConnected: access?.calendar ?? false,
+    scheduleNote: schedule.note,
   };
 }
 

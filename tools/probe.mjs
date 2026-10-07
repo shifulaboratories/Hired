@@ -50,6 +50,8 @@ const tagsData = await load("data/tags.ts");
 const transfer = await load("data/transfer.ts");
 const referrals = await load("data/referrals.ts");
 const transferables = await load("data/transferables.ts");
+const scheduled = await load("data/scheduled.ts");
+const settingsLib = await load("settings.ts");
 const { tools } = await load("mcp/tools.ts");
 const tool = (name) => {
   const found = tools.find((t) => t.name === name);
@@ -420,6 +422,29 @@ try {
   });
 
   // --- Instance surface -------------------------------------------------------
+  await check("a scheduled job is only called running once something has called it, and its clock is not a variable", async () => {
+    const before = await db.setting.findMany({ where: { key: { in: ["digest_token", "digest_ran_at"] } } });
+    try {
+      await db.setting.deleteMany({ where: { key: { in: ["digest_token", "digest_ran_at"] } } });
+      let state = await scheduled.scheduleState("digest");
+      ok(!state.enabled && !state.running && state.note.includes("off"), `with no token: ${JSON.stringify(state)}`);
+      await settingsLib.setSetting("digest_token", "probe-token-not-a-secret");
+      state = await scheduled.scheduleState("digest");
+      ok(state.enabled && !state.running && state.note.includes("yet"), `never called: ${JSON.stringify(state)}`);
+      await scheduled.recordJobRun("digest");
+      state = await scheduled.scheduleState("digest");
+      ok(state.running && state.note === "", `just ran: ${JSON.stringify(state)}`);
+      await scheduled.recordJobRun("digest", new Date(Date.now() - 3 * 86_400_000));
+      state = await scheduled.scheduleState("digest");
+      ok(!state.running && state.note.includes("stopped"), `stale: ${JSON.stringify(state)}`);
+      const variables = await settingsLib.listVariables();
+      ok(!variables.some((row) => row.key === "digest_ran_at"), "the clock is listed as a variable");
+    } finally {
+      await db.setting.deleteMany({ where: { key: { in: ["digest_token", "digest_ran_at"] } } });
+      for (const row of before) await db.setting.create({ data: { key: row.key, value: row.value } });
+    }
+  });
+
   await check("the waitlist is closed on an instance with no site and no signups", async () => {
     const signups = await db.waitlistSignup.count();
     const landing = await db.setting.findUnique({ where: { key: "landing_url" } });

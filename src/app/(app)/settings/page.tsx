@@ -34,6 +34,7 @@ import {
 import { listLinkedAccounts } from "@/lib/data/accounts";
 import { getMailSweep } from "@/lib/data/mail-sweep";
 import { getCaptureLink } from "@/lib/data/capture-link";
+import { scheduleStates } from "@/lib/data/scheduled";
 import { getOutboundSettings } from "@/lib/data/outbound";
 import { listStageTemplates, stageTemplateUsage } from "@/lib/data/stage-templates";
 import { isGoogleRefusal, refusalMessage } from "@/lib/google";
@@ -73,7 +74,7 @@ export default async function SettingsPage({
 
   // Nobody should ever land here with nothing to copy.
   await ensureDefaultConnection(user.id);
-  const [connections, profile, skills, settings, linkedAccounts, sweep, capture, outboundSettings] = await Promise.all([
+  const [connections, profile, skills, settings, linkedAccounts, sweep, capture, outboundSettings, schedules] = await Promise.all([
     listConnections(user.id),
     getProfile(user.id),
     listSkills(),
@@ -82,6 +83,7 @@ export default async function SettingsPage({
     getMailSweep(user.id),
     getCaptureLink(user.id, baseUrl),
     getOutboundSettings(user.id),
+    scheduleStates(),
   ]);
 
   // What the consent screen came back with, as a fixed code — never text from
@@ -186,6 +188,7 @@ export default async function SettingsPage({
                     note: sweep.note,
                     mailConnected: sweep.mailConnected,
                     calendarConnected: sweep.calendarConnected,
+                    scheduleNote: sweep.scheduleNote,
                   },
                 }}
                 captureLink={{
@@ -246,6 +249,7 @@ export default async function SettingsPage({
                 dailyNudge: profile.dailyNudge,
                 digestHour: profile.digestHour,
                 emailConfigured: emailIsConfigured(settings),
+                scheduleNote: schedules.digest.note,
               }}
               outbound={{
                 instanceEnabled: outboundSettings.instanceEnabled,

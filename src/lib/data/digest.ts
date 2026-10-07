@@ -6,6 +6,7 @@ import { timeZoneOf } from "@/lib/data/me";
 import { civilDay, clockIn, weekdayIn } from "@/lib/time";
 import { digestEmail, nudgeEmail, sendEmail, winsEmail } from "@/lib/email";
 import { getSettings, emailIsConfigured } from "@/lib/settings";
+import { scheduleStates } from "@/lib/data/scheduled";
 
 /**
  * The two messages this app is willing to send you.
@@ -231,6 +232,11 @@ export type DigestPreferences = {
   winsQuiet: number;
   /** Whether the instance can send at all. A switch that cannot work is a lie. */
   emailConfigured: boolean;
+  /**
+   * Whether anything calls the digest address on a schedule. Empty when it
+   * does; otherwise the sentence to say before promising a Monday summary.
+   */
+  scheduleNote: string;
 };
 
 export async function getDigestPreferences(userId: string): Promise<DigestPreferences> {
@@ -250,6 +256,7 @@ export async function getDigestPreferences(userId: string): Promise<DigestPrefer
     }),
     getSettings(),
   ]);
+  const schedule = (await scheduleStates(settings)).digest;
   return {
     weeklyDigest: profile?.weeklyDigest ?? false,
     dailyNudge: profile?.dailyNudge ?? false,
@@ -260,6 +267,7 @@ export async function getDigestPreferences(userId: string): Promise<DigestPrefer
     lastWinsOn: profile?.lastWinsOn ?? "",
     winsQuiet: profile?.winsQuiet ?? 0,
     emailConfigured: emailIsConfigured(settings),
+    scheduleNote: schedule.note,
   };
 }
 
