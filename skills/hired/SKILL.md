@@ -5,122 +5,62 @@ description: Orientation for a connected Hired instance — a person's career kn
 
 # Working in someone's Hired
 
-Hired is one person's career, on their own server. Everything you touch through
-the connector is theirs, it is real, and it is the material a resume gets built from.
-There is no draft copy. Deleting a company, a person or an application is reversible —
-it goes to an archive for thirty days — and nothing else is.
+Hired is one person's career, on their own server. Everything you touch is theirs, it is
+real, and it is the material their resumes are built from.
 
-## The four areas
+**Me** is everything they know about their own jobs: each role has a free-form background
+and polished bullets called highlights, plus notes, projects, education and skills.
+**Resumes** and **letters** are documents built from it. The **pipeline** is applications,
+stages, a timeline, tasks and follow-ups; **people** are the companies and contacts behind
+it. **Tags** are the one catalogue behind every label — call `list_tags` before writing one.
 
-**Me** — everything they know about their own career. Each role holds an unlimited
-free-form *background* of raw material, plus polished reusable bullets called
-*highlights*. There are also notes, projects, education, skills and certifications.
-`search_me` is the fastest way in and is almost always the first call.
+## Never invent experience, employers, dates or metrics
 
-**Resumes** — documents assembled from that material. `get_resume_format` first, so
-you know the document shape. New resumes use the Harvard OCS format. Any resume can
-be published to a public URL.
-
-**Pipeline** — applications, stages, an activity timeline, tasks and follow-up dates
-that schedule themselves when a stage changes.
-
-**CRM** — companies and the people at them, as records in their own right. A company
-holds their website, its tags — industry, size, location — and whatever research has
-accumulated.
-
-Two things cut across all four. **Tags** are the one catalogue behind every label in the
-product — where an application came from, a company's industry, size and location, how you
-know a person — so call `list_tags` before writing any of them rather than minting a
-near-duplicate. And the **archive** is where deleting sends a company, a person or an
-application: `list_archive` says what is in there and when each thing is due to go,
-`restore_records` brings it back.
-
-If they have connected a mail and calendar account — `list_linked_accounts` says which, and
-Google, Microsoft 365 and any IMAP or CalDAV provider all work —
-`list_correspondence` returns the real threads and meetings behind any record, read live
-and never stored. Call it before saying where an application stands: the timeline only
-knows what somebody logged by hand.
-
-## The rule that matters most
-
-**Never invent experience, employers, dates or metrics.**
-
-The failure that actually happens is not fabrication from nothing — nobody does that.
-It is *quiet upgrading* while tailoring. A distribution credit becomes a hire. An
-unsettled follower count becomes a cited one. "Helped with" becomes "led". Every one
-of those maps neatly onto a stated requirement in the posting, so it does not feel
-like invention to whoever is drafting.
-
-So: every claim on a resume traces to something already in Me. If the evidence
-is not there, say so and ask. An honest gap is a conversation. A confident
-overstatement is something they have to defend in a room.
-
-Call `list_notes` and read the ones whose `kind` is `GUARDRAIL` — it takes a `limit`, a
-hundred by default, and says so when it cut the list off, so pick them out of the result.
-This person may have written down specific things they have been burned by. Those
-override anything you would otherwise infer, and they are also carried in the briefing
-you were given on connect.
+The failure that happens is not fabrication from nothing. It is quiet upgrading while
+tailoring: "helped with" becomes "led", a credit becomes a hire, an unsettled number becomes
+a cited one. Every claim on a document traces to something in Me. If the evidence is not
+there, say so and ask. Read their rules first: `list_notes` with kind `GUARDRAIL`, and the
+Rules, Caveats and Open questions that `get_role` reads out of each background. Caveats
+never go on a page; open questions are never used.
 
 ## Replace versus append
 
-Several tools **replace** what you send rather than merging it. Getting this wrong
-silently deletes work.
-
-| Tool | Behaviour | What to do |
+| Tool | Behaviour | So |
 |---|---|---|
-| `update_role` | Replaces every field you pass | Use `append_role_background` for new material |
-| `update_resume` | Replaces the document | `get_resume`, modify, write back whole |
-| `update_company` | Replaces each field passed, notes included | `get_company` first, then write the combined notes |
-| `update_contact` | Same | `get_contact` first |
-| `append_role_background` | Adds | Safe by default — prefer it |
-| `tag_records` | **Adds and removes** | The bulk tools, and the exception — safe across a selection |
+| `update_role`, `update_resume` | Replace what you send | Read first, modify, write back whole |
+| `update_company`, `update_contact` | Replace each field passed, notes included | Read first, write the combined value |
+| `append_role_background` | Adds | Use it for anything new about a job on file |
+| `tag_records` | Adds and removes | Use it, not a loop of `update_company`, across a selection |
 
-When someone tells you something new about a job already on file, that is
-`append_role_background`. Not `update_role`.
+When the ask covers several records, pass them all in one call: `move_application_stage`
+with `ids`, `tag_records`, `schedule_contact_pings`, `archive_records`.
 
-The bulk tools are the reason that last row matters. "Tag these nine as fintech" written as
-nine `update_company` calls replaces each one's whole industry list with fintech alone,
-losing every other industry they were filed under; `tag_records` adds
-and removes and leaves everything else alone. The same goes for `move_application_stage` with `ids`,
-`schedule_contact_pings` and `archive_records` — when the ask covers several records, use
-the bulk tool rather than a loop.
+## Before you write
 
-## Before you write anything
+1. `search_me` with the posting's own words, then the words they would have used.
+2. `get_me_snapshot` for the profile, dates, education and their keyword policy.
+3. For a job on the board, `tailor_resume_for_application` makes the tailored copy and
+   names the lines nothing in Me backs. Never edit a resume already attached to an
+   application — that is the version they sent.
+4. `export_resume_pdf` for the real page count; `check_resume_fit` if it runs long, and
+   propose the cuts rather than making them.
 
-1. `search_me` for evidence — always.
-2. `get_me_snapshot` for the profile, dates and education.
-3. For a company: `list_companies` to find the id, then `get_company`.
-4. Only then draft.
+## Undo, and what has none
+
+Deleting a company, a person or an application puts it in the archive (`list_archive`,
+`restore_records`). An assistant's edit to a role or a resume can be put back with
+`list_changes` and `restore_revision`. Four acts cannot be undone: `delete_archived`,
+`empty_archive`, `merge_companies` and, for admins, `admin_delete_user` — say what will go
+and get a plain yes first. Deleting a role, a highlight, a note, a resume or a tag is
+permanent too.
 
 ## Things worth knowing
 
-- **Measure, don't guess.** `export_resume_pdf` reports the real page count. When it runs
-  long, `check_resume_fit` ranks what to cut — propose the cuts rather than making them.
-- **Tailor into a copy.** `duplicate_resume`, then edit the copy. Never edit a resume
-  already attached to an application — that is the version they actually sent.
-- **Publishing is real.** `publish_resume` puts the document at a public URL that
-  anyone holding the link can read. `unpublish_resume` destroys that link rather than
-  pausing it, so a link already out in the world breaks. Say which resume you are
-  about to publish, and warn before withdrawing one.
-- **A company's website is their own domain.** It is what puts their logo in the
-  pipeline. A Greenhouse or Ashby link is the job board, not the employer — do not
-  put one in `website`. Set it whenever you learn it; it costs nothing.
-- **Dates.** `list_schedule(from, to)` merges follow-ups, task deadlines and logged
-  activity into one window. Reach for it whenever the question is about a stretch of
-  time rather than one application. `list_follow_ups` is only what is already overdue.
-- **Deleting is reversible, once.** `archive_records` takes companies, people and
-  applications out rather than destroying them — the row leaves every list, board and
-  count and waits out a retention window. `delete_archived` and `empty_archive` are the only
-  two acts that cannot be undone, and neither can reach anything not already in the archive.
-  Never call either without reading `list_archive` back to them and getting a plain yes.
-  Everything else — a role, a highlight, a note, a resume, a task, a tag — really is gone.
-- **A spreadsheet is one call.** `export_csv` returns companies, people or applications as
-  CSV, taking the same filters, search and sort as the matching list tool. Do not assemble
-  one by hand.
+- `publish_resume` puts a document at a public link; `unpublish_resume` destroys the link.
+  Say which resume, and warn before withdrawing one that may already be out.
+- A company's `website` is its own domain, never a Greenhouse or Ashby link.
+- `list_schedule(from, to)` is the answer to any question about a stretch of time.
+- `export_csv` is the answer to "send me this as a file".
 
-## Saying what you did
-
-After writing, say what you changed and where — "added three highlights to the Vertex
-role", "saved *Helios — Staff Engineer*, one page". They cannot see your tool calls,
-and a resume that changed without explanation is one they have to re-read from
-scratch.
+After writing, say what you changed and where — "added three highlights to the Vertex role",
+"saved *Helios — Staff Engineer*, one page". They cannot see your tool calls.

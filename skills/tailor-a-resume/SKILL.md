@@ -78,9 +78,10 @@ Rules that hold up:
 3. `search_me` per requirement. Collect the evidence with its ids.
 4. `get_me_snapshot` for profile, dates, education, skills.
 5. Draft. Order the experience so the most relevant role leads.
-6. `create_resume`, named `"<Company> — <Role>"`, with `targetRole` and
-   `targetCompany` set. If you are adapting an existing one, `duplicate_resume` first
-   and edit the copy — never the version already attached to an application.
+6. For a job on the board, `tailor_resume_for_application`: it copies their base resume,
+   names and targets it, attaches it to the job, and returns the lines nothing in Me backs
+   — rewrite or drop each. Otherwise `create_resume`, named `"<Company> — <Role>"`. Never
+   edit a resume already attached to an application; that is the version they sent.
 7. `export_resume_pdf` for the real page count; `check_resume_fit` if it runs long.
 8. Tell them what you led with, what you cut, and what you could not evidence.
 
