@@ -45,6 +45,17 @@ someone you already decided to send it to.
 
 Your private notes on the resume are never shown on the public page.
 
+### The same resume as data
+
+Every published resume is also readable as data at the same address with `/resume.json`
+on the end — the document and a plain-text copy, nothing the page doesn't show. Hidden
+sections are left out, and so is the photo even when the page shows one. It exists for
+employers' hiring systems: on a careers page run with
+[Recruited](https://github.com/byw1/recruited), pasting your link into the profile field
+fills in the form and attaches the resume, so you don't upload a file at all. The employer
+keeps the copy they read, as they would any resume you sent; withdrawing the link stops
+anyone reading it again, not what was already sent.
+
 ### Republishing and withdrawing
 
 Publishing a resume that is already published returns the **same** URL, so it is safe to

@@ -35,6 +35,8 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     description: title || undefined,
     // Unlisted means unlisted. An indexed "unlisted" link is a listed one.
     robots: { index: false, follow: false, nocache: true },
+    // The same document as data, for an employer's system the link is pasted into.
+    alternates: { types: { "application/json": `/r/${slug}/resume.json` } },
   };
 }
 
