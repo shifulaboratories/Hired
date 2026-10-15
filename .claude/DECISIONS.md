@@ -7242,3 +7242,22 @@ much into a routing change.
 accounts and outbound cut, the sample workspace, stage checklists with cadence and recurrence,
 board watches as a stateless check, and deleting the two duplicate product skills. A Railway
 template needs the owner's Railway account, and the GHCR image has never been booted on Railway.
+
+## 2026-10-15 — A published resume is also data, at /r/<slug>/resume.json
+
+For "Apply with Hired" in Recruited (byw1/recruited), the employer-side sibling: an applicant
+pastes their published link into a careers form and the form fills itself and attaches the
+resume. That needed the document as data; scraping the page would tie every reader to the
+templates.
+
+**It is exactly the page, as JSON.** Same `getResumeBySlug` (so unpublished, unknown and
+suspended-owner slugs are the same 404), hidden sections dropped, no photo — publishing with
+a photo consents to a page showing it, not to a copy kept in someone's ATS — and nothing
+about the owner. `noindex` header, no CORS (readers fetch from their server). The page names
+it as an alternate. The shape is a contract with readers we don't control: `format:
+"hired-resume"`, `version: 1`, `doc` (resume-schema.ts) and `text` (resumeToText) so a reader
+needn't know the schema; add fields freely, change one only with a new version.
+
+**Not a tool.** Nothing an assistant does changes; the manual's publishing guide and the
+security page say the link now also reads as data. The probe checks the route: a hidden
+section isn't served, unknown and suspended slugs 404, the noindex header is there.

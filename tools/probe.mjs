@@ -138,6 +138,32 @@ try {
     ok(await resumes.getResumeBySlug(slug), "not served after reactivation");
   });
 
+  await check("the published resume as JSON: what the page shows, hidden sections left out, nothing about the owner", async () => {
+    const slug = (await db.resume.findUnique({ where: { id: resume.id } })).slug;
+    await resumes.updateResume(a.id, resume.id, {
+      data: {
+        header: { name: "Ana Reyes", title: "Support lead", email: "ana@example.com" },
+        sections: [
+          { kind: "summary", heading: "Summary", text: "Eight years answering customers." },
+          { kind: "summary", heading: "Private", text: "Salary floor 90k", visible: false },
+        ],
+      },
+    });
+    const route = await jiti.import(path.join(root, "src/app/r/[slug]/resume.json/route.ts"));
+    const get = async (s) => route.GET(new Request(`https://hired.test/r/${s}/resume.json`), { params: Promise.resolve({ slug: s }) });
+    const res = await get(slug);
+    const body = await res.json();
+    ok(res.status === 200 && body.format === "hired-resume" && body.version === 1, `status ${res.status}`);
+    ok(body.doc.header.name === "Ana Reyes" && /Eight years/.test(body.text), "the document or its text is missing");
+    ok(!JSON.stringify(body).includes("Salary floor") && body.doc.sections.length === 1, "a hidden section was served");
+    ok(!/userId|"photo"|"name":"[^"]*acme/i.test(JSON.stringify(body)) && !("photo" in body), "something about the owner was served");
+    ok(res.headers.get("x-robots-tag")?.includes("noindex"), "the JSON can be indexed");
+    ok((await get("no-such-slug")).status === 404, "an unknown slug didn't 404");
+    await db.user.update({ where: { id: a.id }, data: { isActive: false } });
+    ok((await get(slug)).status === 404, "a suspended owner's resume was served as JSON");
+    await db.user.update({ where: { id: a.id }, data: { isActive: true } });
+  });
+
   const role = await me.createRole(a.id, { company: "Acme", title: "Lead", background: "- Started here\n" });
 
   await check("three appends at once all land", async () => {
