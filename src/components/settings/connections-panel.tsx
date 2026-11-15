@@ -177,12 +177,22 @@ function CodeBlock({ code, label }: { code: string; label?: string }) {
 /**
  * Copy the URL and open the client's add-a-server page in one press.
  *
- * Neither ChatGPT nor Claude takes a link that pre-fills the form, so this is
- * as much of the work as we can do from here: the person lands on the right
- * page with the URL already on their clipboard and pastes once. A failed copy
+ * The person lands on the client's add-a-server page with the URL already on
+ * their clipboard. Where the link can pre-fill the form (Claude), there is
+ * nothing to paste; where it can't (ChatGPT), they paste once. A failed copy
  * still opens the page; the URL is shown in the steps below for that case.
  */
-function LaunchButton({ href, label, url }: { href: string; label: string; url: string }) {
+function LaunchButton({
+  href,
+  label,
+  url,
+  prefills,
+}: {
+  href: string;
+  label: string;
+  url: string;
+  prefills: boolean;
+}) {
   return (
     <Button
       type="button"
@@ -200,11 +210,15 @@ function LaunchButton({ href, label, url }: { href: string; label: string; url: 
         if (tab) tab.opener = null;
         try {
           await copied;
-          toast.success("URL copied. Paste it where it asks for the server URL.");
+          toast.success(
+            prefills
+              ? "Name and URL filled in. If the form comes up empty, paste: the URL is on your clipboard."
+              : "URL copied. Paste it where it asks for the server URL.",
+          );
         } catch {
           toast.error("Couldn't copy the URL. Copy it from the steps below.");
         }
-        if (!tab) toast.message(`Your browser blocked the new tab. Open ${href} yourself.`);
+        if (!tab) toast.message("Your browser blocked the new tab. Allow pop-ups for this site and press it again.");
       }}
     >
       <CopyIcon className="size-3.5" />
@@ -220,7 +234,14 @@ function SetupGuide({ clientId, url }: { clientId: string; url: string }) {
 
   return (
     <div className="space-y-4">
-      {recipe.launch && <LaunchButton href={recipe.launch.href} label={recipe.launch.label} url={url} />}
+      {recipe.launch && (
+        <LaunchButton
+          href={recipe.launch.href(url)}
+          label={recipe.launch.label}
+          url={url}
+          prefills={recipe.launch.prefills ?? false}
+        />
+      )}
       <ol className="space-y-3">
         {steps.map((step, index) => (
           <li key={step.text} className="flex gap-3">

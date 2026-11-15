@@ -30,11 +30,11 @@ export type McpClientRecipe = {
   /**
    * The page in the client where a server gets added, when the vendor has one
    * with a stable address. The setup panel turns it into a single button that
-   * copies the URL and opens that page, so the paste is the only step left
-   * that we cannot do for the person. Optional: a CLI or a config file has no
-   * page to open.
+   * copies the URL and opens that page, so at most a paste is left. `href`
+   * takes the connection URL so a client that can pre-fill its form from the
+   * link gets it there too. Optional: a CLI or a config file has no page.
    */
-  launch?: { href: string; label: string };
+  launch?: { href: (url: string) => string; label: string; prefills?: boolean };
 };
 
 const SERVER_NAME = "hired";
@@ -49,13 +49,32 @@ export const MCP_CLIENTS: McpClientRecipe[] = [
     category: "chat",
     tagline: "Web, desktop and mobile",
     native: true,
-    docs: "https://support.anthropic.com/en/articles/11175166",
-    launch: { href: "https://claude.ai/settings/connectors", label: "Copy URL and open Claude" },
+    // Checked against claude.com/docs/connectors/custom/remote-mcp in November
+    // 2026: connectors moved from Settings to Customize, and every individual
+    // plan can add one (Free is capped at one custom connector). The query
+    // string pre-fills the Add custom connector dialog. Anthropic doesn't
+    // document it, so it is treated as a bonus: if Claude ever ignores it, the
+    // link still lands on the right page with the URL on the clipboard. The
+    // token rides in the query, which puts it in this browser's history; it is
+    // going to claude.ai either way, and the same person owns both ends.
+    docs: "https://claude.com/docs/connectors/custom/remote-mcp",
+    launch: {
+      href: (url) =>
+        `https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Hired&connectorUrl=${encodeURIComponent(url)}`,
+      label: "Add to Claude",
+      prefills: true,
+    },
     steps: (url) => [
-      { text: "Open Claude and go to Settings → Connectors (claude.ai/settings/connectors)." },
-      { text: 'Click "Add custom connector".' },
-      { text: "Name it Hired and paste this as the URL:", code: url, codeLabel: "Connection URL" },
-      { text: "Save. Claude can now read and write your career history, resumes and pipeline." },
+      {
+        text: "In Claude, open Customize → Connectors (claude.ai/customize/connectors) and choose Add → Add custom connector.",
+      },
+      { text: "Name it Hired and paste this as the server URL, unless both are already filled in:", code: url, codeLabel: "Connection URL" },
+      {
+        text: "Press Continue and leave authentication on No sign-in. The token in the URL is the sign-in. Then press Add.",
+      },
+      {
+        text: "It shows up in Claude on the web, desktop and phone. On a Team or Enterprise plan only an Owner can add one, for the whole organization, so use a personal account: this URL opens your workspace to whoever holds it.",
+      },
     ],
   },
   {
@@ -87,7 +106,7 @@ export const MCP_CLIENTS: McpClientRecipe[] = [
     // opening the right page with the URL already copied is as close to one
     // click as ChatGPT allows a self-hosted server today.
     docs: "https://developers.openai.com/api/docs/guides/custom-mcp-server",
-    launch: { href: "https://chatgpt.com/plugins", label: "Copy URL and open ChatGPT" },
+    launch: { href: () => "https://chatgpt.com/plugins", label: "Copy URL and open ChatGPT" },
     steps: (url) => [
       {
         text: "In ChatGPT on the web, open Plugins (chatgpt.com/plugins), press + and choose Add custom MCP server.",

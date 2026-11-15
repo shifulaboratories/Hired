@@ -7289,3 +7289,15 @@ third-party reports disagree and the help centre page would not load from here.
 
 Cursor (`cursor://…/mcp/install`) and VS Code (`vscode:mcp/install`) do take real one-click
 install links; not done here, worth doing next.
+
+**Same day, Claude.** Connectors moved from Settings to Customize
+(claude.ai/customize/connectors), so the first version's link already pointed at the old
+page. Claude's dialog also takes `?modal=add-custom-connector&connectorName=…&connectorUrl=…`,
+which opens Add custom connector filled in, leaving Continue and Add. Anthropic does not
+document that query string (a third-party guide does), and it could not be tried from here
+without a signed-in claude.ai session, so it is used as a bonus, not a dependency: the
+button still copies the URL, and a Claude that ignores the parameters still lands on the
+right page. `launch.href` now takes the URL for that reason. The token sits in the query and
+so in the browser's history; it is going to claude.ai regardless. The recipe also warns off
+Team and Enterprise, where only an Owner can add a custom connector and it is added for the
+whole organization, which would share one person's URL with everyone in it.

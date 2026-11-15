@@ -52,25 +52,33 @@ tokens; creating and rotating do, because handing you the URL is the point of th
 
 <Tabs>
   <Tab title="Claude">
-    Web, desktop and mobile.
+    Web, desktop and mobile. Add it once on the web and it is there in the desktop and
+    phone apps too.
+
+    In the app, the Claude recipe opens with **Add to Claude**. One press opens Claude's
+    Add custom connector dialog with the name and URL already filled in, and copies the URL
+    as well in case the form comes up empty. What is left is **Continue** and **Add**.
 
     <Steps>
-      <Step title="Open Settings → Connectors">
-        In Claude, go to [Settings → Connectors](https://claude.ai/settings/connectors). The
-        app's **Copy URL and open Claude** button copies your URL and takes you there.
+      <Step title="Open Customize → Connectors">
+        In Claude, go to [Customize → Connectors](https://claude.ai/customize/connectors),
+        then **Add → Add custom connector**. Connectors used to live under Settings.
       </Step>
-      <Step title="Add a custom connector">
-        Click **Add custom connector**.
+      <Step title="Name it and paste the URL">
+        Name it `Hired` and paste your connection URL as the server URL, then press
+        **Continue**.
       </Step>
-      <Step title="Paste the URL">
-        Name it `Hired` and paste your connection URL where it asks for the server URL.
-      </Step>
-      <Step title="Save">
-        Claude can now read and write your career history, resumes and pipeline.
+      <Step title="Leave it on No sign-in">
+        The token in the URL is the sign-in, so there is nothing to fill in. Press **Add**.
       </Step>
     </Steps>
 
-    [Anthropic's connector documentation →](https://support.anthropic.com/en/articles/11175166)
+    The Free plan allows one custom connector; Pro, Max and Ultra allow more. On a Team or
+    Enterprise plan only an Owner can add one, and it is added for the whole organization,
+    which would hand your URL, and so your workspace, to everyone in it. Use a personal
+    account for this.
+
+    [Anthropic's custom connector documentation →](https://claude.com/docs/connectors/custom/remote-mcp)
   </Tab>
 
   <Tab title="Claude Code">

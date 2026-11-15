@@ -6386,7 +6386,7 @@ export const tools: McpTool[] = [
         client: row.client,
         url,
         setup: recipe?.steps(url) ?? [],
-        open: recipe?.launch?.href ?? null,
+        open: recipe?.launch?.href(url) ?? null,
         docs: recipe?.docs ?? null,
         warning: "This URL is a password. Anyone holding it can read and write this workspace.",
       };
