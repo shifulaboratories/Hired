@@ -13,8 +13,6 @@
   <a href="https://docs.hired.tools/tools/overview">Every tool</a>
 </p>
 
-**An applicant tracking system, for applicants.**
-
 Every company you apply to runs one. Theirs keeps a record on you, scores what you sent and
 decides what happens next. This one keeps the record on them — a record of your career, a
 resume builder and a job-search CRM in one app you host yourself, wired into your AI
@@ -63,46 +61,38 @@ experience, employers, dates or metrics, and to say so and ask when the evidence
 The screens below are the app itself, light and dark, filled with the sample workspace and an invented candidate.
 
 <table>
-  <tr>
-    <td width="50%">
-
+<tr>
+<td width="50%">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/screen-board-dark.png">
-  <img alt="The pipeline board: applications in wishlist, applied, interviewing and offer columns, each card with its location, pay and next follow-up." src=".github/readme/screen-board-light.png">
+<source media="(prefers-color-scheme: dark)" srcset=".github/readme/screen-board-dark.png">
+<img alt="The pipeline board: applications in wishlist, applied, interviewing and offer columns, each card with its location, pay and next follow-up." src=".github/readme/screen-board-light.png">
 </picture>
 <p align="center"><sub><b>Pipeline</b>: every application, with follow-up dates that set themselves</sub></p>
-
-    </td>
-    <td width="50%">
-
+</td>
+<td width="50%">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/screen-resume-dark.png">
-  <img alt="The resume editor: sections on the left, a live Harvard-format page on the right with PDF export and a share link." src=".github/readme/screen-resume-light.png">
+<source media="(prefers-color-scheme: dark)" srcset=".github/readme/screen-resume-dark.png">
+<img alt="The resume editor: sections on the left, a live Harvard-format page on the right with PDF export and a share link." src=".github/readme/screen-resume-light.png">
 </picture>
 <p align="center"><sub><b>Resumes</b>: built from Me, with a live preview and real PDF export</sub></p>
-
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-
+</td>
+</tr>
+<tr>
+<td width="50%">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/screen-role-dark.png">
-  <img alt="A role open in Me: its free-form background, with places for rules, caveats and open questions, and the highlights distilled from it." src=".github/readme/screen-role-light.png">
+<source media="(prefers-color-scheme: dark)" srcset=".github/readme/screen-role-dark.png">
+<img alt="A role open in Me: its free-form background, with places for rules, caveats and open questions, and the highlights distilled from it." src=".github/readme/screen-role-light.png">
 </picture>
 <p align="center"><sub><b>Me</b>: a role's raw background and the highlights drawn from it</sub></p>
-
-    </td>
-    <td width="50%">
-
+</td>
+<td width="50%">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/screen-offer-dark.png">
-  <img alt="An application with an offer recorded as version 2, with the earlier version kept below it." src=".github/readme/screen-offer-light.png">
+<source media="(prefers-color-scheme: dark)" srcset=".github/readme/screen-offer-dark.png">
+<img alt="An application with an offer recorded as version 2, with the earlier version kept below it." src=".github/readme/screen-offer-light.png">
 </picture>
 <p align="center"><sub><b>Offers</b>: recorded as versions, so the first number stays on file</sub></p>
-
-    </td>
-  </tr>
+</td>
+</tr>
 </table>
 
 ## Get it
