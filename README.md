@@ -1,6 +1,19 @@
-# Hired
+<h1 align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/banner-dark.png">
+  <img alt="Hired: an applicant tracking system, for applicants." src=".github/readme/banner-light.png">
+</picture>
+</h1>
 
-An applicant tracking system, for applicants.
+<p align="center">
+  <a href="https://hired.tools">hired.tools</a> ·
+  <a href="https://docs.hired.tools">The manual</a> ·
+  <a href="#get-it">Self-host it</a> ·
+  <a href="#connect-your-ai">Connect your AI</a> ·
+  <a href="https://docs.hired.tools/tools/overview">Every tool</a>
+</p>
+
+**An applicant tracking system, for applicants.**
 
 Every company you apply to runs one. Theirs keeps a record on you, scores what you sent and
 decides what happens next. This one keeps the record on them — a record of your career, a
@@ -15,7 +28,17 @@ The manual is at **[docs.hired.tools](https://docs.hired.tools)**: getting conne
 in Me, tailoring a resume, running the search, every tool with its arguments, and the deploy
 guides in full. This page is the front door.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/flip-dark.png">
+  <img alt="Their ATS keeps a record on you: the one resume you sent, tracked through their stages. Hired keeps the record on them: everything you have done, every version you sent where, and who still owes you an answer." src=".github/readme/flip-light.png">
+</picture>
+
 ## What's in it
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/how-dark.png">
+  <img alt="How it fits together: your AI assistant reads and writes Me, resumes and letters, and the pipeline. Me is the record of your career, resumes and letters are assembled from it, and the pipeline tracks where each one went. The web app and the tools share one data layer on your own Postgres." src=".github/readme/how-light.png">
+</picture>
 
 - **Me** — everything you know about every job you've had, with no length limit and no
   structure required. It's the raw material every document is built from, and it can carry
@@ -34,6 +57,53 @@ guides in full. This page is the front door.
 
 Nothing on a resume is invented. Every connected assistant is told never to make up
 experience, employers, dates or metrics, and to say so and ask when the evidence isn't there.
+
+## See it
+
+The screens below are the app itself, light and dark, filled with the sample workspace and an invented candidate.
+
+<table>
+  <tr>
+    <td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/screen-board-dark.png">
+  <img alt="The pipeline board: applications in wishlist, applied, interviewing and offer columns, each card with its location, pay and next follow-up." src=".github/readme/screen-board-light.png">
+</picture>
+<p align="center"><sub><b>Pipeline</b>: every application, with follow-up dates that set themselves</sub></p>
+
+    </td>
+    <td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/screen-resume-dark.png">
+  <img alt="The resume editor: sections on the left, a live Harvard-format page on the right with PDF export and a share link." src=".github/readme/screen-resume-light.png">
+</picture>
+<p align="center"><sub><b>Resumes</b>: built from Me, with a live preview and real PDF export</sub></p>
+
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/screen-role-dark.png">
+  <img alt="A role open in Me: its free-form background, with places for rules, caveats and open questions, and the highlights distilled from it." src=".github/readme/screen-role-light.png">
+</picture>
+<p align="center"><sub><b>Me</b>: a role's raw background and the highlights drawn from it</sub></p>
+
+    </td>
+    <td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/screen-offer-dark.png">
+  <img alt="An application with an offer recorded as version 2, with the earlier version kept below it." src=".github/readme/screen-offer-light.png">
+</picture>
+<p align="center"><sub><b>Offers</b>: recorded as versions, so the first number stays on file</sub></p>
+
+    </td>
+  </tr>
+</table>
 
 ## Get it
 
@@ -82,6 +152,11 @@ company, log your week, and bring the pipeline up to date from your inbox — ea
 assistant follows using the tools. Admins get 32 more data tools and an eighth workflow for
 inviting someone. Members never see the admin tools at all.
 [Every tool, written out →](https://docs.hired.tools/tools/overview)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/talk-dark.png">
+  <img alt="Four things you can say once connected, and the tools the assistant reaches for: filing last quarter appends to a role's background; tailoring a resume uses search_me, posting_keywords, tailor_resume and trace_resume_evidence; asking what to follow up on uses list_follow_ups and list_schedule; a better offer is recorded as a new version with record_offer." src=".github/readme/talk-light.png">
+</picture>
 
 There is also a chat built into the app for anyone who hasn't connected an assistant yet, if
 an admin gives it an Anthropic API key.
@@ -137,6 +212,9 @@ The MCP server in `src/lib/mcp/` speaks Streamable HTTP directly and holds no se
 so it survives restarts and replicas. Tools are defined once in `src/lib/mcp/tools.ts`. The
 connection token lives in the URL path because that is the one shape every client can
 express; `/api/mcp` also takes `Authorization: Bearer <token>`.
+
+The pictures in this README are drawn in `.github/readme/art.html` and rendered with
+`node .github/readme/render.cjs`. Change the words there, not the PNGs.
 
 ## License
 
