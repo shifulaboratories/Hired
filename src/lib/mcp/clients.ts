@@ -27,6 +27,14 @@ export type McpClientRecipe = {
   /** Link text. Defaults to "<name> MCP docs", which reads badly for the generic cards. */
   docsLabel?: string;
   steps: (url: string) => SetupStep[];
+  /**
+   * The page in the client where a server gets added, when the vendor has one
+   * with a stable address. The setup panel turns it into a single button that
+   * copies the URL and opens that page, so the paste is the only step left
+   * that we cannot do for the person. Optional: a CLI or a config file has no
+   * page to open.
+   */
+  launch?: { href: string; label: string };
 };
 
 const SERVER_NAME = "hired";
@@ -42,8 +50,9 @@ export const MCP_CLIENTS: McpClientRecipe[] = [
     tagline: "Web, desktop and mobile",
     native: true,
     docs: "https://support.anthropic.com/en/articles/11175166",
+    launch: { href: "https://claude.ai/settings/connectors", label: "Copy URL and open Claude" },
     steps: (url) => [
-      { text: "Open Claude and go to Settings → Connectors." },
+      { text: "Open Claude and go to Settings → Connectors (claude.ai/settings/connectors)." },
       { text: 'Click "Add custom connector".' },
       { text: "Name it Hired and paste this as the URL:", code: url, codeLabel: "Connection URL" },
       { text: "Save. Claude can now read and write your career history, resumes and pipeline." },
@@ -69,15 +78,30 @@ export const MCP_CLIENTS: McpClientRecipe[] = [
     id: "chatgpt",
     name: "ChatGPT",
     category: "chat",
-    tagline: "Custom connector",
+    tagline: "Custom MCP server",
     native: true,
-    docs: "https://platform.openai.com/docs/mcp",
+    // Checked against OpenAI's own docs in November 2026. Developer mode is no
+    // longer a step: custom servers are added straight from Plugins (what used
+    // to be Connectors). There is no link that pre-fills the form, and the
+    // plugin directory only lists servers that sign people in with OAuth, so
+    // opening the right page with the URL already copied is as close to one
+    // click as ChatGPT allows a self-hosted server today.
+    docs: "https://developers.openai.com/api/docs/guides/custom-mcp-server",
+    launch: { href: "https://chatgpt.com/plugins", label: "Copy URL and open ChatGPT" },
     steps: (url) => [
-      { text: "Open ChatGPT → Settings → Connectors." },
       {
-        text: "Add a custom connector. Depending on your plan this lives behind developer mode, and creating one may be limited to Plus, Pro and business plans.",
+        text: "In ChatGPT on the web, open Plugins (chatgpt.com/plugins), press + and choose Add custom MCP server.",
       },
-      { text: "Paste this where it asks for the MCP server URL:", code: url, codeLabel: "Connection URL" },
+      { text: "Name it Hired and paste this as the server URL:", code: url, codeLabel: "Connection URL" },
+      {
+        text: "Set authentication to No authentication. The token in the URL is the sign-in, so there is nothing else to fill in.",
+      },
+      {
+        text: "Confirm the warning, choose Create as a plugin, then install it. ChatGPT asks before anything that writes; reads go through without asking.",
+      },
+      {
+        text: "If you don't see Add custom MCP server, your plan doesn't offer it yet. OpenAI lists Business, Enterprise and Edu; on Plus and Pro it varies by account.",
+      },
     ],
   },
   {
