@@ -7261,3 +7261,43 @@ needn't know the schema; add fields freely, change one only with a new version.
 **Not a tool.** Nothing an assistant does changes; the manual's publishing guide and the
 security page say the link now also reads as data. The probe checks the route: a hidden
 section isn't served, unknown and suspended slugs 404, the noindex header is there.
+
+## 2026-11-15 — ChatGPT: one press to the right page with the URL copied, not one click
+
+Asked to make connecting ChatGPT one click. Checked against OpenAI's docs in November 2026
+(developers.openai.com/api/docs/guides/custom-mcp-server): custom servers are now added from
+Plugins (chatgpt.com/plugins → + → Add custom MCP server), developer mode is no longer a step,
+authentication can be "No authentication", and ChatGPT asks before tools without
+`readOnlyHint: true`, which every tool here states. The old recipe sent people to Settings →
+Connectors and developer mode, both of which moved.
+
+**True one click is not available to a self-hosted server.** ChatGPT has no link that
+pre-fills the add-server form, and its plugin directory lists only reviewed apps that sign
+people in with OAuth. Every instance has its own address and authenticates with the token in
+the path, so a directory listing would mean building an OAuth server for the hosted instance
+alone; that is a different, much larger decision and was not taken here.
+
+**What shipped:** recipes carry an optional `launch` page. The setup panel turns it into
+"Copy URL and open ChatGPT" (and the same for Claude, whose connectors page has a stable
+address): both the clipboard write and `window.open` start inside the click, because Safari
+drops either once the gesture has been awaited. The tab opens with an opener that is then
+nulled, since asking for `noopener` makes `window.open` return null and a blocked popup would
+be indistinguishable from a good one. `create_connection` returns the page as `open`; its
+description was left alone to stay inside the tool budget. Plan eligibility is stated as
+OpenAI states it (Business, Enterprise, Edu) with Plus and Pro "varies by account", because
+third-party reports disagree and the help centre page would not load from here.
+
+Cursor (`cursor://…/mcp/install`) and VS Code (`vscode:mcp/install`) do take real one-click
+install links; not done here, worth doing next.
+
+**Same day, Claude.** Connectors moved from Settings to Customize
+(claude.ai/customize/connectors), so the first version's link already pointed at the old
+page. Claude's dialog also takes `?modal=add-custom-connector&connectorName=…&connectorUrl=…`,
+which opens Add custom connector filled in, leaving Continue and Add. Anthropic does not
+document that query string (a third-party guide does), and it could not be tried from here
+without a signed-in claude.ai session, so it is used as a bonus, not a dependency: the
+button still copies the URL, and a Claude that ignores the parameters still lands on the
+right page. `launch.href` now takes the URL for that reason. The token sits in the query and
+so in the browser's history; it is going to claude.ai regardless. The recipe also warns off
+Team and Enterprise, where only an Owner can add a custom connector and it is added for the
+whole organization, which would share one person's URL with everyone in it.

@@ -174,12 +174,74 @@ function CodeBlock({ code, label }: { code: string; label?: string }) {
   );
 }
 
+/**
+ * Copy the URL and open the client's add-a-server page in one press.
+ *
+ * The person lands on the client's add-a-server page with the URL already on
+ * their clipboard. Where the link can pre-fill the form (Claude), there is
+ * nothing to paste; where it can't (ChatGPT), they paste once. A failed copy
+ * still opens the page; the URL is shown in the steps below for that case.
+ */
+function LaunchButton({
+  href,
+  label,
+  url,
+  prefills,
+}: {
+  href: string;
+  label: string;
+  url: string;
+  prefills: boolean;
+}) {
+  return (
+    <Button
+      type="button"
+      className="w-full"
+      onClick={async () => {
+        // Both start inside the click, before anything is awaited: Safari only
+        // lets a page open a tab or touch the clipboard while the gesture is
+        // still live. The tab is opened with an opener and then cut loose,
+        // because asking for noopener up front makes window.open return null
+        // and there would be no way to tell a blocked popup from a good one.
+        const copied = navigator.clipboard
+          ? navigator.clipboard.writeText(url)
+          : Promise.reject(new Error("No clipboard on an insecure origin"));
+        const tab = window.open(href, "_blank");
+        if (tab) tab.opener = null;
+        try {
+          await copied;
+          toast.success(
+            prefills
+              ? "Name and URL filled in. If the form comes up empty, paste: the URL is on your clipboard."
+              : "URL copied. Paste it where it asks for the server URL.",
+          );
+        } catch {
+          toast.error("Couldn't copy the URL. Copy it from the steps below.");
+        }
+        if (!tab) toast.message("Your browser blocked the new tab. Allow pop-ups for this site and press it again.");
+      }}
+    >
+      <CopyIcon className="size-3.5" />
+      {label}
+      <ArrowUpRightIcon className="size-3.5" />
+    </Button>
+  );
+}
+
 function SetupGuide({ clientId, url }: { clientId: string; url: string }) {
   const recipe = MCP_CLIENTS.find((entry) => entry.id === clientId) ?? MCP_CLIENTS[0];
   const steps = recipe.steps(url);
 
   return (
     <div className="space-y-4">
+      {recipe.launch && (
+        <LaunchButton
+          href={recipe.launch.href(url)}
+          label={recipe.launch.label}
+          url={url}
+          prefills={recipe.launch.prefills ?? false}
+        />
+      )}
       <ol className="space-y-3">
         {steps.map((step, index) => (
           <li key={step.text} className="flex gap-3">
