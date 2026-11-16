@@ -7,11 +7,13 @@ import {
   PaletteIcon,
   PlugZapIcon,
   ShieldIcon,
+  Trash2Icon,
   UserRoundIcon,
 } from "lucide-react";
 import { PageHeader, PageShell } from "@/components/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FadeIn } from "@/components/motion";
 import { requireUser, isAdmin, ensureDefaultConnection } from "@/lib/auth";
 import { ConnectionsPanel } from "@/components/settings/connections-panel";
@@ -38,13 +40,14 @@ import { scheduleStates } from "@/lib/data/scheduled";
 import { getOutboundSettings } from "@/lib/data/outbound";
 import { listStageTemplates, stageTemplateUsage } from "@/lib/data/stage-templates";
 import { isGoogleRefusal, refusalMessage } from "@/lib/google";
+import { ARCHIVE_KINDS, ARCHIVE_KIND_LABEL, archiveCounts } from "@/lib/data/archive";
 
 export const dynamic = "force-dynamic";
 
-const TABS = ["connections", "pipeline", "account", "appearance"] as const;
+const TABS = ["connections", "pipeline", "account", "appearance", "archive"] as const;
 
 /**
- * Four tabs rather than one column of cards.
+ * Tabs rather than one column of cards.
  *
  * The page used to open on roughly twelve hundred pixels of connection
  * reference material, with the account you came to edit below all of it. Every
@@ -74,7 +77,7 @@ export default async function SettingsPage({
 
   // Nobody should ever land here with nothing to copy.
   await ensureDefaultConnection(user.id);
-  const [connections, profile, skills, settings, linkedAccounts, sweep, capture, outboundSettings, schedules] = await Promise.all([
+  const [connections, profile, skills, settings, linkedAccounts, sweep, capture, outboundSettings, schedules, archived] = await Promise.all([
     listConnections(user.id),
     getProfile(user.id),
     listSkills(),
@@ -84,6 +87,7 @@ export default async function SettingsPage({
     getCaptureLink(user.id, baseUrl),
     getOutboundSettings(user.id),
     scheduleStates(),
+    archiveCounts(user.id),
   ]);
 
   // What the consent screen came back with, as a fixed code — never text from
@@ -143,6 +147,14 @@ export default async function SettingsPage({
           </TabsTrigger>
           <TabsTrigger value="appearance">
             <PaletteIcon className="hidden size-4 sm:block" /> Appearance
+          </TabsTrigger>
+          <TabsTrigger value="archive">
+            <Trash2Icon className="hidden size-4 sm:block" /> Archive
+            {archived.total > 0 && (
+              <span className="text-muted-foreground ml-0.5 text-[11px] tabular-nums">
+                {archived.total}
+              </span>
+            )}
           </TabsTrigger>
         </TabsList>
 
@@ -273,6 +285,12 @@ export default async function SettingsPage({
             <AppearancePanel />
           </FadeIn>
         </TabsContent>
+
+        <TabsContent value="archive">
+          <FadeIn>
+            <ArchiveTab counts={archived} retentionDays={settings.archiveRetentionDays} />
+          </FadeIn>
+        </TabsContent>
       </Tabs>
     </PageShell>
   );
@@ -295,5 +313,58 @@ async function ChecklistsTab({ userId }: { userId: string }) {
         firedFor: usage.get(line.id) ?? 0,
       }))}
     />
+  );
+}
+
+/**
+ * A pointer to /archive, not a second copy of it. The archive page already
+ * restores and deletes; people looked for it under Settings, so it is listed
+ * here with what is in it and one way through.
+ */
+function ArchiveTab({
+  counts,
+  retentionDays,
+}: {
+  counts: Awaited<ReturnType<typeof archiveCounts>>;
+  retentionDays: number;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2.5">
+          <div className="bg-muted text-muted-foreground flex size-9 items-center justify-center rounded-xl">
+            <Trash2Icon className="size-[18px]" />
+          </div>
+          <div>
+            <CardTitle className="text-[15px]">Archive</CardTitle>
+            <p className="text-muted-foreground text-sm">
+              {retentionDays > 0
+                ? `Companies, people and applications you delete wait here for ${retentionDays} days. Restore them or delete them for good.`
+                : "Companies, people and applications you delete wait here until you restore them or delete them for good."}
+            </p>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        <div className="grid gap-2 sm:grid-cols-3">
+          {ARCHIVE_KINDS.map((kind) => (
+            <Link
+              key={kind}
+              href={`/archive?kind=${kind}`}
+              className="text-muted-foreground hover:text-foreground hover:bg-accent flex items-center justify-between rounded-lg border px-3 py-2 text-[13px] transition-colors"
+            >
+              {ARCHIVE_KIND_LABEL[kind].many.replace(/^./, (c) => c.toUpperCase())}
+              <span className="text-foreground tabular-nums">{counts[kind]}</span>
+            </Link>
+          ))}
+        </div>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/archive">
+            Open the archive <ArrowUpRightIcon className="size-3.5" />
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

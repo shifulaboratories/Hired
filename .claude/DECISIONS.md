@@ -7261,3 +7261,12 @@ needn't know the schema; add fields freely, change one only with a new version.
 **Not a tool.** Nothing an assistant does changes; the manual's publishing guide and the
 security page say the link now also reads as data. The probe checks the route: a hidden
 section isn't served, unknown and suspended slugs 404, the noindex header is there.
+
+## 2026-11-16 — Settings gets an Archive tab that points at /archive
+
+William looked for archived records under Settings and found nothing; the archive was
+reachable only from the profile menu, the mobile drawer and the command palette. Settings
+now has a fifth tab, Archive, with the bin's count per kind and a link through. It is a
+pointer, not a second archive screen: restore and delete-for-good stay on /archive, so
+there is one implementation of each. No tool change — list_archive already answers this
+over MCP.
