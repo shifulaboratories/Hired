@@ -21,7 +21,6 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientMark, ClientTile } from "@/components/client-mark";
@@ -33,7 +32,7 @@ import {
   type AccountView,
 } from "@/components/settings/accounts";
 import { cn } from "@/lib/utils";
-import { MCP_CLIENTS, clientName } from "@/lib/mcp/clients";
+import { MCP_CLIENTS, clientName, clientsById } from "@/lib/mcp/clients";
 import type { McpScope } from "@prisma/client";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -212,13 +211,13 @@ function LaunchButton({
           await copied;
           toast.success(
             prefills
-              ? "Name and URL filled in. If the form comes up empty, paste: the URL is on your clipboard."
-              : "URL copied. Paste it where it asks for the server URL.",
+              ? "Filled in for you. Press Continue, then Add."
+              : "URL copied. Paste it in, and you're done.",
           );
         } catch {
-          toast.error("Couldn't copy the URL. Copy it from the steps below.");
+          toast.error("Couldn't copy the URL. Use the Copy button below.");
         }
-        if (!tab) toast.message("Your browser blocked the new tab. Allow pop-ups for this site and press it again.");
+        if (!tab) toast.message("Your browser blocked the new tab. Allow pop-ups and try again.");
       }}
     >
       <CopyIcon className="size-3.5" />
@@ -250,7 +249,8 @@ function SetupGuide({ clientId, url }: { clientId: string; url: string }) {
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-muted-foreground text-sm">{step.text}</p>
-              {step.code && <CodeBlock code={step.code} label={step.codeLabel} />}
+              {/* The bare URL is shown once, under the steps, with its own Copy. */}
+              {step.code && step.code !== url && <CodeBlock code={step.code} label={step.codeLabel} />}
             </div>
           </li>
         ))}
@@ -356,6 +356,7 @@ function ConnectionSheet({
   const [renaming, setRenaming] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [client, setClient] = useState(connection.client);
+  const [showOther, setShowOther] = useState(false);
   const [scope, setScope] = useState<McpScope>(connection.scope);
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
   // Two transitions, not one: testing a connection and rotating its token are
@@ -475,7 +476,7 @@ function ConnectionSheet({
               </div>
             </SheetDescription>
           </div>
-          <Button variant="outline" size="sm" onClick={runTest} disabled={testing}>
+          <Button variant="outline" size="sm" onClick={runTest} disabled={testing} className="mr-7">
             {testing ? (
               <LoaderCircleIcon className="size-3.5 animate-spin" />
             ) : (
@@ -512,9 +513,48 @@ function ConnectionSheet({
           )}
         </AnimatePresence>
 
-        <div className="mt-6 space-y-6">
-          <div className="space-y-2">
-            <div className="text-[13px] font-semibold">Connection URL</div>
+        {/* Ordered by what the person came to do: pick the app, press the
+            button, done. The URL sits under the steps for anyone pasting by
+            hand, and everything that changes a working connection (scope, a
+            new URL, disconnecting) is folded away under More options, because
+            none of it is part of connecting and all of it used to be read
+            first. Scope is a routing aid, not a permission; its blurb says so. */}
+        <div className="mt-6 space-y-5">
+          <div className="flex flex-wrap gap-1.5">
+            {MCP_CLIENTS.filter(
+              (entry) => entry.category !== "any" || showOther || clientsById.get(client)?.category === "any",
+            ).map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => setClient(entry.id)}
+                title={entry.tagline}
+                aria-pressed={client === entry.id}
+                className={cn(
+                  "flex min-h-11 shrink-0 items-center gap-1.5 rounded-control border px-2.5 text-xs font-medium whitespace-nowrap transition-colors md:min-h-8",
+                  client === entry.id
+                    ? "border-primary/50 bg-accent text-foreground"
+                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                )}
+              >
+                <ClientMark client={entry.id} size={14} />
+                {entry.name}
+              </button>
+            ))}
+            {!showOther && clientsById.get(client)?.category !== "any" && (
+              <button
+                type="button"
+                onClick={() => setShowOther(true)}
+                className="text-muted-foreground hover:bg-accent/60 hover:text-foreground flex min-h-11 shrink-0 items-center rounded-control border px-2.5 text-xs font-medium md:min-h-8"
+              >
+                Other…
+              </button>
+            )}
+          </div>
+
+          <SetupGuide clientId={client} url={url} />
+
+          <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <code className="bg-muted/70 min-w-0 flex-1 truncate rounded-lg border px-3 py-2 font-mono text-[12.5px]">
                 {revealed ? url : masked}
@@ -529,103 +569,63 @@ function ConnectionSheet({
               </Button>
               <CopyButton value={url} label="Copy" />
             </div>
-            <p className="text-muted-foreground text-xs">
-              This URL is a password for your account. Anyone holding it can read and write
-              your career history, resumes and pipeline.
-            </p>
+            <p className="text-muted-foreground text-xs">Your URL. Keep it private: it works like a password.</p>
           </div>
 
-          {/* One select, no new screen.
-              Narrowing is about ACCURACY first: an assistant choosing between
-              two hundred tools picks the wrong one more often than one choosing
-              between sixty, and the wrong one here writes into a career
-              history. It is deliberately not described as a permission, because
-              it is not one — the sentence underneath says so in those words. */}
-          <div className="space-y-1.5">
-            <Label htmlFor={`scope-${connection.id}`} className="text-[13px] font-semibold">
-              What this one is served
-            </Label>
-            <Select
-              value={scope}
-              onValueChange={(next) => {
-                const chosen = next as McpScope;
-                setScope(chosen);
-                startTransition(async () => {
-                  try {
-                    await setConnectionScopeAction(connection.id, chosen);
-                    toast.success(`Now served ${scopeLabel(chosen).toLowerCase()}`);
-                  } catch (error) {
-                    setScope(connection.scope);
-                    toast.error(error instanceof Error ? error.message : "Could not change that.");
-                  }
-                });
-              }}
-            >
-              <SelectTrigger id={`scope-${connection.id}`} className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SCOPES.map((entry) => (
-                  <SelectItem key={entry.key} value={entry.key}>
-                    {entry.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-muted-foreground text-xs">
-              {scopeBlurb(scope)} This is not a permission — the URL still reaches the whole
-              account, and anybody who can sign in can widen it again. It narrows what the
-              assistant is offered, which is what makes it pick the right tool.
-            </p>
-          </div>
-
-          <div>
-            <div className="mb-2 text-[13px] font-semibold">Where are you pasting this?</div>
-            <div className="flex flex-wrap gap-1.5">
-              {MCP_CLIENTS.map((entry) => (
-                <button
-                  key={entry.id}
-                  type="button"
-                  onClick={() => setClient(entry.id)}
-                  title={entry.tagline}
-                  aria-pressed={client === entry.id}
-                  className={cn(
-                    "flex min-h-11 shrink-0 items-center gap-1.5 rounded-control border px-2.5 text-xs font-medium whitespace-nowrap transition-colors md:min-h-8",
-                    client === entry.id
-                      ? "border-primary/50 bg-accent text-foreground"
-                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                  )}
+          <details className="group">
+            <summary className="text-muted-foreground hover:text-foreground cursor-pointer text-xs font-medium select-none">
+              More options
+            </summary>
+            <div className="mt-3 space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor={`scope-${connection.id}`} className="text-[13px] font-semibold">
+                  Tools this app gets
+                </Label>
+                <Select
+                  value={scope}
+                  onValueChange={(next) => {
+                    const chosen = next as McpScope;
+                    setScope(chosen);
+                    startTransition(async () => {
+                      try {
+                        await setConnectionScopeAction(connection.id, chosen);
+                        toast.success(`Now served ${scopeLabel(chosen).toLowerCase()}`);
+                      } catch (error) {
+                        setScope(connection.scope);
+                        toast.error(error instanceof Error ? error.message : "Could not change that.");
+                      }
+                    });
+                  }}
                 >
-                  <ClientMark client={entry.id} size={14} />
-                  {entry.name}
-                </button>
-              ))}
+                  <SelectTrigger id={`scope-${connection.id}`} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SCOPES.map((entry) => (
+                      <SelectItem key={entry.key} value={entry.key}>
+                        {entry.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-muted-foreground text-xs">{scopeBlurb(scope)}</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={rotate} disabled={pending}>
+                  <RefreshCwIcon className={cn("size-3.5", pending && "animate-spin")} /> New URL
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={remove}
+                  disabled={pending}
+                >
+                  <Trash2Icon className="size-3.5" /> Disconnect
+                </Button>
+              </div>
             </div>
-          </div>
-
-          <SetupGuide clientId={client} url={url} />
-
-          <Separator />
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-muted-foreground text-xs">
-              A new URL replaces this one for this assistant only. Everything else stays connected.
-            </p>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={rotate} disabled={pending}>
-                <RefreshCwIcon className={cn("size-3.5", pending && "animate-spin")} /> New URL
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:text-destructive"
-                onClick={remove}
-                disabled={pending}
-              >
-                <Trash2Icon className="size-3.5" /> Disconnect
-              </Button>
-            </div>
-          </div>
+          </details>
         </div>
       </SheetContent>
     </Sheet>
@@ -940,13 +940,10 @@ export function ConnectionsPanel({
           className="border-primary/30 bg-primary-tint hover:border-primary/50 flex w-full items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-colors"
         >
           <span className="min-w-0 flex-1">
-            <span className="block text-[13.5px] font-medium">Start here: connect Claude</span>
-            <span className="text-muted-foreground block text-[13px]">
-              Two minutes of copy and paste, and after it you can say &ldquo;I applied to Figma
-              yesterday&rdquo; instead of filling in a form. Everything here works without it.
-            </span>
+            <span className="block text-[13.5px] font-medium">Start here: connect Claude or ChatGPT</span>
+            <span className="text-muted-foreground block text-[13px]">About a minute. Optional.</span>
           </span>
-          <span className="text-primary shrink-0 text-[13px] font-medium">Show me how →</span>
+          <span className="text-primary shrink-0 text-[13px] font-medium">Connect →</span>
         </button>
       )}
 

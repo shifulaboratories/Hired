@@ -65,16 +65,9 @@ export const MCP_CLIENTS: McpClientRecipe[] = [
       prefills: true,
     },
     steps: (url) => [
-      {
-        text: "In Claude, open Customize → Connectors (claude.ai/customize/connectors) and choose Add → Add custom connector.",
-      },
-      { text: "Name it Hired and paste this as the server URL, unless both are already filled in:", code: url, codeLabel: "Connection URL" },
-      {
-        text: "Press Continue and leave authentication on No sign-in. The token in the URL is the sign-in. Then press Add.",
-      },
-      {
-        text: "It shows up in Claude on the web, desktop and phone. On a Team or Enterprise plan only an Owner can add one, for the whole organization, so use a personal account: this URL opens your workspace to whoever holds it.",
-      },
+      { text: "In Claude, open Customize → Connectors and choose Add custom connector." },
+      { text: "Name it Hired, paste your URL, then press Continue and Add.", code: url, codeLabel: "Connection URL" },
+      { text: "Use a personal Claude account. On Team and Enterprise this would share your data with everyone." },
     ],
   },
   {
@@ -108,19 +101,9 @@ export const MCP_CLIENTS: McpClientRecipe[] = [
     docs: "https://developers.openai.com/api/docs/guides/custom-mcp-server",
     launch: { href: () => "https://chatgpt.com/plugins", label: "Copy URL and open ChatGPT" },
     steps: (url) => [
-      {
-        text: "In ChatGPT on the web, open Plugins (chatgpt.com/plugins), press + and choose Add custom MCP server.",
-      },
-      { text: "Name it Hired and paste this as the server URL:", code: url, codeLabel: "Connection URL" },
-      {
-        text: "Set authentication to No authentication. The token in the URL is the sign-in, so there is nothing else to fill in.",
-      },
-      {
-        text: "Confirm the warning, choose Create as a plugin, then install it. ChatGPT asks before anything that writes; reads go through without asking.",
-      },
-      {
-        text: "If you don't see Add custom MCP server, your plan doesn't offer it yet. OpenAI lists Business, Enterprise and Edu; on Plus and Pro it varies by account.",
-      },
+      { text: "In ChatGPT on the web, open Plugins, press + and choose Add custom MCP server." },
+      { text: "Name it Hired and paste your URL.", code: url, codeLabel: "Connection URL" },
+      { text: "Pick No authentication, then Create. Not there? Your plan doesn't offer it yet." },
     ],
   },
   {
