@@ -59,7 +59,7 @@ export const SCOPES = [
     extras: [],
     readOnly: false,
     blurb:
-      "Every tool this account can reach. The default, and what every connection had before scopes existed.",
+      "Every tool this account can reach. The default.",
   },
   {
     key: "WRITING",
