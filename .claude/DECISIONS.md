@@ -7334,3 +7334,12 @@ at 1440 wide, 2x, then palette-quantized to keep each under about 110 KB. The ba
 unquantized because its glow bands visibly at 256 colours. They are not re-shot by any
 script: they need a running instance, so retake them by hand when a screen changes enough
 to mislead.
+
+## 2026-11-16 — Settings gets an Archive tab that points at /archive
+
+William looked for archived records under Settings and found nothing; the archive was
+reachable only from the profile menu, the mobile drawer and the command palette. Settings
+now has a fifth tab, Archive, with the bin's count per kind and a link through. It is a
+pointer, not a second archive screen: restore and delete-for-good stay on /archive, so
+there is one implementation of each. No tool change — list_archive already answers this
+over MCP.
