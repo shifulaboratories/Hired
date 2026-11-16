@@ -7316,3 +7316,21 @@ line, and the manual's two tabs to a paragraph each. The scope blurb lost the ca
 it is not a permission; the decision-log entry that introduced scopes and the
 `update_connection` description still say it, and the select is now one click further
 from anyone who has not gone looking for it.
+
+## 2026-11-15 — The README gets pictures, drawn and shot from the real app
+
+The GitHub page was text only. It now opens with a banner and carries three drawn diagrams
+(the ATS flip, how Me / documents / pipeline fit, and what you can say with the tools each
+line reaches for) and four screenshots, each in a light and a dark version swapped by
+`<picture>` and `prefers-color-scheme`, so neither GitHub theme shows a white slab.
+
+The diagrams are HTML in `.github/readme/art.html`, built on the app's own tokens, and
+rendered by `node .github/readme/render.cjs` — the same rule as `site/media/og-source.html`:
+change the words, re-render, never edit a PNG. Every claim on them is something the README
+already says or a tool that exists; no counts, so nothing goes stale when the tool array
+changes. The screenshots are the running app with `load_sample_workspace` plus an invented
+candidate (Dana Whitfield, Meridian Logistics, Northbeam Freight — the landing page's), shot
+at 1440 wide, 2x, then palette-quantized to keep each under about 110 KB. The banner is left
+unquantized because its glow bands visibly at 256 colours. They are not re-shot by any
+script: they need a running instance, so retake them by hand when a screen changes enough
+to mislead.

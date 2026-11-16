@@ -1,0 +1,277 @@
+<!doctype html>
+<!--
+  The README's drawn art: the banner and the three diagrams, in both themes.
+
+  Every figure here is a fact about the product as it ships — nothing is a
+  metric, a user count or a feature that does not exist. Change the words here
+  and re-render with `node .github/readme/render.mjs`; do not edit the PNGs.
+
+  Colours are the app's own tokens from src/app/globals.css (light :root and
+  .dark), so the art matches the screenshots beside it. The page is opened as
+  art.html?theme=light or ?theme=dark and each <figure> is captured on its own.
+-->
+<html><head><meta charset="utf-8">
+<style>
+  :root {
+    --page: transparent;
+    --bg: oklch(0.979 0.001 265);
+    --card: oklch(1 0 0);
+    --inset: oklch(0.962 0.002 265);
+    --fg: oklch(0.18 0.006 265);
+    --muted: oklch(0.505 0.008 265);
+    --faint: oklch(0.665 0.008 265);
+    --rim: oklch(0.905 0.003 265);
+    --primary: oklch(0.55 0.17 254);
+    --tint: oklch(0.96 0.019 253);
+    --grid: oklch(0 0 0 / 0.05);
+    --tile: #101214; --cut: #F9F9FA;
+    --s0: oklch(0.6 0.012 265); --s1: oklch(0.55 0.13 235); --s2: oklch(0.53 0.15 268);
+    --s3: oklch(0.52 0.17 300); --s4: oklch(0.55 0.18 340); --s5: oklch(0.58 0.14 68);
+    --s6: oklch(0.55 0.13 152); --s7: oklch(0.55 0.19 25);
+    --shadow: 0 0 0 1px var(--rim), 0 1px 2px oklch(0 0 0 / 0.04), 0 4px 12px oklch(0 0 0 / 0.04);
+  }
+  :root.dark {
+    --bg: oklch(0.165 0.004 265);
+    --card: oklch(0.213 0.004 265);
+    --inset: oklch(0.19 0.004 265);
+    --fg: oklch(0.968 0.002 265);
+    --muted: oklch(0.68 0.008 265);
+    --faint: oklch(0.6 0.008 265);
+    --rim: oklch(1 0 0 / 9%);
+    --primary: oklch(0.65 0.17 252);
+    --tint: oklch(0.65 0.17 252 / 0.17);
+    --grid: oklch(1 0 0 / 0.045);
+    --tile: #F9F9FA; --cut: #191A1E;
+    --s0: oklch(0.7 0.012 265); --s1: oklch(0.68 0.13 235); --s2: oklch(0.66 0.15 268);
+    --s3: oklch(0.68 0.16 300); --s4: oklch(0.7 0.16 340); --s5: oklch(0.75 0.14 68);
+    --s6: oklch(0.7 0.13 152); --s7: oklch(0.68 0.17 25);
+    --shadow: 0 0 0 1px var(--rim);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: transparent; }
+  body { font-family: Inter, sans-serif; color: var(--fg); -webkit-font-smoothing: antialiased; padding: 0; }
+  figure { width: 1280px; background: var(--bg); border-radius: 18px; position: relative; overflow: hidden;
+           box-shadow: inset 0 0 0 1px var(--rim); margin-bottom: 40px; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .mark { width: 44px; height: 44px; }
+  .motif { display: flex; height: 4px; border-radius: 2px; overflow: hidden; }
+  .motif i { flex: 1; }
+  .eyebrow { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
+  .card { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); }
+
+  /* ---------- banner ---------- */
+  #banner { height: 440px; }
+  #banner .grid { position: absolute; inset: 0;
+    background-image: linear-gradient(to right, var(--grid) 1px, transparent 1px), linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 56px 56px; mask-image: radial-gradient(70% 90% at 30% 30%, black, transparent 80%); }
+  #banner .glow { position: absolute; inset: 0;
+    background: radial-gradient(40% 60% at 15% 35%, color-mix(in oklch, var(--primary) 16%, transparent), transparent 72%),
+                radial-gradient(36% 50% at 80% 10%, color-mix(in oklch, var(--s3) 13%, transparent), transparent 74%),
+                radial-gradient(30% 40% at 98% 70%, color-mix(in oklch, var(--s4) 10%, transparent), transparent 76%); }
+  #banner .pad { position: relative; padding: 52px 64px 48px; height: 100%; display: flex; flex-direction: column; }
+  #banner .brand { display: flex; align-items: center; gap: 14px; font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
+  #banner h1 { margin-top: auto; font-size: 58px; line-height: 1.04; letter-spacing: -.04em; font-weight: 600; max-width: 17ch; }
+  #banner h1 .blue { color: var(--primary); }
+  #banner p { margin-top: 18px; font-size: 21px; line-height: 1.45; color: var(--muted); max-width: 54ch; }
+  #banner .foot { margin-top: 30px; display: flex; align-items: center; gap: 18px; }
+  #banner .meta { font-size: 15px; color: var(--faint); letter-spacing: .02em; }
+  #banner .stack { position: absolute; right: 64px; top: 64px; display: flex; flex-direction: column; gap: 10px; width: 300px; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 7px; font-size: 14px; font-weight: 600;
+          background: color-mix(in oklch, var(--c) 14%, transparent); color: var(--c); }
+  .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+  .mini { padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; font-size: 14px; border-left: 3px solid var(--c); }
+  .mini b { font-weight: 600; display: block; } .mini span { color: var(--muted); font-size: 13px; }
+
+  /* ---------- how it fits ---------- */
+  #how { padding: 52px 56px 48px; }
+  #how h2, #talk h2, #flip h2 { font-size: 34px; letter-spacing: -.03em; font-weight: 600; margin-top: 8px; }
+  #how .lede, #talk .lede, #flip .lede { color: var(--muted); font-size: 17px; margin-top: 8px; max-width: 70ch; line-height: 1.5; }
+  .ai { margin-top: 34px; padding: 18px 22px; display: flex; align-items: center; gap: 18px; }
+  .ai .icons { display: flex; gap: 8px; }
+  .ai .icons img { width: 30px; height: 30px; border-radius: 7px; background: #fff; padding: 3px; box-shadow: 0 0 0 1px var(--rim); }
+  .ai .t { font-weight: 600; font-size: 18px; } .ai .s { color: var(--muted); font-size: 14.5px; margin-top: 2px; }
+  .ai .pill { white-space: nowrap; flex: none; margin-left: auto; font-size: 13px; padding: 6px 10px; border-radius: 7px; background: var(--tint); color: var(--primary); font-weight: 600; }
+  .wires { height: 46px; position: relative; }
+  .wires svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .cols { display: grid; grid-template-columns: 1fr 34px 1fr 34px 1fr; align-items: stretch; }
+  .col { padding: 22px 22px 20px; }
+  .col .k { display: flex; align-items: center; gap: 10px; }
+  .col .n { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #fff; background: var(--c); }
+  .col h3 { font-size: 21px; letter-spacing: -.02em; font-weight: 600; }
+  .col p { color: var(--muted); font-size: 14.5px; line-height: 1.5; margin-top: 8px; }
+  .col ul { list-style: none; margin-top: 14px; display: grid; gap: 7px; }
+  .col li { font-size: 14px; padding: 8px 10px; border-radius: 8px; background: var(--inset); display: flex; gap: 8px; align-items: baseline; }
+  .col li::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 2px; background: var(--c); transform: translateY(-1px); }
+  .arrow { display: grid; place-items: center; color: var(--faint); }
+  .base { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .base div { padding: 14px 18px; border-radius: 12px; border: 1px dashed var(--rim); font-size: 14px; color: var(--muted); line-height: 1.45; }
+  .base b { color: var(--fg); font-weight: 600; display: block; font-size: 14.5px; margin-bottom: 2px; }
+
+  /* ---------- talk to it ---------- */
+  #talk { padding: 52px 56px 52px; }
+  .rows { margin-top: 30px; display: grid; gap: 14px; }
+  .row { display: grid; grid-template-columns: 430px 40px 1fr; align-items: center; }
+  .said { padding: 16px 20px; border-radius: 16px 16px 4px 16px; background: var(--primary); color: #fff; font-size: 17px; line-height: 1.4; font-weight: 500; justify-self: end; }
+  .does { padding: 16px 20px; }
+  .does .tools { display: flex; flex-wrap: wrap; gap: 6px; }
+  .does code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; padding: 3px 8px; border-radius: 6px; background: var(--inset); box-shadow: inset 0 0 0 1px var(--rim); }
+  .does p { margin-top: 10px; font-size: 14.5px; color: var(--muted); line-height: 1.5; }
+  .does p b { color: var(--fg); font-weight: 600; }
+  .rule { margin-top: 22px; display: flex; gap: 12px; align-items: center; font-size: 14.5px; color: var(--muted); }
+  .rule b { color: var(--fg); }
+  .rule .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--s6); flex: none; }
+
+  /* ---------- flip ---------- */
+  #flip { padding: 52px 56px 52px; }
+  .two { margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .side { padding: 26px 26px 22px; }
+  .side.theirs { background: var(--inset); box-shadow: inset 0 0 0 1px var(--rim); border-radius: 14px; }
+  .side h3 { font-size: 22px; font-weight: 600; letter-spacing: -.02em; margin-top: 6px; }
+  .side .who { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: var(--faint); }
+  .side.yours .who { color: var(--primary); }
+  .side dl { margin-top: 18px; display: grid; grid-template-columns: 120px 1fr; row-gap: 14px; column-gap: 14px; font-size: 15px; line-height: 1.45; }
+  .side dt { color: var(--faint); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; padding-top: 2px; }
+  .side.theirs dd { color: var(--muted); }
+</style></head>
+<body>
+
+<!-- ======================= BANNER ======================= -->
+<figure id="banner">
+  <div class="grid"></div><div class="glow"></div>
+  <div class="pad">
+    <div class="brand" style="margin-bottom:28px">
+      <svg class="mark" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="var(--tile)"/><rect x="16" y="17" width="13" height="7" rx="1.5" fill="var(--cut)"/><rect x="16" y="28.5" width="22.5" height="7" rx="1.5" fill="var(--cut)"/><rect x="16" y="40" width="32" height="7" rx="1.5" fill="var(--cut)"/></svg>
+      Hired
+    </div>
+    <h1>An applicant tracking system, <span class="blue">for applicants.</span></h1>
+    <p>Your career on the record, a resume builder and a job-search CRM in one app you host yourself, wired into your AI assistant so you can just talk to it.</p>
+    <div class="foot">
+      <div class="motif" style="width:200px">
+        <i style="background:var(--s0)"></i><i style="background:var(--s1)"></i><i style="background:var(--s2)"></i>
+        <i style="background:var(--s3)"></i><i style="background:var(--s4)"></i><i style="background:var(--s5)"></i>
+      </div>
+      <span class="meta mono">hired.tools · self-hosted · AGPL-3.0 · MCP</span>
+    </div>
+  </div>
+  <div class="stack">
+    <div class="card mini" style="--c:var(--s1)"><div><b>Product Manager, Integrations</b><span>Applied · chase in 6d</span></div><span class="chip" style="--c:var(--s1)">Applied</span></div>
+    <div class="card mini" style="--c:var(--s3)"><div><b>Operations Lead</b><span>Round 2 · Thursday</span></div><span class="chip" style="--c:var(--s3)">Interviewing</span></div>
+    <div class="card mini" style="--c:var(--s5)"><div><b>Group Product Manager</b><span>Version 2 · answer in 4d</span></div><span class="chip" style="--c:var(--s5)">Offer</span></div>
+  </div>
+</figure>
+
+<!-- ======================= HOW IT FITS ======================= -->
+<figure id="how">
+  <div class="eyebrow">How it fits together</div>
+  <h2>One record of your career. Everything else is built from it.</h2>
+  <p class="lede">You fill in Me once, in your own words. Resumes and letters are assembled from it, and the pipeline tracks where each one went. Your assistant and the web app work on the same data.</p>
+
+  <div class="card ai">
+    <div class="icons">
+      <img src="../../site/media/clients/claude.png"><img src="../../site/media/clients/chatgpt.png"><img src="../../site/media/clients/cursor.png"><img src="../../site/media/clients/vscode.png"><img src="../../site/media/clients/windsurf.png">
+    </div>
+    <div>
+      <div class="t">Your AI assistant</div>
+      <div class="s">Claude, ChatGPT, Cursor, VS Code, Windsurf or anything else that speaks MCP. One URL per client.</div>
+    </div>
+    <span class="pill mono">reads and writes all three</span>
+  </div>
+
+  <div class="wires">
+    <svg viewBox="0 0 1168 46" preserveAspectRatio="none">
+      <g stroke="var(--faint)" stroke-width="1.5" fill="none" stroke-dasharray="4 5">
+        <path d="M584 0 V14 H186 V46"/><path d="M584 0 V46"/><path d="M584 14 H982 V46"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="cols">
+    <div class="card col" style="--c:var(--primary)">
+      <div class="k"><span class="n">1</span><h3>Me</h3></div>
+      <p>Everything about every job you've had, with no length limit and no structure required.</p>
+      <ul><li>Roles, each with a free-form background</li><li>Highlights: polished, reusable bullets</li><li>Rules for how a job may be described</li><li>Education, projects, skills, notes</li></ul>
+    </div>
+    <div class="arrow"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    <div class="card col" style="--c:var(--s3)">
+      <div class="k"><span class="n">2</span><h3>Resumes &amp; letters</h3></div>
+      <p>Tailored documents assembled from Me, with every bullet checked against it.</p>
+      <ul><li>Harvard format by default, five more templates</li><li>Real PDF export and an unlisted link</li><li>What a tailored copy changed from its base</li><li>Cover letters, outreach, thank-yous</li></ul>
+    </div>
+    <div class="arrow"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    <div class="card col" style="--c:var(--s5)">
+      <div class="k"><span class="n">3</span><h3>Pipeline &amp; people</h3></div>
+      <p>Every application as a board, a table and a calendar, with the companies and contacts behind it.</p>
+      <ul><li>Stages, timeline, tasks and checklists</li><li>Follow-up dates that set themselves</li><li>Interview rounds and offers as versions</li><li>Companies, contacts and referrals</li></ul>
+    </div>
+  </div>
+
+  <div class="base">
+    <div><b>The web app</b>Where you go to look at, adjust and print the result.</div>
+    <div><b>One data layer</b>The tools and the UI call the same functions, scoped to your workspace.</div>
+    <div><b>Your Postgres</b><span class="mono">DATABASE_URL</span> is the only variable you ever set.</div>
+  </div>
+</figure>
+
+<!-- ======================= TALK TO IT ======================= -->
+<figure id="talk">
+  <div class="eyebrow">The interface is a conversation</div>
+  <h2>Say what you want. The tools do the filing.</h2>
+  <p class="lede">A few things you can say once your assistant is connected, and the tools it reaches for.</p>
+  <div class="rows">
+    <div class="row">
+      <div class="said">Here's everything I did at Meridian last quarter. File it.</div><div></div>
+      <div class="card does"><div class="tools"><code>append_role_background</code><code>mine_role_background</code></div>
+        <p>Adds to the role's background <b>without replacing</b> what's there, then distills it into highlights.</p></div>
+    </div>
+    <div class="row">
+      <div class="said">Tailor my resume to this posting.</div><div></div>
+      <div class="card does"><div class="tools"><code>search_me</code><code>posting_keywords</code><code>tailor_resume</code><code>trace_resume_evidence</code></div>
+        <p>Builds a copy from your own evidence and shows <b>which bullets nothing in Me backs up</b>.</p></div>
+    </div>
+    <div class="row">
+      <div class="said">What do I need to follow up on this week?</div><div></div>
+      <div class="card does"><div class="tools"><code>list_follow_ups</code><code>list_schedule</code><code>log_follow_up</code></div>
+        <p>Follow-ups that are due, tasks and interviews in one list, and the next date set when you've chased.</p></div>
+    </div>
+    <div class="row">
+      <div class="said">They came back with a better number.</div><div></div>
+      <div class="card does"><div class="tools"><code>record_offer</code><code>compare_offers</code></div>
+        <p>Records a <b>new version</b> of the offer, so the first one stays on file to compare against.</p></div>
+    </div>
+  </div>
+  <div class="rule"><span class="dot"></span><span><b>Nothing is invented.</b> Every connected assistant is told never to make up experience, employers, dates or metrics, and to ask when the evidence isn't there.</span></div>
+</figure>
+
+<!-- ======================= FLIP ======================= -->
+<figure id="flip">
+  <div class="eyebrow">The idea</div>
+  <h2>Every company you apply to runs an ATS. Now you do too.</h2>
+  <p class="lede">Theirs keeps a record on you. This one keeps the record on them.</p>
+  <div class="two">
+    <div class="side theirs">
+      <div class="who">Their ATS</div>
+      <h3>Keeps a record on you</h3>
+      <dl>
+        <dt>Holds</dt><dd>The one resume you sent them</dd>
+        <dt>Tracks</dt><dd>You, through their stages</dd>
+        <dt>Decides</dt><dd>What happens next, on their schedule</dd>
+        <dt>Hosted by</dt><dd>Them</dd>
+      </dl>
+    </div>
+    <div class="side yours card">
+      <div class="who">Hired</div>
+      <h3>Keeps the record on them</h3>
+      <dl>
+        <dt>Holds</dt><dd>Everything you've done, and every version you sent where</dd>
+        <dt>Tracks</dt><dd>Every application through your stages, and who still owes you an answer</dd>
+        <dt>Decides</dt><dd>Nothing. It tells you who to chase and when</dd>
+        <dt>Hosted by</dt><dd>You, or hired.tools. Export everything as one file, any time</dd>
+      </dl>
+    </div>
+  </div>
+</figure>
+
+<script>
+  if (new URLSearchParams(location.search).get('theme') === 'dark') document.documentElement.classList.add('dark');
+</script>
+</body></html>
