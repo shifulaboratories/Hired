@@ -7302,6 +7302,21 @@ so in the browser's history; it is going to claude.ai regardless. The recipe als
 Team and Enterprise, where only an Owner can add a custom connector and it is added for the
 whole organization, which would share one person's URL with everyone in it.
 
+## 2026-11-16 — The connection panel is for connecting; the rest folds away
+
+William: the connect screens had far too much text. The panel opened on the URL, a
+password warning, a scope select with a three-sentence caveat, and nine client chips
+before any instruction, and the steps under the button repeated the URL in a second copy
+box. Now: the app chips (six, with Other… for the three generic recipes), the one button,
+three short steps, the URL once with one line under it, and More options holding scope,
+New URL and Disconnect, which change a working connection rather than make one. A step
+whose code is just the URL no longer gets its own box in the panel; the tool output keeps
+it. The Claude and ChatGPT recipes went to three lines each, the start-here card to one
+line, and the manual's two tabs to a paragraph each. The scope blurb lost the caveat that
+it is not a permission; the decision-log entry that introduced scopes and the
+`update_connection` description still say it, and the select is now one click further
+from anyone who has not gone looking for it.
+
 ## 2026-11-15 — The README gets pictures, drawn and shot from the real app
 
 The GitHub page was text only. It now opens with a banner and carries three drawn diagrams
