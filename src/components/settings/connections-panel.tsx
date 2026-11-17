@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowUpRightIcon,
@@ -343,11 +343,14 @@ function WiredRow({
 function ConnectionSheet({
   connection,
   baseUrl,
+  counts,
   open,
   onOpenChange,
 }: {
   connection: ConnectionRow;
   baseUrl: string;
+  /** What Hired serves in all, for anyone who goes looking. Not on the page itself. */
+  counts: { tools: number; admin: number; workflows: number };
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -609,6 +612,11 @@ function ConnectionSheet({
                   </SelectContent>
                 </Select>
                 <p className="text-muted-foreground text-xs">{scopeBlurb(scope)}</p>
+                <p className="text-faint text-xs">
+                  Hired offers {counts.tools} tools
+                  {counts.admin > 0 ? ` (${counts.admin} of them admin)` : ""} and {counts.workflows}{" "}
+                  workflows in all.
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={rotate} disabled={pending}>
@@ -868,6 +876,7 @@ export function ConnectionsPanel({
   promptCount,
   accounts,
   captureLink,
+  autoConnect = false,
 }: {
   baseUrl: string;
   connections: ConnectionRow[];
@@ -877,6 +886,8 @@ export function ConnectionsPanel({
   promptCount: number;
   accounts: AccountsProps;
   captureLink: CaptureLinkProps;
+  /** Open the first connection's panel on arrival: ?connect=1, from "Show me how". */
+  autoConnect?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [sweeping, startSweeping] = useTransition();
@@ -886,6 +897,11 @@ export function ConnectionsPanel({
   const [openAccountId, setOpenAccountId] = useState<string | null>(null);
   const [imap, setImap] = useState<{ open: boolean; prefill: AccountView | null }>({ open: false, prefill: null });
   const used = useMemo(() => connections.filter((c) => c.lastUsedAt).length, [connections]);
+  const showSweep = accounts.sweep.mailConnected || accounts.sweep.on;
+  // Nothing has ever called in and there is one connection: the Start here
+  // card is the way in, so the header button and the "never used" row that
+  // open the same panel stand down until it has been used once.
+  const firstRun = used === 0 && connections.length === 1;
 
   const add = (client: string) =>
     startTransition(async () => {
@@ -894,6 +910,19 @@ export function ConnectionsPanel({
       toast.success("Connection added — the URL is in the panel");
       if (created?.id) setOpenId(created.id);
     });
+
+  // "Show me how" on Today lands here to connect, not to read a settings page,
+  // so the panel opens on arrival. Once: closing it must not reopen it, and the
+  // address keeps no ?connect=1 for a reload to trip over.
+  useEffect(() => {
+    if (!autoConnect || connections.length === 0) return;
+    setOpenId(connections[0].id);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("connect");
+    window.history.replaceState(null, "", url.toString());
+    // Arrival only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const openConnection = connections.find((connection) => connection.id === openId) ?? null;
   const openAccount = accounts.list.find((account) => account.id === openAccountId) ?? null;
@@ -911,20 +940,19 @@ export function ConnectionsPanel({
               ? "no accounts"
               : accounts.list.length === 1
                 ? "1 account"
-                : `${accounts.list.length} accounts`}{" "}
-            · {toolCount} tools
-            {isAdmin && adminToolCount > 0 && <span> ({adminToolCount} admin)</span>} · {promptCount}{" "}
-            workflows
+                : `${accounts.list.length} accounts`}
           </p>
         </div>
-        <Button size="sm" onClick={() => setPicking(true)} disabled={pending}>
-          {pending ? (
-            <LoaderCircleIcon className="size-3.5 animate-spin" />
-          ) : (
-            <PlusIcon className="size-3.5" />
-          )}
-          Connect
-        </Button>
+        {!firstRun && (
+          <Button size="sm" onClick={() => setPicking(true)} disabled={pending}>
+            {pending ? (
+              <LoaderCircleIcon className="size-3.5 animate-spin" />
+            ) : (
+              <PlusIcon className="size-3.5" />
+            )}
+            Connect
+          </Button>
+        )}
       </div>
 
       {/* Nothing has ever called in.
@@ -973,7 +1001,7 @@ export function ConnectionsPanel({
           library makes when you are adding one and nobody needs while reading.
           Adding anything is the button above; this is the answer, at a glance. */}
       <section className="space-y-2">
-        {connections.map((connection) => {
+        {(firstRun ? [] : connections).map((connection) => {
           const label = clientName(connection.client);
           const lastUsed = ago(connection.lastUsedAt);
           return (
@@ -1042,50 +1070,58 @@ export function ConnectionsPanel({
           connection URLs — so they sit under the list rather than growing a tab
           apiece. Neither costs a click in its default, off, state. */}
       <section className="space-y-3 rounded-xl border px-4 py-3.5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <Label htmlFor="mail-sweep" className="text-[13.5px] font-medium">
-              Read new mail and queue what it finds
-            </Label>
-            <p className="text-muted-foreground mt-0.5 text-[13px]">
-              Once an hour, look through the accounts above for mail from the companies and people
-              already on your pipeline{accounts.sweep.calendarConnected ? ", and at meetings booked with them," : ""}{" "}
-              and put what it finds on your dashboard to accept or dismiss. It never writes to your
-              pipeline on its own, and it never looks outside the addresses your own records name.
-            </p>
-            {!accounts.sweep.mailConnected && (
-              <p className="text-faint mt-1 text-[12px]">
-                Connect a mailbox above and this switch starts working.
-              </p>
-            )}
-            {accounts.sweep.on && accounts.sweep.scheduleNote && (
-              <p className="text-faint mt-1 text-[12px]">{accounts.sweep.scheduleNote}</p>
-            )}
-            {accounts.sweep.on && accounts.sweep.lastRunAt && (
-              <p className="text-faint mt-1 text-[12px]">
-                Last looked {ago(accounts.sweep.lastRunAt)}
-                {accounts.sweep.note ? ` · ${accounts.sweep.note}` : ""}
-              </p>
-            )}
-          </div>
-          <Switch
-            id="mail-sweep"
-            checked={accounts.sweep.on}
-            disabled={!accounts.sweep.mailConnected || sweeping}
-            onCheckedChange={(next) =>
-              startSweeping(async () => {
-                try {
-                  await setMailSweepAction(next);
-                  toast.success(next ? "The sweep is on" : "The sweep is off");
-                } catch (error) {
-                  toast.error(error instanceof Error ? error.message : "Could not change that.");
+        {/* The sweep reads a mailbox, so with none connected it was a switch
+            that could not be pressed and a paragraph about something you do
+            not have. It appears with the first mailbox — or stays while it is
+            on, so a disconnected account cannot strand it out of sight. */}
+        {showSweep && (
+          <>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <Label htmlFor="mail-sweep" className="text-[13.5px] font-medium">
+                  Read new mail and queue what it finds
+                </Label>
+                <p className="text-muted-foreground mt-0.5 text-[13px]">
+                  Once an hour, look through the accounts above for mail from the companies and people
+                  already on your pipeline{accounts.sweep.calendarConnected ? ", and at meetings booked with them," : ""}{" "}
+                  and put what it finds on your dashboard to accept or dismiss. It never writes to your
+                  pipeline on its own, and it never looks outside the addresses your own records name.
+                </p>
+                {!accounts.sweep.mailConnected && (
+                  <p className="text-faint mt-1 text-[12px]">
+                    Connect a mailbox above and this switch starts working.
+                  </p>
+                )}
+                {accounts.sweep.on && accounts.sweep.scheduleNote && (
+                  <p className="text-faint mt-1 text-[12px]">{accounts.sweep.scheduleNote}</p>
+                )}
+                {accounts.sweep.on && accounts.sweep.lastRunAt && (
+                  <p className="text-faint mt-1 text-[12px]">
+                    Last looked {ago(accounts.sweep.lastRunAt)}
+                    {accounts.sweep.note ? ` · ${accounts.sweep.note}` : ""}
+                  </p>
+                )}
+              </div>
+              <Switch
+                id="mail-sweep"
+                checked={accounts.sweep.on}
+                disabled={!accounts.sweep.mailConnected || sweeping}
+                onCheckedChange={(next) =>
+                  startSweeping(async () => {
+                    try {
+                      await setMailSweepAction(next);
+                      toast.success(next ? "The sweep is on" : "The sweep is off");
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Could not change that.");
+                    }
+                  })
                 }
-              })
-            }
-          />
-        </div>
+              />
+            </div>
+          </>
+        )}
 
-        <div className="border-t pt-3">
+        <div className={cn(showSweep && "border-t pt-3")}>
           {captureLink.exists ? (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1179,6 +1215,7 @@ export function ConnectionsPanel({
           key={openConnection.id}
           connection={openConnection}
           baseUrl={baseUrl}
+          counts={{ tools: toolCount, admin: isAdmin ? adminToolCount : 0, workflows: promptCount }}
           open
           onOpenChange={(next) => {
             if (!next) setOpenId(null);

@@ -32,7 +32,7 @@ export const SETUP_COPY = {
     icon: PlugZapIcon,
     title: "Let Claude do the typing",
     body: "Optional, and the best thing here. Once it is connected you can say “I applied to Figma yesterday” and it fills the card in for you.",
-    href: "/settings",
+    href: "/settings?connect=1",
     cta: "Show me how",
   },
 } as const;

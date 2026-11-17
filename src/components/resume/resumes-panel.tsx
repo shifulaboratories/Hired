@@ -114,15 +114,18 @@ export async function ResumesPanel({
           description={
             hasMaterial
               ? "Build one from Me in a click, or ask Claude to tailor one to a job posting."
-              : "Already have a resume? Paste it to Claude and say \"import this\" — it fills in Me and drafts a resume in one move. Or add a role under Me by hand first."
+              : "Already have a resume? Paste it in and it fills in Me, and every resume you build after that is written from what is there. Or add a role under Me by hand first."
           }
           action={
             hasMaterial ? (
               <NewResumeDialog hasMaterial />
             ) : (
               <div className="flex flex-wrap items-center justify-center gap-2">
+                {/* The importer is one tab over and needs nothing connected;
+                    sending somebody to set up an assistant to do the same job
+                    was the long way round. */}
                 <Button asChild variant="default" size="sm">
-                  <Link href="/settings?tab=connections">Connect an assistant</Link>
+                  <Link href="/me?import=1">Paste a resume</Link>
                 </Button>
                 <NewResumeDialog hasMaterial={false} />
               </div>
