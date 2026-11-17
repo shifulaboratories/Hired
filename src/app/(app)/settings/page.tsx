@@ -234,7 +234,7 @@ export default async function SettingsPage({
                 <LibraryBigIcon className="mt-0.5 size-4 shrink-0" />
                 <span className="min-w-0 flex-1">
                   <span className="text-foreground block font-medium">The docs</span>
-                  Every one of those {visibleTools.length} tools written out with its arguments, plus
+                  Every tool written out with its arguments, plus
                   getting connected, filling in Me, tailoring a resume and running the search —
                   at docs.hired.tools.
                 </span>
