@@ -64,11 +64,11 @@ const TABS = ["connections", "pipeline", "account", "appearance", "archive"] as 
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; account?: string }>;
+  searchParams: Promise<{ tab?: string; account?: string; connect?: string }>;
 }) {
   const user = await requireUser();
   const headerList = await headers();
-  const { tab, account: accountOutcome } = await searchParams;
+  const { tab, account: accountOutcome, connect } = await searchParams;
 
   const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
   const proto =
@@ -163,6 +163,7 @@ export default async function SettingsPage({
             <FadeIn>
               <ConnectionsPanel
                 baseUrl={baseUrl}
+                autoConnect={connect === "1"}
                 connections={connections.map((connection) => ({
                   id: connection.id,
                   name: connection.name,
@@ -233,7 +234,7 @@ export default async function SettingsPage({
                 <LibraryBigIcon className="mt-0.5 size-4 shrink-0" />
                 <span className="min-w-0 flex-1">
                   <span className="text-foreground block font-medium">The docs</span>
-                  Every one of those {visibleTools.length} tools written out with its arguments, plus
+                  Every tool written out with its arguments, plus
                   getting connected, filling in Me, tailoring a resume and running the search —
                   at docs.hired.tools.
                 </span>

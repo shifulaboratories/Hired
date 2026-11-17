@@ -13,11 +13,11 @@ import { cn } from "@/lib/utils";
  * they are all done: no dismiss button, because a step that is finished is
  * finished and a step that is not is the only thing worth reading.
  */
-const COPY = {
+export const SETUP_COPY = {
   track: {
     icon: KanbanIcon,
     title: "Add a job you are going for",
-    body: "Paste the posting and the form fills itself. Say you have applied and the follow-up reminders start on their own.",
+    body: "Paste the job's link and the form fills itself. Say you have applied and the follow-up reminders start on their own.",
     href: "/applications?new=1",
     cta: "Add a job",
   },
@@ -32,7 +32,7 @@ const COPY = {
     icon: PlugZapIcon,
     title: "Let Claude do the typing",
     body: "Optional, and the best thing here. Once it is connected you can say “I applied to Figma yesterday” and it fills the card in for you.",
-    href: "/settings",
+    href: "/settings?connect=1",
     cta: "Show me how",
   },
 } as const;
@@ -41,7 +41,7 @@ export function SetupStrip({ status }: { status: SetupStatus }) {
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {status.steps.map((step, index) => {
-        const copy = COPY[step.key];
+        const copy = SETUP_COPY[step.key];
         return (
           <div
             key={step.key}

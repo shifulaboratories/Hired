@@ -28,6 +28,11 @@ export type SetupStatus = {
   tourSeenAt: Date | null;
   /** Whether the sample search is loaded, so nothing offers it twice. */
   sample: SampleStatus;
+  /**
+   * Whether to offer the sample: nothing loaded, and nothing of theirs on file
+   * — the same test loadSampleWorkspace applies before it will write.
+   */
+  offerSample: boolean;
 };
 
 export async function setupStatus(userId: string): Promise<SetupStatus> {
@@ -79,6 +84,7 @@ export async function setupStatus(userId: string): Promise<SetupStatus> {
     // another reason, which is where it belongs: beside the two that matter.
     outstanding: steps.some((step) => step.key !== "connect" && !step.done),
     sample,
+    offerSample: !sample.loaded && application === null && role === null && highlight === null,
     tourSeenAt: profile?.tourSeenAt ?? null,
   };
 }

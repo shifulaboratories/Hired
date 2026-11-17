@@ -15,6 +15,8 @@ import { listResumeNames } from "@/lib/data/resumes";
 import { listTags, tagsOfKind } from "@/lib/data/tags";
 import { archiveCounts } from "@/lib/data/archive";
 import { getProfile } from "@/lib/data/me";
+import { setupStatus } from "@/lib/data/onboarding";
+import { SampleNotice, SampleOffer } from "@/components/dashboard/sample-data";
 import { civilDay } from "@/lib/time";
 import { parseWidths } from "@/lib/column-widths";
 import { FieldsMenu } from "@/components/pipeline/fields-menu";
@@ -101,6 +103,7 @@ export default async function ApplicationsPage({
     profile,
     shares,
     fieldValues,
+    setup,
   ] = await Promise.all([
     getSettings(),
     listResumeNames(user.id),
@@ -111,6 +114,7 @@ export default async function ApplicationsPage({
     getProfile(user.id),
     listPipelineShares(user.id),
     applicationFieldValues(user.id),
+    setupStatus(user.id),
   ]);
   const zone = profile.timeZone;
   const shareBase = `${headerProto}://${headerHost}`;
@@ -229,7 +233,7 @@ export default async function ApplicationsPage({
         <EmptyState
           icon={KanbanIcon}
           title="Nothing on the board yet"
-          description="Add the first job you are going for — paste the posting and the form fills itself in. Once you have applied to one, the reminders and the chart start working too."
+          description="Add the first job you are going for — paste its link and the form fills itself in. Once you have applied to one, the reminders and the chart start working too."
           action={
             <NewApplicationDialog
               fieldValues={fieldValues}
@@ -243,6 +247,7 @@ export default async function ApplicationsPage({
             />
           }
         />
+        {setup.offerSample && <SampleOffer className="-mt-2" />}
         {/* Archiving the last one lands here too, so the way back has to stay. */}
         <ArchiveNote kind="application" count={bin.application} />
       </PageShell>
@@ -257,6 +262,7 @@ export default async function ApplicationsPage({
           title="Every conversation in flight"
           description={BLURB[view]}
         />
+        {setup.sample.loaded && <SampleNotice className="mb-4" />}
         <PipelineToolbar
           view={view}
           filters={filters}
