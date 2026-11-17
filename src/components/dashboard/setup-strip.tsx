@@ -17,7 +17,7 @@ const COPY = {
   track: {
     icon: KanbanIcon,
     title: "Add a job you are going for",
-    body: "Paste the posting and the form fills itself. Say you have applied and the follow-up reminders start on their own.",
+    body: "Paste the job's link and the form fills itself. Say you have applied and the follow-up reminders start on their own.",
     href: "/applications?new=1",
     cta: "Add a job",
   },

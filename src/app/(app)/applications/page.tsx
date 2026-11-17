@@ -229,7 +229,7 @@ export default async function ApplicationsPage({
         <EmptyState
           icon={KanbanIcon}
           title="Nothing on the board yet"
-          description="Add the first job you are going for — paste the posting and the form fills itself in. Once you have applied to one, the reminders and the chart start working too."
+          description="Add the first job you are going for — paste its link and the form fills itself in. Once you have applied to one, the reminders and the chart start working too."
           action={
             <NewApplicationDialog
               fieldValues={fieldValues}

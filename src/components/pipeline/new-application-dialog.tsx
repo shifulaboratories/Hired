@@ -71,8 +71,8 @@ export function NewApplicationDialog({
 
   // Paste a link, get the form filled. The fields stay editable — the page's
   // answer is a draft, not a decision.
-  const fetchPosting = () => {
-    const url = form.jobUrl.trim();
+  const fetchPosting = (pasted?: string) => {
+    const url = (pasted ?? form.jobUrl).trim();
     if (!url) {
       toast.error("Paste the posting's link first.");
       return;
@@ -162,8 +162,8 @@ export function NewApplicationDialog({
         <DialogHeader>
           <DialogTitle>Track a job</DialogTitle>
           <DialogDescription>
-            Paste the posting and Claude can tailor a resume against it later. No link is fine
-            too — a role you&apos;re chasing through a DM, with no listing, still belongs here.
+            Paste the job&apos;s link and the form fills itself. No link is fine too — a role
+            you&apos;re chasing through a DM, with no listing, still belongs here.
           </DialogDescription>
         </DialogHeader>
 
@@ -174,13 +174,36 @@ export function NewApplicationDialog({
               <Input
                 id="app-url"
                 value={form.jobUrl}
+                autoFocus={!form.company}
                 onChange={(event) => setForm({ ...form, jobUrl: event.target.value })}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") fetchPosting();
                 }}
-                placeholder="https://…  — paste a posting and let it fill the form"
+                // The setup card says paste the link and the form fills
+                // itself, so a pasted link fills it without a second press.
+                // Pasted text that is not a link is the posting itself, which
+                // belongs in Job description — the employer and role are left
+                // to them, because a guess at an employer is the one field
+                // here that writes something false into their search.
+                onPaste={(event) => {
+                  const text = event.clipboardData.getData("text").trim();
+                  if (!text || form.jobUrl.trim()) return;
+                  if (/^https?:\/\/\S+$/i.test(text)) {
+                    event.preventDefault();
+                    setForm((current) => ({ ...current, jobUrl: text }));
+                    fetchPosting(text);
+                  } else if (/\s/.test(text) && text.length > 80) {
+                    event.preventDefault();
+                    setForm((current) => ({
+                      ...current,
+                      jobDescription: current.jobDescription || text,
+                    }));
+                    toast.message("That is the posting's text, not a link, so it went into Job description. Add the company and role.");
+                  }
+                }}
+                placeholder="https://…  — paste the job's link and the form fills itself"
               />
-              <Button variant="outline" onClick={fetchPosting} disabled={fetching}>
+              <Button variant="outline" onClick={() => fetchPosting()} disabled={fetching}>
                 {fetching ? <LoaderCircleIcon className="animate-spin" /> : <SparklesIcon />}
                 Fill from link
               </Button>
@@ -191,7 +214,7 @@ export function NewApplicationDialog({
             <Label htmlFor="app-company">Company</Label>
             <Input
               id="app-company"
-              autoFocus
+              autoFocus={Boolean(form.company)}
               value={form.company}
               onChange={(event) => setForm({ ...form, company: event.target.value })}
               onKeyDown={(event) => {
