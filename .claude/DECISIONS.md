@@ -7363,3 +7363,32 @@ name is now "<Person> Resume" / "<Person> Cover Letter" rather than the private 
 which by default names the company. Links print without scheme or www. ("linkedin.com/in/x");
 letters printed "https://" before. One-click server PDF on Railway stays parked, per the Note in
 docs/self-hosting/pdf.mdx.
+
+## 2026-11-17 — The first ten minutes stop contradicting themselves
+
+William asked for seven fixes from a walk through the app as a brand-new user. What changed,
+and the calls inside them:
+
+- **Pasting a link fills the form; pasting text does not guess.** The setup card promised
+  that pasting the posting fills the form. Only a link did, and only after Fill from link.
+  A pasted link now fetches on paste. Pasted text longer than a line goes to Job description
+  with a note to add the company and role. Pulling an employer out of free text was the
+  other option and was turned down: it is the one field where a guess writes something
+  false into the search, and `capture_job_posting` already refuses to guess one from a URL.
+- **The sample search is in the app.** It was only reachable through
+  `load_sample_workspace`, so the person with nothing connected — the one who most needed
+  something to look at — could not get it. `loadSampleAction` and `wipeSampleAction` call
+  the same data functions. The offer shows only while `setupStatus().offerSample` is true,
+  which is the same emptiness test `loadSampleWorkspace` applies, so the button cannot hit
+  the "real material" refusal. The October audit listed the sample workspace among cuts
+  that wait for a go-ahead; this goes the other way, at William's request.
+- **Today's button is the next setup step until history exists**, not New resume.
+- **Show me how opens the connect panel** (`/settings?connect=1`, stripped from the address
+  on arrival). Until the first connection has been used, the Start here card is the only
+  way in: the header Connect button and the "never used" row stand down. The dashed "Add an
+  assistant or an account" row stays, because it also adds mail accounts.
+- **Tool and workflow counts moved into the connection panel's More options.** No job
+  seeker needs "227 tools (33 admin)" in a page header.
+- **The mail sweep appears with the first mailbox**, or while it is on, so disconnecting
+  an account cannot hide a switch that is still running.
+- **An empty Resumes tab offers the importer** rather than "Connect an assistant".

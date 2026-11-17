@@ -42,7 +42,16 @@ to run `restart_tour` and it will be there next time you open the app.
 Under it on Today, three cards track the only three things a new workspace needs: a job on
 the board, your history on file, and — optionally, and it is the good one — an assistant
 connected. They tick themselves off from what is actually there rather than from a flag, so
-they disappear on their own and there is nothing to dismiss.
+they disappear on their own and there is nothing to dismiss. Until your history is on file,
+the button at the top right of Today is the next of those steps rather than **New resume**,
+because a resume built from an empty Me is an empty page.
+
+If you would rather see the app working before you put anything of your own in it, an empty
+Today and an empty board both offer **Look around with sample data**. It loads a small
+invented search — six jobs, a few people, two offers — written through the same code as
+your own, and while it is there a note on Today and the board says so and removes it again.
+Removing it keeps anything you changed or added. It is the same sample an assistant loads
+with `load_sample_workspace`, and it is only offered while the workspace is empty.
 
 ## Today
 
@@ -159,6 +168,11 @@ is `/crm`.
 
 One toolbar across the top picks the view, the cut and the search.
 
+**Track a job** opens a short form. Paste the posting's link into the first box and it
+fills in the company, role, location, pay and description from the page, and you check it
+over. If what you paste is the posting's text rather than its link, it goes into the
+description and the company and role are left to you; nothing guesses an employer.
+
 <AccordionGroup>
   <Accordion title="Board" icon="table-columns">
     Drag-and-drop across the four live stages: Wishlist, Applied, Interviewing, Offer. The
@@ -264,7 +278,10 @@ pasting a URL into an assistant, not changing a password.
     or IMAP and CalDAV — to test, reconnect and disconnect.
     **Connect** opens a library of everything you can add, assistants on one tab and
     accounts on the other, with what you already have marked as connected. Until something
-    has actually called in, a line at the top offers to walk you through it. The three
+    has actually called in, a line at the top offers to walk you through it, and **Show me
+    how** on Today opens that walkthrough directly. How many tools and workflows Hired offers
+    is under a connection's **More options**. The mail sweep switch appears once you have
+    connected a mailbox for it to read. The three
     [skills](/skills) are folded away below — each a raw `SKILL.md` and a zip — because they
     are the one thing on this screen that talks about file paths.
   </Card>
