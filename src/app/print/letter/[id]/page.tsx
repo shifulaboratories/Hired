@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getLetter } from "@/lib/data/letters";
 import { getProfile } from "@/lib/data/me";
 import { LetterPaper } from "@/components/letters/letter-paper";
 import { PrintTrigger } from "@/components/resume/print-trigger";
+import { LETTER_LABEL } from "@/lib/letter-kinds";
+import { documentTitle } from "@/lib/print-names";
 import { civilDay, formatCivilDay, SERVER_ZONE } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +20,19 @@ export const dynamic = "force-dynamic";
  * Auth-gated like the resume print page. The PDF route signs in as a
  * short-lived session rather than making this address public.
  */
-export default async function LetterPrintPage({ params }: { params: Promise<{ id: string }> }) {
+type Params = { params: Promise<{ id: string }> };
+
+/** The tab title names the PDF the print dialog saves; see /print/[id]. */
+export async function generateMetadata({ params }: Params): Promise<Metadata> {
+  const user = await requireUser();
+  const { id } = await params;
+  const [letter, profile] = await Promise.all([getLetter(user.id, id), getProfile(user.id)]);
+  if (!letter) return { title: "Letter" };
+  const name = profile.fullName || user.name;
+  return { title: { absolute: documentTitle(name, LETTER_LABEL[letter.kind], letter.title) } };
+}
+
+export default async function LetterPrintPage({ params }: Params) {
   const user = await requireUser();
   const { id } = await params;
 
@@ -35,7 +50,7 @@ export default async function LetterPrintPage({ params }: { params: Promise<{ id
 
   return (
     <div className="min-h-svh bg-neutral-200 py-8 print:bg-white print:py-0">
-      <PrintTrigger fileName={letter.title || "Letter"} />
+      <PrintTrigger />
       <div className="mx-auto w-fit bg-white shadow-2xl print:shadow-none">
         <LetterPaper
           kind={letter.kind}

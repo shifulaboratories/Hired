@@ -21,8 +21,8 @@ import type { ResumeDoc } from "@/lib/resume-schema";
  * changes when you zoom. This one is never scaled and never seen.
  *
  * The paper is rendered with `pageMargin: 0` and the margin is carried by the
- * host's column size, which is the same arrangement the printed page uses now
- * that the margin lives on the page box.
+ * host's column size: every page's content box is the sheet minus the margin,
+ * which is what the printed page gets from its cloned padding (globals.css).
  */
 export function PageMeasure({
   doc,

@@ -1,6 +1,7 @@
 import { requireUser, createEphemeralSession, destroySession, SESSION_COOKIE } from "@/lib/auth";
 import { getResume } from "@/lib/data/resumes";
 import { renderPdf, pdfRenderingAvailable } from "@/lib/pdf";
+import { attachmentDisposition, documentTitle } from "@/lib/print-names";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -51,7 +52,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return new Response(new Uint8Array(bytes), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${fileName(resume.name)}"`,
+        "Content-Disposition": attachmentDisposition(
+          documentTitle(resume.doc.header.name, "resume", resume.name),
+          "resume",
+        ),
         "Cache-Control": "no-store",
       },
     });
@@ -65,7 +69,3 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
-function fileName(name: string) {
-  const stem = name.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "resume";
-  return `${stem}.pdf`;
-}

@@ -29,6 +29,7 @@ import { STALE_AFTER, hasGoneQuiet } from "../src/lib/quiet.ts";
 import { parseAmount } from "../src/lib/money.ts";
 import { assertPublicUrl, blockedAddress } from "../src/lib/safe-fetch.ts";
 import { parseResumeDocStrict, parseResumeDoc } from "../src/lib/resume-schema.ts";
+import { attachmentDisposition, displayUrl, documentTitle } from "../src/lib/print-names.ts";
 
 // --- Background sections ---------------------------------------------------
 
@@ -146,4 +147,19 @@ test("a null in a resume means empty, not an error", () => {
 
 test("reading a damaged stored row still opens, as an empty document", () => {
   assert.equal(parseResumeDoc({ sections: "nope" }).sections.length > 0, true);
+});
+
+test("a printed document is named for the person, never the private filing name", () => {
+  assert.equal(documentTitle("Alex Rivera", "resume", "v10 — Stripe: PM"), "Alex Rivera Resume");
+  assert.equal(documentTitle("Alex Rivera", "Cover letter", "Stripe draft"), "Alex Rivera Cover Letter");
+  assert.equal(documentTitle("  ", "resume", "Master"), "Master");
+  const header = attachmentDisposition("José Núñez Resume", "resume");
+  assert.match(header, /filename="Jose-Nunez-Resume\.pdf"/);
+  assert.match(header, /filename\*=UTF-8''Jos%C3%A9-N%C3%BA%C3%B1ez-Resume\.pdf/);
+});
+
+test("a link prints without its scheme, www. or trailing slash", () => {
+  assert.equal(displayUrl("https://www.linkedin.com/in/alex/"), "linkedin.com/in/alex");
+  assert.equal(displayUrl("http://alex.dev"), "alex.dev");
+  assert.equal(displayUrl("github.com/alex"), "github.com/alex");
 });

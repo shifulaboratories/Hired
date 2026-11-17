@@ -1,6 +1,9 @@
 import { requireUser, createEphemeralSession, destroySession, SESSION_COOKIE } from "@/lib/auth";
 import { getLetter } from "@/lib/data/letters";
+import { getProfile } from "@/lib/data/me";
+import { LETTER_LABEL } from "@/lib/letter-kinds";
 import { renderPdf, pdfRenderingAvailable } from "@/lib/pdf";
+import { attachmentDisposition, documentTitle } from "@/lib/print-names";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,7 +24,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const user = await requireUser();
   const { id } = await params;
 
-  const letter = await getLetter(user.id, id);
+  const [letter, profile] = await Promise.all([getLetter(user.id, id), getProfile(user.id)]);
   if (!letter) return new Response("Not found", { status: 404 });
 
   if (!pdfRenderingAvailable()) {
@@ -51,7 +54,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return new Response(new Uint8Array(bytes), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${fileName(letter.title)}"`,
+        "Content-Disposition": attachmentDisposition(
+          documentTitle(profile.fullName || user.name, LETTER_LABEL[letter.kind], letter.title),
+          "letter",
+        ),
         "Cache-Control": "no-store",
       },
     });
@@ -65,7 +71,3 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
-function fileName(name: string) {
-  const stem = name.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "letter";
-  return `${stem}.pdf`;
-}

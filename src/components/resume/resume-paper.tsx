@@ -1,4 +1,5 @@
 import { cn, dateRange } from "@/lib/utils";
+import { displayUrl } from "@/lib/print-names";
 import type { ResumeDoc, ResumeSection } from "@/lib/resume-schema";
 import { templateTakesPhoto } from "@/lib/resume-templates";
 
@@ -210,7 +211,7 @@ function Header({
         )}
         {header.links.length > 0 && (
           <div style={{ marginTop: "0.2em" }}>
-            {header.links.map((link) => stripProtocol(link.url)).join(" | ")}
+            {header.links.map((link) => displayUrl(link.url)).join(" | ")}
           </div>
         )}
         <div className="rp-rule" style={{ marginTop: "0.7em" }} />
@@ -256,7 +257,7 @@ function Header({
           {header.links.map((link, index) => (
             <span key={`${link.url}-${index}`}>
               <Url href={link.url} linkify={linkify} style={{ color: "var(--paper-accent)" }}>
-                {link.label || stripProtocol(link.url)}
+                {link.label || displayUrl(link.url)}
               </Url>
               {index < header.links.length - 1 && (
                 <span style={{ marginLeft: "0.42em" }}>&bull;</span>
@@ -324,7 +325,7 @@ function Header({
         {header.links.map((link, index) => (
           <span key={`${link.url}-${index}`}>
             <Url href={link.url} linkify={linkify} style={{ color: "var(--paper-accent)" }}>
-              {link.label || stripProtocol(link.url)}
+              {link.label || displayUrl(link.url)}
             </Url>
             {index < header.links.length - 1 && (
               <span style={{ opacity: 0.4, marginLeft: "0.75em" }}>·</span>
@@ -515,7 +516,7 @@ function SectionBlock({
                   right={
                     item.url ? (
                       <Url href={item.url} linkify={linkify} style={{ color: "var(--paper-accent)" }}>
-                        {stripProtocol(item.url)}
+                        {displayUrl(item.url)}
                       </Url>
                     ) : undefined
                   }
@@ -563,7 +564,7 @@ function SectionBlock({
                       color: "var(--paper-accent)",
                     }}
                   >
-                    {stripProtocol(item.url)}
+                    {displayUrl(item.url)}
                   </Url>
                 )}
                 {item.description && (
@@ -799,6 +800,3 @@ function hasContent(section: ResumeSection) {
   }
 }
 
-function stripProtocol(url: string) {
-  return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
-}

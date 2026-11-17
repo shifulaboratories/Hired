@@ -744,16 +744,26 @@ body:has(> .auth-field.theme-light) {
 }
 
 @media print {
-  /* The margin lives on the PAGE BOX, not on the paper.
-     It used to be padding on .resume-paper with @page { margin: 0 }, and
-     padding on a box that fragments is sliced: page one got the top, the last
-     page got the bottom, and every page between them got none. Measured out of
-     the real PDF, page two of a two-page resume started 12px from the sheet's
-     edge where page one started at 61px, and page one ran to within 23px of the
-     bottom. @page cannot read a custom property, so the size is stated here and
-     each document's own margin is emitted by the route that prints it. */
+  /* No page-box margin, on purpose. Chrome, Edge and Safari draw their print
+     headers and footers — the date, the tab title, the page's URL and "1/2" —
+     inside the @page margin, and with "Headers and footers" ticked (the default
+     for a lot of people) every PDF saved from the print dialog came out with
+     app.hired.tools/print/… along its bottom edge. A zero margin leaves them no
+     room, so the browser drops them.
+
+     The document's margin is the paper's own padding instead, and
+     box-decoration-break: clone is what makes that padding repeat on every
+     page. Without it, padding on a box that fragments is sliced: page one got
+     the top, the last page got the bottom, and every page between got none —
+     which is why the margin once moved onto @page. Clone gives both: the
+     margin on every edge of every page, and nothing for the browser to print
+     into. The editor's page measurement already assumes a content box of the
+     sheet minus the margin on each page, which is exactly what this produces.
+     A browser without clone (Safari) gets the margin back on the page box from
+     PageMarginStyle instead. */
   @page {
     size: letter;
+    margin: 0;
   }
 
   html,
@@ -768,11 +778,11 @@ body:has(> .auth-field.theme-light) {
   }
 
   .resume-paper {
-    /* auto, not 8.5in: the page box is already the sheet minus its margins, so
-       the paper fills it and the content width is what it always was. */
-    width: auto !important;
+    /* The padding is the inline per-resume margin and is left alone. */
+    width: 8.5in !important;
     min-height: 0 !important;
-    padding: 0 !important;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;

@@ -7343,3 +7343,23 @@ now has a fifth tab, Archive, with the bin's count per kind and a link through. 
 pointer, not a second archive screen: restore and delete-for-good stay on /archive, so
 there is one implementation of each. No tool change — list_archive already answers this
 over MCP.
+
+## 2026-11-16 — Printed PDFs lose the browser's URL and date: margin back on the paper, cloned
+
+William: exported PDFs "have random url text". app.hired.tools has no Chromium (export_resume_pdf
+answers available: false), so every PDF there comes from the print dialog, and Chrome draws its
+headers and footers — date, tab title, the /print/<id> address, "1/2" — inside the @page margin.
+The margin had moved onto @page to stop padding being sliced across pages, which is what gave
+the browser that room. Now @page is zero and the paper's padding carries the margin, with
+box-decoration-break: clone so it repeats on every page: measured out of the PDF, both pages of a
+two-page resume sit 36pt in on every edge, and the dialog has nowhere to print. Safari cannot clone
+block padding, so PageMarginStyle now emits the old @page margin only under
+@supports not (box-decoration-break: clone); same geometry, checked by forcing that branch in
+Chromium. Letters follow the same pattern at 1in.
+
+Also: the tab title (which the dialog uses as the file name) is set by generateMetadata — the old
+PrintTrigger effect was overwritten by Next's own <title>, so every file was "Hired.pdf" — and the
+name is now "<Person> Resume" / "<Person> Cover Letter" rather than the private document name,
+which by default names the company. Links print without scheme or www. ("linkedin.com/in/x");
+letters printed "https://" before. One-click server PDF on Railway stays parked, per the Note in
+docs/self-hosting/pdf.mdx.

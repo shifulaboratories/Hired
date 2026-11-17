@@ -1,5 +1,6 @@
 import { IS_CORRESPONDENCE, LETTER_LABEL } from "@/lib/letter-kinds";
 import type { LetterKind } from "@prisma/client";
+import { displayUrl } from "@/lib/print-names";
 
 /**
  * A letter, on a page.
@@ -37,7 +38,9 @@ export type LetterPaperProps = {
 };
 
 export function LetterPaper({ kind, title, recipient, body, from, date }: LetterPaperProps) {
-  const contact = [from.email, from.phone, from.location, from.website].filter(Boolean);
+  const contact = [from.email, from.phone, from.location, from.website && displayUrl(from.website)].filter(
+    Boolean,
+  );
   // A blank line is a paragraph break; a single newline is a line break inside
   // one. That is how people type into a textarea, so it is how this reads it.
   const paragraphs = body.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
@@ -51,7 +54,7 @@ export function LetterPaper({ kind, title, recipient, body, from, date }: Letter
   return (
     <article className="letter-paper">
       <style>{`
-        @page { size: Letter; margin: 1in; }
+        @media print { @page { size: Letter; margin: 0; } }
         .letter-paper {
           width: 8.5in;
           min-height: 11in;
@@ -62,8 +65,21 @@ export function LetterPaper({ kind, title, recipient, body, from, date }: Letter
           font-size: 11.5pt;
           line-height: 1.5;
         }
+        /* The margin is padding cloned onto every page rather than an @page
+           margin, for the reason globals.css gives at .resume-paper: a page-box
+           margin is where the browser prints the URL and the date. */
         @media print {
-          .letter-paper { width: auto; min-height: 0; padding: 0; }
+          .letter-paper {
+            min-height: 0;
+            -webkit-box-decoration-break: clone;
+            box-decoration-break: clone;
+          }
+          /* Safari slices padding instead of cloning it; there, the page box
+             carries the margin, as resume-paper's PageMarginStyle explains. */
+          @supports not (box-decoration-break: clone) {
+            @page { margin: 1in; }
+            .letter-paper { width: auto; padding: 0; }
+          }
         }
         .letter-paper h1 { font-size: 15pt; font-weight: 600; margin: 0; letter-spacing: 0.01em; }
         .letter-paper .letter-contact { font-size: 9.5pt; color: #444; margin-top: 0.15in; }
