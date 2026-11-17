@@ -27,6 +27,7 @@ import * as mailSweep from "@/lib/data/mail-sweep";
 import * as captureLink from "@/lib/data/capture-link";
 import * as outbound from "@/lib/data/outbound";
 import * as onboarding from "@/lib/data/onboarding";
+import * as sample from "@/lib/data/sample";
 import * as assistant from "@/lib/data/assistant";
 import { pendingApproval } from "@/lib/assistant/run";
 import { StaleWriteError } from "@/lib/data/revision-store";
@@ -2136,6 +2137,34 @@ export async function restartTourAction() {
   await onboarding.setTourSeen(user.id, false);
   // The tour mounts from the layout, which every screen renders.
   revalidatePath("/", "layout");
+}
+
+// --- the sample search ---------------------------------------------------------
+// The same two functions load_sample_workspace and wipe_sample_workspace call.
+// Without these the sample was only reachable from a connected assistant, so the
+// person who most needed something to look at — nothing connected, nothing on
+// file — was the one person who could not get it.
+
+export async function loadSampleAction() {
+  const user = await requireUser();
+  try {
+    await sample.loadSampleWorkspace(user.id);
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "Could not load the sample." };
+  }
+  revalidatePath("/", "layout");
+  return { ok: true as const };
+}
+
+export async function wipeSampleAction() {
+  const user = await requireUser();
+  try {
+    const report = await sample.wipeSampleWorkspace(user.id);
+    revalidatePath("/", "layout");
+    return { ok: true as const, kept: report.kept.map((row) => row.label) };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "Could not remove the sample." };
+  }
 }
 
 // --- the built-in assistant --------------------------------------------------

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  ArrowRightIcon,
   CalendarClockIcon,
   ChartNoAxesColumnIcon,
   ListChecksIcon,
@@ -11,7 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FadeIn } from "@/components/motion";
 import { FollowUpList } from "@/components/dashboard/follow-up-list";
-import { SetupStrip } from "@/components/dashboard/setup-strip";
+import { SETUP_COPY, SetupStrip } from "@/components/dashboard/setup-strip";
+import { SampleNotice, SampleOffer } from "@/components/dashboard/sample-data";
 import { ReviewQueue } from "@/components/dashboard/review-queue";
 import { Outbox } from "@/components/dashboard/outbox";
 import { listProposals, PROPOSAL_LABEL } from "@/lib/data/proposals";
@@ -90,6 +92,13 @@ export default async function HomePage({
   // Analytics does not read the profile, so it asks for the one field it needs
   // rather than paying for the whole row to say "Your search".
   const zone = today ? today[0].timeZone : await timeZoneOf(user.id);
+  // "New resume" with nothing in Me builds an empty page. Until there is
+  // something to write from, the page's one button is the next setup step.
+  const setup = today?.[1];
+  const historyDone = setup?.steps.some((step) => step.key === "history" && step.done) ?? true;
+  const nextStep = historyDone
+    ? null
+    : (setup?.steps.find((step) => step.key !== "connect" && !step.done) ?? null);
 
   return (
     <PageShell>
@@ -109,11 +118,19 @@ export default async function HomePage({
         }
         actions={
           active === "today" ? (
-            <Button asChild variant="default">
-              <Link href="/me?tab=resumes&new=1">
-                <SparklesIcon /> New resume
-              </Link>
-            </Button>
+            nextStep ? (
+              <Button asChild variant="default">
+                <Link href={SETUP_COPY[nextStep.key].href}>
+                  {SETUP_COPY[nextStep.key].cta} <ArrowRightIcon />
+                </Link>
+              </Button>
+            ) : (
+              <Button asChild variant="default">
+                <Link href="/me?tab=resumes&new=1">
+                  <SparklesIcon /> New resume
+                </Link>
+              </Button>
+            )
           ) : null
         }
       />
@@ -283,7 +300,9 @@ async function TodayTab({
       {/* The first-run nudges belong to this tab, not to the page. Analytics
           is about the search; three onboarding cards above its tab strip
           pushed the thing you came for under the fold. */}
+      {setup.sample.loaded && <SampleNotice className="mb-5" />}
       {setup.outstanding && <SetupStrip status={setup} />}
+      {setup.offerSample && <SampleOffer className="mt-4" />}
 
       {/* Above the list, because reporting what happened is the thing you came
           here to do; the list is what you work down afterwards — but only once

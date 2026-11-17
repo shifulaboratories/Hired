@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  * they are all done: no dismiss button, because a step that is finished is
  * finished and a step that is not is the only thing worth reading.
  */
-const COPY = {
+export const SETUP_COPY = {
   track: {
     icon: KanbanIcon,
     title: "Add a job you are going for",
@@ -41,7 +41,7 @@ export function SetupStrip({ status }: { status: SetupStatus }) {
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {status.steps.map((step, index) => {
-        const copy = COPY[step.key];
+        const copy = SETUP_COPY[step.key];
         return (
           <div
             key={step.key}
